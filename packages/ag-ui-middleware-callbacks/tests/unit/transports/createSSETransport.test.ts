@@ -1,4 +1,5 @@
 import { test, expect, mock } from "bun:test";
+import { createSSETransport } from "../../../src/transports/createSSETransport";
 
 test("SSE transport sets correct headers", async () => {
   const mockReq = {

@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { generateId } from "../../../src/utils/idGenerator";
 
 test("generateId creates unique IDs", () => {
   const id1 = generateId();

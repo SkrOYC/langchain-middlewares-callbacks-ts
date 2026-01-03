@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { createMockTransport } from "../../fixtures/mockTransport";
+import { AGUICallbackHandler } from "../../../src/callbacks/AGUICallbackHandler";
 
 // handleLLMStart tests
 

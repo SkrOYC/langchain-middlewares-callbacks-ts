@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { computeStateDelta } from "../../../src/utils/stateDiff";
 
 test("computeDelta returns JSON Patch operations", () => {
   const oldState = { messages: [] };

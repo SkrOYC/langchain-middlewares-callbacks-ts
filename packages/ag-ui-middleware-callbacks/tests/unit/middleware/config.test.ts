@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { createMockTransport } from "../../fixtures/mockTransport";
+import { AGUIMiddlewareOptionsSchema } from "../../../src/middleware/types";
 
 test("AGUIMiddlewareOptionsSchema validates valid options", () => {
   const validOptions = {

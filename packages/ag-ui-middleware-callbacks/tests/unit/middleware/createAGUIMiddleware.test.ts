@@ -1,5 +1,6 @@
 import { test, expect, mock } from "bun:test";
 import { createMockTransport } from "../../fixtures/mockTransport";
+import { createAGUIMiddleware } from "../../../src/middleware/createAGUIMiddleware";
 
 test("createAGUIMiddleware returns middleware object", () => {
   const mockTransport = createMockTransport();

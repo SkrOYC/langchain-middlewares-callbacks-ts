@@ -1,5 +1,6 @@
 import { test, expect, mock } from "bun:test";
 import { createMockTransport } from "../fixtures/mockTransport";
+import { createAGUIAgent } from "../../src/createAGUIAgent";
 
 test("createAGUIAgent returns an agent object", () => {
   const mockTransport = createMockTransport();
