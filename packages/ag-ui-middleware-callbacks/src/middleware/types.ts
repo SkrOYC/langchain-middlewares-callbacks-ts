@@ -8,6 +8,14 @@ import { z } from "zod";
 import type { AGUITransport } from "../transports/types";
 
 /**
+ * Interface for agent state coordination between middleware and agent wrapper.
+ * Used for sharing activeMessageId for guaranteed cleanup.
+ */
+export interface AgentState {
+  activeMessageId: string | undefined;
+}
+
+/**
  * Middleware options schema with Zod validation.
  */
 export const AGUIMiddlewareOptionsSchema = z.object({
@@ -34,6 +42,14 @@ export const AGUIMiddlewareOptionsSchema = z.object({
 
   // Error Handling
   errorDetailLevel: z.enum(["full", "message", "code", "none"]).default("message"),
+  
+  // Internal: Agent state for cleanup coordination (not persisted)
+  _agentState: z.custom<AgentState>(
+    (val) => val && typeof val === "object" && "activeMessageId" in val,
+    {
+      message: "Invalid agent state object",
+    }
+  ).optional(),
 });
 
 /**

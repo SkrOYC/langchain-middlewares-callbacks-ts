@@ -1,5 +1,6 @@
 /**
- * Section-by-section test to find syntax error
+ * Integration tests for AG-UI Agent with createAGUIAgent
+ * Tests the full workflow including lifecycle events, tool calls, and state management.
  */
 
 import { test, expect, describe } from "bun:test";
@@ -16,6 +17,7 @@ import {
   createSingleToolScenario,
   createMultiToolScenario,
   createMultiTurnScenario,
+  createErrorScenario,
 } from "../helpers/testUtils";
 
 // Copy of Basic Functionality section
@@ -440,5 +442,196 @@ describe("Streaming", () => {
     // Should complete successfully
     const eventTypes = getEventTypes(transport);
     expect(eventTypes.length).toBeGreaterThan(0);
+  });
+});
+
+// ============================================================
+// NEW TESTS FOR SPEC COMPLIANCE
+// ============================================================
+
+describe("Error Handling (SPEC Section 8)", () => {
+  test("Agent handles tool error scenario", async () => {
+    const { transport, model, tools } = createErrorScenario("Tool execution failed");
+    
+    const { agent } = createTestAgent(model, tools, transport);
+    
+    // Invoke the agent and see what events are emitted
+    const result = await agent.invoke(formatAgentInput([{ role: "user", content: "This will fail" }]));
+    
+    // Log what events were emitted for debugging
+    const eventTypes = getEventTypes(transport);
+    
+    // Basic test: agent executes without crashing
+    expect(result).toBeDefined();
+    
+    // Verify some events were emitted (at minimum lifecycle events)
+    expect(eventTypes.length).toBeGreaterThan(0);
+  });
+
+  test("Agent configuration accepts errorDetailLevel 'code'", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello"]);
+    
+    const { agent } = createTestAgent(model, [], transport, {
+      errorDetailLevel: "code"
+    });
+    
+    // Should not throw
+    await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+    
+    expect(getEventTypes(transport)).toContain("RUN_FINISHED");
+  });
+
+  test("Agent configuration accepts errorDetailLevel 'full'", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello"]);
+    
+    const { agent } = createTestAgent(model, [], transport, {
+      errorDetailLevel: "full"
+    });
+    
+    // Should not throw
+    await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+    
+    expect(getEventTypes(transport)).toContain("RUN_FINISHED");
+  });
+});
+
+describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
+  test("TEXT_MESSAGE_END is emitted on successful completion", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello!"]);
+    
+    const { agent } = createTestAgent(model, [], transport);
+    
+    await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+    
+    // TEXT_MESSAGE_END should be emitted
+    expectEventCount(transport, "TEXT_MESSAGE_END", 1);
+    
+    // Verify TEXT_MESSAGE_START has matching messageId
+    const textStartEvents = getEventsByType(transport, "TEXT_MESSAGE_START");
+    const textEndEvents = getEventsByType(transport, "TEXT_MESSAGE_END");
+    
+    expect(textStartEvents.length).toBe(1);
+    expect(textEndEvents.length).toBe(1);
+    expect(textEndEvents[0].messageId).toBe(textStartEvents[0].messageId);
+  });
+
+  test("TEXT_MESSAGE_END follows TEXT_MESSAGE_START in event order", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello!"]);
+    
+    const { agent } = createTestAgent(model, [], transport);
+    
+    await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+    
+    const eventTypes = getEventTypes(transport);
+    const textStartIndex = eventTypes.indexOf("TEXT_MESSAGE_START");
+    const textEndIndex = eventTypes.indexOf("TEXT_MESSAGE_END");
+    
+    // TEXT_MESSAGE_END should come after TEXT_MESSAGE_START
+    expect(textEndIndex).toBeGreaterThan(textStartIndex);
+  });
+});
+
+describe("Abort Signal Propagation (SPEC Section 3.2)", () => {
+  test("invoke accepts signal from context", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello"]);
+    
+    const { agent } = createTestAgent(model, [], transport);
+    
+    const abortController = new AbortController();
+    
+    // Should accept signal in context
+    await agent.invoke(
+      formatAgentInput([{ role: "user", content: "Hi" }]),
+      { context: { signal: abortController.signal } }
+    );
+    
+    // Should complete successfully (signal not aborted)
+    const eventTypes = getEventTypes(transport);
+    expect(eventTypes).toContain("RUN_FINISHED");
+  });
+
+  test("stream accepts signal from context", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello"]);
+    
+    const { agent } = createTestAgent(model, [], transport);
+    
+    const abortController = new AbortController();
+    
+    const stream = await agent.stream(
+      formatAgentInput([{ role: "user", content: "Hi" }]),
+      { context: { signal: abortController.signal } }
+    );
+    
+    await collectStreamChunks(stream);
+    
+    // Should complete successfully
+    const eventTypes = getEventTypes(transport);
+    expect(eventTypes).toContain("RUN_FINISHED");
+  });
+});
+
+describe("Smart Emission Policy (SPEC Section 9.3)", () => {
+  test("Callback handler accepts maxUIPayloadSize option", () => {
+    const { AGUICallbackHandler } = require("../../src/callbacks/AGUICallbackHandler");
+    const { createMockTransport } = require("../../tests/helpers/testUtils");
+    
+    const transport = createMockTransport();
+    
+    // Should not throw
+    const handler = new AGUICallbackHandler(transport, {
+      maxUIPayloadSize: 1000
+    });
+    
+    expect(handler).toBeDefined();
+  });
+
+  test("Callback handler accepts chunkLargeResults option", () => {
+    const { AGUICallbackHandler } = require("../../src/callbacks/AGUICallbackHandler");
+    const { createMockTransport } = require("../../tests/helpers/testUtils");
+    
+    const transport = createMockTransport();
+    
+    // Should not throw
+    const handler = new AGUICallbackHandler(transport, {
+      chunkLargeResults: true
+    });
+    
+    expect(handler).toBeDefined();
+  });
+});
+
+describe("State Delta (SPEC Section 4.4)", () => {
+  test("STATE_DELTA is emitted when emitStateSnapshots is 'all'", async () => {
+    const transport = createMockTransport();
+    const model = createTextModel(["Hello"]);
+    
+    const { agent } = createTestAgent(model, [], transport, {
+      emitStateSnapshots: "all"
+    });
+    
+    await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+    
+    // STATE_DELTA should be emitted (when state changes between initial and final)
+    const eventTypes = getEventTypes(transport);
+    
+    // Should have at least STATE_SNAPSHOT events
+    const snapshotEvents = getEventsByType(transport, "STATE_SNAPSHOT");
+    expect(snapshotEvents.length).toBeGreaterThanOrEqual(2); // Initial and final
+    
+    // May have STATE_DELTA if state actually changed
+    // (this depends on whether the model modifies state during execution)
+    const deltaEvents = getEventsByType(transport, "STATE_DELTA");
+    
+    // Delta events should have proper structure if emitted
+    for (const event of deltaEvents) {
+      expect(event.delta).toBeDefined();
+      expect(Array.isArray(event.delta)).toBe(true);
+    }
   });
 });

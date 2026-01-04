@@ -319,11 +319,16 @@ export function createMultiToolScenario() {
 }
 
 /**
- * Scenario 4: Error handling
+ * Scenario 3: Error handling - Tool that throws an error
  */
 export function createErrorScenario(errorMessage: string) {
   const transport = createMockTransport();
-  const model = createTextModel(["This will fail"]);
+  
+  // Create a model that will call the failing tool
+  const model = createToolCallingModel([
+    [{ name: "failing_tool", args: {}, id: "call_1" }], // Tool call
+    [], // Final response (won't be reached if tool errors)
+  ]);
   
   const failingTool = createTestTool(
     "failing_tool",

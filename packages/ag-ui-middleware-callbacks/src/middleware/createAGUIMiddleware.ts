@@ -8,16 +8,27 @@
  * - Metadata propagation: Stores messageId in runtime.config.metadata for callbacks
  * - Session ID priority: configurable > context > options
  * - Fail-safe: All transport emissions wrapped in try/catch
+ * - Agent state coordination: Shares activeMessageId with agent wrapper for cleanup
+ * - State management: Emits STATE_SNAPSHOT and STATE_DELTA events
  */
 
 import { createMiddleware } from "langchain";
 import { generateId } from "../utils/idGenerator";
+import { computeStateDelta } from "../utils/stateDiff";
 import type { AGUIEvent } from "../events";
 import type { AGUITransport } from "../transports/types";
 import {
   AGUIMiddlewareOptionsSchema,
   type AGUIMiddlewareOptions,
+  type AgentState,
 } from "./types";
+
+/**
+ * Interface for tracking previous state for delta computation.
+ */
+interface StateTracker {
+  previousState: unknown;
+}
 
 /**
  * Create AG-UI middleware for LangChain agents.
@@ -31,6 +42,14 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   
   // Store transport in closure for access in hooks
   const transport = validated.transport;
+  
+  // Agent state for cleanup coordination (may be undefined if not provided)
+  const agentState = validated._agentState as AgentState | undefined;
+  
+  // State tracker for delta computation (only used when emitStateSnapshots === 'all')
+  const stateTracker: StateTracker = {
+    previousState: undefined,
+  };
 
   return createMiddleware({
     name: "ag-ui-lifecycle",
@@ -60,13 +79,18 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
         // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
         if (
-          (validated.emitStateSnapshots === "initial" ||
-            validated.emitStateSnapshots === "all")
+          validated.emitStateSnapshots === "initial" ||
+          validated.emitStateSnapshots === "all"
         ) {
           transport.emit({
             type: "STATE_SNAPSHOT",
             snapshot: state,
           });
+          
+          // Track state for delta computation
+          if (validated.emitStateSnapshots === "all") {
+            stateTracker.previousState = state;
+          }
         }
       } catch {
         // Fail-safe: Transport errors never crash agent execution
@@ -79,10 +103,16 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * beforeModel hook - Runs before each model invocation.
      * Emits TEXT_MESSAGE_START and STEP_STARTED.
      * Stores messageId in metadata for callback coordination.
+     * Updates agentState for guaranteed cleanup.
      */
     beforeModel: async (state, runtime) => {
       // Generate unique messageId for this model invocation
       const messageId = generateId();
+
+      // Update agentState for withListeners cleanup coordination (SPEC.md Section 8.2)
+      if (agentState) {
+        agentState.activeMessageId = messageId;
+      }
 
       // Emit TEXT_MESSAGE_START event (SPEC.md Section 4.2)
       try {
@@ -165,24 +195,40 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Fail-safe: If cleanup fails, continue anyway
       }
 
+      // Clear agentState (unless it was already updated by a new beforeModel)
+      if (agentState && agentState.activeMessageId === messageId) {
+        agentState.activeMessageId = undefined;
+      }
+
       return {};
     },
 
     /**
      * afterAgent hook - Runs at the end of agent execution.
-     * Emits RUN_FINISHED or RUN_ERROR and optionally STATE_SNAPSHOT.
+     * Emits RUN_FINISHED or RUN_ERROR and optionally STATE_SNAPSHOT/STATE_DELTA.
      */
     afterAgent: async (state, runtime) => {
       try {
         // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
         if (
-          (validated.emitStateSnapshots === "final" ||
-            validated.emitStateSnapshots === "all")
+          validated.emitStateSnapshots === "final" ||
+          validated.emitStateSnapshots === "all"
         ) {
           transport.emit({
             type: "STATE_SNAPSHOT",
             snapshot: state,
           });
+          
+          // Emit STATE_DELTA if configured (SPEC.md Section 4.4)
+          if (validated.emitStateSnapshots === "all" && stateTracker.previousState !== undefined) {
+            const delta = computeStateDelta(stateTracker.previousState, state);
+            if (delta.length > 0) {
+              transport.emit({
+                type: "STATE_DELTA",
+                delta,
+              });
+            }
+          }
         }
 
         // Check for agent error and emit appropriate event
