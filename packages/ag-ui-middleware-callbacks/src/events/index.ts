@@ -11,35 +11,37 @@
 // Lifecycle Events
 export interface RunStartedEvent {
   type: "RUN_STARTED";
-  threadId?: string;
-  runId?: string;
+  threadId: string;
+  runId: string;
   parentRunId?: string;
   input?: unknown;
 }
 
 export interface RunFinishedEvent {
   type: "RUN_FINISHED";
-  threadId?: string;
-  runId?: string;
+  threadId: string;
+  runId: string;
+  result?: unknown;
 }
 
 export interface RunErrorEvent {
   type: "RUN_ERROR";
-  threadId?: string;
-  runId?: string;
-  message?: string;
+  message: string;
   code?: string;
-  stack?: string;
 }
 
 export interface StepStartedEvent {
   type: "STEP_STARTED";
-  stepIndex?: number;
+  stepName: string;
+  runId?: string;
+  threadId?: string;
 }
 
 export interface StepFinishedEvent {
   type: "STEP_FINISHED";
-  stepIndex?: number;
+  stepName: string;
+  runId?: string;
+  threadId?: string;
 }
 
 // Text Message Events

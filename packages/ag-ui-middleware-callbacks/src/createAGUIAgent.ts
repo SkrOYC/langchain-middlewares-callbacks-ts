@@ -1,12 +1,13 @@
 /**
  * AG-UI Agent Factory
- * 
+ *
  * Creates a LangChain agent with automatic AG-UI protocol integration.
- * 
+ *
  * Architecture:
  * - Uses createAgent() from langchain package
- * - Returns a wrapper that auto-injects AG-UI callbacks on all invocations
- * - Callbacks are merged with user-provided callbacks using LangChain's config merging
+ * - Returns agent with callbacks bound to graph via withConfig
+ * - Guaranteed cleanup via middleware wrapModelCall with try-finally
+ * - Callbacks are merged with user-provided callbacks by LangChain
  * - Abort signal from context enables client disconnect handling
  */
 
@@ -34,15 +35,16 @@ export interface AGUIAgentConfig {
 
 /**
  * Create an AG-UI enabled agent.
- * 
+ *
  * This function creates a LangChain agent with automatic AG-UI protocol integration:
  * - Middleware handles lifecycle events (RUN_STARTED, RUN_FINISHED, etc.)
  * - Callbacks handle streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
- * - Wrapper auto-injects AG-UI callbacks on all invocations
+ * - Uses agent.graph.withConfig to bind callbacks to agent's graph
+ * - Guaranteed cleanup via middleware wrapModelCall with try-finally
  * - LangChain's config merging ensures user callbacks are preserved
- * 
+ *
  * @param config - Agent configuration
- * @returns An agent wrapper with AG-UI protocol support
+ * @returns An agent with AG-UI protocol support
  */
 export function createAGUIAgent(config: AGUIAgentConfig) {
   // Create middleware with transport
@@ -68,22 +70,51 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
     middleware: [middleware],
   });
 
-  // Return a wrapper that auto-injects AG-UI callbacks on all invocations
-  // LangChain's mergeConfigs ensures user callbacks are preserved
-  return {
-    invoke: async (input: any, options?: any) => {
-      const originalCallbacks = [...(options?.callbacks || []), ...aguiCallbacks];
-      return agent.invoke(input, {
-        ...options,
-        callbacks: originalCallbacks,
-      });
-    },
-    stream: async (input: any, options?: any) => {
-      const originalCallbacks = [...(options?.callbacks || []), ...aguiCallbacks];
-      return agent.stream(input, {
-        ...options,
-        callbacks: originalCallbacks,
-      });
-    },
-  };
+  // Bind callbacks to agent's graph using withConfig
+  // This merges callbacks with any user-provided callbacks at runtime
+  // Middleware's wrapModelCall handles guaranteed cleanup via try-finally
+  return agent.graph.withConfig({ callbacks: aguiCallbacks });
+}
+
+/**
+ * Create an AG-UI enabled agent.
+ *
+ * This function creates a LangChain agent with automatic AG-UI protocol integration:
+ * - Middleware handles lifecycle events (RUN_STARTED, RUN_FINISHED, etc.)
+ * - Callbacks handle streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
+ * - Uses withConfig to bind callbacks to agent's graph
+ * - Middleware's wrapModelCall ensures TEXT_MESSAGE_END is emitted even on errors
+ * - LangChain's config merging ensures user callbacks are preserved
+ *
+ * @param config - Agent configuration
+ * @returns An agent with AG-UI protocol support
+ */
+export function createAGUIAgent(config: AGUIAgentConfig) {
+  // Create middleware with transport
+  const middleware = createAGUIMiddleware({
+    transport: config.transport,
+    emitToolResults: config.middlewareOptions?.emitToolResults ?? true,
+    emitStateSnapshots: config.middlewareOptions?.emitStateSnapshots ?? "initial",
+    emitActivities: config.middlewareOptions?.emitActivities ?? false,
+    maxUIPayloadSize: config.middlewareOptions?.maxUIPayloadSize ?? 50 * 1024,
+    chunkLargeResults: config.middlewareOptions?.chunkLargeResults ?? false,
+    threadIdOverride: config.middlewareOptions?.threadIdOverride,
+    runIdOverride: config.middlewareOptions?.runIdOverride,
+    errorDetailLevel: config.middlewareOptions?.errorDetailLevel ?? "message",
+  });
+
+  // Create callbacks for streaming events with smart emission options
+  const aguiCallbacks = [new AGUICallbackHandler(config.transport, config.callbackOptions)];
+
+  // Create base agent with middleware
+  const agent = createAgent({
+    model: config.model,
+    tools: config.tools,
+    middleware: [middleware],
+  });
+
+  // Bind callbacks to agent's graph using withConfig
+  // This merges callbacks with any user-provided callbacks at runtime
+  // Middleware's wrapModelCall handles guaranteed cleanup via try-finally
+  return agent.withConfig({ callbacks: aguiCallbacks });
 }

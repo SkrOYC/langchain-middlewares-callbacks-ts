@@ -50,6 +50,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // This is more reliable than metadata propagation which may not persist across hooks
   let currentMessageId: string | undefined = undefined;
 
+  // Store current stepName in closure for coordination between beforeModel and afterModel
+  let currentStepName: string | undefined = undefined;
+
   // State tracker for delta computation (only used when emitStateSnapshots === 'all')
   const stateTracker: StateTracker = {
     previousState: undefined,
@@ -134,9 +137,15 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     beforeModel: async (state, runtime) => {
       // Generate unique messageId for this model invocation
       const messageId = generateId();
-      
+
       // Store in closure for afterModel coordination
       currentMessageId = messageId;
+
+      // Generate stepName for step correlation
+      const stepName = `model_call_${generateId()}`;
+
+      // Store stepName in closure for afterModel coordination
+      currentStepName = stepName;
 
       // Emit TEXT_MESSAGE_START event (SPEC.md Section 4.2)
       try {
@@ -147,8 +156,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         });
 
         // Emit STEP_STARTED event (SPEC.md Section 4.1)
+        // All events should be tied to run/message context for correlation
         transport.emit({
           type: "STEP_STARTED",
+          stepName,
+          runId,
+          threadId,
         });
       } catch {
         // Fail-safe
@@ -198,8 +211,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         }
 
         // Emit STEP_FINISHED event (SPEC.md Section 4.1)
+        // All events should be tied to run/message context for correlation
         transport.emit({
           type: "STEP_FINISHED",
+          stepName: currentStepName,
+          runId,
+          threadId,
         });
       } catch {
         // Fail-safe
@@ -218,8 +235,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Fail-safe: If cleanup fails, continue anyway
       }
 
-      // Clear the closure variable
+      // Clear the closure variables
       currentMessageId = undefined;
+      currentStepName = undefined;
 
       return {};
     },
@@ -260,8 +278,6 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           const error = stateAny.error as Error;
           transport.emit({
             type: "RUN_ERROR",
-            threadId,
-            runId,
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
@@ -272,8 +288,6 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
               validated.errorDetailLevel === "code"
                 ? "AGENT_EXECUTION_ERROR"
                 : undefined,
-            stack:
-              validated.errorDetailLevel === "full" ? error.stack : undefined,
           });
         } else {
           transport.emit({

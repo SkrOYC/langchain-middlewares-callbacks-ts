@@ -67,12 +67,6 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   // ==================== LLM Callbacks ====================
 
-  /**
-   * handleLLMStart - Captures messageId from metadata.
-   * 
-   * The middleware stores messageId in runtime.config.metadata.agui_messageId,
-   * which is propagated to callbacks via the metadata parameter.
-   */
   async handleLLMStart(
     llm: any,
     prompts: string[],
