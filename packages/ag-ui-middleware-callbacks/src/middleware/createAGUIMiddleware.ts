@@ -42,7 +42,10 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // Store transport in closure for access in hooks
   const transport = validated.transport;
   
-  // Store session IDs in closure for access in afterAgent
+  // ⚠️ CONCURRENCY WARNING: These closure variables assume single-threaded or serialized invocation.
+  // For concurrent usage (same agent instance invoked from multiple requests), developers must
+  // serialize agent.invoke() calls per thread_id to avoid race conditions.
+  // See SPEC.md Section 9.5: "Concurrency serialization - Serialize invocations per thread_id"
   let threadId: string | undefined;
   let runId: string | undefined;
 

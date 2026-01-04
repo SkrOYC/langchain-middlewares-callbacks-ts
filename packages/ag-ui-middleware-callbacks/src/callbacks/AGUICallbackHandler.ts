@@ -309,12 +309,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
    */
   private emitToolResultWithPolicy(
     output: string,
-    toolCallId: string | undefined,
+    toolCallId: string,
     messageId: string | undefined
   ): boolean {
-    // Generate a fallback toolCallId if not provided
-    // In practice, LangChain should always provide either toolCallId or runId
-    const effectiveToolCallId = toolCallId || `tool_${generateId()}`;
+    // Use toolCallId directly - handleToolEnd already calculated endToolCallId = toolCallId ?? runId
+    // This ensures consistency with TOOL_CALL_START and TOOL_CALL_END events
+    const effectiveToolCallId = toolCallId;
 
     // Get content as string
     let content = typeof output === "string" ? output : JSON.stringify(output);

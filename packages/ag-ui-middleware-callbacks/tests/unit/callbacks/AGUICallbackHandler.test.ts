@@ -318,6 +318,40 @@ test("handleToolEnd uses runId when toolCallId not found", async () => {
   );
 });
 
+test("handleToolEnd TOOL_CALL_RESULT uses same toolCallId as TOOL_CALL_END when toolCallId not found", async () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const toolRunId = "run-tool-789";
+  const output = "tool result";
+
+  // handleToolEnd without toolCallId stored - should use runId as fallback
+  await handler.handleToolEnd(
+    output,
+    toolRunId,
+    undefined,
+    []
+  );
+
+  // Get all TOOL_CALL_END calls
+  const endCalls = mockTransport.emit.mock.calls.filter(
+    ([event]: any[]) => event.type === "TOOL_CALL_END"
+  );
+  expect(endCalls.length).toBe(1);
+
+  // Get all TOOL_CALL_RESULT calls
+  const resultCalls = mockTransport.emit.mock.calls.filter(
+    ([event]: any[]) => event.type === "TOOL_CALL_RESULT"
+  );
+  expect(resultCalls.length).toBe(1);
+
+  // Verify both events use the same toolCallId (runId fallback)
+  const endEvent = endCalls[0]?.[0] as { toolCallId: string };
+  const resultEvent = resultCalls[0]?.[0] as { toolCallId: string };
+  expect(endEvent?.toolCallId).toBe(toolRunId);
+  expect(resultEvent?.toolCallId).toBe(toolRunId);
+});
+
 test("handleToolEnd generates messageId for result", async () => {
   const mockTransport = createMockTransport();
   const handler = new AGUICallbackHandler(mockTransport);
