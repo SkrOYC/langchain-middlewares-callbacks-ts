@@ -4,8 +4,8 @@
  * Based on the AG-UI protocol specification:
  * - Lifecycle Events: RUN_STARTED, RUN_FINISHED, RUN_ERROR, STEP_STARTED, STEP_FINISHED
  * - Text Message Events: TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END
- * - Tool Call Events: TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, TOOL_CALL_RESULT
- * - State Events: STATE_SNAPSHOT, STATE_DELTA
+ * - Tool Call Events: TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, TOOL_CALL_RESULT, TOOL_CALL_CHUNK
+ * - State Events: STATE_SNAPSHOT, STATE_DELTA, MESSAGES_SNAPSHOT
  */
 
 // Lifecycle Events
@@ -89,6 +89,14 @@ export interface ToolCallResultEvent {
   parentMessageId?: string;
 }
 
+export interface ToolCallChunkEvent {
+  type: "TOOL_CALL_CHUNK";
+  toolCallId: string;
+  chunk: string;
+  index: number;
+  parentMessageId?: string;
+}
+
 // State Events
 export interface StateSnapshotEvent {
   type: "STATE_SNAPSHOT";
@@ -98,6 +106,11 @@ export interface StateSnapshotEvent {
 export interface StateDeltaEvent {
   type: "STATE_DELTA";
   delta: unknown[];
+}
+
+export interface MessagesSnapshotEvent {
+  type: "MESSAGES_SNAPSHOT";
+  messages: unknown[];
 }
 
 // Union type for all AG-UI events
@@ -114,5 +127,7 @@ export type AGUIEvent =
   | ToolCallArgsEvent
   | ToolCallEndEvent
   | ToolCallResultEvent
+  | ToolCallChunkEvent
   | StateSnapshotEvent
-  | StateDeltaEvent;
+  | StateDeltaEvent
+  | MessagesSnapshotEvent;

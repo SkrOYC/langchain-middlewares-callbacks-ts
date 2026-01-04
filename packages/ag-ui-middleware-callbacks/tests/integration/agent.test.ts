@@ -18,6 +18,8 @@ import {
   createMultiToolScenario,
   createMultiTurnScenario,
   createErrorScenario,
+  createToolCallingModel,
+  createTestTool,
 } from "../helpers/testUtils";
 
 // Copy of Basic Functionality section
@@ -532,6 +534,43 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
     
     // TEXT_MESSAGE_END should come after TEXT_MESSAGE_START
     expect(textEndIndex).toBeGreaterThan(textStartIndex);
+  });
+
+  test("TEXT_MESSAGE_END is emitted when tool execution fails (guaranteed cleanup)", async () => {
+    const transport = createMockTransport();
+    
+    // Create a model that calls a tool, and a tool that throws
+    const model = createToolCallingModel([
+      [{ name: "failing_tool", args: {}, id: "call_1" }], // Tool call
+      [], // Final response (won't be reached)
+    ]);
+    
+    const failingTool = createTestTool(
+      "failing_tool",
+      async () => { throw new Error("Tool execution failed"); },
+      {}
+    );
+    
+    const { agent } = createTestAgent(model, [failingTool], transport);
+    
+    // Invoke the agent - it may or may not throw depending on error handling
+    try {
+      await agent.invoke(formatAgentInput([{ role: "user", content: "This will fail" }]));
+    } catch {
+      // Expected - tool errors may or may not propagate
+    }
+    
+    // TEXT_MESSAGE_END must be emitted even on tool error (guaranteed cleanup)
+    const textStartEvents = getEventsByType(transport, "TEXT_MESSAGE_START");
+    const textEndEvents = getEventsByType(transport, "TEXT_MESSAGE_END");
+    
+    expect(textStartEvents.length).toBeGreaterThanOrEqual(1);
+    expect(textEndEvents.length).toBeGreaterThanOrEqual(1);
+    
+    // Verify the messageIds match
+    if (textStartEvents.length > 0 && textEndEvents.length > 0) {
+      expect(textEndEvents[0].messageId).toBe(textStartEvents[0].messageId);
+    }
   });
 });
 

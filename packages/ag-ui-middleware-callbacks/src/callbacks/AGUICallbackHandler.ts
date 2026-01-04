@@ -228,18 +228,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         parentMessageId: messageId,
       });
 
-      // Apply smart emission policy for tool result (SPEC.md Section 9.3)
-      const processedContent = this.processToolResult(output);
-
-      // Emit TOOL_CALL_RESULT with the tool output
-      this.transport.emit({
-        type: "TOOL_CALL_RESULT",
-        messageId: generateId(),
-        toolCallId: toolCallId || runId,
-        parentMessageId: messageId,
-        content: processedContent,
-        role: "tool",
-      });
+       // Apply smart emission policy for tool result (SPEC.md Section 9.3)
+       // Emit TOOL_CALL_RESULT or TOOL_CALL_CHUNK events based on policy
+       this.emitToolResultWithPolicy(output, toolCallId || runId, messageId);
     } catch {
       // Fail-safe
     }
@@ -256,8 +247,117 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   // ==================== Smart Emission ====================
 
   /**
+   * Split a string into chunks of specified maximum byte size.
+   * Attempts to split at word boundaries when possible.
+   */
+  private chunkString(content: string, maxChunkSize: number): string[] {
+    const chunks: string[] = [];
+    let remaining = content;
+    
+    while (remaining.length > 0) {
+      // If the remaining content fits in one chunk, add it and break
+      if (new Blob([remaining]).size <= maxChunkSize) {
+        chunks.push(remaining);
+        break;
+      }
+      
+      // Try to find a good split point (prefer word boundaries)
+      let splitPoint = maxChunkSize;
+      
+      // Try to split at a word boundary near the max size
+      const spaceIndex = remaining.lastIndexOf(' ', maxChunkSize);
+      const newlineIndex = remaining.lastIndexOf('\n', maxChunkSize);
+      const boundaryIndex = Math.max(spaceIndex, newlineIndex);
+      
+      if (boundaryIndex > maxChunkSize * 0.5) {
+        // Found a reasonable word boundary, split there
+        splitPoint = boundaryIndex;
+      } else {
+        // No good word boundary, split at max size (may split in middle of word)
+        // But ensure we don't split a multi-byte character
+        while (splitPoint > 0 && remaining.charCodeAt(splitPoint - 1) > 127) {
+          splitPoint--;
+        }
+        if (splitPoint === 0) {
+          // Force split at max size if no valid character boundary found
+          splitPoint = maxChunkSize;
+        }
+      }
+      
+      chunks.push(remaining.substring(0, splitPoint));
+      remaining = remaining.substring(splitPoint).trim();
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Emit tool result with smart emission policy (chunking or truncation).
+   * Returns true if chunks were emitted, false if single result was emitted.
+   */
+  private emitToolResultWithPolicy(
+    output: string,
+    toolCallId: string,
+    messageId: string | undefined
+  ): boolean {
+    // Get content as string
+    let content = typeof output === "string" ? output : JSON.stringify(output);
+    
+    // Generate messageId if not provided (for standalone tool calls)
+    const resultMessageId = messageId || generateId();
+    
+    // Check if content exceeds max payload size
+    const contentSize = new Blob([content]).size;
+    
+    if (contentSize <= this.maxUIPayloadSize) {
+      // Content is within limits - emit single result
+      this.transport.emit({
+        type: "TOOL_CALL_RESULT",
+        messageId: resultMessageId,
+        toolCallId,
+        parentMessageId: messageId,
+        content,
+        role: "tool",
+      });
+      return false;
+    }
+    
+    // Content exceeds limits - apply policy
+    if (this.chunkLargeResults) {
+      // Emit TOOL_CALL_CHUNK events for each chunk
+      const chunks = this.chunkString(content, this.maxUIPayloadSize);
+      for (let i = 0; i < chunks.length; i++) {
+        this.transport.emit({
+          type: "TOOL_CALL_CHUNK",
+          toolCallId,
+          chunk: chunks[i],
+          index: i,
+          parentMessageId: messageId,
+        });
+      }
+      return true;
+    }
+    
+    // Truncate content to fit within max payload
+    const truncationMessage = `[Truncated: ${contentSize - this.maxUIPayloadSize + 50} bytes]`;
+    const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
+    const truncatedContent = content.substring(0, availableSpace) + truncationMessage;
+    
+    this.transport.emit({
+      type: "TOOL_CALL_RESULT",
+      messageId: resultMessageId,
+      toolCallId,
+      parentMessageId: messageId,
+      content: truncatedContent,
+      role: "tool",
+    });
+    
+    return false;
+  }
+
+  /**
    * Process tool result according to smart emission policy.
-   * Applies truncation or chunking for large payloads.
+   * @deprecated Use emitToolResultWithPolicy instead for proper chunking support
    */
   private processToolResult(output: string): string {
     // Get content as string

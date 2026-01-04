@@ -173,16 +173,23 @@ test("Middleware afterModel emits TEXT_MESSAGE_END", async () => {
 
   const state = { messages: [] };
   const runtime = {
-    config: { metadata: { agui_messageId: "msg-123" } },
+    config: { metadata: {} },
     context: { transport: mockTransport }
   };
 
+  // Call beforeModel first to set up the closure variable
+  await middleware.beforeModel?.(state, runtime);
+  
+  // Get the messageId that was set in metadata
+  const messageId = runtime.config.metadata.agui_messageId;
+  
+  // Then call afterModel - it should emit TEXT_MESSAGE_END with that messageId
   await middleware.afterModel?.(state, runtime);
 
   expect(mockTransport.emit).toHaveBeenCalledWith(
     expect.objectContaining({
       type: "TEXT_MESSAGE_END",
-      messageId: "msg-123"
+      messageId
     })
   );
 });
@@ -287,6 +294,50 @@ test("Middleware emits STATE_DELTA when configured to 'all'", async () => {
       type: "STATE_SNAPSHOT"
     })
   );
+});
+
+// MESSAGES_SNAPSHOT tests
+
+test("Middleware beforeAgent emits MESSAGES_SNAPSHOT", async () => {
+  const mockTransport = createMockTransport();
+  const middleware = createAGUIMiddleware({ transport: mockTransport });
+
+  const state = { 
+    messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "Hi there!" }],
+    otherData: "test"
+  };
+  const runtime = {
+    config: { configurable: {} },
+    context: { transport: mockTransport }
+  };
+
+  await middleware.beforeAgent?.(state, runtime);
+
+  expect(mockTransport.emit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "MESSAGES_SNAPSHOT",
+      messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "Hi there!" }]
+    })
+  );
+});
+
+test("Middleware beforeAgent does not emit MESSAGES_SNAPSHOT when no messages in state", async () => {
+  const mockTransport = createMockTransport();
+  const middleware = createAGUIMiddleware({ transport: mockTransport });
+
+  const state = { otherData: "test" };
+  const runtime = {
+    config: { configurable: {} },
+    context: { transport: mockTransport }
+  };
+
+  await middleware.beforeAgent?.(state, runtime);
+
+  // Should not have emitted MESSAGES_SNAPSHOT
+  const messagesSnapshotCalls = mockTransport.emit.mock.calls.filter(
+    ([event]: any[]) => event.type === "MESSAGES_SNAPSHOT"
+  );
+  expect(messagesSnapshotCalls.length).toBe(0);
 });
 
 // Error handling tests

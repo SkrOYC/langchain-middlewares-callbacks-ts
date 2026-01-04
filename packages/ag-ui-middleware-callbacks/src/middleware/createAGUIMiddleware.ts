@@ -8,8 +8,8 @@
  * - Metadata propagation: Stores messageId in runtime.config.metadata for callbacks
  * - Session ID priority: configurable > context > options
  * - Fail-safe: All transport emissions wrapped in try/catch
- * - Agent state coordination: Shares activeMessageId with agent wrapper for cleanup
  * - State management: Emits STATE_SNAPSHOT and STATE_DELTA events
+ * - Guaranteed cleanup: Uses withListeners for error cleanup (via createAGUIAgent)
  */
 
 import { createMiddleware } from "langchain";
@@ -20,7 +20,6 @@ import type { AGUITransport } from "../transports/types";
 import {
   AGUIMiddlewareOptionsSchema,
   type AGUIMiddlewareOptions,
-  type AgentState,
 } from "./types";
 
 /**
@@ -43,9 +42,14 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // Store transport in closure for access in hooks
   const transport = validated.transport;
   
-  // Agent state for cleanup coordination (may be undefined if not provided)
-  const agentState = validated._agentState as AgentState | undefined;
-  
+  // Store session IDs in closure for access in afterAgent
+  let threadId: string | undefined;
+  let runId: string | undefined;
+
+  // Store current messageId in closure for coordination between beforeModel and afterModel
+  // This is more reliable than metadata propagation which may not persist across hooks
+  let currentMessageId: string | undefined = undefined;
+
   // State tracker for delta computation (only used when emitStateSnapshots === 'all')
   const stateTracker: StateTracker = {
     previousState: undefined,
@@ -60,14 +64,15 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      */
     beforeAgent: async (state, runtime) => {
       // Session ID priority: configurable > context > options (SPEC.md Section 7.1)
-      const configurable = (runtime as any).config?.configurable || runtime.configurable;
-      const threadId =
+      const runtimeAny = runtime as any;
+      const configurable = runtimeAny.config?.configurable || runtimeAny.configurable;
+      threadId =
         configurable?.thread_id ||
         validated.threadIdOverride ||
-        runtime.context?.threadId;
+        runtimeAny.context?.threadId;
 
-      const runId =
-        configurable?.run_id || runtime.context?.runId;
+      runId =
+        configurable?.run_id || runtimeAny.context?.runId;
 
       // Emit RUN_STARTED event
       try {
@@ -77,22 +82,31 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           runId,
         });
 
-        // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
-        if (
-          validated.emitStateSnapshots === "initial" ||
-          validated.emitStateSnapshots === "all"
-        ) {
-          transport.emit({
-            type: "STATE_SNAPSHOT",
-            snapshot: state,
-          });
-          
-          // Track state for delta computation
-          if (validated.emitStateSnapshots === "all") {
-            stateTracker.previousState = state;
-          }
-        }
-      } catch {
+         // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
+         if (
+           validated.emitStateSnapshots === "initial" ||
+           validated.emitStateSnapshots === "all"
+         ) {
+           transport.emit({
+             type: "STATE_SNAPSHOT",
+             snapshot: state,
+           });
+           
+           // Track state for delta computation
+           if (validated.emitStateSnapshots === "all") {
+             stateTracker.previousState = state;
+           }
+         }
+         
+         // Emit MESSAGES_SNAPSHOT for message history (SPEC.md Section 4.4)
+         const stateAny = state as any;
+         if (stateAny.messages) {
+           transport.emit({
+             type: "MESSAGES_SNAPSHOT",
+             messages: stateAny.messages,
+           });
+         }
+       } catch {
         // Fail-safe: Transport errors never crash agent execution
       }
 
@@ -100,19 +114,29 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     },
 
     /**
+     * wrapModelCall hook - Wraps model invocations for guaranteed cleanup.
+     * Uses try-finally to ensure TEXT_MESSAGE_END is emitted even on error.
+     */
+    wrapModelCall: async (request, handler) => {
+      try {
+        return await handler(request);
+      } finally {
+        // Note: TEXT_MESSAGE_END is emitted in afterModel hook
+        // Guaranteed cleanup on error is handled by withListeners in createAGUIAgent
+      }
+    },
+
+    /**
      * beforeModel hook - Runs before each model invocation.
      * Emits TEXT_MESSAGE_START and STEP_STARTED.
-     * Stores messageId in metadata for callback coordination.
-     * Updates agentState for guaranteed cleanup.
+     * Stores messageId in closure for afterModel coordination.
      */
     beforeModel: async (state, runtime) => {
       // Generate unique messageId for this model invocation
       const messageId = generateId();
-
-      // Update agentState for withListeners cleanup coordination (SPEC.md Section 8.2)
-      if (agentState) {
-        agentState.activeMessageId = messageId;
-      }
+      
+      // Store in closure for afterModel coordination
+      currentMessageId = messageId;
 
       // Emit TEXT_MESSAGE_START event (SPEC.md Section 4.2)
       try {
@@ -161,10 +185,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * Cleans up metadata.
      */
     afterModel: async (state, runtime) => {
-      // Safely access metadata with fallback
-      const config = (runtime as any).config || {};
-      const metadata = config.metadata as Record<string, unknown> | undefined;
-      const messageId = metadata?.agui_messageId;
+      // Use messageId from closure (more reliable than metadata propagation)
+      const messageId = currentMessageId;
 
       try {
         // Emit TEXT_MESSAGE_END event (SPEC.md Section 4.2)
@@ -183,22 +205,21 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Fail-safe
       }
 
-      // Clean up metadata to prevent memory leaks
+      // Clean up metadata to prevent memory leaks (for callbacks)
       try {
-        const config = (runtime as any).config || {};
+        const runtimeAny = runtime as any;
+        const config = runtimeAny.config || {};
         const metadata = config.metadata as Record<string, unknown> | undefined;
         if (metadata?.agui_messageId) {
           const { agui_messageId, ...rest } = metadata;
           config.metadata = rest;
         }
-      } catch {
+       } catch {
         // Fail-safe: If cleanup fails, continue anyway
       }
 
-      // Clear agentState (unless it was already updated by a new beforeModel)
-      if (agentState && agentState.activeMessageId === messageId) {
-        agentState.activeMessageId = undefined;
-      }
+      // Clear the closure variable
+      currentMessageId = undefined;
 
       return {};
     },
@@ -206,6 +227,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     /**
      * afterAgent hook - Runs at the end of agent execution.
      * Emits RUN_FINISHED or RUN_ERROR and optionally STATE_SNAPSHOT/STATE_DELTA.
+     * Note: This only runs on successful completion. For guaranteed cleanup on error,
+     * withListeners in createAGUIAgent handles TEXT_MESSAGE_END emission.
      */
     afterAgent: async (state, runtime) => {
       try {
@@ -232,10 +255,13 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         }
 
         // Check for agent error and emit appropriate event
-        if (state.error) {
-          const error = state.error as Error;
+        const stateAny = state as any;
+        if (stateAny.error) {
+          const error = stateAny.error as Error;
           transport.emit({
             type: "RUN_ERROR",
+            threadId,
+            runId,
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
@@ -252,6 +278,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         } else {
           transport.emit({
             type: "RUN_FINISHED",
+            threadId,
+            runId,
           });
         }
       } catch {

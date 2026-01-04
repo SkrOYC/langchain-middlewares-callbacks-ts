@@ -409,3 +409,107 @@ test("handleToolError cleans up toolCallId", async () => {
 
   expect(handler["toolCallIds"].has(toolRunId)).toBe(false);
 });
+
+// TOOL_CALL_CHUNK tests
+
+test("handleToolEnd emits TOOL_CALL_CHUNK when content exceeds maxUIPayloadSize with chunking enabled", async () => {
+  const mockTransport = createMockTransport();
+  // Create handler with small maxUIPayloadSize to trigger chunking
+  const handler = new AGUICallbackHandler(mockTransport, { 
+    maxUIPayloadSize: 50,
+    chunkLargeResults: true 
+  });
+
+  const toolRunId = "run-tool-789";
+  const toolCallId = "tc-999";
+
+  handler["toolCallIds"].set(toolRunId, toolCallId);
+
+  // Create content that exceeds 50 bytes
+  const largeContent = "This is a very long tool result that definitely exceeds fifty bytes for UI payloads";
+  
+  await handler.handleToolEnd(
+    largeContent,
+    toolRunId,
+    undefined,
+    []
+  );
+
+  // Should have emitted TOOL_CALL_CHUNK events instead of TOOL_CALL_RESULT
+  const chunkCalls = mockTransport.emit.mock.calls.filter(
+    ([event]: any[]) => event.type === "TOOL_CALL_CHUNK"
+  );
+  
+  expect(chunkCalls.length).toBeGreaterThan(0);
+  
+  // Verify chunk structure
+  for (const [event] of chunkCalls) {
+    expect(event.type).toBe("TOOL_CALL_CHUNK");
+    expect(event.toolCallId).toBe(toolCallId);
+    expect(event.chunk).toBeDefined();
+    expect(typeof event.chunk).toBe("string");
+    expect(typeof event.index).toBe("number");
+  }
+});
+
+test("handleToolEnd emits TOOL_CALL_RESULT with truncation when content exceeds limit and chunking disabled", async () => {
+  const mockTransport = createMockTransport();
+  // Create handler with small maxUIPayloadSize but chunking disabled
+  const handler = new AGUICallbackHandler(mockTransport, { 
+    maxUIPayloadSize: 50,
+    chunkLargeResults: false 
+  });
+
+  const toolRunId = "run-tool-789";
+  const toolCallId = "tc-999";
+
+  handler["toolCallIds"].set(toolRunId, toolCallId);
+
+  // Create content that exceeds 50 bytes
+  const largeContent = "This is a very long tool result that definitely exceeds fifty bytes for UI payloads and should be truncated";
+  
+  await handler.handleToolEnd(
+    largeContent,
+    toolRunId,
+    undefined,
+    []
+  );
+
+  // Should have emitted truncated TOOL_CALL_RESULT
+  const resultCall = mockTransport.emit.mock.calls.find(
+    ([event]: any[]) => event.type === "TOOL_CALL_RESULT"
+  );
+  
+  expect(resultCall).toBeDefined();
+  expect(resultCall[0].content).toContain("[Truncated:");
+});
+
+test("chunkString splits content at word boundaries", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  // Access the private chunkString method via the handler instance
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  const content = "Hello world this is a test of chunking at word boundaries";
+  const chunks = chunkString(content, 15);
+  
+  expect(chunks.length).toBeGreaterThan(1);
+  // Verify chunks don't split in middle of words
+  for (const chunk of chunks) {
+    expect(chunk.length).toBeLessThanOrEqual(15);
+  }
+});
+
+test("chunkString handles content smaller than max size", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  const content = "Short content";
+  const chunks = chunkString(content, 100);
+  
+  expect(chunks.length).toBe(1);
+  expect(chunks[0]).toBe(content);
+});
