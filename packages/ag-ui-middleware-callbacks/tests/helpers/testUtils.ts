@@ -145,19 +145,6 @@ class MockChatModel extends BaseChatModel {
   }
 }
 
-export function createMockTransport(): MockTransport {
-  const events: any[] = [];
-  
-  const transport = {
-    events,
-    emit: function(event: any) {
-      events.push(event);
-    },
-  };
-  
-  return transport;
-}
-
 // ============================================================================
 // Model Factory Functions
 // ============================================================================

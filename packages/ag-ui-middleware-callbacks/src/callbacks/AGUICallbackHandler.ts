@@ -67,13 +67,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   // ==================== LLM Callbacks ====================
 
-  async handleLLMStart(
-    llm: any,
-    prompts: string[],
+   override async handleLLMStart(
+    _llm: any,
+    _prompts: string[],
     runId: string,
-    parentRunId?: string,
-    tags?: string[],
-    metadata?: Record<string, unknown>
+    _parentRunId?: string,
+    _extraParams?: Record<string, unknown>,
+    _tags?: string[],
+    metadata?: Record<string, unknown>,
+    _runName?: string
   ): Promise<void> {
     // Capture messageId from metadata (set by middleware)
     const messageId = metadata?.agui_messageId as string | undefined;
@@ -88,12 +90,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
    * This is the primary mechanism for streaming tokens to the UI.
    * Also handles streaming tool call arguments from tool_call_chunks.
    */
-  async handleLLMNewToken(
+   override async handleLLMNewToken(
     token: string,
-    idx: any,
+    _idx: any,
     runId: string,
-    parentRunId?: string,
-    tags?: string[],
+    _parentRunId?: string,
+    _tags?: string[],
     fields?: any
   ): Promise<void> {
     const messageId = this.messageIds.get(runId);
@@ -129,11 +131,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   /**
    * handleLLMEnd - Cleanup messageId from internal state.
    */
-  async handleLLMEnd(
-    output: any,
+   override async handleLLMEnd(
+    _output: any,
     runId: string,
-    parentRunId?: string,
-    tags?: string[]
+    _parentRunId?: string,
+    _tags?: string[],
+    _extraParams?: Record<string, unknown>
   ): Promise<void> {
     // Cleanup messageId to prevent memory leaks
     this.messageIds.delete(runId);
@@ -142,7 +145,13 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   /**
    * handleLLMError - Cleanup messageId on error.
    */
-  async handleLLMError(error: Error, runId: string): Promise<void> {
+   override async handleLLMError(
+    _error: Error,
+    runId: string,
+    _parentRunId?: string,
+    _tags?: string[],
+    _extraParams?: Record<string, unknown>
+  ): Promise<void> {
     // Cleanup on error to prevent memory leaks
     this.messageIds.delete(runId);
   }
@@ -151,17 +160,18 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   /**
    * handleToolStart - Emits TOOL_CALL_START event.
-   * 
+   *
    * Extracts toolCallId from the stringified ToolCall input.
    * Links to parent message via parentRunId.
    */
-  async handleToolStart(
+   override async handleToolStart(
     tool: any,
     input: string,
     runId: string,
     parentRunId?: string,
-    tags?: string[],
-    metadata?: Record<string, unknown>
+    _tags?: string[],
+    _metadata?: Record<string, unknown>,
+    _runName?: string
   ): Promise<void> {
     // Extract toolCallId from stringified ToolCall input
     // Input format: {"id":"...","name":"...","args":{...}}
@@ -185,9 +195,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     try {
       // Emit TOOL_CALL_START
+      // Always use runId as fallback (LangChain guarantees runId is provided)
       this.transport.emit({
         type: "TOOL_CALL_START",
-        toolCallId: toolCallId || runId,
+        toolCallId: toolCallId ?? runId,
         toolCallName: tool.name,
         parentMessageId: messageId,
       });
@@ -198,15 +209,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   /**
    * handleToolEnd - Emits TOOL_CALL_END and TOOL_CALL_RESULT events.
-   * 
+   *
    * Retrieves toolCallId from internal state and links to parent message.
    * Applies smart emission policy for large payloads (SPEC.md Section 9.3).
    */
-  async handleToolEnd(
+   override async handleToolEnd(
     output: string,
     runId: string,
     parentRunId?: string,
-    tags?: string[]
+    _tags?: string[]
   ): Promise<void> {
     const toolCallId = this.toolCallIds.get(runId);
     this.toolCallIds.delete(runId);
@@ -216,15 +227,17 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     try {
       // Emit TOOL_CALL_END
+      // Always use runId as fallback (LangChain guarantees runId is provided)
+      const endToolCallId = toolCallId ?? runId;
       this.transport.emit({
         type: "TOOL_CALL_END",
-        toolCallId: toolCallId || runId,
+        toolCallId: endToolCallId,
         parentMessageId: messageId,
       });
 
        // Apply smart emission policy for tool result (SPEC.md Section 9.3)
        // Emit TOOL_CALL_RESULT or TOOL_CALL_CHUNK events based on policy
-       this.emitToolResultWithPolicy(output, toolCallId || runId, messageId);
+       this.emitToolResultWithPolicy(output, endToolCallId, messageId);
     } catch {
       // Fail-safe
     }
@@ -233,7 +246,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   /**
    * handleToolError - Cleanup toolCallId on error.
    */
-  async handleToolError(error: Error, runId: string): Promise<void> {
+   override async handleToolError(
+    _error: Error,
+    runId: string,
+    _parentRunId?: string,
+    _tags?: string[]
+  ): Promise<void> {
     // Cleanup on error to prevent memory leaks
     this.toolCallIds.delete(runId);
   }
@@ -291,12 +309,16 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
    */
   private emitToolResultWithPolicy(
     output: string,
-    toolCallId: string,
+    toolCallId: string | undefined,
     messageId: string | undefined
   ): boolean {
+    // Generate a fallback toolCallId if not provided
+    // In practice, LangChain should always provide either toolCallId or runId
+    const effectiveToolCallId = toolCallId || `tool_${generateId()}`;
+
     // Get content as string
     let content = typeof output === "string" ? output : JSON.stringify(output);
-    
+
     // Generate messageId if not provided (for standalone tool calls)
     const resultMessageId = messageId || generateId();
     
@@ -308,7 +330,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.transport.emit({
         type: "TOOL_CALL_RESULT",
         messageId: resultMessageId,
-        toolCallId,
+        toolCallId: effectiveToolCallId,
         parentMessageId: messageId,
         content,
         role: "tool",
@@ -323,59 +345,29 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       for (let i = 0; i < chunks.length; i++) {
         this.transport.emit({
           type: "TOOL_CALL_CHUNK",
-          toolCallId,
-          chunk: chunks[i],
+          toolCallId: effectiveToolCallId,
+          chunk: chunks[i]!,
           index: i,
           parentMessageId: messageId,
         });
       }
       return true;
     }
-    
+
     // Truncate content to fit within max payload
     const truncationMessage = `[Truncated: ${contentSize - this.maxUIPayloadSize + 50} bytes]`;
     const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
     const truncatedContent = content.substring(0, availableSpace) + truncationMessage;
-    
+
     this.transport.emit({
       type: "TOOL_CALL_RESULT",
       messageId: resultMessageId,
-      toolCallId,
+      toolCallId: effectiveToolCallId,
       parentMessageId: messageId,
       content: truncatedContent,
       role: "tool",
     });
     
     return false;
-  }
-
-  /**
-   * Process tool result according to smart emission policy.
-   * @deprecated Use emitToolResultWithPolicy instead for proper chunking support
-   */
-  private processToolResult(output: string): string {
-    // Get content as string
-    let content = typeof output === "string" ? output : JSON.stringify(output);
-    
-    // Check if content exceeds max payload size
-    const contentSize = new Blob([content]).size;
-    
-    if (contentSize <= this.maxUIPayloadSize) {
-      // Content is within limits - return as-is
-      return content;
-    }
-    
-    // Content exceeds limits - apply policy
-    if (this.chunkLargeResults) {
-      // TODO: Implement chunking if needed in future
-      // For now, fall back to truncation
-    }
-    
-    // Truncate content to fit within max payload
-    // Leave room for truncation message: "[Truncated: X bytes]"
-    const truncationMessage = `[Truncated: ${contentSize - this.maxUIPayloadSize + 50} bytes]`;
-    const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
-    
-    return content.substring(0, availableSpace) + truncationMessage;
   }
 }

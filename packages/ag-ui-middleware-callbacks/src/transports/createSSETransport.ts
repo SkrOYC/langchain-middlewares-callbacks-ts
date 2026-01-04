@@ -9,7 +9,7 @@
  * - Backpressure handling with queue-based emission
  */
 
-import type { AGUIEvent } from "../../events";
+import type { AGUIEvent } from "../events";
 import type { AGUITransport } from "./types";
 
 /**
@@ -90,7 +90,7 @@ export function createSSETransport(
 
     disconnect: res.end
       ? () => {
-          res.end();
+          res.end?.();
         }
       : undefined,
 

@@ -6,7 +6,7 @@
  * This interface provides a simple, portable way to emit events that works with any backend transport.
  */
 
-import type { AGUIEvent } from "../../events";
+import type { AGUIEvent } from "../events";
 
 /**
  * Transport interface for AG-UI event emission.

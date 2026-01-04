@@ -26,6 +26,6 @@ export { computeStateDelta } from "./utils/stateDiff";
 // Types
 export type { AGUIEvent } from "./events";
 export type { AGUIMiddlewareOptions } from "./middleware/types";
-export const { AGUIMiddlewareOptionsSchema } from "./middleware/types";
+export { AGUIMiddlewareOptionsSchema } from "./middleware/types";
 
 export type { AGUIAgentConfig } from "./createAGUIAgent";

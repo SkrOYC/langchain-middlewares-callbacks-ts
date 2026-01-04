@@ -70,12 +70,15 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       const runtimeAny = runtime as any;
       const configurable = runtimeAny.config?.configurable || runtimeAny.configurable;
       threadId =
-        configurable?.thread_id ||
+        (configurable?.thread_id as string | undefined) ||
         validated.threadIdOverride ||
-        runtimeAny.context?.threadId;
+        (runtimeAny.context?.threadId as string | undefined) ||
+        ""; // Fallback for event type compliance
 
       runId =
-        configurable?.run_id || runtimeAny.context?.runId;
+        (configurable?.run_id as string | undefined) ||
+        (runtimeAny.context?.runId as string | undefined) ||
+        generateId(); // Fallback for event type compliance
 
       // Emit RUN_STARTED event
       try {
@@ -134,7 +137,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * Emits TEXT_MESSAGE_START and STEP_STARTED.
      * Stores messageId in closure for afterModel coordination.
      */
-    beforeModel: async (state, runtime) => {
+    beforeModel: async (_state, runtime) => {
       // Generate unique messageId for this model invocation
       const messageId = generateId();
 
@@ -197,7 +200,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * Emits TEXT_MESSAGE_END and STEP_FINISHED.
      * Cleans up metadata.
      */
-    afterModel: async (state, runtime) => {
+    afterModel: async (_state, runtime) => {
       // Use messageId from closure (more reliable than metadata propagation)
       const messageId = currentMessageId;
 
@@ -214,7 +217,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // All events should be tied to run/message context for correlation
         transport.emit({
           type: "STEP_FINISHED",
-          stepName: currentStepName,
+          stepName: currentStepName || "",
           runId,
           threadId,
         });
@@ -248,7 +251,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * Note: This only runs on successful completion. For guaranteed cleanup on error,
      * withListeners in createAGUIAgent handles TEXT_MESSAGE_END emission.
      */
-    afterAgent: async (state, runtime) => {
+    afterAgent: async (state, _runtime) => {
       try {
         // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
         if (
@@ -275,14 +278,15 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Check for agent error and emit appropriate event
         const stateAny = state as any;
         if (stateAny.error) {
-          const error = stateAny.error as Error;
+          const error = stateAny.error;
+          const errorMessage = error instanceof Error ? error.message : String(error);
           transport.emit({
             type: "RUN_ERROR",
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
-                ? error.message
-                : undefined,
+                ? errorMessage
+                : "", // Empty string when error detail is suppressed
             code:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "code"
@@ -292,8 +296,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         } else {
           transport.emit({
             type: "RUN_FINISHED",
-            threadId,
-            runId,
+            threadId: threadId!,
+            runId: runId!,
           });
         }
       } catch {
