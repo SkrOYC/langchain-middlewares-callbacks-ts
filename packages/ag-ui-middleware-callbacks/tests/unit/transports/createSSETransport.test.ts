@@ -99,3 +99,67 @@ test("SSE transport disconnect method closes response", async () => {
   transport.disconnect?.();
   expect(mockRes.end).toHaveBeenCalled();
 });
+
+test("SSE transport isConnected reflects connection state", async () => {
+  let closeCallback: (() => void) | null = null;
+
+  const mockReq = {
+    on: mock((event: string, callback: () => void) => {
+      if (event === "close") {
+        closeCallback = callback;
+      }
+    }),
+  };
+  const mockRes = {
+    setHeader: mock(() => mockRes),
+    write: mock(() => true),
+  };
+
+  const transport = createSSETransport(mockReq, mockRes);
+
+  // Initially connected
+  expect(transport.isConnected()).toBe(true);
+
+  // Simulate client disconnect
+  closeCallback?.();
+
+  // Should be disconnected
+  expect(transport.isConnected()).toBe(false);
+});
+
+test("SSE transport disconnect is undefined when res.end not provided", async () => {
+  const mockReq = {
+    on: mock(() => {}),
+  };
+  const mockRes = {
+    setHeader: mock(() => mockRes),
+    write: mock(() => true), // No .end method
+  };
+
+  const transport = createSSETransport(mockReq, mockRes);
+
+  // disconnect should be undefined when res.end is not available
+  expect(transport.disconnect).toBeUndefined();
+});
+
+test("SSE transport handles write errors in drain gracefully", async () => {
+  const mockReq = {
+    on: mock(() => {}),
+  };
+  const mockRes = {
+    setHeader: mock(() => mockRes),
+    write: mock(() => {
+      throw new Error("Client disconnected");
+    }),
+  };
+
+  const transport = createSSETransport(mockReq, mockRes);
+
+  // Should not throw despite write error in drain()
+  expect(() => {
+    transport.emit({ type: "RUN_STARTED", threadId: "test", runId: "run-1" });
+  }).not.toThrow();
+
+  // Write was attempted but error caught
+  expect(mockRes.write).toHaveBeenCalled();
+});
