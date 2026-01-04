@@ -28,6 +28,9 @@ import {
 export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // Validate options at creation time
   const validated = AGUIMiddlewareOptionsSchema.parse(options);
+  
+  // Store transport in closure for access in hooks
+  const transport = validated.transport;
 
   return createMiddleware({
     name: "ag-ui-lifecycle",
@@ -47,11 +50,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       const runId =
         configurable?.run_id || runtime.context?.runId;
 
-      const transport = runtime.context?.transport as AGUITransport | undefined;
-
       // Emit RUN_STARTED event
       try {
-        transport?.emit({
+        transport.emit({
           type: "RUN_STARTED",
           threadId,
           runId,
@@ -59,7 +60,6 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
         // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
         if (
-          transport &&
           (validated.emitStateSnapshots === "initial" ||
             validated.emitStateSnapshots === "all")
         ) {
@@ -84,18 +84,16 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       // Generate unique messageId for this model invocation
       const messageId = generateId();
 
-      const transport = runtime.context?.transport as AGUITransport | undefined;
-
       // Emit TEXT_MESSAGE_START event (SPEC.md Section 4.2)
       try {
-        transport?.emit({
+        transport.emit({
           type: "TEXT_MESSAGE_START",
           messageId,
           role: "assistant",
         });
 
         // Emit STEP_STARTED event (SPEC.md Section 4.1)
-        transport?.emit({
+        transport.emit({
           type: "STEP_STARTED",
         });
       } catch {
@@ -106,16 +104,17 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       // This enables callback coordination without direct middleware-callback communication
       // Use Object.defineProperty to work around frozen runtime object
       try {
-        if (!runtime.config?.metadata) {
-          Object.defineProperty(runtime.config || {}, "metadata", {
+        const config = (runtime as any).config || {};
+        if (!config.metadata) {
+          Object.defineProperty(config, "metadata", {
             value: { agui_messageId: messageId },
             writable: true,
             enumerable: true,
             configurable: true,
           });
         } else {
-          runtime.config.metadata = {
-            ...runtime.config.metadata,
+          config.metadata = {
+            ...config.metadata,
             agui_messageId: messageId,
           };
         }
@@ -132,21 +131,22 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * Cleans up metadata.
      */
     afterModel: async (state, runtime) => {
-      const messageId = runtime.config.metadata?.agui_messageId;
-
-      const transport = runtime.context?.transport as AGUITransport | undefined;
+      // Safely access metadata with fallback
+      const config = (runtime as any).config || {};
+      const metadata = config.metadata as Record<string, unknown> | undefined;
+      const messageId = metadata?.agui_messageId;
 
       try {
         // Emit TEXT_MESSAGE_END event (SPEC.md Section 4.2)
         if (messageId) {
-          transport?.emit({
+          transport.emit({
             type: "TEXT_MESSAGE_END",
             messageId,
           });
         }
 
         // Emit STEP_FINISHED event (SPEC.md Section 4.1)
-        transport?.emit({
+        transport.emit({
           type: "STEP_FINISHED",
         });
       } catch {
@@ -155,9 +155,11 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
       // Clean up metadata to prevent memory leaks
       try {
-        if (runtime.config?.metadata?.agui_messageId) {
-          const { agui_messageId, ...rest } = runtime.config.metadata;
-          runtime.config.metadata = rest;
+        const config = (runtime as any).config || {};
+        const metadata = config.metadata as Record<string, unknown> | undefined;
+        if (metadata?.agui_messageId) {
+          const { agui_messageId, ...rest } = metadata;
+          config.metadata = rest;
         }
       } catch {
         // Fail-safe: If cleanup fails, continue anyway
@@ -171,12 +173,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
      * Emits RUN_FINISHED or RUN_ERROR and optionally STATE_SNAPSHOT.
      */
     afterAgent: async (state, runtime) => {
-      const transport = runtime.context?.transport as AGUITransport | undefined;
-
       try {
         // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
         if (
-          transport &&
           (validated.emitStateSnapshots === "final" ||
             validated.emitStateSnapshots === "all")
         ) {
@@ -189,7 +188,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Check for agent error and emit appropriate event
         if (state.error) {
           const error = state.error as Error;
-          transport?.emit({
+          transport.emit({
             type: "RUN_ERROR",
             message:
               validated.errorDetailLevel === "full" ||
@@ -205,7 +204,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
               validated.errorDetailLevel === "full" ? error.stack : undefined,
           });
         } else {
-          transport?.emit({
+          transport.emit({
             type: "RUN_FINISHED",
           });
         }
