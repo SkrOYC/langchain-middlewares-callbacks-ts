@@ -4,11 +4,11 @@
  * Creates a LangChain agent with automatic AG-UI protocol integration.
  *
  * Architecture:
- * - Uses createAgent() from langchain package
- * - Returns agent with callbacks bound to graph via withConfig
- * - Guaranteed cleanup via middleware wrapModelCall with try-finally
- * - Callbacks are merged with user-provided callbacks by LangChain
- * - Abort signal from context enables client disconnect handling
+  * - Uses createAgent() from langchain package
+  * - Returns agent with callbacks bound to graph via withConfig
+  * - Emits lifecycle events for agent execution (RUN_STARTED, RUN_FINISHED, etc.)
+  * - Callbacks are merged with user-provided callbacks by LangChain
+  * - Abort signal from context enables client disconnect handling
  */
 
 import { createAgent } from "langchain";

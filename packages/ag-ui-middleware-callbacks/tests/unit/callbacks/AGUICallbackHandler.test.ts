@@ -520,3 +520,234 @@ test("chunkString handles content smaller than max size", () => {
   expect(chunks.length).toBe(1);
   expect(chunks[0]).toBe(content);
 });
+
+// UTF-8 multi-byte character handling tests
+
+test("chunkString handles Chinese characters correctly", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Chinese characters are 3 bytes each in UTF-8
+  const content = "你好世界";
+  const chunks = chunkString(content, 10);
+  
+  // Verify all chunks round-trip correctly through UTF-8 encoding
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString handles emojis correctly", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Emojis are 4 bytes in UTF-8 (some are surrogate pairs in UTF-16)
+  const content = "Hello 🌍! Test 😀";
+  const chunks = chunkString(content, 8);
+  
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString handles mixed ASCII and multi-byte characters", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Mix of ASCII (1 byte) and Chinese (3 bytes each)
+  const content = "Test 你好 Hello 世界";
+  const chunks = chunkString(content, 6);
+  
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString handles emoji sequences correctly", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Multiple consecutive emojis
+  const content = "😀😃😄😁😆😅";
+  const chunks = chunkString(content, 4);
+  
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString handles Japanese characters correctly", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Japanese hiragana/katakana (3 bytes each in UTF-8)
+  const content = "こんにちは世界";
+  const chunks = chunkString(content, 12);
+  
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+// UTF-8 byte boundary bug reproduction test
+// This test exposes the bug where chunkString splits at UTF-8 byte boundaries
+// rather than character boundaries, causing corrupted output
+
+test("chunkString forces split at byte boundary causing corruption", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Chinese character "你" is 3 bytes in UTF-8: [0xE4, 0xBD, 0xA0]
+  // Using chunk size 2 bytes should force split in middle of character
+  const content = "你好"; // "你" (3 bytes) + "好" (3 bytes) = 6 bytes total
+  const chunks = chunkString(content, 2); // Force split at 2 bytes
+  
+  console.log("Original content:", content);
+  console.log("Bytes:", new TextEncoder().encode(content));
+  console.log("Chunks:", chunks);
+  
+  // At least one chunk should be corrupted if bug exists
+  // The bug forces split at maxChunkSize (2 bytes) even though that splits a multi-byte char
+  for (const chunk of chunks) {
+    console.log("Chunk:", chunk, "Bytes:", new TextEncoder().encode(chunk));
+    // This should pass if no corruption, fail if corrupted
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString byte boundary split with single Chinese character", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Single Chinese character "中" is 3 bytes in UTF-8
+  // Using chunk size 2 bytes should cause corruption
+  const content = "中"; // 3 bytes in UTF-8
+  const chunks = chunkString(content, 2);
+  
+  // One of the chunks should be corrupted (incomplete multi-byte sequence)
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString splits long multi-byte content at byte boundaries", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Create content that's longer than the chunk size
+  // Each Chinese character is 3 bytes, so "你好世界" is 12 bytes
+  const content = "你好世界你好世界"; // 24 bytes total
+  const chunks = chunkString(content, 10); // Split at 10 bytes
+  
+  console.log("Content:", content, "Length:", content.length, "Bytes:", [...new TextEncoder().encode(content)]);
+  console.log("Chunks count:", chunks.length);
+  
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    console.log(`Chunk ${i}: "${chunk}" (${chunk.length} chars, ${bytes.length} bytes)`);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString forces splitting of large multi-byte content", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Create very long Chinese text to force splitting
+  // 50 Chinese characters = 150 bytes in UTF-8
+  const content = "你".repeat(50); // 50 chars, 150 bytes
+  const chunks = chunkString(content, 20); // Split at 20 bytes
+  
+  console.log("Content length:", content.length, "bytes:", new TextEncoder().encode(content).length);
+  console.log("Chunks count:", chunks.length);
+  
+  expect(chunks.length).toBeGreaterThan(1); // Should actually split
+  
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    console.log(`Chunk ${i}: length=${chunk.length}, bytes=${bytes.length}, corrupted=${decoded !== chunk}`);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString splits mixed ASCII and Chinese at byte boundaries", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Create mixed content where split point falls in middle of multi-byte chars
+  // "abc你" = 4 chars, but 1+3=4 bytes in UTF-8
+  // Using chunk size 3 bytes should force split after "ab" or "abc"
+  const content = "abc你def你ghi你jkl"; // Mixed content
+  const chunks = chunkString(content, 5); // Split at 5 bytes
+  
+  console.log("Content:", content, "bytes:", [...new TextEncoder().encode(content)]);
+  console.log("Chunks:", chunks);
+  
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    console.log(`Chunk: "${chunk}" (${chunk.length} chars, ${bytes.length} bytes), corrupted: ${decoded !== chunk}`);
+    expect(decoded).toBe(chunk);
+  }
+});
+
+test("chunkString edge case: force byte boundary split", () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const chunkString = (handler as any).chunkString.bind(handler);
+  
+  // Force the scenario where splitPoint hits 0 and is forced back to maxChunkSize
+  // This requires content where the first maxChunkSize characters are all ASCII
+  // but the byte size exceeds maxChunkSize
+  const content = "aaaaa你bbbbb你ccccc"; // 5 'a' (5 bytes) + '你' (3 bytes) + 5 'b' (5 bytes) + '你' (3 bytes) + 5 'c' (5 bytes) = 21 bytes
+  const chunks = chunkString(content, 10); // Split at 10 bytes
+  
+  console.log("Content:", content, "bytes:", [...new TextEncoder().encode(content)]);
+  console.log("Chunks:", chunks);
+  
+  for (const chunk of chunks) {
+    const bytes = new TextEncoder().encode(chunk);
+    const decoded = new TextDecoder().decode(bytes);
+    console.log(`Chunk: "${chunk}" (${chunk.length} chars, ${bytes.length} bytes), corrupted: ${decoded !== chunk}`);
+    expect(decoded).toBe(chunk);
+  }
+});

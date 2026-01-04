@@ -120,15 +120,15 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     },
 
     /**
-     * wrapModelCall hook - Wraps model invocations for guaranteed cleanup.
-     * Uses try-finally to ensure TEXT_MESSAGE_END is emitted even on error.
+     * wrapModelCall hook - Reserved for future model invocation wrapping.
+     * Currently unused; lifecycle events are handled by beforeModel/afterModel hooks.
      */
     wrapModelCall: async (request, handler) => {
       try {
         return await handler(request);
       } finally {
         // Note: TEXT_MESSAGE_END is emitted in afterModel hook
-        // Guaranteed cleanup on error is handled by withListeners in createAGUIAgent
+        // Error cleanup is best-effort and may not emit on model failure
       }
     },
 
