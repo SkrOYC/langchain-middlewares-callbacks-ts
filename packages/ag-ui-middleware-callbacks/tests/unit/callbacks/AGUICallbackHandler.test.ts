@@ -24,7 +24,8 @@ test("handleLLMStart captures messageId from metadata", async () => {
     ["prompt"],
     runId,
     undefined,
-    [],
+    {},
+    undefined,
     { agui_messageId: messageId }
   );
 
@@ -42,8 +43,10 @@ test("handleLLMStart does not store when no messageId in metadata", async () => 
     ["prompt"],
     runId,
     undefined,
-    [],
-    {}
+    {},            // extraParams
+    undefined,     // tags
+    {},            // metadata (empty, no messageId)
+    undefined      // runName
   );
 
   expect(handler["messageIds"].has(runId)).toBe(false);
@@ -53,9 +56,9 @@ test("handleLLMStart stores multiple messageIds correctly", async () => {
   const mockTransport = createMockTransport();
   const handler = new AGUICallbackHandler(mockTransport);
 
-  await handler.handleLLMStart(null, [], "run-1", undefined, [], { agui_messageId: "msg-1" });
-  await handler.handleLLMStart(null, [], "run-2", undefined, [], { agui_messageId: "msg-2" });
-  await handler.handleLLMStart(null, [], "run-3", undefined, [], { agui_messageId: "msg-3" });
+  await handler.handleLLMStart(null, [], "run-1", undefined, {}, undefined, { agui_messageId: "msg-1" }, undefined);
+  await handler.handleLLMStart(null, [], "run-2", undefined, {}, undefined, { agui_messageId: "msg-2" }, undefined);
+  await handler.handleLLMStart(null, [], "run-3", undefined, {}, undefined, { agui_messageId: "msg-3" }, undefined);
 
   expect(handler["messageIds"].size).toBe(3);
   expect(handler["messageIds"].get("run-1")).toBe("msg-1");
@@ -72,7 +75,7 @@ test("handleLLMNewToken emits TEXT_MESSAGE_CONTENT events", async () => {
   const runId = "run-123";
   const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, [], { agui_messageId: messageId });
+  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
   await handler.handleLLMNewToken("Hello", { promptIndex: 0, completionIndex: 0 }, runId);
 
   expect(mockTransport.emit).toHaveBeenCalledWith(
@@ -102,7 +105,7 @@ test("handleLLMNewToken emits TOOL_CALL_ARGS for tool call chunks", async () => 
   const runId = "run-123";
   const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, [], { agui_messageId: messageId });
+  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
 
   const toolCallChunks = [
     {
@@ -136,7 +139,7 @@ test("handleLLMNewToken handles multiple tokens", async () => {
   const runId = "run-123";
   const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, [], { agui_messageId: messageId });
+  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
 
   await handler.handleLLMNewToken("He", { promptIndex: 0, completionIndex: 0 }, runId);
   await handler.handleLLMNewToken("llo", { promptIndex: 0, completionIndex: 1 }, runId);
@@ -152,7 +155,7 @@ test("handleLLMNewToken does not emit for empty tokens", async () => {
   const runId = "run-123";
   const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, [], { agui_messageId: messageId });
+  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
   await handler.handleLLMNewToken("", { promptIndex: 0, completionIndex: 0 }, runId);
 
   // Empty tokens should still be emitted (they may be valid whitespace)
@@ -178,7 +181,8 @@ test("handleToolStart emits TOOL_CALL_START", async () => {
     toolRunId,
     parentRunId,
     [],
-    {}
+    {},
+    undefined
   );
 
   expect(mockTransport.emit).toHaveBeenCalledWith(
@@ -203,7 +207,8 @@ test("handleToolStart parses toolCallId from input", async () => {
     toolRunId,
     undefined,
     [],
-    {}
+    {},
+    undefined
   );
 
   expect(handler["toolCallIds"].get(toolRunId)).toBe("tc-999");
@@ -221,7 +226,8 @@ test("handleToolStart uses runId when toolCallId not found", async () => {
     toolRunId,
     undefined,
     [],
-    {}
+    {},
+    undefined
   );
 
   expect(handler["toolCallIds"].get(toolRunId)).toBeUndefined();
@@ -246,7 +252,8 @@ test("handleToolStart handles missing parentMessageId", async () => {
     toolRunId,
     "non-existent-parent",
     [],
-    {}
+    {},
+    undefined
   );
 
   expect(mockTransport.emit).toHaveBeenCalledWith(
@@ -332,7 +339,7 @@ test("handleToolEnd generates messageId for result", async () => {
   );
 
   expect(resultCall).toBeDefined();
-  expect(resultCall[0].messageId).toBeDefined();
+  expect(resultCall![0].messageId).toBeDefined();
 });
 
 test("handleToolEnd cleans up toolCallId from internal state", async () => {
@@ -392,7 +399,7 @@ test("handleLLMError cleans up messageId", async () => {
 
   const runId = "run-123";
 
-  await handler.handleLLMStart(null, [], runId, undefined, [], { agui_messageId: "msg-456" });
+  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: "msg-456" }, undefined);
   await handler.handleLLMError(new Error("Test error"), runId);
 
   expect(handler["messageIds"].has(runId)).toBe(false);
@@ -479,9 +486,9 @@ test("handleToolEnd emits TOOL_CALL_RESULT with truncation when content exceeds 
   const resultCall = mockTransport.emit.mock.calls.find(
     ([event]: any[]) => event.type === "TOOL_CALL_RESULT"
   );
-  
+
   expect(resultCall).toBeDefined();
-  expect(resultCall[0].content).toContain("[Truncated:");
+  expect(resultCall![0].content).toContain("[Truncated:");
 });
 
 test("chunkString splits content at word boundaries", () => {
