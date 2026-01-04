@@ -88,62 +88,57 @@ test("Middleware beforeAgent respects emitStateSnapshots option", async () => {
 
 // beforeModel tests
 
-test("Middleware beforeModel emits TEXT_MESSAGE_START", async () => {
+test("Middleware beforeModel emits STEP_STARTED", async () => {
   const mockTransport = createMockTransport();
   const middleware = createAGUIMiddleware({ transport: mockTransport });
 
   const state = { messages: [] };
   const runtime = {
-    config: { metadata: {} },
+    config: { configurable: { thread_id: "test-thread" } },
     context: { transport: mockTransport }
   };
 
+  // Call beforeAgent first to set up runId and threadId
+  await middleware.beforeAgent?.(state, runtime);
+
+  // Now call beforeModel - it should have runId and threadId set
   const result = await middleware.beforeModel?.(state, runtime);
 
+  // Middleware emits STEP_STARTED (not TEXT_MESSAGE_START - that's now handled by callbacks)
   expect(mockTransport.emit).toHaveBeenCalledWith(
     expect.objectContaining({
-      type: "TEXT_MESSAGE_START",
-      role: "assistant"
+      type: "STEP_STARTED",
+      runId: expect.any(String),
+      threadId: "test-thread",
     })
   );
   expect(result).toBeDefined();
 });
 
-test("Middleware beforeModel generates unique messageId", async () => {
+test("Middleware beforeModel emits STEP_STARTED with correct IDs", async () => {
   const mockTransport = createMockTransport();
   const middleware = createAGUIMiddleware({ transport: mockTransport });
 
   const state = { messages: [] };
   const runtime = {
-    config: { metadata: {} },
+    config: { configurable: { thread_id: "test-thread" } },
     context: { transport: mockTransport }
   };
 
-  await middleware.beforeModel?.(state, runtime);
-
-  const messageId1 = runtime.config.metadata.agui_messageId;
-  await middleware.beforeModel?.(state, runtime);
-  const messageId2 = runtime.config.metadata.agui_messageId;
-
-  expect(messageId1).toBeDefined();
-  expect(messageId2).toBeDefined();
-  expect(messageId1).not.toBe(messageId2);
-});
-
-test("Middleware beforeModel sets messageId in metadata", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { metadata: {} },
-    context: { transport: mockTransport }
-  };
+  // Call beforeAgent first to set up runId and threadId
+  await middleware.beforeAgent?.(state, runtime);
 
   await middleware.beforeModel?.(state, runtime);
 
-  expect(runtime.config.metadata.agui_messageId).toBeDefined();
-  expect(typeof runtime.config.metadata.agui_messageId).toBe("string");
+  // Verify STEP_STARTED was emitted with proper IDs
+  expect(mockTransport.emit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "STEP_STARTED",
+      threadId: "test-thread",
+      runId: expect.any(String),
+      stepName: expect.stringMatching(/^model_call_/),
+    })
+  );
 });
 
 test("Middleware beforeModel emits STEP_STARTED", async () => {
@@ -167,7 +162,37 @@ test("Middleware beforeModel emits STEP_STARTED", async () => {
 
 // afterModel tests
 
-test("Middleware afterModel emits TEXT_MESSAGE_END", async () => {
+test("Middleware afterModel emits STEP_FINISHED (not TEXT_MESSAGE_END)", async () => {
+  const mockTransport = createMockTransport();
+  const middleware = createAGUIMiddleware({ transport: mockTransport });
+
+  const state = { messages: [] };
+  const runtime = {
+    config: { configurable: { thread_id: "test-thread" } },
+    context: { transport: mockTransport }
+  };
+
+  // Call beforeAgent first to set up runId and threadId
+  await middleware.beforeAgent?.(state, runtime);
+  
+  await middleware.afterModel?.(state, runtime);
+
+  // Middleware emits STEP_FINISHED (TEXT_MESSAGE_END is now handled by callbacks)
+  expect(mockTransport.emit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "STEP_FINISHED",
+      threadId: "test-thread",
+    })
+  );
+  
+  // Verify TEXT_MESSAGE_END was NOT emitted by middleware
+  const textEndCalls = mockTransport.emit.mock.calls.filter(
+    ([event]: any[]) => event.type === "TEXT_MESSAGE_END"
+  );
+  expect(textEndCalls.length).toBe(0);
+});
+
+test("Middleware afterModel emits STEP_FINISHED", async () => {
   const mockTransport = createMockTransport();
   const middleware = createAGUIMiddleware({ transport: mockTransport });
 
@@ -180,47 +205,9 @@ test("Middleware afterModel emits TEXT_MESSAGE_END", async () => {
   // Call beforeModel first to set up the closure variable
   await middleware.beforeModel?.(state, runtime);
   
-  // Get the messageId that was set in metadata
-  const messageId = runtime.config.metadata.agui_messageId;
-  
-  // Then call afterModel - it should emit TEXT_MESSAGE_END with that messageId
   await middleware.afterModel?.(state, runtime);
 
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "TEXT_MESSAGE_END",
-      messageId
-    })
-  );
-});
-
-test("Middleware afterModel cleans metadata", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { metadata: { agui_messageId: "msg-123" } },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.afterModel?.(state, runtime);
-
-  expect(runtime.config.metadata.agui_messageId).toBeUndefined();
-});
-
-test("Middleware afterModel emits STEP_FINISHED", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { metadata: { agui_messageId: "msg-123" } },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.afterModel?.(state, runtime);
-
+  // Middleware emits STEP_FINISHED (not TEXT_MESSAGE_END - that's now handled by callbacks)
   expect(mockTransport.emit).toHaveBeenCalledWith(
     expect.objectContaining({
       type: "STEP_FINISHED"

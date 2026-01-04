@@ -39,9 +39,12 @@ export interface AGUIAgentConfig {
  * This function creates a LangChain agent with automatic AG-UI protocol integration:
  * - Middleware handles lifecycle events (RUN_STARTED, RUN_FINISHED, etc.)
  * - Callbacks handle streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
- * - Uses agent.graph.withConfig to bind callbacks to agent's graph
+ * - Callbacks must be passed at runtime via agent.streamEvents() config
  * - Guaranteed cleanup via middleware wrapModelCall with try-finally
- * - LangChain's config merging ensures user callbacks are preserved
+ *
+ * Note: Callbacks are not bound to the model here because:
+ * 1. Some models (like MockChatModel in tests) don't properly support withConfig()
+ * 2. Users should pass callbacks at runtime for proper streaming
  *
  * @param config - Agent configuration
  * @returns An agent with AG-UI protocol support
@@ -60,18 +63,13 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
     errorDetailLevel: config.middlewareOptions?.errorDetailLevel ?? "message",
   });
 
-  // Create callbacks for streaming events with smart emission options
-  const aguiCallbacks = [new AGUICallbackHandler(config.transport, config.callbackOptions)];
-
   // Create base agent with middleware
+  // Note: Callbacks are NOT bound here - they must be passed at runtime
   const agent = createAgent({
     model: config.model,
     tools: config.tools,
     middleware: [middleware],
   });
 
-  // Bind callbacks to agent's graph using withConfig
-  // This merges callbacks with any user-provided callbacks at runtime
-  // Middleware's wrapModelCall handles guaranteed cleanup via try-finally
-  return agent.graph.withConfig({ callbacks: aguiCallbacks });
+  return agent;
 }

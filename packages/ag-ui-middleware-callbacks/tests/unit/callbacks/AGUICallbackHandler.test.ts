@@ -12,12 +12,11 @@ test("AGUICallbackHandler is instantiated correctly", () => {
   expect(handler.name).toBe("ag-ui-callback");
 });
 
-test("handleLLMStart captures messageId from metadata", async () => {
+test("handleLLMStart generates messageId internally", async () => {
   const mockTransport = createMockTransport();
   const handler = new AGUICallbackHandler(mockTransport);
 
   const runId = "run-123";
-  const messageId = "msg-456";
 
   await handler.handleLLMStart(
     null as any,
@@ -26,13 +25,14 @@ test("handleLLMStart captures messageId from metadata", async () => {
     undefined,
     {},
     undefined,
-    { agui_messageId: messageId }
+    { agui_messageId: "msg-456" } // This is now ignored - messageId is generated internally
   );
 
-  expect(handler["messageIds"].get(runId)).toBe(messageId);
+  // messageId should be generated internally, not from metadata
+  expect(handler["messageIds"].get(runId)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 });
 
-test("handleLLMStart does not store when no messageId in metadata", async () => {
+test("handleLLMStart always generates messageId even when no metadata", async () => {
   const mockTransport = createMockTransport();
   const handler = new AGUICallbackHandler(mockTransport);
 
@@ -49,21 +49,25 @@ test("handleLLMStart does not store when no messageId in metadata", async () => 
     undefined      // runName
   );
 
-  expect(handler["messageIds"].has(runId)).toBe(false);
+  // messageId should be generated internally
+  expect(handler["messageIds"].has(runId)).toBe(true);
+  expect(handler["messageIds"].get(runId)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 });
 
 test("handleLLMStart stores multiple messageIds correctly", async () => {
   const mockTransport = createMockTransport();
   const handler = new AGUICallbackHandler(mockTransport);
 
-  await handler.handleLLMStart(null, [], "run-1", undefined, {}, undefined, { agui_messageId: "msg-1" }, undefined);
-  await handler.handleLLMStart(null, [], "run-2", undefined, {}, undefined, { agui_messageId: "msg-2" }, undefined);
-  await handler.handleLLMStart(null, [], "run-3", undefined, {}, undefined, { agui_messageId: "msg-3" }, undefined);
+  // handleLLMStart now generates messageId internally
+  await handler.handleLLMStart(null, [], "run-1");
+  await handler.handleLLMStart(null, [], "run-2");
+  await handler.handleLLMStart(null, [], "run-3");
 
   expect(handler["messageIds"].size).toBe(3);
-  expect(handler["messageIds"].get("run-1")).toBe("msg-1");
-  expect(handler["messageIds"].get("run-2")).toBe("msg-2");
-  expect(handler["messageIds"].get("run-3")).toBe("msg-3");
+  // Each messageId should be a UUID format (auto-generated)
+  expect(handler["messageIds"].get("run-1")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  expect(handler["messageIds"].get("run-2")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  expect(handler["messageIds"].get("run-3")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 });
 
 // handleLLMNewToken tests
@@ -73,11 +77,25 @@ test("handleLLMNewToken emits TEXT_MESSAGE_CONTENT events", async () => {
   const handler = new AGUICallbackHandler(mockTransport);
 
   const runId = "run-123";
-  const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
+  // handleLLMStart generates messageId internally and emits TEXT_MESSAGE_START
+  await handler.handleLLMStart(null, [], runId);
+  
+  const messageId = handler["messageIds"].get(runId);
+  expect(messageId).toBeDefined();
+
+  // handleLLMNewToken emits TEXT_MESSAGE_CONTENT
   await handler.handleLLMNewToken("Hello", { promptIndex: 0, completionIndex: 0 }, runId);
 
+  // Should have been called twice: TEXT_MESSAGE_START + TEXT_MESSAGE_CONTENT
+  expect(mockTransport.emit).toHaveBeenCalledTimes(2);
+  expect(mockTransport.emit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "TEXT_MESSAGE_START",
+      messageId,
+      role: "assistant",
+    })
+  );
   expect(mockTransport.emit).toHaveBeenCalledWith(
     expect.objectContaining({
       type: "TEXT_MESSAGE_CONTENT",
@@ -137,29 +155,33 @@ test("handleLLMNewToken handles multiple tokens", async () => {
   const handler = new AGUICallbackHandler(mockTransport);
 
   const runId = "run-123";
-  const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
+  // handleLLMStart now generates messageId internally
+  await handler.handleLLMStart(null, [], runId);
 
+  // Should emit TEXT_MESSAGE_START from handleLLMStart + 3 TEXT_MESSAGE_CONTENT from tokens
   await handler.handleLLMNewToken("He", { promptIndex: 0, completionIndex: 0 }, runId);
   await handler.handleLLMNewToken("llo", { promptIndex: 0, completionIndex: 1 }, runId);
   await handler.handleLLMNewToken("!", { promptIndex: 0, completionIndex: 2 }, runId);
 
-  expect(mockTransport.emit).toHaveBeenCalledTimes(3);
+  // 4 calls: 1 TEXT_MESSAGE_START + 3 TEXT_MESSAGE_CONTENT
+  expect(mockTransport.emit).toHaveBeenCalledTimes(4);
 });
 
-test("handleLLMNewToken does not emit for empty tokens", async () => {
+test("handleLLMNewToken skips empty tokens", async () => {
   const mockTransport = createMockTransport();
   const handler = new AGUICallbackHandler(mockTransport);
 
   const runId = "run-123";
-  const messageId = "msg-456";
 
-  await handler.handleLLMStart(null, [], runId, undefined, {}, undefined, { agui_messageId: messageId }, undefined);
+  // handleLLMStart generates messageId internally
+  await handler.handleLLMStart(null, [], runId);
+  
+  // Empty token should be skipped
   await handler.handleLLMNewToken("", { promptIndex: 0, completionIndex: 0 }, runId);
 
-  // Empty tokens should still be emitted (they may be valid whitespace)
-  expect(mockTransport.emit).toHaveBeenCalled();
+  // Should only emit TEXT_MESSAGE_START (empty token is skipped)
+  expect(mockTransport.emit).toHaveBeenCalledTimes(1);
 });
 
 // handleToolStart tests
@@ -211,7 +233,14 @@ test("handleToolStart parses toolCallId from input", async () => {
     undefined
   );
 
-  expect(handler["toolCallIds"].get(toolRunId)).toBe("tc-999");
+  // Verify TOOL_CALL_START was emitted with correct toolCallId and toolCallName
+  expect(mockTransport.emit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "TOOL_CALL_START",
+      toolCallId: "tc-999",
+      toolCallName: "calculator",
+    })
+  );
 });
 
 test("handleToolStart uses runId when toolCallId not found", async () => {
@@ -230,7 +259,7 @@ test("handleToolStart uses runId when toolCallId not found", async () => {
     undefined
   );
 
-  expect(handler["toolCallIds"].get(toolRunId)).toBeUndefined();
+  expect(handler["toolCallInfo"].get(toolRunId)?.id).toBeUndefined();
   // Should still emit with runId as fallback
   expect(mockTransport.emit).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -273,7 +302,7 @@ test("handleToolEnd emits TOOL_CALL_END and TOOL_CALL_RESULT", async () => {
   const toolRunId = "run-tool-789";
   const toolCallId = "tc-999";
 
-  handler["toolCallIds"].set(toolRunId, toolCallId);
+  handler["toolCallInfo"].set(toolRunId, { id: toolCallId, name: "search" });
   handler["messageIds"].set(parentRunId, "msg-456");
 
   await handler.handleToolEnd(
@@ -359,7 +388,7 @@ test("handleToolEnd generates messageId for result", async () => {
   const toolRunId = "run-tool-789";
   const toolCallId = "tc-999";
 
-  handler["toolCallIds"].set(toolRunId, toolCallId);
+  handler["toolCallInfo"].set(toolRunId, { id: toolCallId, name: "search" });
 
   await handler.handleToolEnd(
     JSON.stringify({ result: "success" }),
@@ -383,7 +412,7 @@ test("handleToolEnd cleans up toolCallId from internal state", async () => {
   const toolRunId = "run-tool-789";
   const toolCallId = "tc-999";
 
-  handler["toolCallIds"].set(toolRunId, toolCallId);
+  handler["toolCallInfo"].set(toolRunId, { id: toolCallId, name: "search" });
 
   await handler.handleToolEnd(
     JSON.stringify({ result: "success" }),
@@ -392,7 +421,26 @@ test("handleToolEnd cleans up toolCallId from internal state", async () => {
     []
   );
 
-  expect(handler["toolCallIds"].has(toolRunId)).toBe(false);
+  expect(handler["toolCallInfo"].has(toolRunId)).toBe(false);
+});
+
+test("handleToolEnd cleans up toolCallId from internal state", async () => {
+  const mockTransport = createMockTransport();
+  const handler = new AGUICallbackHandler(mockTransport);
+
+  const toolRunId = "run-tool-789";
+  const toolCallId = "tc-999";
+
+  handler["toolCallInfo"].set(toolRunId, { id: toolCallId, name: "search" });
+
+  await handler.handleToolEnd(
+    JSON.stringify({ result: "success" }),
+    toolRunId,
+    undefined,
+    []
+  );
+
+  expect(handler["toolCallInfo"].has(toolRunId)).toBe(false);
 });
 
 // Cleanup tests
@@ -402,12 +450,12 @@ test("dispose clears internal state", () => {
   const handler = new AGUICallbackHandler(mockTransport);
 
   handler["messageIds"].set("run-1", "msg-1");
-  handler["toolCallIds"].set("run-2", "tc-1");
+  handler["toolCallInfo"].set("run-2", { id: "tc-1", name: "search" });
 
   handler.dispose();
 
   expect(handler["messageIds"].size).toBe(0);
-  expect(handler["toolCallIds"].size).toBe(0);
+  expect(handler["toolCallInfo"].size).toBe(0);
 });
 
 test("dispose does not throw when called multiple times", () => {
@@ -415,14 +463,14 @@ test("dispose does not throw when called multiple times", () => {
   const handler = new AGUICallbackHandler(mockTransport);
 
   handler["messageIds"].set("run-1", "msg-1");
-  handler["toolCallIds"].set("run-2", "tc-1");
+  handler["toolCallInfo"].set("run-2", { id: "tc-1", name: "search" });
 
   handler.dispose();
   handler.dispose();
   handler.dispose();
 
   expect(handler["messageIds"].size).toBe(0);
-  expect(handler["toolCallIds"].size).toBe(0);
+  expect(handler["toolCallInfo"].size).toBe(0);
 });
 
 // Error handling tests
@@ -445,10 +493,10 @@ test("handleToolError cleans up toolCallId", async () => {
 
   const toolRunId = "run-tool-789";
 
-  handler["toolCallIds"].set(toolRunId, "tc-999");
+  handler["toolCallInfo"].set(toolRunId, { id: "tc-999", name: "search" });
   await handler.handleToolError(new Error("Test error"), toolRunId);
 
-  expect(handler["toolCallIds"].has(toolRunId)).toBe(false);
+  expect(handler["toolCallInfo"].has(toolRunId)).toBe(false);
 });
 
 // TOOL_CALL_CHUNK tests
@@ -464,7 +512,7 @@ test("handleToolEnd emits TOOL_CALL_CHUNK when content exceeds maxUIPayloadSize 
   const toolRunId = "run-tool-789";
   const toolCallId = "tc-999";
 
-  handler["toolCallIds"].set(toolRunId, toolCallId);
+  handler["toolCallInfo"].set(toolRunId, { id: toolCallId, name: "search" });
 
   // Create content that exceeds 50 bytes
   const largeContent = "This is a very long tool result that definitely exceeds fifty bytes for UI payloads";
@@ -504,7 +552,7 @@ test("handleToolEnd emits TOOL_CALL_RESULT with truncation when content exceeds 
   const toolRunId = "run-tool-789";
   const toolCallId = "tc-999";
 
-  handler["toolCallIds"].set(toolRunId, toolCallId);
+  handler["toolCallInfo"].set(toolRunId, { id: toolCallId, name: "search" });
 
   // Create content that exceeds 50 bytes
   const largeContent = "This is a very long tool result that definitely exceeds fifty bytes for UI payloads and should be truncated";

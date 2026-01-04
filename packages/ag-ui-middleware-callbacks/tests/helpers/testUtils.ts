@@ -8,7 +8,7 @@
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { tool } from "langchain";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
-import type { AGUITransport } from "../transports/types";
+import type { AGUITransport } from "../../src/transports/types";
 
 // ============================================================================
 // Mock Transport Factory
@@ -91,11 +91,11 @@ class MockChatModel extends BaseChatModel {
     };
   }
   
-  async _streamResponseChunks(
+  override async _streamResponseChunks(
     _messages: any[],
     _options: any,
     _runManager?: any
-  ) {
+  ): AsyncGenerator<any> {
     const response = this.responses[this.responseIndex % this.responses.length];
     this.responseIndex++;
     
@@ -363,7 +363,7 @@ export function createMultiTurnScenario() {
 // ============================================================================
 
 export interface TestAgent {
-  agent: { invoke: Function; stream: Function };
+  agent: { invoke: Function; stream: Function; streamEvents: Function };
   transport: MockTransport;
   model: MockChatModel;
   tools: ReturnType<typeof tool>[];
@@ -379,14 +379,23 @@ export function createTestAgent(
   middlewareOptions?: Record<string, any>
 ): TestAgent {
   let createAGUIAgentModule: typeof import("../../src/createAGUIAgent");
-  
+  let AGUICallbackHandler: typeof import("../../src/callbacks/AGUICallbackHandler").AGUICallbackHandler;
+
   async function getCreateAGUIAgent() {
     if (!createAGUIAgentModule) {
       createAGUIAgentModule = await import("../../src/createAGUIAgent");
     }
     return createAGUIAgentModule;
   }
-  
+
+  async function getAGUICallbackHandler() {
+    if (!AGUICallbackHandler) {
+      const module = await import("../../src/callbacks/AGUICallbackHandler");
+      AGUICallbackHandler = module.AGUICallbackHandler;
+    }
+    return AGUICallbackHandler;
+  }
+
   const agent = {
     invoke: async (input: any, options?: any) => {
       const { createAGUIAgent } = await getCreateAGUIAgent();
@@ -408,8 +417,27 @@ export function createTestAgent(
       });
       return aguiAgent.stream(input, options);
     },
+    streamEvents: async (input: any, options?: any) => {
+      const { createAGUIAgent } = await getCreateAGUIAgent();
+      const CallbackHandler = await getAGUICallbackHandler();
+      const aguiAgent = createAGUIAgent({
+        model,
+        tools,
+        transport,
+        middlewareOptions,
+      });
+      // Create callback handler for streaming events
+      const handler = new CallbackHandler(transport);
+      // Add callbacks to options if not present
+      const streamOptions = {
+        ...options,
+        callbacks: [...(options?.callbacks || []), handler],
+      };
+      const stream = await (aguiAgent as any).streamEvents(input, streamOptions);
+      return stream;
+    },
   };
-  
+
   return { agent, transport, model, tools };
 }
 

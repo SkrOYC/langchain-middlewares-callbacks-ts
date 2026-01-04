@@ -66,7 +66,7 @@ export interface TextMessageEndEvent {
 export interface ToolCallStartEvent {
   type: "TOOL_CALL_START";
   toolCallId: string;
-  toolCallName: string;
+  toolCallName?: string;
   parentMessageId?: string;
 }
 
@@ -86,6 +86,7 @@ export interface ToolCallResultEvent {
   type: "TOOL_CALL_RESULT";
   messageId: string;
   toolCallId: string;
+  toolCallName?: string;
   content: string;
   role: "tool";
   parentMessageId?: string;
@@ -94,6 +95,7 @@ export interface ToolCallResultEvent {
 export interface ToolCallChunkEvent {
   type: "TOOL_CALL_CHUNK";
   toolCallId: string;
+  toolCallName?: string;
   chunk: string;
   index: number;
   parentMessageId?: string;
