@@ -514,7 +514,7 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
   // 
   // These tests are skipped due to test infrastructure limitations, not functionality issues.
 
-  test.skip("TEXT_MESSAGE_END is emitted on successful completion", async () => {
+  test("TEXT_MESSAGE_END is emitted on successful completion", async () => {
     const transport = createMockTransport();
     const model = createTextModel(["Hello!"]);
 
@@ -546,7 +546,7 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
     expect(textEndEvents[0].messageId).toBe(textStartEvents[0].messageId);
   });
 
-  test.skip("TEXT_MESSAGE_END follows TEXT_MESSAGE_START in event order", async () => {
+  test("TEXT_MESSAGE_END follows TEXT_MESSAGE_START in event order", async () => {
     const transport = createMockTransport();
     const model = createTextModel(["Hello!"]);
 
@@ -574,7 +574,7 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
     expect(textEndIndex).toBeGreaterThan(textStartIndex);
   });
 
-  test.skip("TEXT_MESSAGE_END is emitted when tool execution fails (guaranteed cleanup)", async () => {
+  test("TEXT_MESSAGE_END is emitted when tool execution fails (guaranteed cleanup)", async () => {
     const transport = createMockTransport();
 
     // Create a model that calls a tool, and a tool that throws

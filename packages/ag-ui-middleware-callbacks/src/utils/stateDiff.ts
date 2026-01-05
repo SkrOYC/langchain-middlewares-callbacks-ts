@@ -18,5 +18,5 @@ export function computeStateDelta(
   oldState: unknown,
   newState: unknown
 ): Operation[] {
-  return compare(oldState, newState);
+  return compare(oldState as any, newState as any);
 }

@@ -34,6 +34,11 @@ export const AGUIMiddlewareOptionsSchema = z.object({
 
   // Error Handling
   errorDetailLevel: z.enum(["full", "message", "code", "none"]).default("message"),
+
+  // Data Mappers (New in Protocol Compliance)
+  stateMapper: z.custom<(state: any) => any>().optional(),
+  resultMapper: z.custom<(result: any) => any>().optional(),
+  activityMapper: z.custom<(node: any) => any>().optional(),
 });
 
 /**

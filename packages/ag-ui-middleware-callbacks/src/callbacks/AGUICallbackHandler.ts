@@ -2,18 +2,11 @@
  * AG-UI Callback Handler
  * 
  * Handles streaming events for LLM tokens and tool calls.
- * 
- * Architecture (SPEC.md Section 2.6):
- * - Extends BaseCallbackHandler from @langchain/core/callbacks/base
- * - Internal state: Map<runId, messageId> and Map<runId, toolCallId>
- * - Fail-safe: super({ raiseError: false })
- * - Metadata propagation: Reads messageId from metadata in handleLLMStart
- * - Parent run correlation: Uses parentRunId to link tool callbacks to LLM
- * - Smart emission: Respects maxUIPayloadSize for tool results
  */
 
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
-import { generateId } from "../utils/idGenerator";
+import { generateId, generateDeterministicId } from "../utils/idGenerator";
+import { extractToolOutput } from "../utils/cleaner";
 import type { AGUITransport } from "../transports/types";
 
 /**
@@ -33,102 +26,140 @@ export interface AGUICallbackHandlerOptions {
 export class AGUICallbackHandler extends BaseCallbackHandler {
   name = "ag-ui-callback";
 
-  // Internal state for message/tool correlation (SPEC.md Section 2.5.1)
   private messageIds = new Map<string, string>();
+  private latestMessageIds = new Map<string, string>();
+  private agentRunIds = new Map<string, string>(); // Maps current runId to authoritative agentRunId
+  private parentToAuthoritativeId = new Map<string, string>(); // Maps internal parentRunId to authoritative agentRunId
+  private reasoningIds = new Map<string, string>();
   private toolCallInfo = new Map<string, { id: string; name: string }>();
+  private agentTurnTracker = new Map<string, number>();
+  private pendingToolCalls = new Map<string, string[]>();
   private transport: AGUITransport;
   
-  // Smart emission configuration
   private maxUIPayloadSize: number;
   private chunkLargeResults: boolean;
 
-  /**
-   * Create a new AG-UI callback handler.
-   * 
-   * @param transport - Transport for emitting AG-UI events
-   * @param options - Optional configuration for smart emission
-   */
   constructor(transport: AGUITransport, options?: AGUICallbackHandlerOptions) {
-    // Fail-safe: Never raise errors from AG-UI callbacks
     super({ raiseError: false });
     this.transport = transport;
-    this.maxUIPayloadSize = options?.maxUIPayloadSize ?? 50 * 1024; // 50KB default
+    this.maxUIPayloadSize = options?.maxUIPayloadSize ?? 50 * 1024;
     this.chunkLargeResults = options?.chunkLargeResults ?? false;
   }
 
-  /**
-   * Dispose - Cleanup internal state to prevent memory leaks.
-   * Called when the handler is no longer needed.
-   */
   dispose(): void {
     this.messageIds.clear();
+    this.latestMessageIds.clear();
+    this.agentRunIds.clear();
+    this.parentToAuthoritativeId.clear();
+    this.reasoningIds.clear();
     this.toolCallInfo.clear();
+    this.agentTurnTracker.clear();
+    this.pendingToolCalls.clear();
   }
 
   // ==================== LLM Callbacks ====================
 
-   override async handleLLMStart(
-     _llm: any,
-     _prompts: string[],
-     runId: string,
-     _parentRunId?: string,
-     _extraParams?: Record<string, unknown>,
-     _tags?: string[],
-     _metadata?: Record<string, unknown>,
-     _runName?: string
-   ): Promise<void> {
-     // Generate unique messageId for this LLM invocation
-     const messageId = generateId();
-     
-     // Store messageId keyed by runId for correlation in handleLLMNewToken
-     this.messageIds.set(runId, messageId);
+  override async handleLLMStart(
+    _llm: any,
+    _prompts: string[],
+    runId: string,
+    _parentRunId?: string,
+    _extraParams?: Record<string, unknown>,
+    _tags?: string[],
+    _metadata?: Record<string, unknown>,
+    _runName?: string
+  ): Promise<void> {
+    // Priority: metadata.run_id (to match Middleware) > parentRunId > current runId
+    const agentRunId = 
+      ((_metadata as any)?.run_id as string | undefined) || 
+      ((_metadata as any)?.configurable?.run_id as string | undefined) ||
+      _parentRunId || 
+      runId;
+    
+    this.agentRunIds.set(runId, agentRunId);
+    if (_parentRunId) {
+      this.parentToAuthoritativeId.set(_parentRunId, agentRunId);
+    }
+      
+    const turnIndex = this.agentTurnTracker.get(agentRunId) || 0;
+    this.agentTurnTracker.set(agentRunId, turnIndex + 1);
+    
+    const messageId = generateDeterministicId(agentRunId, turnIndex);
+    this.messageIds.set(runId, messageId);
+    this.latestMessageIds.set(agentRunId, messageId);
+  }
 
-     // Emit TEXT_MESSAGE_START event
-     try {
-       this.transport.emit({
-         type: "TEXT_MESSAGE_START",
-         messageId,
-         role: "assistant",
-       });
-     } catch {
-       // Fail-safe
-     }
-   }
+  override async handleLLMNewToken(
+    token: string,
+    _idx: any,
+    runId: string,
+    _parentRunId?: string,
+    _tags?: string[],
+    fields?: any
+  ): Promise<void> {
+    const messageId = this.messageIds.get(runId);
+    if (!messageId) return;
 
-  /**
-   * handleLLMNewToken - Emits TEXT_MESSAGE_CONTENT and TOOL_CALL_ARGS events.
-   * 
-   * This is the primary mechanism for streaming tokens to the UI.
-   * Also handles streaming tool call arguments from tool_call_chunks.
-   */
-   override async handleLLMNewToken(
-     token: string,
-     _idx: any,
-     runId: string,
-     _parentRunId?: string,
-     _tags?: string[],
-     fields?: any
-   ): Promise<void> {
-     const messageId = this.messageIds.get(runId);
-     if (!messageId) return;
+    try {
+      // Handle Reasoning Tokens (e.g., DeepSeek, OpenAI o1)
+      const reasoningContent = fields?.chunk?.message?.additional_kwargs?.reasoning_content || 
+                               fields?.chunk?.message?.additional_kwargs?.reasoning;
+      if (reasoningContent) {
+        let reasoningId = this.reasoningIds.get(runId);
+        if (!reasoningId) {
+          const agentRunId = this.agentRunIds.get(runId) || 
+                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
+                            _parentRunId || 
+                            runId;
+          reasoningId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for reasoning
+          this.reasoningIds.set(runId, reasoningId);
+          this.transport.emit({
+            type: "REASONING_START",
+            messageId: reasoningId,
+          });
+          this.transport.emit({
+            type: "REASONING_MESSAGE_START",
+            messageId: reasoningId,
+            role: "reasoning",
+          });
+        }
+        
+        const delta = typeof reasoningContent === 'string' 
+          ? reasoningContent 
+          : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
 
-     try {
-       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
-       // Only emit non-empty tokens to avoid flooding the stream
-       if (token && token.length > 0) {
-         this.transport.emit({
-           type: "TEXT_MESSAGE_CONTENT",
-           messageId,
-           delta: token,
-         });
-       }
+        this.transport.emit({
+          type: "REASONING_MESSAGE_CONTENT",
+          messageId: reasoningId,
+          delta,
+        });
+      }
+
+      // Emit TEXT_MESSAGE_CONTENT for streaming tokens
+      if (token && token.length > 0) {
+        this.transport.emit({
+          type: "TEXT_MESSAGE_CONTENT",
+          messageId,
+          delta: token,
+        });
+      }
 
       // Emit TOOL_CALL_ARGS for streaming tool arguments
-      // The tool call ID is directly available in the chunks
       const toolCallChunks = fields?.chunk?.message?.tool_call_chunks;
       if (toolCallChunks) {
+        const agentRunId = this.agentRunIds.get(runId) || 
+                          (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
+                          _parentRunId || 
+                          runId;
         for (const chunk of toolCallChunks) {
           if (chunk.id) {
+            // Track pending tool call ID for this AGENT run
+            const pending = this.pendingToolCalls.get(agentRunId) || [];
+            if (!pending.includes(chunk.id)) {
+              pending.push(chunk.id);
+              this.pendingToolCalls.set(agentRunId, pending);
+            }
+
             this.transport.emit({
               type: "TOOL_CALL_ARGS",
               toolCallId: chunk.id,
@@ -138,185 +169,216 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         }
       }
     } catch {
-      // Fail-safe: Transport errors never crash agent execution
+      // Fail-safe
     }
   }
 
-   /**
-    * handleLLMEnd - Emit TEXT_MESSAGE_END and cleanup messageId.
-    */
-   override async handleLLMEnd(
-     _output: any,
-     runId: string,
-     _parentRunId?: string,
-     _tags?: string[],
-     _extraParams?: Record<string, unknown>
-   ): Promise<void> {
-     const messageId = this.messageIds.get(runId);
-     
-     if (messageId) {
-       try {
-         // Emit TEXT_MESSAGE_END event
-         this.transport.emit({
-           type: "TEXT_MESSAGE_END",
-           messageId,
-         });
-       } catch {
-         // Fail-safe
-       }
-     }
-
-     // Cleanup messageId to prevent memory leaks
-     this.messageIds.delete(runId);
-   }
-
-  /**
-   * handleLLMError - Cleanup messageId on error.
-   */
-   override async handleLLMError(
-    _error: Error,
+  override async handleLLMEnd(
+    _output: any,
     runId: string,
     _parentRunId?: string,
     _tags?: string[],
     _extraParams?: Record<string, unknown>
   ): Promise<void> {
-    // Cleanup on error to prevent memory leaks
+    const reasoningId = this.reasoningIds.get(runId);
+    
+    try {
+      // Collect any tool calls from final output that we missed during streaming
+      if (_output && typeof _output === "object") {
+        const toolCalls = _output.tool_calls || (_output.kwargs?.tool_calls);
+        if (Array.isArray(toolCalls)) {
+          const agentRunId = this.agentRunIds.get(runId) || 
+                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
+                            _parentRunId || 
+                            runId;
+          const pending = this.pendingToolCalls.get(agentRunId) || [];
+          for (const tc of toolCalls) {
+            if (tc.id && !pending.includes(tc.id)) {
+              pending.push(tc.id);
+            }
+          }
+          this.pendingToolCalls.set(agentRunId, pending);
+        }
+      }
+
+      if (reasoningId) {
+        this.transport.emit({
+          type: "REASONING_MESSAGE_END",
+          messageId: reasoningId,
+        });
+        this.transport.emit({
+          type: "REASONING_END",
+          messageId: reasoningId,
+        });
+        this.reasoningIds.delete(runId);
+      }
+    } catch {
+      // Fail-safe
+    }
+  }
+
+  override async handleLLMError(
+    _error: Error,
+    runId: string,
+    _parentRunId?: string
+  ): Promise<void> {
     this.messageIds.delete(runId);
+    this.reasoningIds.delete(runId);
+    const agentRunId = this.agentRunIds.get(runId) || 
+                      (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
+                      _parentRunId || 
+                      runId;
+    this.pendingToolCalls.delete(agentRunId);
+    this.agentRunIds.delete(runId);
   }
 
   // ==================== Tool Callbacks ====================
 
-   /**
-    * handleToolStart - Emits TOOL_CALL_START event.
-    *
-    * Extracts toolCallId from the stringified ToolCall input.
-    * Links to parent message via parentRunId.
-    */
-   override async handleToolStart(
-     tool: any,
-     input: string,
-     runId: string,
-     parentRunId?: string,
-     _tags?: string[],
-     _metadata?: Record<string, unknown>,
-     _runName?: string
-   ): Promise<void> {
-     // Extract toolCallId and toolCallName from stringified ToolCall input
-     // Input format: {"id":"...","name":"...","args":{...}}
-     let toolInfo: { id: string; name: string } | undefined;
-     try {
-       const parsed = JSON.parse(input);
-       if (parsed && typeof parsed === "object" && "id" in parsed) {
-         toolInfo = { id: parsed.id, name: parsed.name || tool.name };
-       }
-     } catch {
-       toolInfo = undefined;
-     }
+  override async handleToolStart(
+    tool: any,
+    input: string,
+    runId: string,
+    parentRunId?: string,
+    _tags?: string[],
+    metadata?: Record<string, unknown>
+  ): Promise<void> {
+    let toolCallId = runId;
+    let toolCallName = tool.name;
 
-     // Store for handleToolEnd
-     if (toolInfo) {
-       this.toolCallInfo.set(runId, toolInfo);
-     }
-
-     // Retrieve parent messageId using parentRunId
-     const messageId = this.messageIds.get(parentRunId || "") || undefined;
-
-     try {
-       // Emit TOOL_CALL_START
-       this.transport.emit({
-         type: "TOOL_CALL_START",
-         toolCallId: toolInfo?.id ?? runId,
-         toolCallName: toolInfo?.name,
-         parentMessageId: messageId,
-       });
-      } catch {
-        // Fail-safe
+    try {
+      // Check if metadata has an authoritative run_id to match Middleware
+      if ((metadata as any)?.run_id && typeof (metadata as any).run_id === "string") {
+        const authRunId = (metadata as any).run_id;
+        if (parentRunId) {
+          this.parentToAuthoritativeId.set(parentRunId, authRunId);
+        }
       }
+
+      // 1. Check metadata for tool_call_id (preferred in modern LangChain)
+      if (metadata?.tool_call_id && typeof metadata.tool_call_id === "string") {
+        toolCallId = metadata.tool_call_id;
+      } 
+      // 2. Check pending tool calls from parent run (correlate by order)
+      else if (parentRunId && this.pendingToolCalls.get(this.parentToAuthoritativeId.get(parentRunId) || parentRunId)?.length) {
+        const authParentId = this.parentToAuthoritativeId.get(parentRunId) || parentRunId;
+        const pending = this.pendingToolCalls.get(authParentId)!;
+        toolCallId = pending.shift()!;
+      }
+      // 3. Check input for tool_call_id (fallback for some older patterns)
+      else if (input) {
+        const parsed = typeof input === "string" ? JSON.parse(input) : input;
+        if (parsed && typeof parsed === "object") {
+          if (parsed.tool_call_id) {
+            toolCallId = parsed.tool_call_id;
+          } else if (parsed.id) {
+            toolCallId = parsed.id;
+          }
+          if (parsed.name) {
+            toolCallName = parsed.name;
+          }
+        }
+      }
+    } catch {
+      // Use defaults
     }
 
-    /**
-    * handleToolEnd - Emits TOOL_CALL_END and TOOL_CALL_RESULT events.
-    *
-    * Retrieves toolCallId from internal state and links to parent message.
-    * Applies smart emission policy for large payloads (SPEC.md Section 9.3).
-    */
-   override async handleToolEnd(
-     output: string,
-     runId: string,
-     parentRunId?: string,
-     _tags?: string[]
-   ): Promise<void> {
-     const toolInfo = this.toolCallInfo.get(runId);
-     this.toolCallInfo.delete(runId);
+    this.toolCallInfo.set(runId, { id: toolCallId, name: toolCallName });
 
-     // Retrieve parent messageId via parentRunId
-     const messageId = this.messageIds.get(parentRunId || "") || undefined;
+    const agentRunId = (parentRunId ? this.parentToAuthoritativeId.get(parentRunId) : null) || parentRunId || "";
+    const messageId = this.latestMessageIds.get(agentRunId);
 
-     try {
-       // Emit TOOL_CALL_END
-       const endToolCallId = toolInfo?.id ?? runId;
-       this.transport.emit({
-         type: "TOOL_CALL_END",
-         toolCallId: endToolCallId,
-         parentMessageId: messageId,
-       });
+    try {
+      this.transport.emit({
+        type: "TOOL_CALL_START",
+        toolCallId,
+        toolCallName,
+        parentMessageId: messageId,
+      });
+    } catch {
+      // Fail-safe
+    }
+  }
 
-       // Apply smart emission policy for tool result (SPEC.md Section 9.3)
-       this.emitToolResultWithPolicy(output, endToolCallId, messageId, toolInfo?.name);
-     } catch {
-       // Fail-safe
-     }
-   }
+  override async handleToolEnd(
+    output: any,
+    runId: string,
+    parentRunId?: string
+  ): Promise<void> {
+    const toolInfo = this.toolCallInfo.get(runId);
+    this.toolCallInfo.delete(runId);
 
-   /**
-    * handleToolError - Cleanup toolCallId on error.
-    */
-   override async handleToolError(
-     _error: Error,
-     runId: string,
-     _parentRunId?: string,
-     _tags?: string[]
-   ): Promise<void> {
-     // Cleanup on error to prevent memory leaks
-     this.toolCallInfo.delete(runId);
-   }
+    const agentRunId = (parentRunId ? this.parentToAuthoritativeId.get(parentRunId) : null) || parentRunId || "";
+    const messageId = this.latestMessageIds.get(agentRunId);
+
+    try {
+      const endToolCallId = toolInfo?.id ?? runId;
+
+      // If output is a LangChain message, it might contain the real tool_call_id
+      let finalToolCallId = endToolCallId;
+      if (output && typeof output === "object") {
+        const kwargs = output.kwargs || output.lc_kwargs;
+        if (kwargs?.tool_call_id) {
+          finalToolCallId = kwargs.tool_call_id;
+        }
+      }
+
+      this.transport.emit({
+        type: "TOOL_CALL_END",
+        toolCallId: finalToolCallId,
+        parentMessageId: messageId,
+      });
+
+      this.emitToolResultWithPolicy(output, finalToolCallId, messageId, toolInfo?.name);
+    } catch {
+      // Fail-safe
+    }
+  }
+
+  override async handleToolError(
+    _error: Error,
+    runId: string,
+    parentRunId?: string
+  ): Promise<void> {
+    const toolInfo = this.toolCallInfo.get(runId);
+    this.toolCallInfo.delete(runId);
+    const agentRunId = (parentRunId ? this.parentToAuthoritativeId.get(parentRunId) : null) || parentRunId || "";
+    const messageId = this.latestMessageIds.get(agentRunId);
+
+    try {
+      this.transport.emit({
+        type: "TOOL_CALL_END",
+        toolCallId: toolInfo?.id ?? runId,
+        parentMessageId: messageId,
+      });
+    } catch {
+      // Fail-safe
+    }
+  }
 
   // ==================== Smart Emission ====================
 
-  /**
-   * Split a string into chunks of specified maximum byte size.
-   * Attempts to split at word boundaries when possible.
-   */
   private chunkString(content: string, maxChunkSize: number): string[] {
     const chunks: string[] = [];
     let remaining = content;
     
     while (remaining.length > 0) {
-      // If the remaining content fits in one chunk, add it and break
       if (new Blob([remaining]).size <= maxChunkSize) {
         chunks.push(remaining);
         break;
       }
       
-      // Try to find a good split point (prefer word boundaries)
       let splitPoint = maxChunkSize;
-      
-      // Try to split at a word boundary near the max size
       const spaceIndex = remaining.lastIndexOf(' ', maxChunkSize);
       const newlineIndex = remaining.lastIndexOf('\n', maxChunkSize);
       const boundaryIndex = Math.max(spaceIndex, newlineIndex);
       
       if (boundaryIndex > maxChunkSize * 0.5) {
-        // Found a reasonable word boundary, split there
         splitPoint = boundaryIndex;
       } else {
-        // No good word boundary, split at max size (may split in middle of word)
-        // But ensure we don't split a multi-byte character
         while (splitPoint > 0 && remaining.charCodeAt(splitPoint - 1) > 127) {
           splitPoint--;
         }
         if (splitPoint === 0) {
-          // Force split at max size if no valid character boundary found
           splitPoint = maxChunkSize;
         }
       }
@@ -328,71 +390,60 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     return chunks;
   }
 
-   /**
-    * Emit tool result with smart emission policy (chunking or truncation).
-    * Returns true if chunks were emitted, false if single result was emitted.
-    */
-   private emitToolResultWithPolicy(
-     output: string,
-     toolCallId: string,
-     messageId: string | undefined,
-     toolCallName?: string
-   ): boolean {
-     // Get content as string
-     let content = typeof output === "string" ? output : JSON.stringify(output);
+  private emitToolResultWithPolicy(
+    output: any,
+    toolCallId: string,
+    messageId: string | undefined,
+    toolCallName?: string
+  ): void {
+    let content = extractToolOutput(output);
+    const resultMessageId = generateId();
+    const contentSize = new Blob([content]).size;
+    
+    if (contentSize <= this.maxUIPayloadSize) {
+      this.transport.emit({
+        type: "TOOL_CALL_RESULT",
+        messageId: resultMessageId,
+        toolCallId,
+        toolCallName,
+        parentMessageId: messageId,
+        content,
+        role: "tool",
+      });
+      return;
+    }
+    
+    if (this.chunkLargeResults) {
+      const chunks = this.chunkString(content, this.maxUIPayloadSize);
+      for (let i = 0; i < chunks.length; i++) {
+        // Use CUSTOM event or a new event type for large result chunks
+        // to avoid collision with ToolCallChunk which is for arguments
+        this.transport.emit({
+          type: "CUSTOM",
+          name: "LARGE_RESULT_CHUNK",
+          value: {
+            toolCallId,
+            chunk: chunks[i],
+            index: i,
+            total: chunks.length
+          }
+        });
+      }
+      return;
+    }
 
-     // Generate messageId if not provided (for standalone tool calls)
-     const resultMessageId = messageId || generateId();
-     
-     // Check if content exceeds max payload size
-     const contentSize = new Blob([content]).size;
-     
-     if (contentSize <= this.maxUIPayloadSize) {
-       // Content is within limits - emit single result
-       this.transport.emit({
-         type: "TOOL_CALL_RESULT",
-         messageId: resultMessageId,
-         toolCallId,
-         toolCallName,
-         parentMessageId: messageId,
-         content,
-         role: "tool",
-       });
-       return false;
-     }
-     
-     // Content exceeds limits - apply policy
-     if (this.chunkLargeResults) {
-       // Emit TOOL_CALL_CHUNK events for each chunk
-       const chunks = this.chunkString(content, this.maxUIPayloadSize);
-       for (let i = 0; i < chunks.length; i++) {
-         this.transport.emit({
-           type: "TOOL_CALL_CHUNK",
-           toolCallId,
-           toolCallName,
-           chunk: chunks[i]!,
-           index: i,
-           parentMessageId: messageId,
-         });
-       }
-       return true;
-     }
+    const truncationMessage = ` [Truncated: ${contentSize - this.maxUIPayloadSize + 50} bytes]`;
+    const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
+    const truncatedContent = content.substring(0, Math.max(0, availableSpace)) + truncationMessage;
 
-     // Truncate content to fit within max payload
-     const truncationMessage = `[Truncated: ${contentSize - this.maxUIPayloadSize + 50} bytes]`;
-     const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
-     const truncatedContent = content.substring(0, availableSpace) + truncationMessage;
-
-     this.transport.emit({
-       type: "TOOL_CALL_RESULT",
-       messageId: resultMessageId,
-       toolCallId,
-       toolCallName,
-       parentMessageId: messageId,
-       content: truncatedContent,
-       role: "tool",
-     });
-     
-     return false;
-   }
+    this.transport.emit({
+      type: "TOOL_CALL_RESULT",
+      messageId: resultMessageId,
+      toolCallId,
+      toolCallName,
+      parentMessageId: messageId,
+      content: truncatedContent,
+      role: "tool",
+    });
+  }
 }

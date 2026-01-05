@@ -349,12 +349,10 @@
     // State Management
     // ============================================================================
 
-    let sessionId = null;
+    let sessionId = localStorage.getItem('agui_session_id');
     let eventSource = null;
-    let currentMessageId = null;
-    let currentToolCallId = null;
     let messageBuffer = "";
-    let config = null;
+    let config = JSON.parse(localStorage.getItem('agui_config') || 'null');
 
     // DOM Elements
     const elements = {
@@ -398,6 +396,16 @@
       elements.debugPanel.classList.toggle('visible');
     }
 
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function scrollToBottom() {
+      elements.messages.scrollTop = elements.messages.scrollHeight;
+    }
+
     // ============================================================================
     // Message Handling
     // ============================================================================
@@ -410,35 +418,24 @@
       scrollToBottom();
     }
 
-    function startAssistantMessage() {
+    function startAssistantMessage(messageId) {
       const messageEl = document.createElement('div');
       messageEl.className = 'message assistant';
-      messageEl.id = 'currentMessage';
+      messageEl.id = messageId || 'currentMessage';
       messageEl.innerHTML = `<div class="message-bubble"></div>`;
       elements.messages.appendChild(messageEl);
-      currentMessageId = 'currentMessage';
       messageBuffer = "";
       scrollToBottom();
       return messageEl;
     }
 
-    function appendToCurrentMessage(delta) {
-      const messageEl = document.getElementById(currentMessageId);
+    function appendToCurrentMessage(messageId, delta) {
+      const messageEl = document.getElementById(messageId);
       if (messageEl) {
         messageBuffer += delta;
         messageEl.querySelector('.message-bubble').textContent = messageBuffer;
         scrollToBottom();
       }
-    }
-
-    function scrollToBottom() {
-      elements.messages.scrollTop = elements.messages.scrollHeight;
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
     }
 
     // ============================================================================
@@ -482,45 +479,22 @@
 
     function handleTextMessageStart(event) {
       addDebugEvent('TEXT_MESSAGE_START', event);
-      currentMessageId = event.messageId;
-      startAssistantMessage();
+      startAssistantMessage(event.messageId);
     }
 
     function handleTextMessageContent(event) {
       addDebugEvent('TEXT_MESSAGE_CONTENT', event);
       if (event.delta) {
-        appendToCurrentMessage(event.delta);
+        appendToCurrentMessage(event.messageId, event.delta);
       }
     }
 
     function handleTextMessageEnd(event) {
       addDebugEvent('TEXT_MESSAGE_END', event);
-      
-      // If no TEXT_MESSAGE_CONTENT was received, extract content from STATE_SNAPSHOT
-      if (messageBuffer === "" && currentMessageId) {
-        const snapshots = document.querySelectorAll('.debug-event');
-        for (let i = snapshots.length - 1; i >= 0; i--) {
-          const text = snapshots[i].textContent;
-          if (text.includes('STATE_SNAPSHOT') && text.includes('model_request')) {
-            try {
-              const data = JSON.parse(text.split('data: ')[1].split('...')[0]);
-              if (data.snapshot?.model_request?.messages?.[0]?.kwargs?.content) {
-                appendToCurrentMessage(data.snapshot.model_request.messages[0].kwargs.content);
-                break;
-              }
-            } catch (e) {
-              // Try next event
-            }
-          }
-        }
-      }
-      
-      currentMessageId = null;
     }
 
     function handleToolCallStart(event) {
       addDebugEvent('TOOL_CALL_START', event);
-      currentToolCallId = event.toolCallId;
       showToolCall(event.toolCallName);
     }
 
@@ -542,7 +516,6 @@
 
     function handleRunFinished(event) {
       addDebugEvent('RUN_FINISHED', event);
-      currentToolCallId = null;
       hideToolCall();
     }
 
@@ -556,7 +529,22 @@
       addDebugEvent('STATE_SNAPSHOT', event);
     }
 
-    // AG-UI Event Handler Map
+    function handleMessagesSnapshot(event) {
+      addDebugEvent('MESSAGES_SNAPSHOT', event);
+      if (event.messages && event.messages.length > 0) {
+        elements.messages.innerHTML = '';
+        event.messages.forEach(msg => {
+          if (msg.role === 'user') {
+            addUserMessage(msg.content);
+          } else if (msg.role === 'assistant' && msg.content) {
+            const el = startAssistantMessage(msg.id);
+            el.querySelector('.message-bubble').textContent = msg.content;
+            messageBuffer = msg.content; // Set buffer so next append works if needed
+          }
+        });
+      }
+    }
+
     const eventHandlers = {
       'RUN_STARTED': handleRunStarted,
       'TEXT_MESSAGE_START': handleTextMessageStart,
@@ -569,6 +557,7 @@
       'RUN_FINISHED': handleRunFinished,
       'RUN_ERROR': handleRunError,
       'STATE_SNAPSHOT': handleStateSnapshot,
+      'MESSAGES_SNAPSHOT': handleMessagesSnapshot,
     };
 
     // ============================================================================
@@ -586,14 +575,13 @@
       }
 
       config = { baseUrl, apiKey, model };
+      localStorage.setItem('agui_config', JSON.stringify(config));
       elements.configModal.classList.add('hidden');
-      
-      // Focus on message input
       elements.messageInput.focus();
     }
 
     // ============================================================================
-    // Message Sending (Fire-and-Forget Pattern)
+    // Message Sending
     // ============================================================================
 
     async function sendMessage() {
@@ -605,13 +593,11 @@
         return;
       }
 
-      // Add user message to UI
       addUserMessage(text);
       elements.messageInput.value = '';
       elements.messageInput.focus();
 
       try {
-        // POST: Send message to create or update session
         const postBody = {
           messages: [{ role: 'user', content: text }],
           config: config,
@@ -633,8 +619,8 @@
 
         const data = await postResponse.json();
         sessionId = data.sessionId;
+        localStorage.setItem('agui_session_id', sessionId);
 
-        // GET: Connect to SSE to receive agent response
         connectEventSource();
 
       } catch (error) {
@@ -688,9 +674,15 @@
     });
     elements.debugToggle.addEventListener('click', toggleDebug);
 
-    // Check if config exists in memory (for page refresh)
     if (config) {
+      elements.baseUrl.value = config.baseUrl || 'https://api.openai.com/v1';
+      elements.apiKey.value = config.apiKey || '';
+      elements.model.value = config.model || 'gpt-4o-mini';
       elements.configModal.classList.add('hidden');
+      
+      if (sessionId) {
+         addDebugEvent('SESSION', `Resumed session ${sessionId}`);
+      }
     }
   </script>
 </body>

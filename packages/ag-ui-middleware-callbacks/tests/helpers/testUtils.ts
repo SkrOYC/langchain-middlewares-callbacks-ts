@@ -7,7 +7,8 @@
 
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { tool } from "langchain";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, AIMessageChunk } from "@langchain/core/messages";
+import { expect } from "bun:test";
 import type { AGUITransport } from "../../src/transports/types";
 
 // ============================================================================
@@ -91,7 +92,7 @@ class MockChatModel extends BaseChatModel {
     };
   }
   
-  override async _streamResponseChunks(
+  override async *_streamResponseChunks(
     _messages: any[],
     _options: any,
     _runManager?: any
@@ -100,24 +101,18 @@ class MockChatModel extends BaseChatModel {
     this.responseIndex++;
     
     const content = response.content || "";
-    const chunks = content.split(/(?=.)/).filter(c => c);
+    const chunks = typeof content === "string" ? content.split(/(?=.)/).filter(c => c) : [];
     
-    async function* generateChunks() {
-      for (const chunk of chunks) {
-        yield {
-          text: chunk,
-          message: new AIMessage({
-            content: chunk,
-            additional_kwargs: {},
-            response_metadata: {}
-          }),
-          usage: {},
-          getLMOutput: () => ({}),
-        };
-      }
+    for (const chunk of chunks) {
+      yield {
+        message: new AIMessageChunk({
+          content: chunk,
+          additional_kwargs: {},
+          response_metadata: {}
+        }),
+        generationInfo: {},
+      };
     }
-    
-    return generateChunks();
   }
   
   get index() {
@@ -405,7 +400,19 @@ export function createTestAgent(
         transport,
         middlewareOptions,
       });
-      return aguiAgent.invoke(input, options);
+      // Ensure a run_id is present for Middleware to satisfy ID coordination
+      const config = {
+        ...options,
+        context: {
+          run_id: options?.configurable?.run_id || options?.context?.run_id || `test-run-${Date.now()}`,
+          ...options?.context,
+        },
+        configurable: {
+          run_id: options?.configurable?.run_id || options?.context?.run_id || `test-run-${Date.now()}`,
+          ...options?.configurable,
+        }
+      };
+      return aguiAgent.invoke(input, config);
     },
     stream: async (input: any, options?: any) => {
       const { createAGUIAgent } = await getCreateAGUIAgent();
@@ -415,7 +422,19 @@ export function createTestAgent(
         transport,
         middlewareOptions,
       });
-      return aguiAgent.stream(input, options);
+      // Ensure a run_id is present for Middleware to satisfy ID coordination
+      const config = {
+        ...options,
+        context: {
+          run_id: options?.configurable?.run_id || options?.context?.run_id || `test-run-${Date.now()}`,
+          ...options?.context,
+        },
+        configurable: {
+          run_id: options?.configurable?.run_id || options?.context?.run_id || `test-run-${Date.now()}`,
+          ...options?.configurable,
+        }
+      };
+      return aguiAgent.stream(input, config);
     },
     streamEvents: async (input: any, options?: any) => {
       const { createAGUIAgent } = await getCreateAGUIAgent();
@@ -426,11 +445,23 @@ export function createTestAgent(
         transport,
         middlewareOptions,
       });
+      // Ensure a run_id is present for Middleware to satisfy ID coordination
+      const config = {
+        ...options,
+        context: {
+          run_id: options?.configurable?.run_id || options?.context?.run_id || `test-run-${Date.now()}`,
+          ...options?.context,
+        },
+        configurable: {
+          run_id: options?.configurable?.run_id || options?.context?.run_id || `test-run-${Date.now()}`,
+          ...options?.configurable,
+        }
+      };
       // Create callback handler for streaming events
       const handler = new CallbackHandler(transport);
       // Add callbacks to options if not present
       const streamOptions = {
-        ...options,
+        ...config,
         callbacks: [...(options?.callbacks || []), handler],
       };
       const stream = await (aguiAgent as any).streamEvents(input, streamOptions);

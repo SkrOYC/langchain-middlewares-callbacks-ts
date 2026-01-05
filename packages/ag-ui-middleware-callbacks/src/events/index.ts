@@ -6,7 +6,31 @@
  * - Text Message Events: TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END
  * - Tool Call Events: TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, TOOL_CALL_RESULT, TOOL_CALL_CHUNK
  * - State Events: STATE_SNAPSHOT, STATE_DELTA, MESSAGES_SNAPSHOT
+ * - Activity Events: ACTIVITY_SNAPSHOT, ACTIVITY_DELTA
+ * - Reasoning Events: REASONING_START, REASONING_MESSAGE_START, REASONING_MESSAGE_CONTENT, REASONING_MESSAGE_END, REASONING_END
+ * - Special Events: RAW, CUSTOM
  */
+
+export type MessageRole = "developer" | "system" | "assistant" | "user" | "tool" | "activity" | "reasoning";
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface Message {
+  id: string;
+  role: MessageRole;
+  content?: string;
+  name?: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  error?: string;
+}
 
 // Lifecycle Events
 export interface RunStartedEvent {
@@ -48,7 +72,7 @@ export interface StepFinishedEvent {
 export interface TextMessageStartEvent {
   type: "TEXT_MESSAGE_START";
   messageId: string;
-  role: "assistant" | "user" | "system";
+  role: MessageRole;
 }
 
 export interface TextMessageContentEvent {
@@ -60,6 +84,16 @@ export interface TextMessageContentEvent {
 export interface TextMessageEndEvent {
   type: "TEXT_MESSAGE_END";
   messageId: string;
+}
+
+/**
+ * TextMessageChunk (convenience): Auto-expands to Start → Content → End
+ */
+export interface TextMessageChunkEvent {
+  type: "TEXT_MESSAGE_CHUNK";
+  messageId?: string;
+  role?: MessageRole;
+  delta?: string;
 }
 
 // Tool Call Events
@@ -92,13 +126,15 @@ export interface ToolCallResultEvent {
   parentMessageId?: string;
 }
 
+/**
+ * ToolCallChunk (convenience): Auto-expands to Start → Args → End
+ */
 export interface ToolCallChunkEvent {
   type: "TOOL_CALL_CHUNK";
-  toolCallId: string;
+  toolCallId?: string;
   toolCallName?: string;
-  chunk: string;
-  index: number;
   parentMessageId?: string;
+  delta?: unknown;
 }
 
 // State Events
@@ -114,7 +150,71 @@ export interface StateDeltaEvent {
 
 export interface MessagesSnapshotEvent {
   type: "MESSAGES_SNAPSHOT";
-  messages: unknown[];
+  messages: Message[];
+}
+
+// Activity Events
+export interface ActivitySnapshotEvent {
+  type: "ACTIVITY_SNAPSHOT";
+  messageId: string;
+  activityType: string;
+  content: unknown;
+  replace?: boolean;
+}
+
+export interface ActivityDeltaEvent {
+  type: "ACTIVITY_DELTA";
+  messageId: string;
+  activityType: string;
+  patch: unknown[];
+}
+
+// Reasoning Events
+export interface ReasoningStartEvent {
+  type: "REASONING_START";
+  messageId: string;
+  encryptedContent?: string;
+}
+
+export interface ReasoningMessageStartEvent {
+  type: "REASONING_MESSAGE_START";
+  messageId: string;
+  role: MessageRole;
+}
+
+export interface ReasoningMessageContentEvent {
+  type: "REASONING_MESSAGE_CONTENT";
+  messageId: string;
+  delta: string;
+}
+
+export interface ReasoningMessageEndEvent {
+  type: "REASONING_MESSAGE_END";
+  messageId: string;
+}
+
+export interface ReasoningMessageChunkEvent {
+  type: "REASONING_MESSAGE_CHUNK";
+  messageId?: string;
+  delta?: string;
+}
+
+export interface ReasoningEndEvent {
+  type: "REASONING_END";
+  messageId: string;
+}
+
+// Special Events
+export interface RawEvent {
+  type: "RAW";
+  event: unknown;
+  source?: string;
+}
+
+export interface CustomEvent {
+  type: "CUSTOM";
+  name: string;
+  value: unknown;
 }
 
 // Union type for all AG-UI events
@@ -127,6 +227,7 @@ export type AGUIEvent =
   | TextMessageStartEvent
   | TextMessageContentEvent
   | TextMessageEndEvent
+  | TextMessageChunkEvent
   | ToolCallStartEvent
   | ToolCallArgsEvent
   | ToolCallEndEvent
@@ -134,4 +235,14 @@ export type AGUIEvent =
   | ToolCallChunkEvent
   | StateSnapshotEvent
   | StateDeltaEvent
-  | MessagesSnapshotEvent;
+  | MessagesSnapshotEvent
+  | ActivitySnapshotEvent
+  | ActivityDeltaEvent
+  | ReasoningStartEvent
+  | ReasoningMessageStartEvent
+  | ReasoningMessageContentEvent
+  | ReasoningMessageEndEvent
+  | ReasoningMessageChunkEvent
+  | ReasoningEndEvent
+  | RawEvent
+  | CustomEvent;

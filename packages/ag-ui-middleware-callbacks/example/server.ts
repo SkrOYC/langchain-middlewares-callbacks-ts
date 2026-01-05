@@ -265,19 +265,27 @@ const GET_CHAT_STREAM = async (request: Request): Promise<Response> => {
           );
 
           // Consume the stream - middleware and callbacks emit all events automatically
-          for await (const _event of eventStream) {
-            // No manual event handling needed - AG-UI middleware + callbacks handle everything:
-            // - RUN_STARTED, RUN_FINISHED, STATE_SNAPSHOT (middleware)
-            // - TEXT_MESSAGE_START/END, STEP_STARTED/FINISHED (callbacks)
-            // - TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, TOOL_CALL_START/END/RESULT (callbacks)
+          let lastMessages = session.messages;
+          for await (const event of eventStream) {
+            // Capture the latest messages from the state to persist them
+            // In streamEvents v2, look for 'on_chain_end' of the main agent
+            if (event.event === "on_chain_end" && event.data?.output?.messages) {
+              lastMessages = event.data.output.messages;
+            } else if (event.event === "on_chain_end" && Array.isArray(event.data?.output)) {
+              // Fallback for when output is just an array of messages
+              lastMessages = event.data.output;
+            }
+          }
+
+          // Update session with final messages from the run to maintain thread
+          if (lastMessages && lastMessages.length > 0) {
+            session.messages = lastMessages;
+            console.log(`Updated session ${sessionId} with ${lastMessages.length} messages`);
           }
 
           // Cleanup callback handler
           aguiCallback.dispose();
 
-          // Clean up session after stream completes
-          sessions.delete(sessionId);
-          
           streamCompleted = true;
           clearTimeout(timeoutId);
           controller.close();

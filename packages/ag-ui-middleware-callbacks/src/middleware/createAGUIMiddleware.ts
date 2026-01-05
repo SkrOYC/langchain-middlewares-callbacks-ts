@@ -2,21 +2,14 @@
  * AG-UI Middleware Factory
  *
  * Creates middleware that integrates LangChain agents with the AG-UI protocol.
- *
- * Architecture (SPEC.md Section 2.5):
- * - Middleware handles lifecycle events (RUN_STARTED, RUN_FINISHED, etc.)
- * - Callbacks handle streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
- * - Session ID priority: configurable > context > options
- * - Fail-safe: All transport emissions wrapped in try/catch
- * - State management: Emits STATE_SNAPSHOT and STATE_DELTA events
- * - Guaranteed cleanup: Uses withListeners for error cleanup (via createAGUIAgent)
  */
 
 import { createMiddleware } from "langchain";
-import { generateId } from "../utils/idGenerator";
+import { z } from "zod";
+import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { computeStateDelta } from "../utils/stateDiff";
-import type { AGUIEvent } from "../events";
-import type { AGUITransport } from "../transports/types";
+import { mapLangChainMessageToAGUI } from "../utils/messageMapper";
+import { cleanLangChainData } from "../utils/cleaner";
 import {
   AGUIMiddlewareOptionsSchema,
   type AGUIMiddlewareOptions,
@@ -39,98 +32,94 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // Validate options at creation time
   const validated = AGUIMiddlewareOptionsSchema.parse(options);
   
-  // Store transport in closure for access in hooks
   const transport = validated.transport;
   
-  // ⚠️ CONCURRENCY WARNING: These closure variables assume single-threaded or serialized invocation.
-  // For concurrent usage (same agent instance invoked from multiple requests), developers must
-  // serialize agent.invoke() calls per thread_id to avoid race conditions.
-  // See SPEC.md Section 9.5: "Concurrency serialization - Serialize invocations per thread_id"
   let threadId: string | undefined;
   let runId: string | undefined;
-
-  // Store current stepName in closure for coordination between beforeModel and afterModel
   let currentStepName: string | undefined = undefined;
+  let modelTurnIndex = 0;
 
-  // State tracker for delta computation (only used when emitStateSnapshots === 'all')
   const stateTracker: StateTracker = {
     previousState: undefined,
   };
 
+  const activityStates = new Map<string, any>();
+
   return createMiddleware({
     name: "ag-ui-lifecycle",
+    contextSchema: z.object({
+      run_id: z.string().optional(),
+      runId: z.string().optional(),
+      thread_id: z.string().optional(),
+      threadId: z.string().optional(),
+    }) as any,
 
-    /**
-     * beforeAgent hook - Runs at the start of agent execution.
-     * Emits RUN_STARTED and optionally STATE_SNAPSHOT.
-     */
     beforeAgent: async (state, runtime) => {
-      // Session ID priority: configurable > context > options (SPEC.md Section 7.1)
+      modelTurnIndex = 0;
       const runtimeAny = runtime as any;
       const configurable = runtimeAny.config?.configurable || runtimeAny.configurable;
+      
       threadId =
+        (configurable?.threadId as string | undefined) ||
         (configurable?.thread_id as string | undefined) ||
+        (configurable?.checkpoint_id as string | undefined) ||
         validated.threadIdOverride ||
         (runtimeAny.context?.threadId as string | undefined) ||
-        ""; // Fallback for event type compliance
+        (runtimeAny.context?.thread_id as string | undefined) ||
+        "";
 
+      // Exhaustive search for Run ID without fallback workarounds
       runId =
+        validated.runIdOverride ||
         (configurable?.run_id as string | undefined) ||
+        (runtimeAny.runId as string | undefined) ||
+        (runtimeAny.id as string | undefined) ||
         (runtimeAny.context?.runId as string | undefined) ||
-        generateId(); // Fallback for event type compliance
+        (runtimeAny.context?.run_id as string | undefined) ||
+        (runtimeAny.config?.runId as string | undefined);
 
-      // Emit RUN_STARTED event
+      if (!runId) {
+        throw new Error(
+          "AG-UI Middleware Error: Authoritative Run ID not found in runtime. " +
+          "Deterministic ID coordination requires a stable Run ID. " +
+          "Please ensure run_id is provided in configurable or context."
+        );
+      }
+
       try {
         transport.emit({
           type: "RUN_STARTED",
           threadId,
           runId,
+          input: cleanLangChainData(runtimeAny.config?.input),
         });
 
-          // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
-          if (
-            validated.emitStateSnapshots === "initial" ||
-            validated.emitStateSnapshots === "all"
-          ) {
-            transport.emit({
-              type: "STATE_SNAPSHOT",
-              snapshot: state,
-            });
-          }
+        if (
+          validated.emitStateSnapshots === "initial" ||
+          validated.emitStateSnapshots === "all"
+        ) {
+          const snapshot = validated.stateMapper 
+            ? validated.stateMapper(state) 
+            : cleanLangChainData(state);
           
-          // Emit MESSAGES_SNAPSHOT for message history (SPEC.md Section 4.4)
-          const stateAny = state as any;
-          if (stateAny.messages) {
-            transport.emit({
-              type: "MESSAGES_SNAPSHOT",
-              messages: stateAny.messages,
-            });
+          // Remove messages from state snapshot by default to avoid redundancy
+          if (!validated.stateMapper && snapshot && typeof snapshot === "object") {
+            delete (snapshot as any).messages;
           }
-        } catch {
-         // Fail-safe: Transport errors never crash agent execution
-       }
 
-       return {};
-    },
-
-    /**
-     * beforeModel hook - Runs before each model invocation.
-     * Emits TEXT_MESSAGE_START and STEP_STARTED.
-     * Note: messageId is generated by callbacks in handleLLMStart using runId as key.
-     */
-    beforeModel: async (_state, _runtime) => {
-      // Generate stepName for step correlation
-      const stepName = `model_call_${generateId()}`;
-      currentStepName = stepName;
-
-      // Emit STEP_STARTED event (SPEC.md Section 4.1)
-      try {
-        transport.emit({
-          type: "STEP_STARTED",
-          stepName,
-          runId,
-          threadId,
-        });
+          transport.emit({
+            type: "STATE_SNAPSHOT",
+            snapshot,
+          });
+        }
+        
+        const stateAny = state as any;
+        if (stateAny.messages && Array.isArray(stateAny.messages)) {
+          transport.emit({
+            type: "MESSAGES_SNAPSHOT",
+            messages: stateAny.messages.map(mapLangChainMessageToAGUI),
+          });
+        }
       } catch {
         // Fail-safe
       }
@@ -138,14 +127,68 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       return {};
     },
 
-    /**
-     * afterModel hook - Runs after each model response.
-     * Emits TEXT_MESSAGE_END and STEP_FINISHED.
-     * Note: messageId is managed by callbacks via handleLLMStart/handleLLMEnd.
-     */
+    beforeModel: async (state, _runtime) => {
+      const turnIndex = modelTurnIndex++;
+      const messageId = generateDeterministicId(runId!, turnIndex);
+      const stepName = `model_call_${messageId}`;
+      currentStepName = stepName;
+
+      try {
+        transport.emit({
+          type: "STEP_STARTED",
+          stepName,
+          runId,
+          threadId,
+        });
+
+        transport.emit({
+          type: "TEXT_MESSAGE_START",
+          messageId,
+          role: "assistant",
+        });
+
+        if (validated.emitActivities) {
+          const activityType = validated.activityMapper ? validated.activityMapper(state) : "THINKING";
+          const activityId = generateDeterministicId(runId!, 500); // 500 is a magic number for activities
+          const activityContent = { status: "invoking model", data: cleanLangChainData(state) };
+
+          const prevState = activityStates.get(activityId);
+          if (prevState) {
+            const patch = computeStateDelta(prevState, activityContent);
+            if (patch.length > 0) {
+              transport.emit({
+                type: "ACTIVITY_DELTA",
+                messageId: activityId,
+                activityType,
+                patch: patch as any[],
+              });
+            }
+          } else {
+            transport.emit({
+              type: "ACTIVITY_SNAPSHOT",
+              messageId: activityId,
+              activityType,
+              content: activityContent,
+            });
+          }
+          activityStates.set(activityId, activityContent);
+        }
+      } catch {
+        // Fail-safe
+      }
+
+      return {};
+    },
+
     afterModel: async (_state, _runtime) => {
       try {
-        // Emit STEP_FINISHED event (SPEC.md Section 4.1)
+        const messageId = generateDeterministicId(runId!, modelTurnIndex - 1);
+        
+        transport.emit({
+          type: "TEXT_MESSAGE_END",
+          messageId,
+        });
+
         transport.emit({
           type: "STEP_FINISHED",
           stepName: currentStepName || "",
@@ -156,31 +199,30 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Fail-safe
       }
 
-      // Clear the closure variable
       currentStepName = undefined;
-
       return {};
     },
 
-    /**
-     * afterAgent hook - Runs at the end of agent execution.
-     * Emits RUN_FINISHED or RUN_ERROR and optionally STATE_SNAPSHOT/STATE_DELTA.
-     * Note: This only runs on successful completion. For guaranteed cleanup on error,
-     * withListeners in createAGUIAgent handles TEXT_MESSAGE_END emission.
-     */
     afterAgent: async (state, _runtime) => {
       try {
-        // Emit STATE_SNAPSHOT if configured (SPEC.md Section 4.4)
         if (
           validated.emitStateSnapshots === "final" ||
           validated.emitStateSnapshots === "all"
         ) {
+          const snapshot = validated.stateMapper 
+            ? validated.stateMapper(state) 
+            : cleanLangChainData(state);
+          
+          // Remove messages from state snapshot by default to avoid redundancy
+          if (!validated.stateMapper && snapshot && typeof snapshot === "object") {
+            delete (snapshot as any).messages;
+          }
+
           transport.emit({
             type: "STATE_SNAPSHOT",
-            snapshot: state,
+            snapshot,
           });
           
-          // Emit STATE_DELTA if configured (SPEC.md Section 4.4)
           if (validated.emitStateSnapshots === "all" && stateTracker.previousState !== undefined) {
             const delta = computeStateDelta(stateTracker.previousState, state);
             if (delta.length > 0) {
@@ -192,7 +234,6 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           }
         }
 
-        // Check for agent error and emit appropriate event
         const stateAny = state as any;
         if (stateAny.error) {
           const error = stateAny.error;
@@ -203,22 +244,19 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
                 ? errorMessage
-                : "", // Empty string when error detail is suppressed
-            code:
-              validated.errorDetailLevel === "full" ||
-              validated.errorDetailLevel === "code"
-                ? "AGENT_EXECUTION_ERROR"
-                : undefined,
+                : "",
+            code: "AGENT_EXECUTION_ERROR",
           });
         } else {
           transport.emit({
             type: "RUN_FINISHED",
             threadId: threadId!,
             runId: runId!,
+            result: validated.resultMapper ? validated.resultMapper(state) : undefined,
           });
         }
       } catch {
-        // Fail-safe: Transport errors never crash agent execution
+        // Fail-safe
       }
 
       return {};

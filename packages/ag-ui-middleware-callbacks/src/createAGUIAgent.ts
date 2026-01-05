@@ -61,6 +61,9 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
     threadIdOverride: config.middlewareOptions?.threadIdOverride,
     runIdOverride: config.middlewareOptions?.runIdOverride,
     errorDetailLevel: config.middlewareOptions?.errorDetailLevel ?? "message",
+    stateMapper: config.middlewareOptions?.stateMapper,
+    resultMapper: config.middlewareOptions?.resultMapper,
+    activityMapper: config.middlewareOptions?.activityMapper,
   });
 
   // Create base agent with middleware
@@ -70,6 +73,23 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
     tools: config.tools,
     middleware: [middleware],
   });
+
+  // Attach global listeners for guaranteed cleanup and error handling if supported
+  if (agent && typeof (agent as any).withListeners === "function") {
+    return (agent as any).withListeners({
+      onError: (run: any) => {
+        try {
+          config.transport.emit({
+            type: "RUN_ERROR",
+            message: typeof run.error === "string" ? run.error : (run.error as any)?.message || "Agent execution failed",
+            code: "AGENT_EXECUTION_ERROR",
+          });
+        } catch {
+          // Fail-safe
+        }
+      },
+    });
+  }
 
   return agent;
 }

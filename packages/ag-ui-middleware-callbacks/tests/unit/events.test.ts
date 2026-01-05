@@ -1,56 +1,56 @@
 import { test, expect } from "bun:test";
+import type { AGUIEvent } from "../../src/events";
 
-test("TEXT_MESSAGE_START event has correct structure", () => {
-  const event = {
-    type: "TEXT_MESSAGE_START",
-    messageId: "msg-123",
-    role: "assistant",
-    timestamp: expect.any(Number)
+test("ACTIVITY_SNAPSHOT event has correct structure", () => {
+  const event: AGUIEvent = {
+    type: "ACTIVITY_SNAPSHOT",
+    messageId: "activity-1",
+    activityType: "PLAN",
+    content: { tasks: ["task1"] },
+    replace: true
   };
-  expect(event).toBeDefined();
+  expect(event.type).toBe("ACTIVITY_SNAPSHOT");
 });
 
-test("TEXT_MESSAGE_CONTENT event has correct structure", () => {
-  const event = {
-    type: "TEXT_MESSAGE_CONTENT",
-    messageId: "msg-123",
-    delta: "Hello"
+test("ACTIVITY_DELTA event has correct structure", () => {
+  const event: AGUIEvent = {
+    type: "ACTIVITY_DELTA",
+    messageId: "activity-1",
+    activityType: "PLAN",
+    patch: [{ op: "add", path: "/tasks/-", value: "task2" }]
   };
-  expect(event).toBeDefined();
+  expect(event.type).toBe("ACTIVITY_DELTA");
 });
 
-test("TEXT_MESSAGE_END event has correct structure", () => {
-  const event = {
-    type: "TEXT_MESSAGE_END",
-    messageId: "msg-123"
+test("REASONING_START event has correct structure", () => {
+  const event: AGUIEvent = {
+    type: "REASONING_START",
+    messageId: "reason-1",
+    encryptedContent: "secret"
   };
-  expect(event).toBeDefined();
+  expect(event.type).toBe("REASONING_START");
 });
 
-test("TOOL_CALL_START event has correct structure", () => {
-  const event = {
-    type: "TOOL_CALL_START",
-    toolCallId: "tc-123",
-    toolCallName: "search",
-    parentMessageId: "msg-123"
+test("MESSAGES_SNAPSHOT event uses Message objects", () => {
+  const event: AGUIEvent = {
+    type: "MESSAGES_SNAPSHOT",
+    messages: [
+      {
+        id: "msg-1",
+        role: "user",
+        content: "Hello"
+      },
+      {
+        id: "msg-2",
+        role: "assistant",
+        tool_calls: [{
+          id: "tc-1",
+          type: "function",
+          function: { name: "test", arguments: "{}" }
+        }]
+      }
+    ]
   };
-  expect(event).toBeDefined();
-});
-
-test("TOOL_CALL_ARGS event streams deltas", () => {
-  const event = {
-    type: "TOOL_CALL_ARGS",
-    toolCallId: "tc-123",
-    delta: { query: "test" }
-  };
-  expect(event).toBeDefined();
-});
-
-test("RUN_STARTED event has correct structure", () => {
-  const event = {
-    type: "RUN_STARTED",
-    threadId: "thread-123",
-    runId: "run-456"
-  };
-  expect(event).toBeDefined();
+  expect(event.type).toBe("MESSAGES_SNAPSHOT");
+  expect(event.messages).toHaveLength(2);
 });

@@ -22,9 +22,12 @@ export { AGUICallbackHandler } from "./callbacks/AGUICallbackHandler";
 // Utility functions
 export { generateId } from "./utils/idGenerator";
 export { computeStateDelta } from "./utils/stateDiff";
+export { mapLangChainMessageToAGUI } from "./utils/messageMapper";
+export { cleanLangChainData, extractToolOutput } from "./utils/cleaner";
+export { expandEvent } from "./utils/eventNormalizer";
 
 // Types
-export type { AGUIEvent } from "./events";
+export type { AGUIEvent, Message, ToolCall, MessageRole } from "./events";
 export type { AGUIMiddlewareOptions } from "./middleware/types";
 export { AGUIMiddlewareOptionsSchema } from "./middleware/types";
 

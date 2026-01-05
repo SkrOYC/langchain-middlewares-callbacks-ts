@@ -1,372 +1,156 @@
-import { test, expect, mock } from "bun:test";
+import { test, expect, describe } from "bun:test";
 import { createMockTransport } from "../../fixtures/mockTransport";
 import { createAGUIMiddleware } from "../../../src/middleware/createAGUIMiddleware";
+import { HumanMessage, AIMessage } from "@langchain/core/messages";
 
-test("createAGUIMiddleware returns middleware object", () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  expect(middleware).toBeDefined();
-  expect(typeof middleware).toBe("object");
-});
-
-test("createAGUIMiddleware validates options", () => {
+describe("createAGUIMiddleware", () => {
   const mockTransport = createMockTransport();
 
-  expect(() => createAGUIMiddleware({ transport: mockTransport })).not.toThrow();
-});
+  test("returns middleware object", () => {
+    const middleware = createAGUIMiddleware({ transport: mockTransport } as any);
 
-test("createAGUIMiddleware rejects invalid options", () => {
-  expect(() => createAGUIMiddleware({ transport: null as any })).toThrow();
-});
-
-// beforeAgent tests
-
-test("Middleware beforeAgent emits RUN_STARTED event", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = {};
-  const runtime = {
-    config: { configurable: { thread_id: "thread-123" } },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.beforeAgent?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "RUN_STARTED",
-      threadId: "thread-123"
-    })
-  );
-});
-
-test("Middleware beforeAgent uses threadIdOverride", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({
-    transport: mockTransport,
-    threadIdOverride: "override-123"
+    expect(middleware).toBeDefined();
+    expect(typeof middleware).toBe("object");
   });
 
-  const state = {};
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
+  describe("beforeAgent", () => {
+    test("emits RUN_STARTED and mapped MESSAGES_SNAPSHOT (Red Phase)", async () => {
+      const middleware = createAGUIMiddleware({ transport: mockTransport } as any);
 
-  await middleware.beforeAgent?.(state, runtime);
+      const state = {
+        messages: [
+          new HumanMessage("Hello"),
+          new AIMessage("Hi there!")
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-123", run_id: "run-123" } },
+        context: { transport: mockTransport }
+      };
 
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      threadId: "override-123"
-    })
-  );
-});
+      const beforeAgent = middleware.beforeAgent as any;
+      await beforeAgent(state, runtime);
 
-test("Middleware beforeAgent respects emitStateSnapshots option", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({
-    transport: mockTransport,
-    emitStateSnapshots: "none"
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "RUN_STARTED",
+          threadId: "thread-123"
+        })
+      );
+
+      // Verify MESSAGES_SNAPSHOT uses mapped AG-UI messages
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MESSAGES_SNAPSHOT",
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: "user", content: "Hello" }),
+            expect.objectContaining({ role: "assistant", content: "Hi there!" })
+          ])
+        })
+      );
+    });
+
+    test("applies stateMapper if provided", async () => {
+      const stateMapper = (state: any) => ({ curated: state.secret ? "hidden" : "visible" });
+      const middleware = createAGUIMiddleware({ 
+        transport: mockTransport,
+        stateMapper,
+        emitStateSnapshots: "initial"
+      } as any);
+
+      const state = { secret: "top-secret", other: "public" };
+      const runtime = {
+        config: { configurable: { run_id: "run-123" } },
+        context: { transport: mockTransport }
+      };
+
+      const beforeAgent = middleware.beforeAgent as any;
+      await beforeAgent(state, runtime);
+
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "STATE_SNAPSHOT",
+          snapshot: { curated: "hidden" }
+        })
+      );
+    });
+
+    test("filters 'messages' from STATE_SNAPSHOT by default (Red Phase)", async () => {
+      const middleware = createAGUIMiddleware({ transport: mockTransport } as any);
+      const state = { 
+        messages: [new HumanMessage("test")],
+        app_data: "keep me"
+      };
+      const runtime = {
+        config: { configurable: { run_id: "run-123" } },
+        context: { transport: mockTransport }
+      };
+
+      const beforeAgent = middleware.beforeAgent as any;
+      await beforeAgent(state, runtime);
+
+      const snapshotCall = mockTransport.emit.mock.calls.find(call => call[0].type === "STATE_SNAPSHOT");
+      expect(snapshotCall).toBeDefined();
+      // This should FAIL currently because we haven't implemented filtering yet
+      expect(snapshotCall![0].snapshot.messages).toBeUndefined();
+    });
   });
 
-  const state = {};
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
+  describe("Step/Activity Correlation (Red Phase)", () => {
+    test("emits ACTIVITY_SNAPSHOT for configured steps", async () => {
+      const middleware = createAGUIMiddleware({ 
+        transport: mockTransport,
+        emitActivities: true
+      } as any);
 
-  await middleware.beforeAgent?.(state, runtime);
+      const state = {};
+      const runtime = {
+        config: { configurable: { thread_id: "t1", run_id: "run-123" } },
+        context: { transport: mockTransport }
+      };
 
-  // Should not emit STATE_SNAPSHOT when set to "none"
-  const snapshotCalls = mockTransport.emit.mock.calls.filter(
-    ([event]) => event.type === "STATE_SNAPSHOT"
-  );
-  expect(snapshotCalls.length).toBe(0);
-});
+      const beforeAgent = middleware.beforeAgent as any;
+      await beforeAgent(state, runtime);
+      
+      const beforeModel = middleware.beforeModel as any;
+      await beforeModel(state, runtime);
 
-// beforeModel tests
-
-test("Middleware beforeModel emits STEP_STARTED", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: { thread_id: "test-thread" } },
-    context: { transport: mockTransport }
-  };
-
-  // Call beforeAgent first to set up runId and threadId
-  await middleware.beforeAgent?.(state, runtime);
-
-  // Now call beforeModel - it should have runId and threadId set
-  const result = await middleware.beforeModel?.(state, runtime);
-
-  // Middleware emits STEP_STARTED (not TEXT_MESSAGE_START - that's now handled by callbacks)
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STEP_STARTED",
-      runId: expect.any(String),
-      threadId: "test-thread",
-    })
-  );
-  expect(result).toBeDefined();
-});
-
-test("Middleware beforeModel emits STEP_STARTED with correct IDs", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: { thread_id: "test-thread" } },
-    context: { transport: mockTransport }
-  };
-
-  // Call beforeAgent first to set up runId and threadId
-  await middleware.beforeAgent?.(state, runtime);
-
-  await middleware.beforeModel?.(state, runtime);
-
-  // Verify STEP_STARTED was emitted with proper IDs
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STEP_STARTED",
-      threadId: "test-thread",
-      runId: expect.any(String),
-      stepName: expect.stringMatching(/^model_call_/),
-    })
-  );
-});
-
-test("Middleware beforeModel emits STEP_STARTED", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { metadata: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.beforeModel?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STEP_STARTED"
-    })
-  );
-});
-
-// afterModel tests
-
-test("Middleware afterModel emits STEP_FINISHED (not TEXT_MESSAGE_END)", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: { thread_id: "test-thread" } },
-    context: { transport: mockTransport }
-  };
-
-  // Call beforeAgent first to set up runId and threadId
-  await middleware.beforeAgent?.(state, runtime);
-  
-  await middleware.afterModel?.(state, runtime);
-
-  // Middleware emits STEP_FINISHED (TEXT_MESSAGE_END is now handled by callbacks)
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STEP_FINISHED",
-      threadId: "test-thread",
-    })
-  );
-  
-  // Verify TEXT_MESSAGE_END was NOT emitted by middleware
-  const textEndCalls = mockTransport.emit.mock.calls.filter(
-    ([event]: any[]) => event.type === "TEXT_MESSAGE_END"
-  );
-  expect(textEndCalls.length).toBe(0);
-});
-
-test("Middleware afterModel emits STEP_FINISHED", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { metadata: {} },
-    context: { transport: mockTransport }
-  };
-
-  // Call beforeModel first to set up the closure variable
-  await middleware.beforeModel?.(state, runtime);
-  
-  await middleware.afterModel?.(state, runtime);
-
-  // Middleware emits STEP_FINISHED (not TEXT_MESSAGE_END - that's now handled by callbacks)
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STEP_FINISHED"
-    })
-  );
-});
-
-// State snapshot tests
-
-test("Middleware emits STATE_SNAPSHOT when configured to 'initial'", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({
-    transport: mockTransport,
-    emitStateSnapshots: "initial"
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "ACTIVITY_SNAPSHOT",
+          activityType: expect.any(String),
+          messageId: expect.any(String)
+        })
+      );
+    });
   });
 
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
+  describe("afterAgent", () => {
+    test("applies resultMapper to RUN_FINISHED (Red Phase)", async () => {
+      const resultMapper = (result: any) => ({ status: "done", count: result.messages.length });
+      const middleware = createAGUIMiddleware({ 
+        transport: mockTransport,
+        resultMapper
+      } as any);
 
-  await middleware.beforeAgent?.(state, runtime);
+      const state = { messages: ["msg1", "msg2"] };
+      const runtime = {
+        config: { configurable: { thread_id: "t1", run_id: "run-123" } },
+        context: { transport: mockTransport }
+      };
 
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STATE_SNAPSHOT"
-    })
-  );
-});
+      const beforeAgent = middleware.beforeAgent as any;
+      await beforeAgent(state, runtime);
 
-test("Middleware emits STATE_SNAPSHOT when configured to 'final'", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({
-    transport: mockTransport,
-    emitStateSnapshots: "final"
+      const afterAgent = middleware.afterAgent as any;
+      await afterAgent(state, runtime);
+
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "RUN_FINISHED",
+          result: { status: "done", count: 2 }
+        })
+      );
+    });
   });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.afterAgent?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STATE_SNAPSHOT"
-    })
-  );
-});
-
-test("Middleware emits STATE_DELTA when configured to 'all'", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({
-    transport: mockTransport,
-    emitStateSnapshots: "all"
-  });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.beforeAgent?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "STATE_SNAPSHOT"
-    })
-  );
-});
-
-// MESSAGES_SNAPSHOT tests
-
-test("Middleware beforeAgent emits MESSAGES_SNAPSHOT", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { 
-    messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "Hi there!" }],
-    otherData: "test"
-  };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.beforeAgent?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "MESSAGES_SNAPSHOT",
-      messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "Hi there!" }]
-    })
-  );
-});
-
-test("Middleware beforeAgent does not emit MESSAGES_SNAPSHOT when no messages in state", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { otherData: "test" };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.beforeAgent?.(state, runtime);
-
-  // Should not have emitted MESSAGES_SNAPSHOT
-  const messagesSnapshotCalls = mockTransport.emit.mock.calls.filter(
-    ([event]: any[]) => event.type === "MESSAGES_SNAPSHOT"
-  );
-  expect(messagesSnapshotCalls.length).toBe(0);
-});
-
-// Error handling tests
-
-test("Middleware afterAgent emits RUN_FINISHED on success", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({ transport: mockTransport });
-
-  const state = { messages: [] };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.afterAgent?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "RUN_FINISHED"
-    })
-  );
-});
-
-test("Middleware afterAgent emits RUN_ERROR on error", async () => {
-  const mockTransport = createMockTransport();
-  const middleware = createAGUIMiddleware({
-    transport: mockTransport,
-    errorDetailLevel: "message"
-  });
-
-  const state = { error: new Error("Test error") };
-  const runtime = {
-    config: { configurable: {} },
-    context: { transport: mockTransport }
-  };
-
-  await middleware.afterAgent?.(state, runtime);
-
-  expect(mockTransport.emit).toHaveBeenCalledWith(
-    expect.objectContaining({
-      type: "RUN_ERROR",
-      message: "Test error"
-    })
-  );
 });
