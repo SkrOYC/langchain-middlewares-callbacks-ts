@@ -1,6 +1,6 @@
 # AG-UI Middleware Callbacks Example
 
-A minimal working example demonstrating the `ag-ui-middleware-callbacks` package with AG-UI protocol compliance.
+A minimal working example demonstrating the `ag-ui-middleware-callbacks` package with AG-UI protocol compliance. This example uses a single-file architecture powered by Bun's native support for JSX/TSX and server-side rendering.
 
 ## Prerequisites
 
@@ -16,67 +16,40 @@ cd packages/ag-ui-middleware-callbacks/example
 # Install dependencies
 bun install
 
-# Start the development server
-bun run dev
+# Start the demo (Single-file server + client)
+bun run start
 ```
 
 Then open http://localhost:3000 in your browser.
 
-## Configuration
+## Architecture
 
-1. **Base URL**: OpenAI-compatible endpoint (e.g., `https://api.openai.com/v1`)
-2. **API Key**: Your API key (not stored, sent only to the server)
-3. **Model**: Model name (e.g., `gpt-4o-mini`, `gpt-4o`, `llama3`)
+This demo uses `demo.tsx` as a universal entry point:
+- **Server**: Uses `Bun.serve` to handle HTTP requests and SSE streams.
+- **Client**: React application defined in the same file, bundled on-the-fly via `Bun.build`.
+- **SSR**: Initial page load is server-side rendered using `react-dom/server`.
 
 ## Features
 
-- **Real-time Streaming**: Text generation appears character by character
-- **Tool Calling**: Uses calculator and echo tools
-- **Session Management**: In-memory session storage (resets on server restart)
-- **Error Handling**: Toast notifications for errors
-- **AG-UI Protocol**: Full protocol compliance with lifecycle events
-
-## Architecture
-
-```
-public/index.html     → Browser client (EventSource)
-server.ts             → Bun HTTP server + SSE endpoint
-src/agent.ts          → createAGUIAgent factory
-src/tools.ts          → Calculator and echo tools
-```
-
-## Tool Reference
-
-| Tool | Description | Example |
-|------|-------------|---------|
-| `calculator` | Basic arithmetic | `{"a": 5, "b": 3, "operation": "add"}` |
-| `echo` | Returns input text | `{"text": "Hello"}` |
-
-## Event Flow
-
-1. Client sends POST `/chat` with config and messages
-2. Server creates session and returns sessionId
-3. Client connects EventSource to `/chat?sessionId=xxx`
-4. Server runs agent and emits AG-UI events
-5. Client displays events in real-time
+- **Real-time Streaming**: Text generation appears character by character.
+- **Tool Calling**: Integrated calculator tool demonstrating protocol events.
+- **Deterministic IDs**: Demonstrates synchronization between middleware and callbacks.
+- **Zero Configuration**: Client settings are persisted in `localStorage`.
 
 ## AG-UI Events Handled
 
 - `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR`
 - `TEXT_MESSAGE_START` / `CONTENT` / `END`
 - `TOOL_CALL_START` / `ARGS` / `END` / `RESULT`
-- `STATE_SNAPSHOT` (initial state)
+- `MESSAGES_SNAPSHOT` (for session resume)
 
 ## Local Development
 
 ```bash
 # Watch mode (restarts on file changes)
 bun run dev
-
-# Production mode
-bun run start
 ```
 
 ## Security Notes
 
-⚠️ **For local development only** - API keys are sent to the server in memory and not persisted. Do not deploy this example to production without adding proper authentication and encryption.
+⚠️ **For local development only** - API keys are provided in the UI and used by the server in memory. Do not deploy this example to production without adding proper authentication.
