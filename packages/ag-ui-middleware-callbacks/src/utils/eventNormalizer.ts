@@ -6,9 +6,6 @@ import type {
   ToolCallStartEvent,
   ToolCallArgsEvent,
   ToolCallEndEvent,
-  ThinkingTextMessageStartEvent,
-  ThinkingTextMessageContentEvent,
-  ThinkingTextMessageEndEvent
 } from "../events";
 import { generateId } from "./idGenerator";
 
@@ -78,32 +75,6 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
           toolCallId,
           parentMessageId: event.parentMessageId,
         } as ToolCallEndEvent);
-      }
-
-      return results.length > 0 ? results : [event];
-    }
-
-    case "THINKING_TEXT_MESSAGE_CHUNK": {
-      const messageId = event.messageId || generateId();
-      const results: AGUIEvent[] = [];
-
-      if (event.delta) {
-        // Emit START → CONTENT → END (complete short message)
-        results.push({
-          type: "THINKING_TEXT_MESSAGE_START",
-          messageId,
-        } as ThinkingTextMessageStartEvent);
-        
-        results.push({
-          type: "THINKING_TEXT_MESSAGE_CONTENT",
-          messageId,
-          delta: event.delta,
-        } as ThinkingTextMessageContentEvent);
-        
-        results.push({
-          type: "THINKING_TEXT_MESSAGE_END",
-          messageId,
-        } as ThinkingTextMessageEndEvent);
       }
 
       return results.length > 0 ? results : [event];

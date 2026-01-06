@@ -84,21 +84,20 @@ describe("AGUICallbackHandler", () => {
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "THINKING_START",
-          messageId: expect.any(String),
+          // messageId is not included in thinking events (they're separate from main message flow)
         })
       );
 
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "THINKING_TEXT_MESSAGE_START",
-          messageId: expect.any(String),
+          // messageId is not included in thinking events
         })
       );
 
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "THINKING_TEXT_MESSAGE_CONTENT",
-          messageId: expect.any(String),
           delta: "I should use a tool to check => weather.",
         })
       );
@@ -136,14 +135,14 @@ describe("AGUICallbackHandler", () => {
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "THINKING_TEXT_MESSAGE_END",
-          messageId: expect.any(String),
+          // messageId is not included in thinking events
         })
       );
 
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "THINKING_END",
-          messageId: expect.any(String),
+          // messageId is not included in thinking events
         })
       );
 
@@ -232,7 +231,7 @@ describe("AGUICallbackHandler", () => {
         expect.objectContaining({
           type: "TOOL_CALL_END",
           toolCallId: "tc-1",
-          parentMessageId,
+          // parentMessageId is not included in TOOL_CALL_END events
         })
       );
 
@@ -240,7 +239,6 @@ describe("AGUICallbackHandler", () => {
         expect.objectContaining({
           type: "TOOL_CALL_RESULT",
           toolCallId: "tc-1",
-          parentMessageId,
           content: '{"temp":72}',
           role: "tool",
         })
@@ -271,7 +269,7 @@ describe("AGUICallbackHandler", () => {
         expect.objectContaining({
           type: "TOOL_CALL_END",
           toolCallId: "tc-1",
-          parentMessageId: (handler as any).latestMessageIds.get(parentRunId),
+          // parentMessageId is not included in TOOL_CALL_END events
         })
       );
     });

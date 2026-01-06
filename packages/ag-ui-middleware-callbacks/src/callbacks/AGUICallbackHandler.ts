@@ -32,9 +32,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private parentToAuthoritativeId = new Map<string, string>(); // Maps internal parentRunId to authoritative agentRunId
   private thinkingIds = new Map<string, string>();
   private toolCallInfo = new Map<string, { id: string; name: string }>();
+  private toolCallNames = new Map<string, string>(); // Maps toolCallId to tool name from LLM tool_calls
   private agentTurnTracker = new Map<string, number>();
   private pendingToolCalls = new Map<string, string[]>();
-  private pendingToolArgs = new Map<string, { id: string; name: string; args: string[] }>(); // Buffer for tool args until TOOL_CALL_START
+  private accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
   private transport: AGUITransport;
   
   private maxUIPayloadSize: number;
@@ -54,9 +55,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     this.parentToAuthoritativeId.clear();
     this.thinkingIds.clear();
     this.toolCallInfo.clear();
+    this.toolCallNames.clear();
     this.agentTurnTracker.clear();
     this.pendingToolCalls.clear();
-    this.pendingToolArgs.clear();
+    this.accumulatedToolArgs.clear();
   }
 
   // ==================== LLM Callbacks ====================
@@ -173,23 +175,44 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         });
       }
 
-      // Buffer TOOL_CALL_ARGS for streaming tool arguments (emit after TOOL_CALL_START for correct order)
+      // Emit TOOL_CALL_ARGS for streaming tool arguments (may contain partial JSON fragments)
       const toolCallChunks = fields?.chunk?.message?.tool_call_chunks;
-      if (toolCallChunks) {
+      if (toolCallChunks && Array.isArray(toolCallChunks)) {
+        const agentRunId = this.agentRunIds.get(runId) || 
+                          (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
+                          _parentRunId || 
+                          runId;
+        
+        // Track tool call IDs for correlation with handleToolStart
+        const pending = this.pendingToolCalls.get(agentRunId) || [];
+        
         for (const chunk of toolCallChunks) {
-          if (chunk.id) {
-            // Get or create pending tool call entry
-            let pending = this.pendingToolArgs.get(chunk.id);
-            if (!pending) {
-              pending = { id: chunk.id, name: "", args: [] };
-              this.pendingToolArgs.set(chunk.id, pending);
+          if (chunk.id && chunk.args) {
+            // Accumulate partial args by toolCallId
+            const previousArgs = this.accumulatedToolArgs.get(chunk.id) || "";
+            const newArgs = previousArgs + chunk.args;
+            
+            // Only emit if args have changed (avoid duplicate emissions)
+            if (newArgs !== previousArgs) {
+              this.accumulatedToolArgs.set(chunk.id, newArgs);
+              
+              this.transport.emit({
+                type: "TOOL_CALL_ARGS",
+                toolCallId: chunk.id,
+                delta: chunk.args,
+                timestamp: Date.now(),
+              });
             }
             
-            // Accumulate arguments
-            if (chunk.args) {
-              pending.args.push(chunk.args);
+            // Track this tool call ID for later correlation
+            if (!pending.includes(chunk.id)) {
+              pending.push(chunk.id);
             }
           }
+        }
+        
+        if (pending.length > 0) {
+          this.pendingToolCalls.set(agentRunId, pending);
         }
       }
     } catch {
@@ -220,6 +243,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           for (const tc of toolCalls) {
             if (tc.id && !pending.includes(tc.id)) {
               pending.push(tc.id);
+              
+              // Store tool name for later use in handleToolStart
+              if (tc.function?.name) {
+                this.toolCallNames.set(tc.id, tc.function.name);
+              }
               
               // Emit TOOL_CALL_ARGS for tool calls that weren't streamed
               if (tc.function?.arguments) {
@@ -287,44 +315,115 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     runId: string,
     parentRunId?: string,
     _tags?: string[],
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    runName?: string
   ): Promise<void> {
     let toolCallId = runId;
-    let toolCallName = (tool as any).name || 
+    
+    // Try to get tool name from various sources (in priority order):
+    // 1. runName parameter (most direct - provided by LangChain)
+    // 2. From tool object properties (tool.kwargs.name)
+    // 3. From stored tool names (populated in handleLLMEnd from LLM tool_calls)
+    // 4. From input JSON
+    // 5. Default to "unknown_tool"
+    let toolCallName = runName || 
+                      (tool as any).kwargs?.name ||
+                      (tool as any).name || 
                       (tool as any).func?.name || 
                       (tool as any).getName?.() || 
+                      (tool as any).toolName ||
+                      (tool as any)._name ||
                       "unknown_tool";  // Ensure always populated
 
     try {
-      // Check if metadata has an authoritative run_id to match Middleware
-      if ((metadata as any)?.run_id && typeof (metadata as any).run_id === "string") {
-        const authRunId = (metadata as any).run_id;
-        if (parentRunId) {
-          this.parentToAuthoritativeId.set(parentRunId, authRunId);
-        }
-      }
-
-      // 1. Check metadata for tool_call_id (preferred in modern LangChain)
+      // Priority order for toolCallId (MUST use LangChain IDs only):
+      // 1. metadata.tool_call_id (modern LangChain pattern)
+      // 2. Input's tool_call_id or id field (from tool invocation)
+      // 3. Match accumulated streaming args by content
+      
+      // 1. Check metadata for tool_call_id (if provided)
       if (metadata?.tool_call_id && typeof metadata.tool_call_id === "string") {
         toolCallId = metadata.tool_call_id;
-      } 
-      // 2. Check pending tool calls from parent run (correlate by order)
-      else if (parentRunId && this.pendingToolCalls.get(this.parentToAuthoritativeId.get(parentRunId) || parentRunId)?.length) {
-        const authParentId = this.parentToAuthoritativeId.get(parentRunId) || parentRunId;
-        const pending = this.pendingToolCalls.get(authParentId)!;
-        toolCallId = pending.shift()!;
+        
+        // If we have a stored tool name for this ID, use it
+        const storedName = this.toolCallNames.get(toolCallId);
+        if (storedName && storedName !== "unknown_tool") {
+          toolCallName = storedName;
+        }
       }
-      // 3. Check input for tool_call_id (fallback for some older patterns)
+      // 2. Check input for tool_call_id or id
       else if (input) {
-        const parsed = typeof input === "string" ? JSON.parse(input) : input;
-        if (parsed && typeof parsed === "object") {
-          if (parsed.tool_call_id) {
-            toolCallId = parsed.tool_call_id;
-          } else if (parsed.id) {
-            toolCallId = parsed.id;
+        try {
+          const parsed = typeof input === "string" ? JSON.parse(input) : input;
+          if (parsed && typeof parsed === "object") {
+            if (parsed.tool_call_id) {
+              toolCallId = parsed.tool_call_id;
+            } else if (parsed.id) {
+              toolCallId = parsed.id;
+            }
+            if (parsed.name) {
+              toolCallName = parsed.name;
+            }
           }
-          if (parsed.name) {
-            toolCallName = parsed.name;
+        } catch {
+          // Not JSON, ignore
+        }
+      }
+      // 3. Match accumulated streaming args by content comparison
+      if (toolCallId === runId && this.accumulatedToolArgs.size > 0 && input) {
+        // Find matching accumulated ID by comparing args content
+        for (const [id, args] of this.accumulatedToolArgs) {
+          if (input.includes(args) || args.includes(input)) {
+            toolCallId = id;
+            
+            // If we have a stored tool name for this ID, use it
+            const storedName = this.toolCallNames.get(id);
+            if (storedName && storedName !== "unknown_tool") {
+              toolCallName = storedName;
+            }
+            break;
+          }
+        }
+      }
+    } catch {
+      // Use defaults
+    }
+
+    try {
+      // Priority order for toolCallId (MUST use LangChain IDs only):
+      // 1. metadata.tool_call_id (modern LangChain pattern)
+      // 2. Input's tool_call_id or id field (from tool invocation)
+      // 3. Match accumulated streaming args by content
+      
+      // 1. Check metadata for tool_call_id (if provided)
+      if (metadata?.tool_call_id && typeof metadata.tool_call_id === "string") {
+        toolCallId = metadata.tool_call_id;
+      }
+      // 2. Check input for tool_call_id or id
+      else if (input) {
+        try {
+          const parsed = typeof input === "string" ? JSON.parse(input) : input;
+          if (parsed && typeof parsed === "object") {
+            if (parsed.tool_call_id) {
+              toolCallId = parsed.tool_call_id;
+            } else if (parsed.id) {
+              toolCallId = parsed.id;
+            }
+            if (parsed.name) {
+              toolCallName = parsed.name;
+            }
+          }
+        } catch {
+          // Not JSON, ignore
+        }
+      }
+      // 3. Match accumulated streaming args by content comparison
+      if (toolCallId === runId && this.accumulatedToolArgs.size > 0 && input) {
+        // Find matching accumulated ID by comparing args content
+        for (const [id, args] of this.accumulatedToolArgs) {
+          if (input.includes(args) || args.includes(input)) {
+            toolCallId = id;
+            break;
           }
         }
       }
@@ -347,42 +446,41 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         timestamp: Date.now(),
       });
 
-      // Emit TOOL_CALL_ARGS from tool input if available
+      // Emit final complete args (Option A: always emit final args per AG-UI spec)
+      // If we accumulated partial streaming args, emit the complete args from tool input
+      const accumulatedArgs = this.accumulatedToolArgs.get(toolCallId);
+      
       if (input && typeof input === "string") {
+        // Extract complete args from tool input
+        let completeArgs = input;
         try {
           const parsedInput = JSON.parse(input);
           if (parsedInput.arguments || parsedInput.input || parsedInput) {
-            const argsString = JSON.stringify(parsedInput.arguments || parsedInput.input || parsedInput);
-            this.transport.emit({
-              type: "TOOL_CALL_ARGS",
-              toolCallId,
-              delta: argsString,
-              timestamp: Date.now(),
-            });
+            completeArgs = JSON.stringify(parsedInput.arguments || parsedInput.input || parsedInput);
           }
         } catch {
-          // Input is not JSON, emit as-is
-          this.transport.emit({
-            type: "TOOL_CALL_ARGS",
-            toolCallId,
-            delta: input,
-            timestamp: Date.now(),
-          });
+          // Input is not JSON, use as-is
         }
-      }
 
-      // Emit buffered TOOL_CALL_ARGS if any (maintains correct order: START → ARGS → END → RESULT)
-      const pending = this.pendingToolArgs.get(toolCallId);
-      if (pending && pending.args.length > 0) {
-        for (const arg of pending.args) {
-          this.transport.emit({
-            type: "TOOL_CALL_ARGS",
-            toolCallId,
-            delta: arg,
-            timestamp: Date.now(),
-          });
-        }
-        this.pendingToolArgs.delete(toolCallId);
+        // Emit final complete args
+        this.transport.emit({
+          type: "TOOL_CALL_ARGS",
+          toolCallId,
+          delta: completeArgs,
+          timestamp: Date.now(),
+        });
+
+        // Cleanup accumulated partial args
+        this.accumulatedToolArgs.delete(toolCallId);
+      } else if (accumulatedArgs) {
+        // No tool input but we have accumulated streaming args - emit them
+        this.transport.emit({
+          type: "TOOL_CALL_ARGS",
+          toolCallId,
+          delta: accumulatedArgs,
+          timestamp: Date.now(),
+        });
+        this.accumulatedToolArgs.delete(toolCallId);
       }
     } catch {
       // Fail-safe
@@ -396,6 +494,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const toolInfo = this.toolCallInfo.get(runId);
     this.toolCallInfo.delete(runId);
+
+    // Cleanup tool name mapping
+    if (toolInfo?.id) {
+      this.toolCallNames.delete(toolInfo.id);
+    }
 
     const agentRunId = (parentRunId ? this.parentToAuthoritativeId.get(parentRunId) : null) || parentRunId || "";
     const messageId = this.latestMessageIds.get(agentRunId);
@@ -432,9 +535,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const toolInfo = this.toolCallInfo.get(runId);
     this.toolCallInfo.delete(runId);
     
-    // Cleanup pending tool args for this tool call
+    // Cleanup accumulated tool args for this tool call
     if (toolInfo?.id) {
-      this.pendingToolArgs.delete(toolInfo.id);
+      this.accumulatedToolArgs.delete(toolInfo.id);
     }
     
     const agentRunId = (parentRunId ? this.parentToAuthoritativeId.get(parentRunId) : null) || parentRunId || "";
