@@ -212,6 +212,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           });
           this.transport.emit({
             type: "THINKING_TEXT_MESSAGE_START",
+            messageId: thinkingId,
             timestamp: Date.now(),
           });
         }
@@ -222,6 +223,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
         this.transport.emit({
           type: "THINKING_TEXT_MESSAGE_CONTENT",
+          messageId: thinkingId,
           delta,
           timestamp: Date.now(),
         });
@@ -338,6 +340,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       if (thinkingId) {
         this.transport.emit({
           type: "THINKING_TEXT_MESSAGE_END",
+          messageId: thinkingId,
           timestamp: Date.now(),
         });
         this.transport.emit({

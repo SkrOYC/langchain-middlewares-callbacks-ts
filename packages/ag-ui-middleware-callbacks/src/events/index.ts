@@ -187,22 +187,26 @@ export interface ActivityDeltaEvent {
 export interface ThinkingStartEvent {
   type: "THINKING_START";
   title?: string;
+  messageId?: string;
   timestamp?: number;
 }
 
 export interface ThinkingTextMessageStartEvent {
   type: "THINKING_TEXT_MESSAGE_START";
+  messageId: string;
   timestamp?: number;
 }
 
 export interface ThinkingTextMessageContentEvent {
   type: "THINKING_TEXT_MESSAGE_CONTENT";
+  messageId: string;
   delta: string;
   timestamp?: number;
 }
 
 export interface ThinkingTextMessageEndEvent {
   type: "THINKING_TEXT_MESSAGE_END";
+  messageId: string;
   timestamp?: number;
 }
 
