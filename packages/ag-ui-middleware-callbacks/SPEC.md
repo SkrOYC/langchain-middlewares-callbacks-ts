@@ -1055,7 +1055,43 @@ See Section 2.6 for complete callback handler implementation including all event
 
 **Why Middleware Only**: State management requires full access to agent state and the ability to compute JSON Patch deltas. Callbacks cannot access or modify agent state.
 
-### 4.5 Special Events
+### 4.5 Activity Events
+
+| AG-UI Event | Mechanism | LangChain Feature | Trigger |
+|-------------|-----------|----------------|---------|
+| ACTIVITY_SNAPSHOT | **Middleware** | `beforeModel` | New activity starts (model invocation) |
+| ACTIVITY_DELTA | **Middleware** | `afterModel` | Activity completes (status update) |
+
+**ACTIVITY_DELTA Implementation:**
+
+The middleware implements granular activity tracking using ACTIVITY_SNAPSHOT and ACTIVITY_DELTA:
+
+| Event | When Emitted | Content |
+|-------|--------------|---------|
+| ACTIVITY_SNAPSHOT | Activity starts (beforeModel) | Step name, model type, input preview |
+| ACTIVITY_DELTA | Activity updates (during execution) | Status changes, progress updates |
+| ACTIVITY_DELTA | Activity completes (afterModel) | Output type, tool call presence |
+
+**Activity Types:**
+- `AGENT_STEP` - Model invocation activity
+- `TOOL_EXECUTION` - Tool call activity (when tools are invoked)
+
+**Activity Content Structure:**
+```typescript
+interface AgentStepActivity {
+  stepName: string;           // e.g., "model_call_<id>"
+  status: "started" | "processing" | "completed";
+  modelName: string;          // Model identifier
+  inputPreview: string;       // First 100 chars of input
+  outputType?: string;        // "text" | "tool_calls" | "unknown"
+  hasToolCalls?: boolean;     // Whether tool calls were made
+  timestamp: number;
+}
+```
+
+**Enable Activities:** Set `emitActivities: true` in middleware options.
+
+### 4.6 Special Events
 
 | AG-UI Event | Mechanism | LangChain Feature | Trigger |
 |-------------|-----------|----------------|---------|

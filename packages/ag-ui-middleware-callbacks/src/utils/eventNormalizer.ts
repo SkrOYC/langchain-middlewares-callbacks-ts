@@ -88,14 +88,18 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
       const results: AGUIEvent[] = [];
 
       if (event.delta) {
+        // Emit START → CONTENT → END (complete short message)
+        results.push({
+          type: "THINKING_TEXT_MESSAGE_START",
+          messageId,
+        } as ThinkingTextMessageStartEvent);
+        
         results.push({
           type: "THINKING_TEXT_MESSAGE_CONTENT",
           messageId,
           delta: event.delta,
         } as ThinkingTextMessageContentEvent);
-      }
-
-      if (event.delta) {
+        
         results.push({
           type: "THINKING_TEXT_MESSAGE_END",
           messageId,

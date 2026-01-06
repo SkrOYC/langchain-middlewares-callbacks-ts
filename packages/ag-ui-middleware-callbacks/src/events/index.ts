@@ -54,6 +54,7 @@ export interface RunErrorEvent {
   type: "RUN_ERROR";
   threadId?: string;
   runId?: string;
+  parentRunId?: string;
   message: string;
   code?: string;
 }

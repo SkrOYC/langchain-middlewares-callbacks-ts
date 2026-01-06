@@ -23,6 +23,101 @@ interface StateTracker {
 }
 
 /**
+ * Interface for tracking agent execution activities.
+ */
+interface ActivityTracker {
+  currentActivityId: string | undefined;
+  currentActivityType: string;
+  activityContent: Record<string, any>;
+}
+
+/**
+ * Helper function to get a preview of the input for activity content.
+ */
+function getInputPreview(state: unknown): string {
+  const stateAny = state as any;
+  if (stateAny.messages && Array.isArray(stateAny.messages)) {
+    const lastMessage = stateAny.messages[stateAny.messages.length - 1];
+    if (lastMessage && typeof lastMessage.content === "string") {
+      return lastMessage.content.substring(0, 100) + (lastMessage.content.length > 100 ? "..." : "");
+    }
+  }
+  return "[no input preview]";
+}
+
+/**
+ * Helper function to get the type of output from state.
+ */
+function getOutputType(state: unknown): string {
+  const stateAny = state as any;
+  if (stateAny.messages && Array.isArray(stateAny.messages)) {
+    const lastMessage = stateAny.messages[stateAny.messages.length - 1];
+    if (lastMessage?.tool_calls?.length) return "tool_calls";
+    if (lastMessage?.content) return "text";
+  }
+  return "unknown";
+}
+
+/**
+ * Helper function to check if state contains tool calls.
+ */
+function hasToolCalls(state: unknown): boolean {
+  const stateAny = state as any;
+  return !!(stateAny.messages && stateAny.messages.some((m: any) => m.tool_calls?.length > 0));
+}
+
+/**
+ * Emit ACTIVITY_SNAPSHOT or ACTIVITY_DELTA based on current state.
+ * ACTIVITY_SNAPSHOT = new activity or significant change
+ * ACTIVITY_DELTA = incremental update
+ */
+async function emitActivityUpdate(
+  transport: any,
+  currentRunId: string | undefined,
+  stepIndex: number,
+  activityTracker: ActivityTracker,
+  status: "started" | "processing" | "completed",
+  details?: Record<string, any>
+): Promise<void> {
+  if (!currentRunId) return;
+
+  const activityId = `activity-${currentRunId}-${stepIndex}`;
+  const baseContent = {
+    status,
+    timestamp: Date.now(),
+    ...details,
+  };
+
+  if (!activityTracker.currentActivityId || activityTracker.currentActivityId !== activityId) {
+    // New activity - emit SNAPSHOT
+    activityTracker.currentActivityId = activityId;
+    activityTracker.currentActivityType = "AGENT_STEP";
+    activityTracker.activityContent = baseContent;
+
+    transport.emit({
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: activityId,
+      activityType: "AGENT_STEP",
+      content: baseContent,
+      replace: true,
+    });
+  } else {
+    // Existing activity - emit DELTA
+    const patch = computeStateDelta(activityTracker.activityContent, baseContent);
+    if (patch.length > 0) {
+      activityTracker.activityContent = baseContent;
+
+      transport.emit({
+        type: "ACTIVITY_DELTA",
+        messageId: activityId,
+        activityType: "AGENT_STEP",
+        patch,
+      });
+    }
+  }
+}
+
+/**
  * Create AG-UI middleware for LangChain agents.
  *
  * @param options - Middleware configuration options
@@ -41,6 +136,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
   const stateTracker: StateTracker = {
     previousState: undefined,
+  };
+
+  const activityTracker: ActivityTracker = {
+    currentActivityId: undefined,
+    currentActivityType: "AGENT_STEP",
+    activityContent: {},
   };
 
   const activityStates = new Map<string, any>();
@@ -155,6 +256,22 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           threadId,
         });
 
+        // Emit ACTIVITY_SNAPSHOT for new activity if activities are enabled
+        if (validated.emitActivities) {
+          await emitActivityUpdate(
+            transport,
+            runId,
+            turnIndex,
+            activityTracker,
+            "started",
+            {
+              stepName,
+              modelName: (runtime as any).config?.model?._modelType || "unknown",
+              inputPreview: getInputPreview(state),
+            }
+          );
+        }
+
         // TEXT_MESSAGE_START is handled by AGUICallbackHandler
         // It reads messageId from metadata in handleLLMStart
       } catch {
@@ -164,7 +281,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       return {};
     },
 
-    afterModel: async (_state, _runtime) => {
+    afterModel: async (state, _runtime) => {
       try {
         // TEXT_MESSAGE_END is handled by AGUICallbackHandler
         // It uses the same messageId from metadata coordination
@@ -175,6 +292,23 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           runId,
           threadId,
         });
+
+        // Emit ACTIVITY_DELTA for completed activity if activities are enabled
+        if (validated.emitActivities && currentStepName) {
+          const turnIndex = modelTurnIndex - 1;
+          await emitActivityUpdate(
+            transport,
+            runId,
+            turnIndex,
+            activityTracker,
+            "completed",
+            {
+              stepName: currentStepName,
+              outputType: getOutputType(state),
+              hasToolCalls: hasToolCalls(state),
+            }
+          );
+        }
       } catch {
         // Fail-safe
       }
@@ -218,10 +352,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         if (stateAny.error) {
           const error = stateAny.error;
           const errorMessage = error instanceof Error ? error.message : String(error);
+          const runtimeAny = _runtime as any;
           transport.emit({
             type: "RUN_ERROR",
             threadId: threadId,
             runId: runId,
+            parentRunId: runtimeAny.config?.configurable?.parent_run_id || undefined,
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
