@@ -190,6 +190,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           threadId,
           runId,
           input: cleanLangChainData(runtimeAny.config?.input),
+          timestamp: Date.now(),
         });
 
         if (
@@ -205,19 +206,21 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             delete (snapshot as any).messages;
           }
 
-          transport.emit({
-            type: "STATE_SNAPSHOT",
-            snapshot,
-          });
-        }
-        
-        const stateAny = state as any;
-        if (stateAny.messages && Array.isArray(stateAny.messages)) {
-          transport.emit({
-            type: "MESSAGES_SNAPSHOT",
-            messages: stateAny.messages.map(mapLangChainMessageToAGUI),
-          });
-        }
+           transport.emit({
+             type: "STATE_SNAPSHOT",
+             snapshot,
+             timestamp: Date.now(),
+           });
+         }
+         
+         const stateAny = state as any;
+         if (stateAny.messages && Array.isArray(stateAny.messages)) {
+           transport.emit({
+             type: "MESSAGES_SNAPSHOT",
+             messages: stateAny.messages.map(mapLangChainMessageToAGUI),
+             timestamp: Date.now(),
+           });
+         }
       } catch {
         // Fail-safe
       }
@@ -256,8 +259,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         transport.emit({
           type: "STEP_STARTED",
           stepName,
-          runId,
-          threadId,
+          timestamp: Date.now(),
+          // REMOVED: runId, threadId
         });
 
         // Emit ACTIVITY_SNAPSHOT for new activity if activities are enabled
@@ -294,8 +297,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         transport.emit({
           type: "STEP_FINISHED",
           stepName: currentStepName || "",
-          runId,
-          threadId,
+          timestamp: Date.now(),
+          // REMOVED: runId, threadId
         });
 
         // Emit ACTIVITY_DELTA for completed activity if activities are enabled
@@ -338,38 +341,38 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             delete (snapshot as any).messages;
           }
 
-          transport.emit({
-            type: "STATE_SNAPSHOT",
-            snapshot,
-          });
-          
-          if (validated.emitStateSnapshots === "all" && stateTracker.previousState !== undefined) {
-            const delta = computeStateDelta(stateTracker.previousState, state);
-            if (delta.length > 0) {
-              transport.emit({
-                type: "STATE_DELTA",
-                delta,
-              });
-            }
-          }
+           transport.emit({
+             type: "STATE_SNAPSHOT",
+             snapshot,
+             timestamp: Date.now(),
+           });
+           
+           if (validated.emitStateSnapshots === "all" && stateTracker.previousState !== undefined) {
+             const delta = computeStateDelta(stateTracker.previousState, state);
+             if (delta.length > 0) {
+               transport.emit({
+                 type: "STATE_DELTA",
+                 delta,
+                 timestamp: Date.now(),
+               });
+             }
+           }
         }
 
         const stateAny = state as any;
         if (stateAny.error) {
           const error = stateAny.error;
           const errorMessage = error instanceof Error ? error.message : String(error);
-          const runtimeAny = _runtime as any;
           transport.emit({
             type: "RUN_ERROR",
-            threadId: threadId,
-            runId: runId,
-            parentRunId: runtimeAny.config?.configurable?.parent_run_id || undefined,
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
                 ? errorMessage
                 : "",
             code: "AGENT_EXECUTION_ERROR",
+            timestamp: Date.now(),
+            // REMOVED: threadId, runId, parentRunId
           });
         } else {
           transport.emit({
@@ -377,6 +380,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             threadId: threadId!,
             runId: runId!,
             result: validated.resultMapper ? validated.resultMapper(state) : undefined,
+            timestamp: Date.now(),
           });
         }
       } catch {

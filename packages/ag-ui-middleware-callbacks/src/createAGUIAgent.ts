@@ -82,13 +82,13 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
           // Extract threadId and runId from run config if available
           const threadId = run.config?.configurable?.threadId as string | undefined;
           const agentRunId = run.config?.configurable?.runId as string | undefined;
-          config.transport.emit({
-            type: "RUN_ERROR",
-            threadId: threadId ?? config.middlewareOptions?.threadIdOverride,
-            runId: agentRunId ?? config.middlewareOptions?.runIdOverride,
-            message: typeof run.error === "string" ? run.error : (run.error as any)?.message || "Agent execution failed",
-            code: "AGENT_EXECUTION_ERROR",
-          });
+         config.transport.emit({
+           type: "RUN_ERROR",
+           message: typeof run.error === "string" ? run.error : (run.error as any)?.message || "Agent execution failed",
+           code: "AGENT_EXECUTION_ERROR",
+           timestamp: Date.now(),
+           // REMOVED: threadId, runId
+         });
         } catch {
           // Fail-safe
         }

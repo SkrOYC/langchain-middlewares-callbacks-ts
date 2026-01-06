@@ -34,6 +34,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private toolCallInfo = new Map<string, { id: string; name: string }>();
   private agentTurnTracker = new Map<string, number>();
   private pendingToolCalls = new Map<string, string[]>();
+  private pendingToolArgs = new Map<string, { id: string; name: string; args: string[] }>(); // Buffer for tool args until TOOL_CALL_START
   private transport: AGUITransport;
   
   private maxUIPayloadSize: number;
@@ -55,6 +56,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     this.toolCallInfo.clear();
     this.agentTurnTracker.clear();
     this.pendingToolCalls.clear();
+    this.pendingToolArgs.clear();
   }
 
   // ==================== LLM Callbacks ====================
@@ -95,6 +97,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         type: "TEXT_MESSAGE_START",
         messageId: middlewareMessageId,
         role: "assistant",
+        timestamp: Date.now(),
       });
     } else {
       // Generate our own messageId if middleware didn't provide one
@@ -110,6 +113,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         type: "TEXT_MESSAGE_START",
         messageId,
         role: "assistant",
+        timestamp: Date.now(),
       });
     }
   }
@@ -140,11 +144,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           this.thinkingIds.set(runId, thinkingId);
           this.transport.emit({
             type: "THINKING_START",
-            messageId: thinkingId,
+            timestamp: Date.now(),
           });
           this.transport.emit({
             type: "THINKING_TEXT_MESSAGE_START",
-            messageId: thinkingId,
+            timestamp: Date.now(),
           });
         }
 
@@ -154,8 +158,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
         this.transport.emit({
           type: "THINKING_TEXT_MESSAGE_CONTENT",
-          messageId: thinkingId,
           delta,
+          timestamp: Date.now(),
         });
       }
 
@@ -165,30 +169,26 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           type: "TEXT_MESSAGE_CONTENT",
           messageId,
           delta: token,
+          timestamp: Date.now(),
         });
       }
 
-      // Emit TOOL_CALL_ARGS for streaming tool arguments
+      // Buffer TOOL_CALL_ARGS for streaming tool arguments (emit after TOOL_CALL_START for correct order)
       const toolCallChunks = fields?.chunk?.message?.tool_call_chunks;
       if (toolCallChunks) {
-        const agentRunId = this.agentRunIds.get(runId) || 
-                          (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
-                          _parentRunId || 
-                          runId;
         for (const chunk of toolCallChunks) {
           if (chunk.id) {
-            // Track pending tool call ID for this AGENT run
-            const pending = this.pendingToolCalls.get(agentRunId) || [];
-            if (!pending.includes(chunk.id)) {
-              pending.push(chunk.id);
-              this.pendingToolCalls.set(agentRunId, pending);
+            // Get or create pending tool call entry
+            let pending = this.pendingToolArgs.get(chunk.id);
+            if (!pending) {
+              pending = { id: chunk.id, name: "", args: [] };
+              this.pendingToolArgs.set(chunk.id, pending);
             }
-
-            this.transport.emit({
-              type: "TOOL_CALL_ARGS",
-              toolCallId: chunk.id,
-              delta: chunk.args,
-            });
+            
+            // Accumulate arguments
+            if (chunk.args) {
+              pending.args.push(chunk.args);
+            }
           }
         }
       }
@@ -207,7 +207,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const messageId = this.messageIds.get(runId);
     const thinkingId = this.thinkingIds.get(runId);
 
-    try {
+     try {
       // Collect any tool calls from final output that we missed during streaming
       if (_output && typeof _output === "object") {
         const toolCalls = _output.tool_calls || (_output.kwargs?.tool_calls);
@@ -220,6 +220,16 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           for (const tc of toolCalls) {
             if (tc.id && !pending.includes(tc.id)) {
               pending.push(tc.id);
+              
+              // Emit TOOL_CALL_ARGS for tool calls that weren't streamed
+              if (tc.function?.arguments) {
+                this.transport.emit({
+                  type: "TOOL_CALL_ARGS",
+                  toolCallId: tc.id,
+                  delta: tc.function.arguments,
+                  timestamp: Date.now(),
+                });
+              }
             }
           }
           this.pendingToolCalls.set(agentRunId, pending);
@@ -231,17 +241,18 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         this.transport.emit({
           type: "TEXT_MESSAGE_END",
           messageId,
+          timestamp: Date.now(),
         });
       }
 
       if (thinkingId) {
         this.transport.emit({
           type: "THINKING_TEXT_MESSAGE_END",
-          messageId: thinkingId,
+          timestamp: Date.now(),
         });
         this.transport.emit({
           type: "THINKING_END",
-          messageId: thinkingId,
+          timestamp: Date.now(),
         });
         this.thinkingIds.delete(runId);
       }
@@ -279,7 +290,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     metadata?: Record<string, unknown>
   ): Promise<void> {
     let toolCallId = runId;
-    let toolCallName = tool.name;
+    let toolCallName = (tool as any).name || 
+                      (tool as any).func?.name || 
+                      (tool as any).getName?.() || 
+                      "unknown_tool";  // Ensure always populated
 
     try {
       // Check if metadata has an authoritative run_id to match Middleware
@@ -324,12 +338,52 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const messageId = this.latestMessageIds.get(agentRunId);
 
     try {
+      // Emit TOOL_CALL_START first
       this.transport.emit({
         type: "TOOL_CALL_START",
         toolCallId,
         toolCallName,
         parentMessageId: messageId,
+        timestamp: Date.now(),
       });
+
+      // Emit TOOL_CALL_ARGS from tool input if available
+      if (input && typeof input === "string") {
+        try {
+          const parsedInput = JSON.parse(input);
+          if (parsedInput.arguments || parsedInput.input || parsedInput) {
+            const argsString = JSON.stringify(parsedInput.arguments || parsedInput.input || parsedInput);
+            this.transport.emit({
+              type: "TOOL_CALL_ARGS",
+              toolCallId,
+              delta: argsString,
+              timestamp: Date.now(),
+            });
+          }
+        } catch {
+          // Input is not JSON, emit as-is
+          this.transport.emit({
+            type: "TOOL_CALL_ARGS",
+            toolCallId,
+            delta: input,
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // Emit buffered TOOL_CALL_ARGS if any (maintains correct order: START → ARGS → END → RESULT)
+      const pending = this.pendingToolArgs.get(toolCallId);
+      if (pending && pending.args.length > 0) {
+        for (const arg of pending.args) {
+          this.transport.emit({
+            type: "TOOL_CALL_ARGS",
+            toolCallId,
+            delta: arg,
+            timestamp: Date.now(),
+          });
+        }
+        this.pendingToolArgs.delete(toolCallId);
+      }
     } catch {
       // Fail-safe
     }
@@ -361,7 +415,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.transport.emit({
         type: "TOOL_CALL_END",
         toolCallId: finalToolCallId,
-        parentMessageId: messageId,
+        timestamp: Date.now(),
       });
 
       this.emitToolResultWithPolicy(output, finalToolCallId, messageId, toolInfo?.name);
@@ -377,6 +431,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const toolInfo = this.toolCallInfo.get(runId);
     this.toolCallInfo.delete(runId);
+    
+    // Cleanup pending tool args for this tool call
+    if (toolInfo?.id) {
+      this.pendingToolArgs.delete(toolInfo.id);
+    }
+    
     const agentRunId = (parentRunId ? this.parentToAuthoritativeId.get(parentRunId) : null) || parentRunId || "";
     const messageId = this.latestMessageIds.get(agentRunId);
 
@@ -384,7 +444,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.transport.emit({
         type: "TOOL_CALL_END",
         toolCallId: toolInfo?.id ?? runId,
-        parentMessageId: messageId,
+        timestamp: Date.now(),
       });
     } catch {
       // Fail-safe
@@ -441,10 +501,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         type: "TOOL_CALL_RESULT",
         messageId: resultMessageId,
         toolCallId,
-        toolCallName,
-        parentMessageId: messageId,
         content,
         role: "tool",
+        timestamp: Date.now(),
       });
       return;
     }
@@ -476,10 +535,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       type: "TOOL_CALL_RESULT",
       messageId: resultMessageId,
       toolCallId,
-      toolCallName,
-      parentMessageId: messageId,
       content: truncatedContent,
       role: "tool",
+      timestamp: Date.now(),
     });
   }
 }

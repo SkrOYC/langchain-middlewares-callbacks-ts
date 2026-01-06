@@ -41,6 +41,7 @@ export interface RunStartedEvent {
   runId: string;
   parentRunId?: string;
   input?: unknown;
+  timestamp?: number;
 }
 
 export interface RunFinishedEvent {
@@ -48,47 +49,47 @@ export interface RunFinishedEvent {
   threadId: string;
   runId: string;
   result?: unknown;
+  timestamp?: number;
 }
 
 export interface RunErrorEvent {
   type: "RUN_ERROR";
-  threadId?: string;
-  runId?: string;
-  parentRunId?: string;
   message: string;
   code?: string;
+  timestamp?: number;
 }
 
 export interface StepStartedEvent {
   type: "STEP_STARTED";
   stepName: string;
-  runId?: string;
-  threadId?: string;
+  timestamp?: number;
 }
 
 export interface StepFinishedEvent {
   type: "STEP_FINISHED";
   stepName: string;
-  runId?: string;
-  threadId?: string;
+  timestamp?: number;
 }
 
 // Text Message Events
 export interface TextMessageStartEvent {
   type: "TEXT_MESSAGE_START";
   messageId: string;
-  role: MessageRole;
+  role?: "developer" | "system" | "assistant" | "user";
+  timestamp?: number;
 }
 
 export interface TextMessageContentEvent {
   type: "TEXT_MESSAGE_CONTENT";
   messageId: string;
   delta: string;
+  timestamp?: number;
 }
 
 export interface TextMessageEndEvent {
   type: "TEXT_MESSAGE_END";
   messageId: string;
+  timestamp?: number;
 }
 
 /**
@@ -97,8 +98,9 @@ export interface TextMessageEndEvent {
 export interface TextMessageChunkEvent {
   type: "TEXT_MESSAGE_CHUNK";
   messageId?: string;
-  role?: MessageRole;
+  role?: "developer" | "system" | "assistant" | "user";
   delta?: string;
+  timestamp?: number;
 }
 
 // Tool Call Events
@@ -107,28 +109,29 @@ export interface ToolCallStartEvent {
   toolCallId: string;
   toolCallName: string;
   parentMessageId?: string;
+  timestamp?: number;
 }
 
 export interface ToolCallArgsEvent {
   type: "TOOL_CALL_ARGS";
   toolCallId: string;
-  delta: unknown;
+  delta: string;
+  timestamp?: number;
 }
 
 export interface ToolCallEndEvent {
   type: "TOOL_CALL_END";
   toolCallId: string;
-  parentMessageId?: string;
+  timestamp?: number;
 }
 
 export interface ToolCallResultEvent {
   type: "TOOL_CALL_RESULT";
   messageId: string;
   toolCallId: string;
-  toolCallName?: string;
   content: string;
-  role: "tool";
-  parentMessageId?: string;
+  role?: "tool";
+  timestamp?: number;
 }
 
 /**
@@ -139,23 +142,27 @@ export interface ToolCallChunkEvent {
   toolCallId?: string;
   toolCallName?: string;
   parentMessageId?: string;
-  delta?: unknown;
+  delta?: string;
+  timestamp?: number;
 }
 
 // State Events
 export interface StateSnapshotEvent {
   type: "STATE_SNAPSHOT";
   snapshot: unknown;
+  timestamp?: number;
 }
 
 export interface StateDeltaEvent {
   type: "STATE_DELTA";
   delta: Operation[];
+  timestamp?: number;
 }
 
 export interface MessagesSnapshotEvent {
   type: "MESSAGES_SNAPSHOT";
   messages: Message[];
+  timestamp?: number;
 }
 
 // Activity Events
@@ -163,49 +170,45 @@ export interface ActivitySnapshotEvent {
   type: "ACTIVITY_SNAPSHOT";
   messageId: string;
   activityType: string;
-  content: unknown;
+  content: Record<string, unknown>;
   replace?: boolean;
+  timestamp?: number;
 }
 
 export interface ActivityDeltaEvent {
   type: "ACTIVITY_DELTA";
   messageId: string;
   activityType: string;
-  patch: unknown[];
+  patch: Operation[];
+  timestamp?: number;
 }
 
 // Thinking Events
 export interface ThinkingStartEvent {
   type: "THINKING_START";
-  messageId: string;
   title?: string;
+  timestamp?: number;
 }
 
 export interface ThinkingTextMessageStartEvent {
   type: "THINKING_TEXT_MESSAGE_START";
-  messageId: string;
+  timestamp?: number;
 }
 
 export interface ThinkingTextMessageContentEvent {
   type: "THINKING_TEXT_MESSAGE_CONTENT";
-  messageId: string;
   delta: string;
+  timestamp?: number;
 }
 
 export interface ThinkingTextMessageEndEvent {
   type: "THINKING_TEXT_MESSAGE_END";
-  messageId: string;
-}
-
-export interface ThinkingTextMessageChunkEvent {
-  type: "THINKING_TEXT_MESSAGE_CHUNK";
-  messageId?: string;
-  delta?: string;
+  timestamp?: number;
 }
 
 export interface ThinkingEndEvent {
   type: "THINKING_END";
-  messageId: string;
+  timestamp?: number;
 }
 
 // Special Events
@@ -246,7 +249,6 @@ export type AGUIEvent =
   | ThinkingTextMessageStartEvent
   | ThinkingTextMessageContentEvent
   | ThinkingTextMessageEndEvent
-  | ThinkingTextMessageChunkEvent
   | ThinkingEndEvent
   | RawEvent
   | CustomEvent;
