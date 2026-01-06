@@ -78,7 +78,6 @@ const CSS = `
   .thinking-content { color: #666; line-height: 1.6; }
   .tool-result { background: white; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; margin: 8px 0 8px 40px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .tool-result-header { font-weight: 600; color: #495057; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; }
-  .tool-icon { font-size: 14px; }
   .tool-result-content { font-family: 'SF Mono', Monaco, monospace; color: #28a745; background: #f8f9fa; padding: 8px 12px; border-radius: 4px; margin-top: 8px; font-size: 13px; }
   .tool-args { font-family: 'SF Mono', Monaco, monospace; color: #6c757d; font-size: 11px; background: #f1f3f5; padding: 6px 10px; border-radius: 4px; margin-bottom: 6px; }
   .activity-block { background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-left: 3px solid #ff9800; border-radius: 4px; padding: 12px 16px; margin: 8px 0 8px 40px; }
@@ -105,7 +104,7 @@ const CSS = `
   .modal-buttons { display: flex; gap: 10px; margin-top: 20px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 10px 0; }
   .header h3 { color: #333; margin-bottom: 4px; }
-  .settings-btn { padding: 8px 12px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 16px; transition: all 0.2s; }
+  .settings-btn { padding: 8px 16px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
   .settings-btn:hover { background: #e9ecef; }
 `;
 
@@ -124,8 +123,11 @@ function App() {
   const [formApiKey, setFormApiKey] = useState("");
   const [formModel, setFormModel] = useState("grok-code");
 
-  // Initialize from localStorage
+  // Initialize from localStorage - only on client side to prevent hydration mismatch
+  const [isClient, setIsClient] = useState(false);
+  
   useEffect(() => {
+    setIsClient(true);
     const savedConfig = localStorage.getItem("agui_config");
     if (savedConfig) {
       const parsed = JSON.parse(savedConfig);
@@ -428,7 +430,7 @@ function App() {
 
   return (
     <div className="chat-container">
-      {isSettingsOpen && (
+      {isClient && isSettingsOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
             <h2>Configure Agent</h2>
@@ -474,7 +476,7 @@ function App() {
           <h3>AG-UI Demo</h3>
         </div>
         <button className="settings-btn" onClick={() => setIsSettingsOpen(true)}>
-          ⚙️
+          Settings
         </button>
       </div>
 
@@ -490,7 +492,7 @@ function App() {
             return (
               <div key={event.id} className="thinking-block">
                 <div className="thinking-header">
-                  <span>💭</span> Thinking...
+                  Thinking...
                 </div>
                 <div className="thinking-content">{event.content}</div>
               </div>
@@ -499,7 +501,6 @@ function App() {
             return (
               <div key={event.id} className="tool-result">
                 <div className="tool-result-header">
-                  <span className="tool-icon">🔧</span>
                   Tool: {event.toolName}
                 </div>
                 {event.toolArgs && (
@@ -522,7 +523,6 @@ function App() {
             return (
               <div key={event.id} className="activity-block">
                 <div className="activity-header">
-                  <span>⚡</span>
                   Activity: {event.activityType || "AGENT_STEP"}
                   <span className={`activity-status ${status}`}>{statusText}</span>
                 </div>
@@ -618,6 +618,7 @@ if (import.meta.main) {
           <html>
             <head>
               <title>AG-UI Demo</title>
+              <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>AG</text></svg>" />
               <style dangerouslySetInnerHTML={{ __html: CSS }} />
             </head>
             <body>
