@@ -1,17 +1,19 @@
 /**
  * AG-UI Protocol Event Types
- * 
+ *
  * Based on the AG-UI protocol specification:
  * - Lifecycle Events: RUN_STARTED, RUN_FINISHED, RUN_ERROR, STEP_STARTED, STEP_FINISHED
  * - Text Message Events: TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END
  * - Tool Call Events: TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, TOOL_CALL_RESULT, TOOL_CALL_CHUNK
  * - State Events: STATE_SNAPSHOT, STATE_DELTA, MESSAGES_SNAPSHOT
  * - Activity Events: ACTIVITY_SNAPSHOT, ACTIVITY_DELTA
- * - Reasoning Events: REASONING_START, REASONING_MESSAGE_START, REASONING_MESSAGE_CONTENT, REASONING_MESSAGE_END, REASONING_END
+ * - Thinking Events: THINKING_START, THINKING_TEXT_MESSAGE_START, THINKING_TEXT_MESSAGE_CONTENT, THINKING_TEXT_MESSAGE_END, THINKING_END
  * - Special Events: RAW, CUSTOM
  */
 
-export type MessageRole = "developer" | "system" | "assistant" | "user" | "tool" | "activity" | "reasoning";
+import { type Operation } from "fast-json-patch";
+
+export type MessageRole = "developer" | "system" | "assistant" | "user" | "tool" | "activity";
 
 export interface ToolCall {
   id: string;
@@ -50,6 +52,8 @@ export interface RunFinishedEvent {
 
 export interface RunErrorEvent {
   type: "RUN_ERROR";
+  threadId?: string;
+  runId?: string;
   message: string;
   code?: string;
 }
@@ -100,7 +104,7 @@ export interface TextMessageChunkEvent {
 export interface ToolCallStartEvent {
   type: "TOOL_CALL_START";
   toolCallId: string;
-  toolCallName?: string;
+  toolCallName: string;
   parentMessageId?: string;
 }
 
@@ -145,7 +149,7 @@ export interface StateSnapshotEvent {
 
 export interface StateDeltaEvent {
   type: "STATE_DELTA";
-  delta: unknown[];
+  delta: Operation[];
 }
 
 export interface MessagesSnapshotEvent {
@@ -169,38 +173,37 @@ export interface ActivityDeltaEvent {
   patch: unknown[];
 }
 
-// Reasoning Events
-export interface ReasoningStartEvent {
-  type: "REASONING_START";
+// Thinking Events
+export interface ThinkingStartEvent {
+  type: "THINKING_START";
   messageId: string;
-  encryptedContent?: string;
+  title?: string;
 }
 
-export interface ReasoningMessageStartEvent {
-  type: "REASONING_MESSAGE_START";
+export interface ThinkingTextMessageStartEvent {
+  type: "THINKING_TEXT_MESSAGE_START";
   messageId: string;
-  role: MessageRole;
 }
 
-export interface ReasoningMessageContentEvent {
-  type: "REASONING_MESSAGE_CONTENT";
+export interface ThinkingTextMessageContentEvent {
+  type: "THINKING_TEXT_MESSAGE_CONTENT";
   messageId: string;
   delta: string;
 }
 
-export interface ReasoningMessageEndEvent {
-  type: "REASONING_MESSAGE_END";
+export interface ThinkingTextMessageEndEvent {
+  type: "THINKING_TEXT_MESSAGE_END";
   messageId: string;
 }
 
-export interface ReasoningMessageChunkEvent {
-  type: "REASONING_MESSAGE_CHUNK";
+export interface ThinkingTextMessageChunkEvent {
+  type: "THINKING_TEXT_MESSAGE_CHUNK";
   messageId?: string;
   delta?: string;
 }
 
-export interface ReasoningEndEvent {
-  type: "REASONING_END";
+export interface ThinkingEndEvent {
+  type: "THINKING_END";
   messageId: string;
 }
 
@@ -238,11 +241,11 @@ export type AGUIEvent =
   | MessagesSnapshotEvent
   | ActivitySnapshotEvent
   | ActivityDeltaEvent
-  | ReasoningStartEvent
-  | ReasoningMessageStartEvent
-  | ReasoningMessageContentEvent
-  | ReasoningMessageEndEvent
-  | ReasoningMessageChunkEvent
-  | ReasoningEndEvent
+  | ThinkingStartEvent
+  | ThinkingTextMessageStartEvent
+  | ThinkingTextMessageContentEvent
+  | ThinkingTextMessageEndEvent
+  | ThinkingTextMessageChunkEvent
+  | ThinkingEndEvent
   | RawEvent
   | CustomEvent;

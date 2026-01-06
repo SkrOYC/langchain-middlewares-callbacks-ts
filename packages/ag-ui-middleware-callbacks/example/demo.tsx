@@ -6,22 +6,23 @@ import type { AGUITransport } from "../src/index";
 // Types & Interfaces
 // ============================================================================
 
-interface Message {
-  id?: string;
-  role: "user" | "assistant" | "tool" | "system" | "reasoning";
-  content: string;
-}
-
 interface AgentConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
 }
 
-interface ToolResult {
-  toolCallId: string;
-  toolName: string;
-  content: string;
+interface ChatEvent {
+  id: string;
+  type: "message" | "thinking" | "tool-result";
+  messageId?: string;
+  content?: string;
+  role?: string;
+  toolCallId?: string;
+  toolName?: string;
+  toolArgs?: string;
+  toolResult?: string;
+  timestamp: number;
 }
 
 // ============================================================================
@@ -39,37 +40,50 @@ const CSS = `
   .message-bubble { max-width: 70%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
   .message.assistant .message-bubble { background: white; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
   .message.user .message-bubble { background: #007aff; color: white; border-bottom-right-radius: 4px; }
-  .message.reasoning .message-bubble { background: #f0f0f0; color: #666; border-left: 3px solid #ccc; font-style: italic; border-radius: 4px; }
   .message.tool .message-bubble { background: #e8f5e9; color: #2e7d32; border-radius: 4px; font-family: monospace; font-size: 12px; }
-  .tool-indicator { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #856404; margin: 8px 0; }
-  .tool-result { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; margin: 8px 0 8px 60px; font-size: 12px; }
-  .tool-result-header { font-weight: 600; color: #495057; margin-bottom: 4px; }
-  .tool-result-content { font-family: 'SF Mono', Monaco, monospace; color: #28a745; }
+  .thinking-block { background: linear-gradient(135deg, #f0f4f8 0%, #e8eef3 100%); border-left: 3px solid #4a90a4; border-radius: 4px; padding: 12px 16px; margin: 8px 0 8px 40px; font-style: italic; color: #555; font-size: 13px; position: relative; }
+  .thinking-header { font-weight: 600; color: #4a90a4; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .thinking-content { color: #666; line-height: 1.6; }
+  .tool-result { background: white; border: 1px solid #e9ecef; border-radius: 8px; padding: 12px; margin: 8px 0 8px 40px; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .tool-result-header { font-weight: 600; color: #495057; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .tool-icon { font-size: 14px; }
+  .tool-result-content { font-family: 'SF Mono', Monaco, monospace; color: #28a745; background: #f8f9fa; padding: 8px 12px; border-radius: 4px; margin-top: 8px; font-size: 13px; }
+  .tool-args { font-family: 'SF Mono', Monaco, monospace; color: #6c757d; font-size: 11px; background: #f1f3f5; padding: 6px 10px; border-radius: 4px; margin-bottom: 6px; }
   .input-area { display: flex; gap: 12px; padding: 16px; background: white; border-top: 1px solid #e0e0e0; border-radius: 12px; }
-  .input-area input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-  .btn { padding: 10px 16px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .input-area input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
+  .input-area input:focus { outline: none; border-color: #007aff; }
+  .btn { padding: 10px 16px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
   .btn-primary { background: #007aff; color: white; }
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .modal-content { background: white; padding: 24px; border-radius: 12px; width: 400px; max-width: 90%; }
-  .form-group { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
-  .form-group label { font-size: 12px; color: #666; font-weight: 500; }
-  .form-group input { padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; }
+  .btn-primary:hover { background: #0056b3; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+  .modal-content { background: white; padding: 24px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .modal-content h2 { margin-bottom: 20px; color: #333; }
+  .form-group { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+  .form-group label { font-size: 12px; color: #666; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-group input { padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; transition: border-color 0.2s; }
+  .form-group input:focus { outline: none; border-color: #007aff; }
+  .modal-buttons { display: flex; gap: 10px; margin-top: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 10px 0; }
+  .header h3 { color: #333; margin-bottom: 4px; }
+  .settings-btn { padding: 8px 12px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 16px; transition: all 0.2s; }
+  .settings-btn:hover { background: #e9ecef; }
 `;
 
 function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [toolResults, setToolResults] = useState<ToolResult[]>([]);
-  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [chatEvents, setChatEvents] = useState<ChatEvent[]>([]);
   const [input, setInput] = useState("");
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [eventSource, setEventSource] = useState<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Form State
-  const [formBaseUrl, setFormBaseUrl] = useState("https://api.openai.com/v1");
+  const [formBaseUrl, setFormBaseUrl] = useState("https://opencode.ai/zen/v1");
   const [formApiKey, setFormApiKey] = useState("");
-  const [formModel, setFormModel] = useState("gpt-4o-mini");
+  const [formModel, setFormModel] = useState("grok-code");
 
   // Initialize from localStorage
   useEffect(() => {
@@ -89,7 +103,16 @@ function App() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, toolResults, activeTool]);
+  }, [chatEvents]);
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [eventSource]);
 
   const saveSettings = () => {
     const newConfig = { baseUrl: formBaseUrl, apiKey: formApiKey, model: formModel };
@@ -101,17 +124,24 @@ function App() {
   const handleSend = async () => {
     if (!input.trim() || !config) return;
 
-    const userMsg: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMsg]);
-    setToolResults([]);
+    // Add user message to timeline
+    const userMessage: ChatEvent = {
+      id: crypto.randomUUID(),
+      type: "message",
+      role: "user",
+      content: input,
+      timestamp: Date.now(),
+    };
+    setChatEvents((prev) => [...prev, userMessage]);
     setInput("");
+    setIsRunning(true);
 
     try {
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [userMsg],
+          messages: [{ role: "user", content: input }],
           config,
           sessionId,
         }),
@@ -125,74 +155,170 @@ function App() {
       }
     } catch (err) {
       console.error("Failed to send:", err);
+      setIsRunning(false);
     }
   };
 
   const connectSSE = (id: string) => {
-    const eventSource = new EventSource(`/chat?sessionId=${id}`);
-    
-    eventSource.onmessage = (event) => {
+    if (eventSource) {
+      eventSource.close();
+    }
+
+    const newEventSource = new EventSource(`/chat?sessionId=${id}`);
+    setEventSource(newEventSource);
+
+    newEventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      
+
       switch (data.type) {
-        case "MESSAGES_SNAPSHOT":
-          setMessages(data.messages);
+        // Lifecycle Events
+        case "RUN_STARTED":
+          setIsRunning(true);
           break;
-        case "TEXT_MESSAGE_START":
-          setMessages((prev) => [...prev, { id: data.messageId, role: "assistant", content: "" }]);
+
+        case "RUN_FINISHED":
+          setIsRunning(false);
           break;
-        case "TEXT_MESSAGE_CONTENT":
-          setMessages((prev) => prev.map(m => 
-            m.id === data.messageId ? { ...m, content: m.content + data.delta } : m
-          ));
-          break;
-        case "REASONING_MESSAGE_START":
-          setMessages((prev) => [...prev, { id: data.messageId, role: "reasoning", content: "" }]);
-          break;
-        case "REASONING_MESSAGE_CONTENT":
-          setMessages((prev) => prev.map(m => 
-            m.id === data.messageId ? { ...m, content: m.content + data.delta } : m
-          ));
-          break;
-        case "TOOL_CALL_START":
-          setActiveTool(data.toolCallName);
-          // Initialize or update tool result with streaming args placeholder
-          setToolResults(prev => {
-            const existing = prev.find(tr => tr.toolCallId === data.toolCallId);
-            if (existing) return prev;
-            return [...prev, { toolCallId: data.toolCallId, toolName: data.toolCallName, content: "" }];
-          });
-          break;
-        case "TOOL_CALL_ARGS":
-          setToolResults(prev => prev.map(tr => 
-            tr.toolCallId === data.toolCallId ? { ...tr, content: tr.content + data.delta } : tr
-          ));
-          break;
-        case "TOOL_CALL_END":
-          setActiveTool(null);
-          break;
-        case "TOOL_CALL_RESULT":
-          setToolResults((prev) => {
-            const exists = prev.some(tr => tr.toolCallId === data.toolCallId);
-            if (exists) {
-              return prev.map(tr => tr.toolCallId === data.toolCallId ? { ...tr, content: data.content } : tr);
-            }
-            return [...prev, {
-              toolCallId: data.toolCallId,
-              toolName: data.toolCallName || "Result",
-              content: data.content
-            }];
-          });
-          break;
+
         case "RUN_ERROR":
-          alert(`Error: ${data.message}`);
-          eventSource.close();
+          setIsRunning(false);
+          break;
+
+        case "STEP_STARTED":
+        case "STEP_FINISHED":
+          // Log steps (could add to UI in future)
+          break;
+
+        // Message Events
+        case "TEXT_MESSAGE_START":
+          // Add new assistant message to timeline
+          setChatEvents((prev) => [
+            ...prev,
+            {
+              id: data.messageId,
+              type: "message",
+              role: "assistant",
+              content: "",
+              messageId: data.messageId,
+              timestamp: Date.now(),
+            },
+          ]);
+          break;
+
+        case "TEXT_MESSAGE_CONTENT":
+          // Append to last assistant message
+          setChatEvents((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === "message" && last.role === "assistant") {
+              const updated = [...prev];
+              updated[updated.length - 1] = { ...last, content: last.content + data.delta };
+              return updated;
+            }
+            return prev;
+          });
+          break;
+
+        case "TEXT_MESSAGE_END":
+          // Message completed
+          break;
+
+        // Thinking Events
+        case "THINKING_START":
+          setChatEvents((prev) => [
+            ...prev,
+            {
+              id: data.messageId,
+              type: "thinking",
+              messageId: data.messageId,
+              content: "",
+              timestamp: Date.now(),
+            },
+          ]);
+          break;
+
+        case "THINKING_TEXT_MESSAGE_CONTENT":
+          setChatEvents((prev) => {
+            const index = prev.findIndex((e) => e.type === "thinking" && e.messageId === data.messageId);
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], content: updated[index].content + data.delta };
+              return updated;
+            }
+            return prev;
+          });
+          break;
+
+        case "THINKING_END":
+          // Thinking completed
+          break;
+
+        // Tool Events
+        case "TOOL_CALL_START":
+          // Tool call started - will be followed by result
+          break;
+
+        case "TOOL_CALL_ARGS":
+          // Update tool args in most recent tool result or create placeholder
+          setChatEvents((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === "tool-result" && last.toolCallId === data.toolCallId) {
+              const updated = [...prev];
+              updated[updated.length - 1] = { ...last, toolArgs: last.toolArgs + String(data.delta) };
+              return updated;
+            }
+            // Create placeholder if doesn't exist
+            return [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                type: "tool-result",
+                toolCallId: data.toolCallId,
+                toolName: "Unknown",
+                toolArgs: String(data.delta),
+                toolResult: "",
+                timestamp: Date.now(),
+              },
+            ];
+          });
+          break;
+
+        case "TOOL_CALL_END":
+          // Tool call ended - args are complete
+          break;
+
+        case "TOOL_CALL_RESULT":
+          // Update or create tool result
+          setChatEvents((prev) => {
+            const index = prev.findIndex((e) => e.type === "tool-result" && e.toolCallId === data.toolCallId);
+            const toolResult: ChatEvent = {
+              id: data.messageId,
+              type: "tool-result",
+              toolCallId: data.toolCallId,
+              toolName: data.toolCallName || "Unknown Tool",
+              toolArgs: prev[index]?.toolArgs || "",
+              toolResult: String(data.content),
+              timestamp: Date.now(),
+            };
+            
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = toolResult;
+              return updated;
+            }
+            return [...prev, toolResult];
+          });
+          break;
+
+        default:
+          // Unknown event type
           break;
       }
     };
 
-    eventSource.onerror = () => {
-      eventSource.close();
+    newEventSource.onerror = (error) => {
+      console.error("SSE error:", error);
+      setIsRunning(false);
+      newEventSource.close();
     };
   };
 
@@ -204,55 +330,99 @@ function App() {
             <h2>Configure Agent</h2>
             <div className="form-group">
               <label>Base URL</label>
-              <input value={formBaseUrl} onChange={e => setFormBaseUrl(e.target.value)} />
+              <input
+                value={formBaseUrl}
+                onChange={(e) => setFormBaseUrl(e.target.value)}
+              />
             </div>
             <div className="form-group">
               <label>API Key</label>
-              <input type="password" value={formApiKey} onChange={e => setFormApiKey(e.target.value)} placeholder="sk-..." />
+              <input
+                type="password"
+                value={formApiKey}
+                onChange={(e) => setFormApiKey(e.target.value)}
+                placeholder="sk-..."
+              />
             </div>
             <div className="form-group">
               <label>Model</label>
-              <input value={formModel} onChange={e => setFormModel(e.target.value)} />
+              <input
+                value={formModel}
+                onChange={(e) => setFormModel(e.target.value)}
+              />
             </div>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button className="btn btn-primary" onClick={saveSettings}>Save & Start</button>
-              {config && <button className="btn" onClick={() => setIsSettingsOpen(false)}>Cancel</button>}
+            <div className="modal-buttons">
+              <button className="btn btn-primary" onClick={saveSettings}>
+                Save & Start
+              </button>
+              {config && (
+                <button className="btn" onClick={() => setIsSettingsOpen(false)}>
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0" }}>
-        <h3>AG-UI Demo</h3>
-        <button className="btn" onClick={() => setIsSettingsOpen(true)}>⚙️ Settings</button>
+      <div className="header">
+        <div>
+          <h3>AG-UI Demo</h3>
+        </div>
+        <button className="settings-btn" onClick={() => setIsSettingsOpen(true)}>
+          ⚙️
+        </button>
       </div>
 
       <div className="messages">
-        {messages.map((m, i) => (
-          <div key={m.id || i} className={`message ${m.role}`}>
-            <div className="message-bubble">{m.content}</div>
-          </div>
-        ))}
-        {activeTool && (
-          <div className="tool-indicator">Using tool: {activeTool}</div>
-        )}
-        {toolResults.map((tr) => (
-          <div key={tr.toolCallId} className="tool-result">
-            <div className="tool-result-header">Tool: {tr.toolName}</div>
-            <div className="tool-result-content">{tr.content}</div>
-          </div>
-        ))}
+        {chatEvents.map((event) => {
+          if (event.type === "message") {
+            return (
+              <div key={event.id} className={`message ${event.role}`}>
+                <div className="message-bubble">{event.content}</div>
+              </div>
+            );
+          } else if (event.type === "thinking") {
+            return (
+              <div key={event.id} className="thinking-block">
+                <div className="thinking-header">
+                  <span>💭</span> Thinking...
+                </div>
+                <div className="thinking-content">{event.content}</div>
+              </div>
+            );
+          } else if (event.type === "tool-result") {
+            return (
+              <div key={event.id} className="tool-result">
+                <div className="tool-result-header">
+                  <span className="tool-icon">🔧</span>
+                  Tool: {event.toolName}
+                </div>
+                {event.toolArgs && (
+                  <div className="tool-args">Args: {event.toolArgs}</div>
+                )}
+                {event.toolResult && (
+                  <div className="tool-result-content">{event.toolResult}</div>
+                )}
+              </div>
+            );
+          }
+          return null;
+        })}
         <div ref={messagesEndRef} />
       </div>
+
       <div className="input-area">
-        <input 
-          value={input} 
+        <input
+          value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Type a message..."
-          disabled={!config}
+          placeholder={isRunning ? "Agent is running..." : "Type a message..."}
+          disabled={!config || isRunning}
         />
-        <button className="btn btn-primary" onClick={handleSend} disabled={!config}>Send</button>
+        <button className="btn btn-primary" onClick={handleSend} disabled={!config || isRunning}>
+          {isRunning ? "Running..." : "Send"}
+        </button>
       </div>
     </div>
   );
@@ -275,11 +445,20 @@ if (import.meta.main) {
     async ({ a, b, operation }: { a: number; b: number; operation: string }) => {
       let result: number;
       switch (operation) {
-        case "add": result = a + b; break;
-        case "subtract": result = a - b; break;
-        case "multiply": result = a * b; break;
-        case "divide": result = a / b; break;
-        default: return `Unknown operation: ${operation}`;
+        case "add":
+          result = a + b;
+          break;
+        case "subtract":
+          result = a - b;
+          break;
+        case "multiply":
+          result = a * b;
+          break;
+        case "divide":
+          result = a / b;
+          break;
+        default:
+          return `Unknown operation: ${operation}`;
       }
       return `Result: ${result}`;
     },
@@ -291,10 +470,13 @@ if (import.meta.main) {
         properties: {
           a: { type: "number" },
           b: { type: "number" },
-          operation: { type: "string", enum: ["add", "subtract", "multiply", "divide"] }
+          operation: {
+            type: "string",
+            enum: ["add", "subtract", "multiply", "divide"],
+          },
         },
-        required: ["a", "b", "operation"]
-      }
+        required: ["a", "b", "operation"],
+      },
     }
   );
 
@@ -312,25 +494,34 @@ if (import.meta.main) {
               <style dangerouslySetInnerHTML={{ __html: CSS }} />
             </head>
             <body>
-              <div id="root"><App /></div>
+              <div id="root">
+                <App />
+              </div>
               <script type="module" src="/client.js"></script>
             </body>
           </html>
         );
-        return new Response("<!DOCTYPE html>" + html, { headers: { "Content-Type": "text/html" } });
+        return new Response("<!DOCTYPE html>" + html, {
+          headers: { "Content-Type": "text/html" },
+        });
       }
 
-      // Self-bundle for the browser
+      // Self-bundle for browser
       if (url.pathname === "/client.js") {
         const build = await Bun.build({
           entrypoints: [import.meta.filename!],
           target: "browser",
           minify: true,
-          define: { 
+          define: {
             "import.meta.main": "false",
-            "process.env.NODE_ENV": JSON.stringify("development")
+            "process.env.NODE_ENV": JSON.stringify("development"),
           },
-          external: ["react-dom/server", "@langchain/core/tools", "@langchain/openai", "langchain"]
+          external: [
+            "react-dom/server",
+            "@langchain/core/tools",
+            "@langchain/openai",
+            "langchain",
+          ],
         });
         return new Response(build.outputs[0]);
       }
@@ -345,7 +536,9 @@ if (import.meta.main) {
           }
           const session = sessions.get(sessionId);
           session.messages.push(...(body.messages || []));
-          return new Response(JSON.stringify({ sessionId }), { headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ sessionId }), {
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         if (req.method === "GET") {
@@ -356,7 +549,10 @@ if (import.meta.main) {
           const model = new ChatOpenAI({
             model: session.config.model,
             streaming: true,
-            configuration: { baseURL: session.config.baseUrl, apiKey: session.config.apiKey },
+            configuration: {
+              baseURL: session.config.baseUrl,
+              apiKey: session.config.apiKey,
+            },
           });
 
           return new Response(
@@ -365,10 +561,18 @@ if (import.meta.main) {
                 const encoder = new TextEncoder();
                 const transport: AGUITransport = {
                   emit: async (event) => {
-                    try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)); } catch {}
-                  }
+                    try {
+                      controller.enqueue(
+                        encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+                      );
+                    } catch {}
+                  },
                 };
-                const agent = createAGUIAgent({ model, tools: [calculatorTool], transport });
+                const agent = createAGUIAgent({
+                  model,
+                  tools: [calculatorTool],
+                  transport,
+                });
                 const aguiCallback = new AGUICallbackHandler(transport);
 
                 const eventStream = await (agent as any).streamEvents(
@@ -377,15 +581,23 @@ if (import.meta.main) {
                 );
 
                 for await (const event of eventStream) {
-                  if (event.event === "on_chain_end" && event.data?.output?.messages) {
+                  if (
+                    event.event === "on_chain_end" &&
+                    event.data?.output?.messages
+                  ) {
                     session.messages = event.data.output.messages;
                   }
                 }
                 aguiCallback.dispose();
                 controller.close();
-              }
+              },
             }),
-            { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } }
+            {
+              headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+              },
+            }
           );
         }
       }

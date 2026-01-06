@@ -22,13 +22,13 @@ test("ACTIVITY_DELTA event has correct structure", () => {
   expect(event.type).toBe("ACTIVITY_DELTA");
 });
 
-test("REASONING_START event has correct structure", () => {
+test("THINKING_START event has correct structure", () => {
   const event: AGUIEvent = {
-    type: "REASONING_START",
-    messageId: "reason-1",
-    encryptedContent: "secret"
+    type: "THINKING_START",
+    messageId: "think-1",
+    title: "Analyzing request"
   };
-  expect(event.type).toBe("REASONING_START");
+  expect(event.type).toBe("THINKING_START");
 });
 
 test("MESSAGES_SNAPSHOT event uses Message objects", () => {

@@ -30,7 +30,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private latestMessageIds = new Map<string, string>();
   private agentRunIds = new Map<string, string>(); // Maps current runId to authoritative agentRunId
   private parentToAuthoritativeId = new Map<string, string>(); // Maps internal parentRunId to authoritative agentRunId
-  private reasoningIds = new Map<string, string>();
+  private thinkingIds = new Map<string, string>();
   private toolCallInfo = new Map<string, { id: string; name: string }>();
   private agentTurnTracker = new Map<string, number>();
   private pendingToolCalls = new Map<string, string[]>();
@@ -51,7 +51,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     this.latestMessageIds.clear();
     this.agentRunIds.clear();
     this.parentToAuthoritativeId.clear();
-    this.reasoningIds.clear();
+    this.thinkingIds.clear();
     this.toolCallInfo.clear();
     this.agentTurnTracker.clear();
     this.pendingToolCalls.clear();
@@ -69,24 +69,49 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _metadata?: Record<string, unknown>,
     _runName?: string
   ): Promise<void> {
-    // Priority: metadata.run_id (to match Middleware) > parentRunId > current runId
-    const agentRunId = 
-      ((_metadata as any)?.run_id as string | undefined) || 
+    // Priority: metadata.agui_messageId (from middleware) > metadata.run_id > parentRunId > runId
+    const agentRunId =
+      ((_metadata as any)?.agui_runId as string | undefined) ||
+      ((_metadata as any)?.run_id as string | undefined) ||
       ((_metadata as any)?.configurable?.run_id as string | undefined) ||
-      _parentRunId || 
+      _parentRunId ||
       runId;
-    
+
     this.agentRunIds.set(runId, agentRunId);
     if (_parentRunId) {
       this.parentToAuthoritativeId.set(_parentRunId, agentRunId);
     }
-      
-    const turnIndex = this.agentTurnTracker.get(agentRunId) || 0;
-    this.agentTurnTracker.set(agentRunId, turnIndex + 1);
+
+    // Check if middleware sent us a messageId via metadata
+    const middlewareMessageId = (_metadata as any)?.agui_messageId as string | undefined;
     
-    const messageId = generateDeterministicId(agentRunId, turnIndex);
-    this.messageIds.set(runId, messageId);
-    this.latestMessageIds.set(agentRunId, messageId);
+    if (middlewareMessageId) {
+      // Use middleware's messageId for coordination
+      this.messageIds.set(runId, middlewareMessageId);
+      this.latestMessageIds.set(agentRunId, middlewareMessageId);
+      
+      // Emit TEXT_MESSAGE_START (coordination with middleware)
+      this.transport.emit({
+        type: "TEXT_MESSAGE_START",
+        messageId: middlewareMessageId,
+        role: "assistant",
+      });
+    } else {
+      // Generate our own messageId if middleware didn't provide one
+      const turnIndex = this.agentTurnTracker.get(agentRunId) || 0;
+      this.agentTurnTracker.set(agentRunId, turnIndex + 1);
+
+      const messageId = generateDeterministicId(agentRunId, turnIndex);
+      this.messageIds.set(runId, messageId);
+      this.latestMessageIds.set(agentRunId, messageId);
+      
+      // Emit TEXT_MESSAGE_START (no middleware coordination)
+      this.transport.emit({
+        type: "TEXT_MESSAGE_START",
+        messageId,
+        role: "assistant",
+      });
+    }
   }
 
   override async handleLLMNewToken(
@@ -102,35 +127,34 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     try {
       // Handle Reasoning Tokens (e.g., DeepSeek, OpenAI o1)
-      const reasoningContent = fields?.chunk?.message?.additional_kwargs?.reasoning_content || 
+      const reasoningContent = fields?.chunk?.message?.additional_kwargs?.reasoning_content ||
                                fields?.chunk?.message?.additional_kwargs?.reasoning;
       if (reasoningContent) {
-        let reasoningId = this.reasoningIds.get(runId);
-        if (!reasoningId) {
-          const agentRunId = this.agentRunIds.get(runId) || 
-                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
-                            _parentRunId || 
+        let thinkingId = this.thinkingIds.get(runId);
+        if (!thinkingId) {
+          const agentRunId = this.agentRunIds.get(runId) ||
+                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) ||
+                            _parentRunId ||
                             runId;
-          reasoningId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for reasoning
-          this.reasoningIds.set(runId, reasoningId);
+          thinkingId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for thinking
+          this.thinkingIds.set(runId, thinkingId);
           this.transport.emit({
-            type: "REASONING_START",
-            messageId: reasoningId,
+            type: "THINKING_START",
+            messageId: thinkingId,
           });
           this.transport.emit({
-            type: "REASONING_MESSAGE_START",
-            messageId: reasoningId,
-            role: "reasoning",
+            type: "THINKING_TEXT_MESSAGE_START",
+            messageId: thinkingId,
           });
         }
-        
-        const delta = typeof reasoningContent === 'string' 
-          ? reasoningContent 
+
+        const delta = typeof reasoningContent === 'string'
+          ? reasoningContent
           : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
 
         this.transport.emit({
-          type: "REASONING_MESSAGE_CONTENT",
-          messageId: reasoningId,
+          type: "THINKING_TEXT_MESSAGE_CONTENT",
+          messageId: thinkingId,
           delta,
         });
       }
@@ -180,16 +204,17 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _tags?: string[],
     _extraParams?: Record<string, unknown>
   ): Promise<void> {
-    const reasoningId = this.reasoningIds.get(runId);
-    
+    const messageId = this.messageIds.get(runId);
+    const thinkingId = this.thinkingIds.get(runId);
+
     try {
       // Collect any tool calls from final output that we missed during streaming
       if (_output && typeof _output === "object") {
         const toolCalls = _output.tool_calls || (_output.kwargs?.tool_calls);
         if (Array.isArray(toolCalls)) {
-          const agentRunId = this.agentRunIds.get(runId) || 
-                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
-                            _parentRunId || 
+          const agentRunId = this.agentRunIds.get(runId) ||
+                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) ||
+                            _parentRunId ||
                             runId;
           const pending = this.pendingToolCalls.get(agentRunId) || [];
           for (const tc of toolCalls) {
@@ -201,17 +226,28 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         }
       }
 
-      if (reasoningId) {
+      // Emit TEXT_MESSAGE_END
+      if (messageId) {
         this.transport.emit({
-          type: "REASONING_MESSAGE_END",
-          messageId: reasoningId,
+          type: "TEXT_MESSAGE_END",
+          messageId,
         });
-        this.transport.emit({
-          type: "REASONING_END",
-          messageId: reasoningId,
-        });
-        this.reasoningIds.delete(runId);
       }
+
+      if (thinkingId) {
+        this.transport.emit({
+          type: "THINKING_TEXT_MESSAGE_END",
+          messageId: thinkingId,
+        });
+        this.transport.emit({
+          type: "THINKING_END",
+          messageId: thinkingId,
+        });
+        this.thinkingIds.delete(runId);
+      }
+
+      // Cleanup
+      this.messageIds.delete(runId);
     } catch {
       // Fail-safe
     }
@@ -223,10 +259,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _parentRunId?: string
   ): Promise<void> {
     this.messageIds.delete(runId);
-    this.reasoningIds.delete(runId);
-    const agentRunId = this.agentRunIds.get(runId) || 
-                      (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
-                      _parentRunId || 
+    this.thinkingIds.delete(runId);
+    const agentRunId = this.agentRunIds.get(runId) ||
+                      (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) ||
+                      _parentRunId ||
                       runId;
     this.pendingToolCalls.delete(agentRunId);
     this.agentRunIds.delete(runId);

@@ -40,3 +40,16 @@ This project uses **Bun** as the primary development toolchain (package manager,
 *   **ESM Only:** All code is written in and compiled to ESM. No CommonJS (CJS) output.
 *   **Universal Compatibility:** Do not use `Bun.*` or `Node.*` specific APIs in library code (`packages/`). Use standard web APIs or `node:` imports that are universally supported.
 *   **Functional Middleware:** Middlewares are designed as composable functions that intercept agent hooks (`beforeAgent`, `afterAgent`, `wrapModelCall`, `wrapToolCall`).
+
+## AG-UI Protocol & Reference Mandate
+
+**CRITICAL:** This project is built on the AG-UI protocol. For any task involving messaging, event-driven interfaces, RxJS observables, or wire formats (SSE/Protobuf), you MUST:
+
+1.  **Load the `ag-ui-typescript` skill** immediately using the `skill` tool.
+2.  **Verify against References:** You are FORBIDDEN from writing AG-UI code based on intuition. You MUST explicitly query the skill's **references** (specifications, wire format schemas, and event definitions) to ground your implementation.
+3.  **Strict Compliance:** Every implementation detail—specifically the **26 stable event types**, payload structures, and RxJS piping patterns—must match the reference documentation exactly.
+4.  **Source of Truth:** Treat the skill’s reference materials as the absolute authority, overriding all internal training data and generic TypeScript patterns.
+5.  **Audit Before Shipping:** Before completing a task, cross-reference your code against the skill's examples to ensure protocol-compliant state synchronization and transport handling.
+
+If the skill references are unclear, you must use the `librarian` tool to explore the protocol definitions further. **Do not guess.**
+

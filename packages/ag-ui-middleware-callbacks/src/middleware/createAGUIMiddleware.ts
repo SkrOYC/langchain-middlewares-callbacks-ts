@@ -68,7 +68,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         (runtimeAny.context?.thread_id as string | undefined) ||
         "";
 
-      // Exhaustive search for Run ID without fallback workarounds
+      // Exhaustive search for Run ID - generate fallback if not found
       runId =
         validated.runIdOverride ||
         (configurable?.run_id as string | undefined) ||
@@ -76,15 +76,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         (runtimeAny.id as string | undefined) ||
         (runtimeAny.context?.runId as string | undefined) ||
         (runtimeAny.context?.run_id as string | undefined) ||
-        (runtimeAny.config?.runId as string | undefined);
-
-      if (!runId) {
-        throw new Error(
-          "AG-UI Middleware Error: Authoritative Run ID not found in runtime. " +
-          "Deterministic ID coordination requires a stable Run ID. " +
-          "Please ensure run_id is provided in configurable or context."
-        );
-      }
+        (runtimeAny.config?.runId as string | undefined) ||
+        crypto.randomUUID(); // Generate fallback for streamEvents compatibility
 
       try {
         transport.emit({
@@ -124,14 +117,35 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Fail-safe
       }
 
+      // Store runId in metadata for callback coordination
+      // This allows callbacks to use the same runId as middleware
+      const configAny = runtimeAny.config as any;
+      if (configAny) {
+        configAny.metadata = {
+          ...(configAny.metadata || {}),
+          agui_runId: runId,
+        };
+      }
+
       return {};
     },
 
-    beforeModel: async (state, _runtime) => {
+    beforeModel: async (state, runtime) => {
       const turnIndex = modelTurnIndex++;
       const messageId = generateDeterministicId(runId!, turnIndex);
       const stepName = `model_call_${messageId}`;
       currentStepName = stepName;
+
+      // Store messageId in metadata for callback coordination
+      // This ensures callbacks use the same messageId as middleware
+      const runtimeAny = runtime as any;
+      const configAny = runtimeAny.config as any;
+      if (configAny) {
+        configAny.metadata = {
+          ...(configAny.metadata || {}),
+          agui_messageId: messageId,
+        };
+      }
 
       try {
         transport.emit({
@@ -141,38 +155,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           threadId,
         });
 
-        transport.emit({
-          type: "TEXT_MESSAGE_START",
-          messageId,
-          role: "assistant",
-        });
-
-        if (validated.emitActivities) {
-          const activityType = validated.activityMapper ? validated.activityMapper(state) : "THINKING";
-          const activityId = generateDeterministicId(runId!, 500); // 500 is a magic number for activities
-          const activityContent = { status: "invoking model", data: cleanLangChainData(state) };
-
-          const prevState = activityStates.get(activityId);
-          if (prevState) {
-            const patch = computeStateDelta(prevState, activityContent);
-            if (patch.length > 0) {
-              transport.emit({
-                type: "ACTIVITY_DELTA",
-                messageId: activityId,
-                activityType,
-                patch: patch as any[],
-              });
-            }
-          } else {
-            transport.emit({
-              type: "ACTIVITY_SNAPSHOT",
-              messageId: activityId,
-              activityType,
-              content: activityContent,
-            });
-          }
-          activityStates.set(activityId, activityContent);
-        }
+        // TEXT_MESSAGE_START is handled by AGUICallbackHandler
+        // It reads messageId from metadata in handleLLMStart
       } catch {
         // Fail-safe
       }
@@ -182,12 +166,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
     afterModel: async (_state, _runtime) => {
       try {
-        const messageId = generateDeterministicId(runId!, modelTurnIndex - 1);
-        
-        transport.emit({
-          type: "TEXT_MESSAGE_END",
-          messageId,
-        });
+        // TEXT_MESSAGE_END is handled by AGUICallbackHandler
+        // It uses the same messageId from metadata coordination
 
         transport.emit({
           type: "STEP_FINISHED",
@@ -240,6 +220,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           transport.emit({
             type: "RUN_ERROR",
+            threadId: threadId,
+            runId: runId,
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"

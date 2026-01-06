@@ -22,15 +22,8 @@ export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
   let tool_call_id: string | undefined;
   let content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 
-  // Detect reasoning role from additional_kwargs (e.g. DeepSeek or OpenAI o1)
-  const reasoningContent = message.additional_kwargs?.reasoning_content || message.additional_kwargs?.reasoning;
-  const isReasoningOnly = reasoningContent && (!content || content === "" || content === "[]");
-
   if (message instanceof HumanMessage || (message as any).role === "user" || (message as any)._getType?.() === "human") {
     role = "user";
-  } else if (isReasoningOnly) {
-    role = "reasoning";
-    content = typeof reasoningContent === 'string' ? reasoningContent : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
   } else if (message instanceof AIMessage || (message as any).role === "assistant" || (message as any)._getType?.() === "ai") {
     role = "assistant";
     const toolCalls = (message as any).tool_calls || (message as any).kwargs?.tool_calls;

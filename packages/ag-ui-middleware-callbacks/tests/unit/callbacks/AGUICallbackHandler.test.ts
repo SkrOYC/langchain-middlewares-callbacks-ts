@@ -12,18 +12,18 @@ describe("AGUICallbackHandler", () => {
   });
 
   describe("LLM Callbacks", () => {
-    test("handleLLMStart generates messageId internally and sets it in the map", async () => {
+    test("handleLLMStart generates messageId internally and sets it in map", async () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const runId = "run-123";
+      const parentRunId = "run-parent";
 
-      await handler.handleLLMStart(null, ["prompt"], runId);
+      await handler.handleLLMStart(null, ["prompt"], runId, parentRunId, undefined, undefined, undefined);
 
-      // messageId should be generated internally
       const messageId = (handler as any).messageIds.get(runId);
       expect(messageId).toBeDefined();
       expect(typeof messageId).toBe("string");
-      
+
       // Should NOT emit TEXT_MESSAGE_START anymore (Middleware responsibility)
       expect(mockTransport.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({
@@ -36,10 +36,9 @@ describe("AGUICallbackHandler", () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const runId = "run-123";
+      const messageId = "msg-abc";
 
-      await handler.handleLLMStart(null, [], runId);
-      const messageId = (handler as any).messageIds.get(runId);
-
+      (handler as any).messageIds.set(runId, messageId);
       await handler.handleLLMNewToken("Hello", null, runId);
 
       expect(mockTransport.emit).toHaveBeenCalledWith(
@@ -51,17 +50,18 @@ describe("AGUICallbackHandler", () => {
       );
     });
 
-    test("handleLLMNewToken detects and emits Reasoning events (Red Phase)", async () => {
+    test("handleLLMNewToken detects and emits Thinking events", async () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const runId = "run-123";
+      const messageId = "msg-abc";
 
+      (handler as any).messageIds.set(runId, messageId);
       await handler.handleLLMStart(null, [], runId);
-      const messageId = (handler as any).messageIds.get(runId);
 
       // Mock a chunk with reasoning content (DeepSeek style)
       await handler.handleLLMNewToken(
-        "", // empty token for reasoning
+        "",
         null,
         runId,
         undefined,
@@ -70,59 +70,109 @@ describe("AGUICallbackHandler", () => {
           chunk: {
             message: {
               additional_kwargs: {
-                reasoning_content: "I should use a tool to check the weather."
+                reasoning_content: "I should use a tool to check => weather."
               }
             }
           }
         }
       );
 
-      // Should emit REASONING_START (first time) and REASONING_MESSAGE_CONTENT
+      expect((handler as any).thinkingIds.get(runId)).toBeDefined();
+
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "REASONING_START",
+          type: "THINKING_START",
           messageId: expect.any(String),
         })
       );
 
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "REASONING_MESSAGE_CONTENT",
+          type: "THINKING_TEXT_MESSAGE_START",
           messageId: expect.any(String),
-          delta: "I should use a tool to check the weather.",
+        })
+      );
+
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "THINKING_TEXT_MESSAGE_CONTENT",
+          messageId: expect.any(String),
+          delta: "I should use a tool to check => weather.",
         })
       );
     });
 
-    test("handleLLMEnd emits REASONING_END but NOT TEXT_MESSAGE_END", async () => {
+    test("handleLLMEnd emits THINKING_TEXT_MESSAGE_END and THINKING_END", async () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const runId = "run-123";
+      const messageId = "msg-abc";
 
-      await handler.handleLLMStart(null, [], runId);
-      const messageId = (handler as any).messageIds.get(runId);
-      
+      (handler as any).messageIds.set(runId, messageId);
+
       // Trigger some reasoning first
-      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-        chunk: { message: { additional_kwargs: { reasoning_content: "thinking" } } }
-      });
+      await handler.handleLLMNewToken(
+        "",
+        null,
+        runId,
+        undefined,
+        undefined,
+        {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        }
+      );
 
       await handler.handleLLMEnd({}, runId);
+
+      // Should emit thinking end events
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "THINKING_TEXT_MESSAGE_END",
+          messageId: expect.any(String),
+        })
+      );
+
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "THINKING_END",
+          messageId: expect.any(String),
+        })
+      );
 
       // Should NOT emit TEXT_MESSAGE_END anymore (Middleware responsibility)
       expect(mockTransport.emit).not.toHaveBeenCalledWith(
         expect.objectContaining({
           type: "TEXT_MESSAGE_END",
-          messageId,
         })
       );
+    });
 
-      expect(mockTransport.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "REASONING_END",
-          messageId: expect.any(String),
-        })
-      );
+    test("handleLLMError cleans up maps", async () => {
+      const mockTransport = createMockTransport();
+      const handler = new AGUICallbackHandler(mockTransport);
+      const runId = "run-123";
+
+      await handler.handleLLMStart(null, [], runId);
+      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+        chunk: {
+          message: {
+            additional_kwargs: {
+              reasoning_content: "test reasoning"
+            }
+          }
+        }
+      });
+
+      await handler.handleLLMError(new Error("Test error"), runId);
+
+      expect((handler as any).messageIds.get(runId)).toBeUndefined();
+      expect((handler as any).thinkingIds.get(runId)).toBeUndefined();
     });
   });
 
@@ -133,13 +183,13 @@ describe("AGUICallbackHandler", () => {
       const parentRunId = "run-parent";
       const toolRunId = "run-tool";
 
-      await handler.handleLLMStart(null, [], parentRunId);
-      const parentMessageId = (handler as any).messageIds.get(parentRunId);
-      
-      // End LLM run
-      await handler.handleLLMEnd({}, parentRunId);
+      await handler.handleLLMStart(null, [], toolRunId, parentRunId);
+      const parentMessageId = (handler as any).latestMessageIds.get(parentRunId);
 
-      // Start tool call in the same logical step
+      // End LLM run
+      await handler.handleLLMEnd({}, toolRunId);
+
+      // Start tool call - should use parent message
       await handler.handleToolStart(
         { name: "weather_tool" },
         JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
@@ -151,6 +201,7 @@ describe("AGUICallbackHandler", () => {
         expect.objectContaining({
           type: "TOOL_CALL_START",
           toolCallId: "tc-1",
+          toolCallName: "weather_tool",
           parentMessageId,
         })
       );
@@ -160,25 +211,66 @@ describe("AGUICallbackHandler", () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const toolRunId = "run-tool";
+      const parentRunId = "run-parent";
+
+      await handler.handleLLMStart(null, [], toolRunId, parentRunId);
+      const parentMessageId = (handler as any).latestMessageIds.get(parentRunId);
 
       await handler.handleToolStart(
         { name: "weather_tool" },
         JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
-        toolRunId
+        toolRunId,
+        parentRunId
       );
 
-      await handler.handleToolEnd('{"temp": 72}', toolRunId);
+      await handler.handleToolEnd('{"temp":72}', toolRunId, parentRunId);
+
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "TOOL_CALL_END",
+          toolCallId: "tc-1",
+          parentMessageId,
+        })
+      );
 
       expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "TOOL_CALL_RESULT",
           toolCallId: "tc-1",
+          parentMessageId,
           content: '{"temp":72}',
           role: "tool",
         })
       );
-      
+
       expect((handler as any).toolCallInfo.has(toolRunId)).toBe(false);
+    });
+
+    test("handleToolError emits TOOL_CALL_END", async () => {
+      const mockTransport = createMockTransport();
+      const handler = new AGUICallbackHandler(mockTransport);
+      const toolRunId = "run-tool";
+      const parentRunId = "run-parent";
+
+      await handler.handleLLMStart(null, [], toolRunId, parentRunId);
+      const parentMessageId = (handler as any).latestMessageIds.get(parentRunId);
+
+      await handler.handleToolStart(
+        { name: "weather_tool" },
+        JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
+        toolRunId,
+        parentRunId
+      );
+
+      await handler.handleToolError(new Error("Test error"), toolRunId, parentRunId);
+
+      expect(mockTransport.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "TOOL_CALL_END",
+          toolCallId: "tc-1",
+          parentMessageId: (handler as any).latestMessageIds.get(parentRunId),
+        })
+      );
     });
   });
 });

@@ -8,7 +8,6 @@ test("SSE transport sets correct headers", async () => {
   const mockRes = {
     setHeader: mock(() => mockRes),
   };
-
   createSSETransport(mockReq, mockRes);
 
   expect(mockRes.setHeader).toHaveBeenCalledWith("Content-Type", "text/event-stream");
@@ -30,7 +29,7 @@ test("SSE transport emits events as SSE data", async () => {
     type: "TEXT_MESSAGE_START",
     messageId: "msg-123",
     role: "assistant"
-  };
+  } as const;
 
   transport.emit(event);
   expect(mockRes.write).toHaveBeenCalledWith(`data: ${JSON.stringify(event)}\n\n`);
@@ -78,7 +77,7 @@ test("SSE transport handles backpressure with queue", async () => {
 
   // Emit multiple events rapidly
   for (let i = 0; i < 10; i++) {
-    transport.emit({ type: "EVENT", data: i });
+    transport.emit({ type: "RUN_STARTED", threadId: "test", runId: `run-${i}` });
   }
 
   expect(mockRes.write).toHaveBeenCalledTimes(10);
