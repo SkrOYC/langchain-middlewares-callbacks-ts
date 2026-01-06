@@ -39,7 +39,7 @@ LangChain.js agents require a **hybrid integration approach** to achieve full AG
 This package implements **Approach B: Middleware + User-Passed Callbacks**. This provides:
 
 1. **Middleware** for lifecycle events (RUN_STARTED, RUN_FINISHED, STATE_SNAPSHOT, etc.)
-2. **Callbacks** for streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
+2. **Callbacks** for streaming events (TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END, TOOL_CALL_*, THINKING_*, etc.)
 3. **Explicit invocation** - Callbacks are passed at runtime via `streamEvents()` configuration
 
 **Usage Pattern:**
@@ -887,72 +887,73 @@ stateSchema = z.object({
 
 | AG-UI Event | Best Mechanism | LangChain Feature | Trigger |
 |-------------|----------------|----------------|---------|
-| TEXT_MESSAGE_START | **Middleware** | `beforeModel` hook | Model begins generating response |
-| TEXT_MESSAGE_CONTENT | **Callbacks** (handleLLMNewToken) | Token-level streaming from model |
-| TEXT_MESSAGE_END | **Middleware** (afterModel hook) | Model stream completes |
+| TEXT_MESSAGE_START | **Callbacks** (handleLLMStart) | Model invocation begins | Model begins generating response |
+| TEXT_MESSAGE_CONTENT | **Callbacks** (handleLLMNewToken) | Token-level streaming from model | Token generation |
+| TEXT_MESSAGE_END | **Callbacks** (handleLLMEnd) | Model invocation completes | Model stream completes |
 
-**Why This Split?**
+**Why Callbacks for All Text Events?**
 
-| Event | Why Middleware? | Why Callbacks? |
-|-------|-----------------|-------------------|
-| TEXT_MESSAGE_START | Agent workflow boundary | Too early for streaming |
-| TEXT_MESSAGE_CONTENT | **Cannot access tokens** | **Callbacks required** (handleLLMNewToken) |
-| TEXT_MESSAGE_END | Agent workflow boundary | Fires after streaming complete |
+| Event | Why Callbacks? |
+|-------|----------------|
+| TEXT_MESSAGE_START | Callbacks receive handleLLMStart which provides the message boundary and access to metadata for ID coordination |
+| TEXT_MESSAGE_CONTENT | **Cannot access tokens** - Middleware has no streaming capability, **Callbacks required** (handleLLMNewToken) |
+| TEXT_MESSAGE_END | Callbacks receive handleLLMEnd which fires after streaming complete and provides cleanup coordination |
 
 **Streaming Implementation:**
 
-All TEXT_MESSAGE_CONTENT events require callbacks (handleLLMNewToken). Middleware cannot access streaming tokens.
+All TEXT_MESSAGE events (START, CONTENT, END) require callbacks. Middleware cannot access streaming tokens or model boundaries directly.
 
-Note: All streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, tool lifecycle) require callbacks. Middleware has no streaming capability.
-
-**Key Requirement:** Callbacks need access to message IDs and tool call IDs. This is achieved via:
-1. **Metadata propagation**: Middleware stores messageId in `runtime.config.metadata.agui_messageId`
+**Key Requirement:** Callbacks need access to message IDs. This is achieved via:
+1. **Metadata propagation**: Middleware stores messageId in `runtime.config.metadata.agui_messageId` (if using middleware for other lifecycle events)
 2. **Internal state storage**: Callbacks store IDs in `Map<runId, messageId>`
 3. **Parent run correlation**: `parentRunId` links tool callbacks to LLM callbacks
 
 See Section 2.6 for complete callback handler implementation.
 
-**Middleware Implementation for Boundaries:**
+**Callback Implementation for Text Messages:**
 
 ```typescript
-createMiddleware({
-  name: "ag-ui-lifecycle",
-   
-   beforeModel: async (state, runtime) => {
-     // Emit message start and set ID for callbacks
-     const messageId = generateId();
-     runtime.context.transport.emit({
-       type: "TEXT_MESSAGE_START",
-       messageId,
-       role: "assistant"
-     });
-     
-     // Store in metadata for callbacks
-     runtime.config.metadata = {
-       ...runtime.config.metadata,
-       agui_messageId: messageId
-     };
-     
-     return {};
-   },
-   
-   afterModel: async (state, runtime) => {
-     // Retrieve messageId from metadata
-     const messageId = runtime.config.metadata?.agui_messageId;
-     
-     if (messageId) {
-       runtime.context.transport.emit({
-         type: "TEXT_MESSAGE_END",
-         messageId
-       });
-     }
-     
-     // Clean up metadata
-     delete runtime.config.metadata?.agui_messageId;
-     
-     return {};
-   }
- });
+class AGUICallbackHandler extends BaseCallbackHandler {
+  private messageIds = new Map<string, string>();
+
+  async handleLLMStart(llm, prompts, runId, parentRunId, tags, metadata) {
+    // Generate or retrieve messageId
+    const messageId = metadata?.agui_messageId || generateId();
+    this.messageIds.set(runId, messageId);
+    
+    // Emit TEXT_MESSAGE_START
+    this.transport.emit({
+      type: "TEXT_MESSAGE_START",
+      messageId,
+      role: "assistant"
+    });
+  }
+  
+  async handleLLMNewToken(token, idx, runId, parentRunId, tags, fields) {
+    const messageId = this.messageIds.get(runId);
+    if (!messageId) return;
+    
+    // Emit TEXT_MESSAGE_CONTENT
+    this.transport.emit({
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId,
+      delta: token
+    });
+  }
+  
+  async handleLLMEnd(output, runId, parentRunId, tags) {
+    const messageId = this.messageIds.get(runId);
+    if (!messageId) return;
+    
+    // Emit TEXT_MESSAGE_END
+    this.transport.emit({
+      type: "TEXT_MESSAGE_END",
+      messageId
+    });
+    
+    this.messageIds.delete(runId);
+  }
+}
 ```
 
 ### 4.3 Tool Call Events
@@ -1483,45 +1484,46 @@ emit: (event: AGUIEvent) => {
 
 ### 8.2 Guaranteed Event Cleanup
 
-**Critical Issue:** Middleware's `afterAgent` hook only runs on successful completion. If agent errors mid-execution, messages can be left in `TEXT_MESSAGE_START` state without `TEXT_MESSAGE_END`.
+**Critical Issue:** Callbacks' `handleLLMEnd` may not fire if agent errors mid-execution (e.g., tool errors, model failures). In such cases, messages can be left in `TEXT_MESSAGE_START` state without `TEXT_MESSAGE_END`.
 
 **Package Solution:** Use `withListeners` for guaranteed cleanup on both success and error.
 
 **Implementation:**
 ```typescript
 export function createAGUIAgent(config: AGUIAgentConfig) {
-  let activeMessageId: string | undefined;
-
+  // Create AGUICallbackHandler for streaming events (TEXT_MESSAGE_START/CONTENT/END, etc.)
+  const callbackHandler = new AGUICallbackHandler(config.transport);
+  
   const agent = createAgent({
     model: config.model,
     tools: config.tools,
     middleware: [createAGUIMiddleware({ transport: config.transport })]
   });
 
-  // ✅ Guaranteed cleanup on both success and error
-  return agent.withListeners({
-    onEnd: (run) => {
-      if (activeMessageId) {
-        config.transport.emit({
-          type: "TEXT_MESSAGE_END",
-          messageId: activeMessageId
-        });
-      }
-    },
+  // ✅ Guaranteed cleanup on both success and error via withListeners
+  // This ensures TEXT_MESSAGE_END is emitted even if callbacks don't complete normally
+  return agent.withConfig({
+    callbacks: [callbackHandler]
+  }).withListeners({
     onError: (run) => {
-      // ✅ Ensures cleanup even when agent fails
-      if (activeMessageId) {
+      // Emit TEXT_MESSAGE_END for any active message to prevent orphaned UI state
+      callbackHandler.messageIds.forEach((messageId, runId) => {
         config.transport.emit({
           type: "TEXT_MESSAGE_END",
-          messageId: activeMessageId
+          messageId
         });
-      }
+      });
+      callbackHandler.dispose();
     }
   });
 }
 ```
 
 **Why This Matters:**
+
+In AG-UI protocol, orphaned TEXT_MESSAGE_START events without TEXT_MESSAGE_END cause UI inconsistencies (e.g., spinner that never stops). While AGUICallbackHandler normally emits TEXT_MESSAGE_END in handleLLMEnd, error scenarios may prevent this callback from firing. The withListeners guarantee ensures proper cleanup.
+
+**Note:** Since TEXT_MESSAGE_START/END are handled by callbacks (AGUICallbackHandler), middleware's `afterAgent` hook is not the appropriate place for TEXT_MESSAGE cleanup. The callback handler itself handles normal completion, while withListeners provides error recovery.
 - Agent errors (model failures, tool errors, timeouts) halt execution before `afterAgent` runs
 - `withListeners({ onError })` guarantees cleanup regardless of failure mode
 - Orphaned `TEXT_MESSAGE_START` events cause UI inconsistencies

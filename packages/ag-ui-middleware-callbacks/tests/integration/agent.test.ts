@@ -520,12 +520,12 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
 
     const { agent } = createTestAgent(model, [], transport);
 
-    // Use streamEvents with AGUICallbackHandler to get TEXT_MESSAGE events
+    // Use streamEvents - test utility already provides AGUICallbackHandler
     const eventStream = await (agent as any).streamEvents(
       formatAgentInput([{ role: "user", content: "Hi" }]),
       {
         version: "v2",
-        callbacks: [new (await import("../../src/callbacks/AGUICallbackHandler")).AGUICallbackHandler(transport)],
+        // No need to add AGUICallbackHandler - test utility provides one automatically
       }
     );
 
@@ -534,7 +534,7 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
       // Stream consumed - callbacks have emitted events
     }
 
-    // TEXT_MESSAGE_END should be emitted
+    // TEXT_MESSAGE_END should be emitted exactly once (from test utility's handler)
     expectEventCount(transport, "TEXT_MESSAGE_END", 1);
 
     // Verify TEXT_MESSAGE_START has matching messageId
@@ -552,12 +552,12 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
 
     const { agent } = createTestAgent(model, [], transport);
 
-    // Use streamEvents with AGUICallbackHandler to get TEXT_MESSAGE events
+    // Use streamEvents - test utility already provides AGUICallbackHandler
     const eventStream = await (agent as any).streamEvents(
       formatAgentInput([{ role: "user", content: "Hi" }]),
       {
         version: "v2",
-        callbacks: [new (await import("../../src/callbacks/AGUICallbackHandler")).AGUICallbackHandler(transport)],
+        // No need to add AGUICallbackHandler - test utility provides one automatically
       }
     );
 
@@ -591,12 +591,12 @@ describe("Guaranteed Cleanup (SPEC Section 8.2)", () => {
 
     const { agent } = createTestAgent(model, [failingTool], transport);
 
-    // Use streamEvents with AGUICallbackHandler to get TEXT_MESSAGE events
+    // Use streamEvents - test utility already provides AGUICallbackHandler
     const eventStream = await (agent as any).streamEvents(
       formatAgentInput([{ role: "user", content: "This will fail" }]),
       {
         version: "v2",
-        callbacks: [new (await import("../../src/callbacks/AGUICallbackHandler")).AGUICallbackHandler(transport)],
+        // No need to add AGUICallbackHandler - test utility provides one automatically
       }
     );
 

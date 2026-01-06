@@ -12,7 +12,7 @@ describe("AGUICallbackHandler", () => {
   });
 
   describe("LLM Callbacks", () => {
-    test("handleLLMStart generates messageId internally and sets it in map", async () => {
+    test("handleLLMStart generates messageId internally and emits TEXT_MESSAGE_START", async () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const runId = "run-123";
@@ -24,10 +24,12 @@ describe("AGUICallbackHandler", () => {
       expect(messageId).toBeDefined();
       expect(typeof messageId).toBe("string");
 
-      // Should NOT emit TEXT_MESSAGE_START anymore (Middleware responsibility)
-      expect(mockTransport.emit).not.toHaveBeenCalledWith(
+      // Should emit TEXT_MESSAGE_START (Callback responsibility)
+      expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "TEXT_MESSAGE_START",
+          messageId: expect.any(String),
+          role: "assistant",
         })
       );
     });
@@ -102,7 +104,7 @@ describe("AGUICallbackHandler", () => {
       );
     });
 
-    test("handleLLMEnd emits THINKING_TEXT_MESSAGE_END and THINKING_END", async () => {
+    test("handleLLMEnd emits THINKING_TEXT_MESSAGE_END, THINKING_END, and TEXT_MESSAGE_END", async () => {
       const mockTransport = createMockTransport();
       const handler = new AGUICallbackHandler(mockTransport);
       const runId = "run-123";
@@ -145,10 +147,11 @@ describe("AGUICallbackHandler", () => {
         })
       );
 
-      // Should NOT emit TEXT_MESSAGE_END anymore (Middleware responsibility)
-      expect(mockTransport.emit).not.toHaveBeenCalledWith(
+      // Should emit TEXT_MESSAGE_END (Callback responsibility)
+      expect(mockTransport.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "TEXT_MESSAGE_END",
+          messageId: messageId,
         })
       );
     });
