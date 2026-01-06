@@ -77,6 +77,7 @@ async function emitActivityUpdate(
   stepIndex: number,
   activityTracker: ActivityTracker,
   status: "started" | "processing" | "completed",
+  activityMapper: ((node: any) => any) | undefined,
   details?: Record<string, any>
 ): Promise<void> {
   if (!currentRunId) return;
@@ -88,24 +89,27 @@ async function emitActivityUpdate(
     ...details,
   };
 
+  // Apply activityMapper if provided
+  const finalContent = activityMapper ? activityMapper(baseContent) : baseContent;
+
   if (!activityTracker.currentActivityId || activityTracker.currentActivityId !== activityId) {
     // New activity - emit SNAPSHOT
     activityTracker.currentActivityId = activityId;
     activityTracker.currentActivityType = "AGENT_STEP";
-    activityTracker.activityContent = baseContent;
+    activityTracker.activityContent = finalContent;
 
     transport.emit({
       type: "ACTIVITY_SNAPSHOT",
       messageId: activityId,
       activityType: "AGENT_STEP",
-      content: baseContent,
+      content: finalContent,
       replace: true,
     });
   } else {
     // Existing activity - emit DELTA
-    const patch = computeStateDelta(activityTracker.activityContent, baseContent);
+    const patch = computeStateDelta(activityTracker.activityContent, finalContent);
     if (patch.length > 0) {
-      activityTracker.activityContent = baseContent;
+      activityTracker.activityContent = finalContent;
 
       transport.emit({
         type: "ACTIVITY_DELTA",
@@ -264,11 +268,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             turnIndex,
             activityTracker,
             "started",
+            validated.activityMapper,
             {
               stepName,
               modelName: (runtime as any).config?.model?._modelType || "unknown",
               inputPreview: getInputPreview(state),
-            }
+            } as Record<string, any>
           );
         }
 
@@ -302,11 +307,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             turnIndex,
             activityTracker,
             "completed",
+            validated.activityMapper,
             {
               stepName: currentStepName,
               outputType: getOutputType(state),
               hasToolCalls: hasToolCalls(state),
-            }
+            } as Record<string, any>
           );
         }
       } catch {

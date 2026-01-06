@@ -104,5 +104,63 @@ describe("Activity Events", () => {
       expect(snapshotEvents.length).toBe(0);
       expect(deltaEvents.length).toBe(0);
     });
+
+    test("activityMapper transforms activity content", async () => {
+      const transport = createMockTransport();
+      const model = createTextModel(["Response text"]);
+
+      // Custom mapper that transforms the activity content
+      const customMapper = (node: any) => ({
+        customField: "customValue",
+        step: node.stepName,
+        // Note: activityMapper returns a new object, not modifying the original
+      });
+
+      const { agent } = createTestAgent(model, [], transport, {
+        emitActivities: true,
+        activityMapper: customMapper,
+      });
+
+      await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
+
+      // Should have ACTIVITY_SNAPSHOT with transformed content
+      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
+      expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+
+      const snapshot = snapshotEvents[0];
+      expect(snapshot.content.customField).toBe("customValue");
+      expect(snapshot.content.step).toBeDefined();
+      // The mapper completely replaces content, so original fields won't exist
+      expect(snapshot.content.stepName).toBeUndefined();
+    });
+
+    test("activityMapper receives base content with all fields", async () => {
+      const transport = createMockTransport();
+      const model = createTextModel(["Response text"]);
+
+      // Mapper that logs received fields for verification
+      const receivedFields: string[] = [];
+      const fieldMapper = (node: any) => {
+        Object.keys(node).forEach((key) => receivedFields.push(key));
+        return node;
+      };
+
+      const { agent } = createTestAgent(model, [], transport, {
+        emitActivities: true,
+        activityMapper: fieldMapper,
+      });
+
+      await agent.invoke(formatAgentInput([{ role: "user", content: "Test" }]));
+
+      // Verify base content has expected fields
+      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
+      expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+
+      // Should have received standard fields
+      expect(receivedFields).toContain("status");
+      expect(receivedFields).toContain("timestamp");
+      expect(receivedFields).toContain("stepName");
+      expect(receivedFields).toContain("modelName");
+    });
   });
 });

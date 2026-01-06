@@ -19,15 +19,50 @@ LangChain.js agents require a **hybrid integration approach** to achieve full AG
 
 **Solution:** Use the appropriate mechanism for each event type based on its requirements.
 
-**Two Supported Approaches:**
+**Recommended Approach:**
 
 | Approach | Description | Use Case | Complexity | User Experience |
-|----------|-------------|----------|------------|----------------|
-| **A) AG-UI Agent Wrapper** | Creates a wrapper class that automatically adds callbacks to all invocations | Production, plug-and-play | Medium | ⭐⭐ **Best for most cases** |
-| **B) Middleware + User-Passed Callbacks** | Returns middleware and callbacks; user passes callbacks to each invoke/stream | Testing, flexible | Low | Best for flexibility |
-| **C) AG-UI Backend Endpoint** | Exposes agent via AG-UI protocol server endpoint | Server deployment, full protocol control | High | Best for multi-tenant deployments |
+|----------|-------------|----------|------------|-----------------|
+| **B) Middleware + User-Passed Callbacks** | Returns middleware and callbacks; user passes callbacks to each invoke/stream | **⭐ Recommended for most cases** | Low | Best for flexibility and LangChain compatibility |
+| A) AG-UI Agent Wrapper | Creates a wrapper class that automatically adds callbacks via withConfig | Alternative (requires model support) | Medium | Good for production when models support withConfig |
+| C) AG-UI Backend Endpoint | Exposes agent via AG-UI protocol server endpoint | Server deployment, full protocol control | High | Best for multi-tenant deployments |
 
-### 2.2 Transport Abstraction (Driver Pattern)
+**Why Approach B is Recommended:**
+
+1. **Clean separation of concerns** - Middleware handles lifecycle/state, callbacks handle streaming
+2. **No model requirements** - Works with any LangChain model (unlike withConfig which requires model support)
+3. **Explicit control** - Users control when callbacks are active
+4. **Debuggability** - Clear visibility into what's being passed where
+
+### 2.2 Integration Approach (Approach B)
+
+This package implements **Approach B: Middleware + User-Passed Callbacks**. This provides:
+
+1. **Middleware** for lifecycle events (RUN_STARTED, RUN_FINISHED, STATE_SNAPSHOT, etc.)
+2. **Callbacks** for streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
+3. **Explicit invocation** - Callbacks are passed at runtime via `streamEvents()` configuration
+
+**Usage Pattern:**
+
+```typescript
+import { createAGUIAgent } from "ag-ui-middleware-callbacks";
+import { AGUICallbackHandler } from "ag-ui-middleware-callbacks";
+
+// Create agent with middleware (lifecycle events)
+const agent = createAGUIAgent({
+  model,
+  tools,
+  transport: sseTransport
+});
+
+// Stream with callbacks (streaming events)
+const stream = await agent.streamEvents(input, {
+  version: "v2",
+  callbacks: [new AGUICallbackHandler(sseTransport)]
+});
+```
+
+See Section 2.8 for complete implementation details.
 - **Runtime-Only Transport**: Transports (WS, SSE) are live handles and **must not** be persisted in agent state.
 - **Interface-based**: Transport is an abstraction, allowing the middleware to remain decoupled from the network layer.
 - **Context-Injected**: Transports are provided at runtime via the agent's context, supporting session re-attachment after checkpoint resumption.
@@ -469,9 +504,11 @@ await agent.invoke(input, {
 
 ---
 
-#### 2.7 Approach A: AG-UI Agent Wrapper Class ⭐⭐ Recommended for Production
+#### 2.7 Approach A: AG-UI Agent Wrapper (Alternative)
 
 **Description:** Creates a wrapper class that automatically adds callbacks to all invocations.
+
+> **Note:** This is an **alternative approach**. The recommended approach for this package is **Approach B** (see Section 2.8).
 
 **Factory Signature:**
 ```typescript
@@ -608,9 +645,11 @@ await agent.invoke(
 
 ---
 
-#### 2.8 Approach B: Middleware + User-Passed Callbacks
+#### 2.8 Approach B: Middleware + User-Passed Callbacks ⭐ Recommended
 
 **Description:** Returns separate middleware and callbacks; user passes callbacks to each invocation.
+
+> **⭐ Recommended:** This is the recommended approach for this package. It provides clean separation of concerns and works with any LangChain model.
 
 **Factory Signatures:**
 ```typescript
@@ -755,11 +794,14 @@ await agent.runAgent({ messages: [...] });
 
 | Factor | Approach A (Wrapper) | Approach B (User Callbacks) | Approach C (Backend) |
 |--------|----------------------|------------------------|-----------------|
-| **Plug-and-Play** | ✅ Yes | ⚠️ No (user friction) | ⚠️ No (requires server) |
-| **User Friction** | ✅ Zero | ⚠️ High (must remember) | ✅ Zero (transparent) |
-| **Flexibility** | ⚠️ Medium (requires wrapper updates) | ✅ High (per-invocation) | ✅ High (endpoint control) |
-| **Maintenance** | ⚠️ Low (wrapper class) | ✅ Zero (pure middleware) | ⚠️ High (server) |
-| **Best For** | Production apps | Testing/Dev | Enterprise deployments |
+| **Recommended** | ❌ Alternative | ✅ **⭐ Recommended** | ❌ Specialized |
+| **Plug-and-Play** | ✅ Yes | ⚠️ Explicit callbacks | ⚠️ Requires server |
+| **Model Support** | ⚠️ Requires withConfig | ✅ Any model | ✅ Any model |
+| **Flexibility** | ⚠️ Medium | ✅ High (per-invocation) | ✅ High (endpoint) |
+| **Maintenance** | ⚠️ Low (wrapper) | ✅ Zero (pure) | ⚠️ High (server) |
+| **Best For** | Alternative when needed | Most use cases | Enterprise deployments |
+
+**Recommendation:** Use **Approach B** for most applications. Use Approach A only when you need automatic callback binding and your model supports `withConfig`. Use Approach C for server deployments requiring full protocol control.
 
 ---
 
@@ -1072,9 +1114,21 @@ The middleware implements granular activity tracking using ACTIVITY_SNAPSHOT and
 | ACTIVITY_DELTA | Activity updates (during execution) | Status changes, progress updates |
 | ACTIVITY_DELTA | Activity completes (afterModel) | Output type, tool call presence |
 
-**Activity Types:**
-- `AGENT_STEP` - Model invocation activity
-- `TOOL_EXECUTION` - Tool call activity (when tools are invoked)
+**Activity Type:**
+
+The `activityType` field is a string discriminator that identifies the type of activity. This package uses:
+- `AGENT_STEP` - Model invocation activity (primary activity type)
+
+**Tool Activities - Known Limitation:**
+
+Tool execution activities (e.g., `TOOL_EXECUTION`) are currently **not implemented**. This is because:
+- Middleware does not have direct access to tool execution callbacks
+- Tool activities would require coordination between callbacks and middleware
+- The `activityType` is a free-form string (not a predefined enum per AG-UI spec)
+
+If you need tool execution visibility, use:
+- **TOOL_CALL_START/END events** - These are emitted via callbacks
+- **Custom ACTIVITY events** - Emit your own ACTIVITY_SNAPSHOT/DELTA via transport
 
 **Activity Content Structure:**
 ```typescript
