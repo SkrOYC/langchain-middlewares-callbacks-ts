@@ -318,6 +318,26 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             } as Record<string, any>
           );
         }
+
+        // NEW: Emit STATE_DELTA for real-time state updates during streaming
+        // This provides efficient incremental updates instead of full snapshots
+        // Only emit when we're emitting state snapshots ("initial", "final", or "all")
+        if (
+          validated.emitStateSnapshots !== "none" &&
+          stateTracker.previousState !== undefined
+        ) {
+          const delta = computeStateDelta(stateTracker.previousState, state);
+          if (delta.length > 0) {
+            transport.emit({
+              type: "STATE_DELTA",
+              delta,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        
+        // Update state tracker for next delta computation
+        stateTracker.previousState = cleanLangChainData(state);
       } catch {
         // Fail-safe
       }

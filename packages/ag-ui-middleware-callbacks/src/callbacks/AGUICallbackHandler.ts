@@ -7,6 +7,7 @@
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
+import { expandEvent } from "../utils/eventNormalizer";
 import type { AGUITransport } from "../transports/types";
 
 /**
@@ -59,6 +60,67 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     this.agentTurnTracker.clear();
     this.pendingToolCalls.clear();
     this.accumulatedToolArgs.clear();
+  }
+
+  // ==================== Convenience Methods for Chunk Events ====================
+
+  /**
+   * Emit a TEXT_MESSAGE_CHUNK event (convenience method)
+   * Auto-expands to START → CONTENT → END lifecycle
+   * 
+   * Use this for simple cases where you have the complete message at once
+   * instead of handling the streaming lifecycle manually.
+   * 
+   * @param messageId - Unique message identifier (auto-generated if not provided)
+   * @param role - Message role (defaults to "assistant")
+   * @param delta - Text content to emit
+   */
+  async emitTextChunk(
+    messageId: string,
+    role: "assistant" | "user" | "system" | "developer" = "assistant",
+    delta: string
+  ): Promise<void> {
+    const events = expandEvent({
+      type: "TEXT_MESSAGE_CHUNK",
+      messageId,
+      role,
+      delta,
+    } as any);
+    
+    for (const event of events) {
+      await this.transport.emit(event);
+    }
+  }
+
+  /**
+   * Emit a TOOL_CALL_CHUNK event (convenience method)
+   * Auto-expands to START → ARGS → END lifecycle
+   * 
+   * Use this for simple tool calls where you have the complete arguments at once
+   * instead of handling the streaming lifecycle manually.
+   * 
+   * @param toolCallId - Unique tool call identifier (auto-generated if not provided)
+   * @param toolCallName - Name of the tool being called
+   * @param delta - Tool arguments (JSON string)
+   * @param parentMessageId - ID of the message that triggered this tool call
+   */
+  async emitToolChunk(
+    toolCallId: string,
+    toolCallName: string,
+    delta: string,
+    parentMessageId?: string
+  ): Promise<void> {
+    const events = expandEvent({
+      type: "TOOL_CALL_CHUNK",
+      toolCallId,
+      toolCallName,
+      delta,
+      parentMessageId,
+    } as any);
+    
+    for (const event of events) {
+      await this.transport.emit(event);
+    }
   }
 
   // ==================== LLM Callbacks ====================
@@ -446,8 +508,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         timestamp: Date.now(),
       });
 
-      // Emit final complete args (Option A: always emit final args per AG-UI spec)
-      // If we accumulated partial streaming args, emit the complete args from tool input
+      // Emit final complete args only if not already fully streamed
+      // Check if args were already accumulated from streaming
       const accumulatedArgs = this.accumulatedToolArgs.get(toolCallId);
       
       if (input && typeof input === "string") {
@@ -462,13 +524,16 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           // Input is not JSON, use as-is
         }
 
-        // Emit final complete args
-        this.transport.emit({
-          type: "TOOL_CALL_ARGS",
-          toolCallId,
-          delta: completeArgs,
-          timestamp: Date.now(),
-        });
+        // Only emit final args if they weren't already fully streamed
+        // This prevents duplicate TOOL_CALL_ARGS events
+        if (!accumulatedArgs || accumulatedArgs !== completeArgs) {
+          this.transport.emit({
+            type: "TOOL_CALL_ARGS",
+            toolCallId,
+            delta: completeArgs,
+            timestamp: Date.now(),
+          });
+        }
 
         // Cleanup accumulated partial args
         this.accumulatedToolArgs.delete(toolCallId);
