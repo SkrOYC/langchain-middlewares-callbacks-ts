@@ -14,7 +14,7 @@ interface AgentConfig {
 
 interface ChatEvent {
   id: string;
-  type: "message" | "thinking" | "tool-result";
+  type: "message" | "thinking" | "tool-result" | "activity";
   messageId?: string;
   content?: string;
   role?: string;
@@ -22,7 +22,39 @@ interface ChatEvent {
   toolName?: string;
   toolArgs?: string;
   toolResult?: string;
+  activityType?: string;
   timestamp: number;
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Apply JSON Patch (RFC 6902) to an object
+ */
+function applyStateDelta(obj: any, patch: Array<{ op: string; path: string; value?: any }>): any {
+  const result = { ...obj };
+  for (const operation of patch) {
+    const { op, path, value } = operation;
+    const parts = path.split("/").filter(Boolean);
+    const lastKey = parts.pop()!;
+    let target = result;
+    for (const part of parts) {
+      target = target[part];
+      if (!target) break;
+    }
+    switch (op) {
+      case "add":
+      case "replace":
+        target[lastKey] = value;
+        break;
+      case "remove":
+        delete target[lastKey];
+        break;
+    }
+  }
+  return result;
 }
 
 // ============================================================================
@@ -49,6 +81,13 @@ const CSS = `
   .tool-icon { font-size: 14px; }
   .tool-result-content { font-family: 'SF Mono', Monaco, monospace; color: #28a745; background: #f8f9fa; padding: 8px 12px; border-radius: 4px; margin-top: 8px; font-size: 13px; }
   .tool-args { font-family: 'SF Mono', Monaco, monospace; color: #6c757d; font-size: 11px; background: #f1f3f5; padding: 6px 10px; border-radius: 4px; margin-bottom: 6px; }
+  .activity-block { background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-left: 3px solid #ff9800; border-radius: 4px; padding: 12px 16px; margin: 8px 0 8px 40px; }
+  .activity-header { font-weight: 600; color: #e65100; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .activity-content { color: #333; line-height: 1.6; font-size: 13px; }
+  .activity-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 8px; }
+  .activity-status.started { background: #e3f2fd; color: #1976d2; }
+  .activity-status.processing { background: #fff3e0; color: #f57c00; }
+  .activity-status.completed { background: #e8f5e9; color: #388e3c; }
   .input-area { display: flex; gap: 12px; padding: 16px; background: white; border-top: 1px solid #e0e0e0; border-radius: 12px; }
   .input-area input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; transition: border-color 0.2s; }
   .input-area input:focus { outline: none; border-color: #007aff; }
@@ -189,6 +228,63 @@ function App() {
           // Log steps (could add to UI in future)
           break;
 
+        // Activity Events (AG-UI Protocol Section 5)
+        case "ACTIVITY_SNAPSHOT":
+          // Add or update activity message
+          setChatEvents((prev) => {
+            const index = prev.findIndex((e) => e.messageId === data.messageId);
+            const activityEvent: ChatEvent = {
+              id: data.messageId,
+              type: "activity",
+              messageId: data.messageId,
+              activityType: data.activityType,
+              content: JSON.stringify(data.content, null, 2),
+              timestamp: Date.now(),
+            };
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = activityEvent;
+              return updated;
+            }
+            return [...prev, activityEvent];
+          });
+          break;
+
+        case "ACTIVITY_DELTA":
+          // Update existing activity with JSON patch
+          setChatEvents((prev) => {
+            const index = prev.findIndex((e) => e.messageId === data.messageId);
+            if (index !== -1 && prev[index].content) {
+              try {
+                const updated = [...prev];
+                const currentContent = JSON.parse(updated[index].content || "{}");
+                const patchedContent = applyStateDelta(currentContent, data.patch);
+                updated[index] = { ...updated[index], content: JSON.stringify(patchedContent, null, 2) };
+                return updated;
+              } catch {
+                return prev;
+              }
+            }
+            return prev;
+          });
+          break;
+
+        // State Events (AG-UI Protocol Section 4)
+        case "STATE_SNAPSHOT":
+          // Could be used for conversation recovery - log for now
+          console.log("State snapshot received:", data.snapshot);
+          break;
+
+        case "STATE_DELTA":
+          // Incremental state updates - log for now
+          console.log("State delta received:", data.delta);
+          break;
+
+        case "MESSAGES_SNAPSHOT":
+          // Full conversation history - could be used for recovery
+          console.log("Messages snapshot received:", data.messages.length, "messages");
+          break;
+
         // Message Events
         case "TEXT_MESSAGE_START":
           // Add new assistant message to timeline
@@ -236,6 +332,10 @@ function App() {
           ]);
           break;
 
+        case "THINKING_TEXT_MESSAGE_START":
+          // Thinking content stream started - content will follow
+          break;
+
         case "THINKING_TEXT_MESSAGE_CONTENT":
           setChatEvents((prev) => {
             const index = prev.findIndex((e) => e.type === "thinking" && e.messageId === data.messageId);
@@ -246,6 +346,10 @@ function App() {
             }
             return prev;
           });
+          break;
+
+        case "THINKING_TEXT_MESSAGE_END":
+          // Thinking content stream completed
           break;
 
         case "THINKING_END":
@@ -404,6 +508,29 @@ function App() {
                 {event.toolResult && (
                   <div className="tool-result-content">{event.toolResult}</div>
                 )}
+              </div>
+            );
+          } else if (event.type === "activity") {
+            // Parse activity content to display status
+            let status = "processing";
+            let statusText = "Processing";
+            try {
+              const content = JSON.parse(event.content || "{}");
+              status = content.status || "processing";
+              statusText = status.charAt(0).toUpperCase() + status.slice(1);
+            } catch {}
+            return (
+              <div key={event.id} className="activity-block">
+                <div className="activity-header">
+                  <span>⚡</span>
+                  Activity: {event.activityType || "AGENT_STEP"}
+                  <span className={`activity-status ${status}`}>{statusText}</span>
+                </div>
+                <div className="activity-content">
+                  <pre style={{ margin: 0, fontSize: "11px", overflow: "auto" }}>
+                    {event.content}
+                  </pre>
+                </div>
               </div>
             );
           }
@@ -572,7 +699,32 @@ if (import.meta.main) {
                   model,
                   tools: [calculatorTool],
                   transport,
+                  middlewareOptions: {
+                    // Lifecycle events from middleware (RUN_STARTED, RUN_FINISHED, ACTIVITY, etc.)
+                    emitToolResults: true,
+                    emitStateSnapshots: "initial",
+                    emitActivities: true,
+                    maxUIPayloadSize: 50 * 1024,
+                    chunkLargeResults: false,
+                    errorDetailLevel: "message",
+                    // Custom mappers for transformed events
+                    activityMapper: (node) => ({
+                      ...node,
+                      _demoMapped: true,
+                      _demoTimestamp: Date.now(),
+                      stepDescription: node.stepName
+                        ? `Executing: ${node.stepName}`
+                        : "Agent processing",
+                    }),
+                    stateMapper: (state) => ({
+                      ...state,
+                      _demoNote: "This state snapshot was transformed by stateMapper",
+                    }),
+                  },
                 });
+
+                // AGUICallbackHandler handles LLM streaming events
+                // (TEXT_MESSAGE, THINKING, TOOL_CALL - events that come from the model)
                 const aguiCallback = new AGUICallbackHandler(transport);
 
                 const eventStream = await (agent as any).streamEvents(
@@ -588,7 +740,6 @@ if (import.meta.main) {
                     session.messages = event.data.output.messages;
                   }
                 }
-                aguiCallback.dispose();
                 controller.close();
               },
             }),
