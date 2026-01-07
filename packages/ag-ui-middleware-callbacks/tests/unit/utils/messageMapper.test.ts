@@ -30,8 +30,8 @@ describe("messageMapper", () => {
     const mapped = mapLangChainMessageToAGUI(message);
     expect(mapped.role).toBe("assistant");
     expect(mapped.content).toBe("Thinking...");
-    expect(mapped.tool_calls).toHaveLength(1);
-    expect(mapped.tool_calls?.[0]).toEqual({
+    expect(mapped.toolCalls).toHaveLength(1);
+    expect(mapped.toolCalls?.[0]).toEqual({
       id: "call_1",
       type: "function",
       function: {
@@ -49,7 +49,7 @@ describe("messageMapper", () => {
     const mapped = mapLangChainMessageToAGUI(message);
     expect(mapped.role).toBe("tool");
     expect(mapped.content).toBe('{"temp": 22}');
-    expect(mapped.tool_call_id).toBe("call_1");
+    expect(mapped.toolCallId).toBe("call_1");
   });
 
   it("should map SystemMessage to system role", () => {

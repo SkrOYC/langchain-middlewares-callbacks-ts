@@ -18,17 +18,17 @@ import type { Message, ToolCall } from "../events";
 export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
   const id = (message as any).id || generateId();
   let role: Message["role"] = "assistant";
-  let tool_calls: ToolCall[] | undefined;
-  let tool_call_id: string | undefined;
+  let toolCalls: ToolCall[] | undefined;
+  let toolCallId: string | undefined;
   let content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
 
   if (message instanceof HumanMessage || (message as any).role === "user" || (message as any)._getType?.() === "human") {
     role = "user";
   } else if (message instanceof AIMessage || (message as any).role === "assistant" || (message as any)._getType?.() === "ai") {
     role = "assistant";
-    const toolCalls = (message as any).tool_calls || (message as any).kwargs?.tool_calls;
-    if (toolCalls && toolCalls.length > 0) {
-      tool_calls = toolCalls.map((tc: any) => ({
+    const toolCallsFromLLM = (message as any).tool_calls || (message as any).kwargs?.tool_calls;
+    if (toolCallsFromLLM && toolCallsFromLLM.length > 0) {
+      toolCalls = toolCallsFromLLM.map((tc: any) => ({
         id: tc.id!,
         type: "function",
         function: {
@@ -39,7 +39,7 @@ export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
     }
   } else if (message instanceof ToolMessage || (message as any).role === "tool" || (message as any)._getType?.() === "tool") {
     role = "tool";
-    tool_call_id = (message as any).tool_call_id || (message as any).kwargs?.tool_call_id;
+    toolCallId = (message as any).tool_call_id || (message as any).kwargs?.tool_call_id;
   } else if (message instanceof SystemMessage || (message as any).role === "system" || (message as any)._getType?.() === "system") {
     role = "system";
   } else if (message instanceof ChatMessage) {
@@ -52,8 +52,8 @@ export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
     id,
     role,
     content,
-    tool_calls,
-    tool_call_id,
+    toolCalls,
+    toolCallId,
     name: (message as any).name
   };
 }

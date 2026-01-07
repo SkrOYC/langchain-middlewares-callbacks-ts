@@ -51,8 +51,8 @@ export interface Message {
   role: MessageRole;
   content?: string;
   name?: string;
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
   error?: string;
 }
 

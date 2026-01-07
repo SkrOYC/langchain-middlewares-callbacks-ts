@@ -6,8 +6,7 @@
 
 import { createMiddleware } from "langchain";
 import { z } from "zod";
-import { compare, type Operation } from "fast-json-patch";
-import { generateId, generateDeterministicId } from "../utils/idGenerator";
+import { generateDeterministicId } from "../utils/idGenerator";
 import { computeStateDelta } from "../utils/stateDiff";
 import { mapLangChainMessageToAGUI } from "../utils/messageMapper";
 import { cleanLangChainData } from "../utils/cleaner";
@@ -22,255 +21,6 @@ import { createValidatingTransport } from "../utils/validation";
  */
 function isValidationEnabled(validateEvents: AGUIMiddlewareOptions['validateEvents']): boolean {
   return validateEvents === true || validateEvents === "strict";
-}
-
-/**
- * Filter STATE_DELTA operations to include only UI-relevant state paths.
- * Based on AG-UI protocol spec: STATE_DELTA should emit shared application state,
- * not internal framework metadata.
- * 
- * Whitelist: paths that serve legitimate UI purposes
- * Blacklist: internal framework details that should not be synchronized
- */
-function filterStateDelta(delta: Operation[]): Operation[] {
-  // Paths that are valuable for UI/synchronization
-  const WHITELIST_PATTERNS = [
-    // Message array structure
-    '/messages',
-    '/messages/-',           // Add new message
-    '/messages/\\d+',        // Specific message index
-    
-    // Message properties (AG-UI relevant)
-    '/messages/\\d+/id',           // Message ID for correlation
-    '/messages/\\d+/role',         // Message role (user/assistant/tool)
-    '/messages/\\d+/content',      // Message content
-    '/messages/\\d+/name',         // Component name (for tracing)
-    '/messages/\\d+/tool_call_id', // Tool result correlation
-    '/messages/\\d+/status',       // Tool execution status
-    
-    // Provider and usage data (valuable for UI)
-    '/messages/\\d+/additional_kwargs',
-    '/messages/\\d+/response_metadata',
-    '/messages/\\d+/usage_metadata',
-    
-    // Tool calls (important for UI state)
-    '/messages/\\d+/tool_calls',
-    '/messages/\\d+/tool_call_chunks',
-  ];
-  
-  // Internal framework details to exclude
-  const BLACKLIST_PATTERNS = [
-    // LangChain internal markers
-    '/messages/\\d+/lc',
-    '/messages/\\d+/type',
-    '/messages/\\d+/id$',          // Internal ID array (keep messageId, remove this)
-    '/messages/\\d+/kwargs',       // Internal structure (extract content instead)
-    '/messages/\\d+/invalid_tool_calls',
-    
-    // LangGraph internals
-    '/messages/\\d+/lg_',
-    '/lg_',
-    
-    // Root-level internal paths
-    '^/lc$',
-    '^/type$',
-    '^/kwargs$',
-    '^/additional_kwargs$',
-  ];
-  
-  const isWhitelisted = (path: string): boolean => {
-    return WHITELIST_PATTERNS.some(pattern => {
-      const regex = new RegExp(pattern);
-      return regex.test(path);
-    });
-  };
-  
-  const isBlacklisted = (path: string): boolean => {
-    return BLACKLIST_PATTERNS.some(pattern => {
-      const regex = new RegExp(pattern);
-      return regex.test(path);
-    });
-  };
-  
-  // Filter: include if whitelisted AND not blacklisted
-  return delta.filter(op => {
-    const path = op.path;
-    
-    // Must be whitelisted
-    if (!isWhitelisted(path)) {
-      return false;
-    }
-    
-    // Must not be blacklisted
-    if (isBlacklisted(path)) {
-      return false;
-    }
-    
-    return true;
-  });
-}
-
-/**
- * Check if a path is whitelisted for STATE_DELTA emission.
- * Whitelist paths have legitimate UI/synchronization purposes.
- */
-function isPathWhitelisted(path: string): boolean {
-  const WHITELIST_PATTERNS = [
-    // Message array structure
-    '/messages',
-    '/messages/-',           // Add new message
-    '/messages/\\d+',        // Specific message index
-    
-    // Message properties (AG-UI relevant)
-    '/messages/\\d+/id',           // Message ID for correlation
-    '/messages/\\d+/role',         // Message role (user/assistant/tool)
-    '/messages/\\d+/content',      // Message content
-    '/messages/\\d+/name',         // Component name (for tracing)
-    '/messages/\\d+/tool_call_id', // Tool result correlation
-    '/messages/\\d+/status',       // Tool execution status
-    
-    // Provider and usage data (valuable for UI)
-    '/messages/\\d+/additional_kwargs',
-    '/messages/\\d+/response_metadata',
-    '/messages/\\d+/usage_metadata',
-    
-    // Tool calls (important for UI state)
-    '/messages/\\d+/tool_calls',
-    '/messages/\\d+/tool_call_chunks',
-  ];
-  
-  return WHITELIST_PATTERNS.some(pattern => {
-    const regex = new RegExp(pattern);
-    return regex.test(path);
-  });
-}
-
-/**
- * Check if a path is blacklisted for STATE_DELTA emission.
- * Blacklist paths are internal framework details.
- */
-function isPathBlacklisted(path: string): boolean {
-  const BLACKLIST_PATTERNS = [
-    // LangChain internal markers
-    '/messages/\\d+/lc',
-    '/messages/\\d+/type',
-    '/messages/\\d+/id$',          // Internal ID array (keep messageId, remove this)
-    '/messages/\\d+/kwargs',       // Internal structure (extract content instead)
-    '/messages/\\d+/invalid_tool_calls',
-    
-    // LangGraph internals
-    '/messages/\\d+/lg_',
-    '/lg_',
-    
-    // Root-level internal paths
-    '^/lc$',
-    '^/type$',
-    '^/kwargs$',
-    '^/additional_kwargs$',
-  ];
-  
-  return BLACKLIST_PATTERNS.some(pattern => {
-    const regex = new RegExp(pattern);
-    return regex.test(path);
-  });
-}
-
-/**
- * Clean LangChain message objects to extract UI-relevant fields only.
- * Based on field-by-field justification analysis.
- */
-function cleanMessageForState(message: any): any {
-  if (!message || typeof message !== 'object') {
-    return message;
-  }
-  
-  // For LangChain objects, extract from kwargs if it exists
-  const kwargs = message.kwargs || {};
-  
-  return {
-    // UI-relevant fields from AG-UI spec
-    id: kwargs.id || message.id,          // AG-UI messageId or LangChain internal ID
-    role: kwargs.role || inferRole(message), // Message role
-    content: kwargs.content || '',         // Message content
-    name: kwargs.name || message.name,     // Component name (for tracing)
-    tool_call_id: kwargs.tool_call_id,     // Tool result correlation
-    status: kwargs.status,                 // Tool execution status
-    
-    // Provider and usage data (valuable for UI)
-    additional_kwargs: kwargs.additional_kwargs,
-    response_metadata: kwargs.response_metadata,
-    usage_metadata: kwargs.usage_metadata,
-    tool_calls: kwargs.tool_calls,
-    tool_call_chunks: kwargs.tool_call_chunks,
-  };
-}
-
-/**
- * Infer message role from LangChain message structure.
- */
-function inferRole(message: any): string {
-  const kwargs = message.kwargs || {};
-  
-  if (kwargs.role) return kwargs.role;
-  if (message.name === 'calculator' || message.tool_call_id) return 'tool';
-  if (message.lc_serializable?.id?.[1] === 'AIMessage' || 
-      message.lc_serializable?.id?.[1] === 'AIMessageChunk') return 'assistant';
-  if (message.lc_serializable?.id?.[1] === 'HumanMessage') return 'user';
-  if (message.lc_serializable?.id?.[1] === 'ToolMessage') return 'tool';
-  
-  return 'unknown';
-}
-
-/**
- * Filter STATE_DELTA operations and clean message values.
- * Ensures only UI-relevant state paths and data are emitted.
- */
-function filterAndCleanStateDelta(delta: Operation[]): Operation[] {
-  return delta
-    .map(op => {
-      // Filter paths first
-      const path = op.path;
-      if (!isPathWhitelisted(path) || isPathBlacklisted(path)) {
-        return null;
-      }
-      
-      // For 'add' operations, clean the value (message objects)
-      if (op.op === 'add' && op.value && typeof op.value === 'object') {
-        // Check if this looks like a message object
-        if (op.value.kwargs || op.value.lc || op.value.type) {
-          return {
-            ...op,
-            value: cleanMessageForState(op.value),
-          };
-        }
-      }
-      
-      return op;
-    })
-    .filter((op): op is Operation => op !== null);
-}
-
-/**
- * Interface for tracking previous state for delta computation.
- */
-interface StateTracker {
-  previousState: unknown;
-}
-
-/**
- * Interface for tracking agent execution activities.
- */
-interface ActivityTracker {
-  currentActivityId: string | undefined;
-  currentActivityType: string;
-  activityContent: Record<string, any>;
-}
-
-/**
- * Helper function to get a preview of the input for activity content.
- */
-interface StateTracker {
-  previousState: unknown;
 }
 
 /**
@@ -303,7 +53,7 @@ function getOutputType(state: unknown): string {
   const stateAny = state as any;
   if (stateAny.messages && Array.isArray(stateAny.messages)) {
     const lastMessage = stateAny.messages[stateAny.messages.length - 1];
-    if (lastMessage?.tool_calls?.length) return "tool_calls";
+    if (lastMessage?.toolCalls?.length) return "tool_calls";
     if (lastMessage?.content) return "text";
   }
   return "unknown";
@@ -314,7 +64,7 @@ function getOutputType(state: unknown): string {
  */
 function hasToolCalls(state: unknown): boolean {
   const stateAny = state as any;
-  return !!(stateAny.messages && stateAny.messages.some((m: any) => m.tool_calls?.length > 0));
+  return !!(stateAny.messages && stateAny.messages.some((m: any) => m.toolCalls?.length > 0));
 }
 
 /**
@@ -395,10 +145,6 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   let runId: string | undefined;
   let currentStepName: string | undefined = undefined;
   let modelTurnIndex = 0;
-
-  const stateTracker: StateTracker = {
-    previousState: undefined,
-  };
 
   const activityTracker: ActivityTracker = {
     currentActivityId: undefined,
@@ -580,7 +326,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // Emit STATE_SNAPSHOT after state-stabilizing events (not during streaming)
         // Per AG-UI spec and LangGraph implementation: emit only when streaming has completed
         // and state is stable. STATE_DELTA is NOT used in actual LangGraph implementations.
-        if (validated.emitStateSnapshots !== "none" && stateTracker.previousState !== undefined) {
+        if (validated.emitStateSnapshots !== "none") {
           // Only emit STATE_SNAPSHOT after streaming completes (state-stabilizing event)
           // This follows the LangGraph pattern: emit after tool/text streaming ends
           const filteredState = cleanLangChainData(state);
@@ -595,17 +341,14 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           
           // Only emit if we have meaningful state to share
           const stateKeys = snapshot ? Object.keys(snapshot).filter(k => snapshot[k] !== undefined && snapshot[k] !== null) : [];
-          if (stateKeys.length > 0) {
-            transport.emit({
-              type: "STATE_SNAPSHOT",
-              snapshot,
-              timestamp: Date.now(),
-            });
-          }
-        }
-        
-        // Update state tracker for next computation
-        stateTracker.previousState = cleanLangChainData(state);
+           if (stateKeys.length > 0) {
+             transport.emit({
+               type: "STATE_SNAPSHOT",
+               snapshot,
+               timestamp: Date.now(),
+             });
+           }
+         }
       } catch {
         // Fail-safe
       }
