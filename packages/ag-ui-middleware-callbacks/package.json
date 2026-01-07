@@ -1,12 +1,31 @@
 {
-  "name": "ag-ui-middleware-callbacks",
-  "module": "index.ts",
-  "type": "module",
-  "devDependencies": {
-    "@types/bun": "latest"
+  "name": "@skroyc/ag-ui-middleware-callbacks",
+  "version": "0.1.1",
+  "description": "LangChain.js integration providing middleware and callbacks for AG-UI protocol compatibility",
+  "keywords": ["langchain", "ag-ui", "middleware", "callbacks", "agent", "streaming"],
+  "author": "SkrOYC <oscar@ocmasesorias.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skrOYC/langchain-middlewares-callbacks-ts.git",
+    "directory": "packages/ag-ui-middleware-callbacks"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": ["dist/", "package.json", "README.md", "LICENSE"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": ">=5"
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.42",
@@ -14,5 +33,14 @@
     "langchain": "^1.2.3",
     "zod": "^3.22.4",
     "fast-json-patch": "^3.1.1"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "bun test",
+    "lint": "bun lint"
   }
 }

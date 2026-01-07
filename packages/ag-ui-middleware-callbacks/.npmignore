@@ -1,0 +1,16 @@
+src/
+tests/
+*.test.ts
+*.config.*
+bunfig.toml
+tsconfig.json
+.git/
+.idea/
+.vscode/
+.DS_Store
+coverage/
+*.lcov
+*.log
+.eslintcache
+*.tsbuildinfo
+.cache/

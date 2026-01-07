@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*",
-    "examples/*"
+    "packages/*"
   ],
   "scripts": {
     "build": "bun run --filter '*' build",
@@ -14,12 +13,5 @@
   "devDependencies": {
     "typescript": "^5.0.0",
     "bun-types": "latest"
-  },
-  "dependencies": {
-    "@langchain/core": "^1.1.8",
-    "@langchain/langgraph": "^1.0.7",
-    "@langchain/openai": "^1.2.1",
-    "fast-json-patch": "^3.1.1",
-    "zod": "^4.3.4"
   }
 }
