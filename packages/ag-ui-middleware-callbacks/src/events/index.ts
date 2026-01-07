@@ -1,6 +1,10 @@
 /**
  * AG-UI Protocol Event Types
  *
+ * This module provides type definitions for the AG-UI protocol events.
+ * It maintains backward compatibility with existing code while leveraging
+ * @ag-ui/core for validation where applicable.
+ * 
  * Based on the AG-UI protocol specification:
  * - Lifecycle Events: RUN_STARTED, RUN_FINISHED, RUN_ERROR, STEP_STARTED, STEP_FINISHED
  * - Text Message Events: TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END
@@ -9,9 +13,27 @@
  * - Activity Events: ACTIVITY_SNAPSHOT, ACTIVITY_DELTA
  * - Thinking Events: THINKING_START, THINKING_TEXT_MESSAGE_START, THINKING_TEXT_MESSAGE_CONTENT, THINKING_TEXT_MESSAGE_END, THINKING_END
  * - Special Events: RAW, CUSTOM
+ * 
+ * @see https://docs.ag-ui.com/introduction
+ * @packageDocumentation
  */
 
 import { type Operation } from "fast-json-patch";
+
+// ============================================================================
+// Re-export @ag-ui/core types and schemas for optional validation
+// ============================================================================
+
+export {
+  EventType,
+  EventSchemas,
+  MessageSchema as AGUICoreMessageSchema,
+  ToolCallSchema as AGUICoreToolCallSchema,
+} from '@ag-ui/core';
+
+// ============================================================================
+// Message Types (backward compatible with existing code)
+// ============================================================================
 
 export type MessageRole = "developer" | "system" | "assistant" | "user" | "tool" | "activity";
 
@@ -34,7 +56,10 @@ export interface Message {
   error?: string;
 }
 
+// ============================================================================
 // Lifecycle Events
+// ============================================================================
+
 export interface RunStartedEvent {
   type: "RUN_STARTED";
   threadId: string;
@@ -71,7 +96,10 @@ export interface StepFinishedEvent {
   timestamp?: number;
 }
 
+// ============================================================================
 // Text Message Events
+// ============================================================================
+
 export interface TextMessageStartEvent {
   type: "TEXT_MESSAGE_START";
   messageId: string;
@@ -103,7 +131,10 @@ export interface TextMessageChunkEvent {
   timestamp?: number;
 }
 
+// ============================================================================
 // Tool Call Events
+// ============================================================================
+
 export interface ToolCallStartEvent {
   type: "TOOL_CALL_START";
   toolCallId: string;
@@ -146,7 +177,10 @@ export interface ToolCallChunkEvent {
   timestamp?: number;
 }
 
+// ============================================================================
 // State Events
+// ============================================================================
+
 export interface StateSnapshotEvent {
   type: "STATE_SNAPSHOT";
   snapshot: unknown;
@@ -165,7 +199,10 @@ export interface MessagesSnapshotEvent {
   timestamp?: number;
 }
 
+// ============================================================================
 // Activity Events
+// ============================================================================
+
 export interface ActivitySnapshotEvent {
   type: "ACTIVITY_SNAPSHOT";
   messageId: string;
@@ -183,7 +220,10 @@ export interface ActivityDeltaEvent {
   timestamp?: number;
 }
 
+// ============================================================================
 // Thinking Events
+// ============================================================================
+
 export interface ThinkingStartEvent {
   type: "THINKING_START";
   title?: string;
@@ -215,7 +255,10 @@ export interface ThinkingEndEvent {
   timestamp?: number;
 }
 
+// ============================================================================
 // Special Events
+// ============================================================================
+
 export interface RawEvent {
   type: "RAW";
   event: unknown;
@@ -228,7 +271,10 @@ export interface CustomEvent {
   value: unknown;
 }
 
+// ============================================================================
 // Union type for all AG-UI events
+// ============================================================================
+
 export type AGUIEvent =
   | RunStartedEvent
   | RunFinishedEvent

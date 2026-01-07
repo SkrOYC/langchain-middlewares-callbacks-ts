@@ -64,6 +64,7 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
     stateMapper: config.middlewareOptions?.stateMapper,
     resultMapper: config.middlewareOptions?.resultMapper,
     activityMapper: config.middlewareOptions?.activityMapper,
+    validateEvents: config.middlewareOptions?.validateEvents ?? false,
   });
 
   // Create base agent with middleware

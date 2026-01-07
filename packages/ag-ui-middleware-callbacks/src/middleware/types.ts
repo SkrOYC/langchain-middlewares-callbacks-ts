@@ -21,7 +21,7 @@ export const AGUIMiddlewareOptionsSchema = z.object({
 
   // Event control
   emitToolResults: z.boolean().default(true),
-  emitStateSnapshots: z.enum(["initial", "final", "none"]).default("initial"),
+  emitStateSnapshots: z.enum(["initial", "final", "all", "none"]).default("initial"),
   emitActivities: z.boolean().default(false),
 
   // Smart Emission Policy
@@ -39,6 +39,20 @@ export const AGUIMiddlewareOptionsSchema = z.object({
   stateMapper: z.custom<(state: any) => any>().optional(),
   resultMapper: z.custom<(result: any) => any>().optional(),
   activityMapper: z.custom<(node: any) => any>().optional(),
+  
+  // Validation (New - @ag-ui/core integration)
+  /**
+   * Enable runtime validation of events against @ag-ui/core schemas.
+   * Disabled by default for performance. Enable in development for debugging.
+   * 
+   * - false (default): No validation, events emitted as-is
+   * - true: Validate events, log warnings for invalid events
+   * - "strict": Validate events, throw on invalid events
+   */
+  validateEvents: z.union([
+    z.boolean(),
+    z.literal("strict"),
+  ]).default(false),
 });
 
 /**

@@ -24,3 +24,27 @@ export interface AGUITransport {
   disconnect?(): void;
   isConnected?(): boolean;
 }
+
+/**
+ * Extended Protobuf transport interface with binary encoding utilities.
+ * 
+ * Provides all base AGUITransport functionality plus:
+ * - Abort signal for client disconnect handling
+ * - Binary encoding/decoding utilities
+ */
+export interface ProtobufTransport extends AGUITransport {
+  /** Abort signal triggered on client disconnect */
+  signal: AbortSignal;
+  
+  /**
+   * Encode an event with 4-byte Big-Endian length prefix.
+   * Useful for manual encoding when needed.
+   */
+  encodeEvent(event: AGUIEvent): Uint8Array;
+  
+  /**
+   * Decode a framed event (with 4-byte length prefix).
+   * Useful for parsing received protobuf data.
+   */
+  decodeEvent(data: Uint8Array): AGUIEvent;
+}

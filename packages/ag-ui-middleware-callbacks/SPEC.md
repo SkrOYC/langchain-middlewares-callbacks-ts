@@ -1402,13 +1402,62 @@ await agent.invoke(input, {
 });
 ```
 
-#### B. WebSocket Transport
+#### B. Protocol Buffer (Protobuf) Transport (New)
+
+Binary encoding using `@ag-ui/proto` for bandwidth-efficient event transmission (60-80% smaller payloads).
+
+- ✅ **Binary Encoding**: Uses `@ag-ui/proto` encode/decode functions
+- ✅ **4-Byte Length Prefix**: Big-Endian framing per AG-UI protocol spec
+- ✅ **Fail-Safe Emission**: Same error handling as SSE transport
+- ✅ **Abort Signal Integration**: Client disconnect handling
+- ✅ **Backpressure Handling**: Queue-based emission
+
+**Wire Format:**
+```
+┌─────────────────┬──────────────────────────────────┐
+│ Length (4 BE)   │ Protobuf Event Bytes             │
+└─────────────────┴──────────────────────────────────┘
+```
+
+**Implementation:**
+```typescript
+import { createProtobufTransport, AGUI_MEDIA_TYPE } from 'ag-ui-middleware-callbacks';
+
+export interface ProtobufTransport extends AGUITransport {
+  signal: AbortSignal;
+  encodeEvent(event: AGUIEvent): Uint8Array;
+  decodeEvent(data: Uint8Array): AGUIEvent;
+}
+
+// Usage with content negotiation
+app.post('/api/agent', (req, res) => {
+  const acceptProtobuf = req.headers.accept?.includes(AGUI_MEDIA_TYPE);
+  
+  const transport = acceptProtobuf
+    ? createProtobufTransport(req, res)
+    : createSSETransport(req, res);
+  
+  // ... use transport
+});
+```
+
+**Media Type:** `application/vnd.ag-ui.event+proto`
+
+**Known Limitations:**
+Some events are not yet supported by `@ag-ui/proto` for binary encoding:
+- `TOOL_CALL_RESULT`
+- `ACTIVITY_SNAPSHOT`
+- `ACTIVITY_DELTA`
+
+For these events, use SSE transport or handle encoding errors gracefully.
+
+#### C. WebSocket Transport
 - Full-duplex communication
 - Message queuing during disconnects
 - Connection state management
 - Protocol framing
 
-#### C. HTTP Streaming Transport
+#### D. HTTP Streaming Transport
 - Long-polling fallback
 - Chunked transfer encoding
 - Connection timeout handling
