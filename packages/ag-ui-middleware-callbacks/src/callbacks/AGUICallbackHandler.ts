@@ -256,16 +256,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
             const previousArgs = this.accumulatedToolArgs.get(chunk.id) || "";
             const newArgs = previousArgs + chunk.args;
             
-            // Only emit if args have changed (avoid duplicate emissions)
+            // Only accumulate if args have changed (avoid duplicate accumulations)
             if (newArgs !== previousArgs) {
               this.accumulatedToolArgs.set(chunk.id, newArgs);
-              
-              this.transport.emit({
-                type: "TOOL_CALL_ARGS",
-                toolCallId: chunk.id,
-                delta: chunk.args,
-                timestamp: Date.now(),
-              });
             }
             
             // Track this tool call ID for later correlation
@@ -313,14 +306,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
                 this.toolCallNames.set(tc.id, tc.function.name);
               }
               
-              // Emit TOOL_CALL_ARGS for tool calls that weren't streamed
+              // Accumulate tool call args for later emission in handleToolStart
               if (tc.function?.arguments) {
-                this.transport.emit({
-                  type: "TOOL_CALL_ARGS",
-                  toolCallId: tc.id,
-                  delta: tc.function.arguments,
-                  timestamp: Date.now(),
-                });
+                this.accumulatedToolArgs.set(tc.id, tc.function.arguments);
               }
             }
           }
@@ -511,43 +499,17 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         timestamp: Date.now(),
       });
 
-      // Emit final complete args only if not already fully streamed
-      // Check if args were already accumulated from streaming
+      // Emit accumulated TOOL_CALL_ARGS (from streaming in handleLLMNewToken)
+      // This preserves real-time streaming while maintaining protocol sequence
       const accumulatedArgs = this.accumulatedToolArgs.get(toolCallId);
-      
-      if (input && typeof input === "string") {
-        // Extract complete args from tool input
-        let completeArgs = input;
-        try {
-          const parsedInput = JSON.parse(input);
-          if (parsedInput.arguments || parsedInput.input || parsedInput) {
-            completeArgs = JSON.stringify(parsedInput.arguments || parsedInput.input || parsedInput);
-          }
-        } catch {
-          // Input is not JSON, use as-is
-        }
-
-        // Only emit final args if they weren't already fully streamed
-        // This prevents duplicate TOOL_CALL_ARGS events
-        if (!accumulatedArgs || accumulatedArgs !== completeArgs) {
-          this.transport.emit({
-            type: "TOOL_CALL_ARGS",
-            toolCallId,
-            delta: completeArgs,
-            timestamp: Date.now(),
-          });
-        }
-
-        // Cleanup accumulated partial args
-        this.accumulatedToolArgs.delete(toolCallId);
-      } else if (accumulatedArgs) {
-        // No tool input but we have accumulated streaming args - emit them
+      if (accumulatedArgs) {
         this.transport.emit({
           type: "TOOL_CALL_ARGS",
           toolCallId,
           delta: accumulatedArgs,
           timestamp: Date.now(),
         });
+        // Clean up accumulated args
         this.accumulatedToolArgs.delete(toolCallId);
       }
     } catch {
