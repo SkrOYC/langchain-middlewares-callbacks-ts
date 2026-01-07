@@ -15,12 +15,12 @@ The goal is to provide modular, self-contained packages that handle cross-cuttin
 *   **Monorepo Manager:** [Bun Workspaces](https://bun.sh/docs/install/workspaces)
 *   **Language:** TypeScript (Strict, ESM Only)
 *   **Runtime:** Universal JavaScript (Node.js, Deno, Bun, Cloudflare Workers) via `tsup` bundling.
-*   **Core Dependencies:** `langchain`, `@langchain/langgraph`
+*   **Core Dependencies:** `@langchain/core`, `@langchain/langgraph`, `@ag-ui/core`, `@ag-ui/proto`
 
 ## Directory Structure
 
 *   **`packages/`**: Contains the standalone middleware libraries. Each package is intended to be published independently to npm.
-*   **`examples/`**: Contains reference implementations and integration tests demonstrating how to use the middlewares in actual agents.
+*   **`packages/ag-ui-middleware-callbacks/example/`**: Contains reference implementations and integration tests demonstrating how to use the middlewares in actual agents.
 
 ## Development Workflow
 
