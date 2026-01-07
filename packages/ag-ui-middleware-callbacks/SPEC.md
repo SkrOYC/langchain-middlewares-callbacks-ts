@@ -595,53 +595,7 @@ await agent.invoke({ messages: [...] });
 LangChain.js provides a `withConfig` method that automatically binds callbacks to all invocations, eliminating the need for a manual wrapper class:
 
 ```typescript
-function createAGUIAgent(config: AGUIAgentConfig) {
-  const middleware = createAGUIMiddleware({
-    transport: config.transport
-  });
-  const callbacks = [new AGUICallbackHandler(config.transport)];
-
-  const agent = createAgent({
-    model: config.model,
-    tools: config.tools,
-    middleware: [middleware]
-  });
-
-  // Automatic callback binding - no wrapper class needed!
-  // This merges callbacks with any user-provided callbacks
-  return agent.withConfig({ callbacks });
-}
-
-// Usage - identical to wrapper class
-const agent = createAGUIAgent({ model, tools, transport: sseTransport });
-await agent.invoke({ messages: [...] });
-
-// User callbacks are automatically merged
-await agent.invoke(
-  { messages: [...] },
-  {
-    callbacks: [userCallback]  // Merged with AG-UI callbacks automatically
-  }
-);
-```
-
-**Benefits of `withConfig` approach:**
-- ✅ Simpler implementation (10 lines vs 50+ line wrapper class)
-- ✅ Automatic callback merging (built into LangChain)
-- ✅ No manual method proxying needed
-- ✅ Type-safe (returns properly typed agent)
-- ✅ Same API for users (transparent)
-
-**How `withConfig` Works:**
-- `withConfig({ callbacks })` creates a `RunnableBinding` that automatically merges callbacks
-- When user calls `invoke({ callbacks: [userCb] })`, LangChain merges: `[userCb, ...agUICallbacks]`
-- Middleware is baked into the agent's graph structure at creation time
-- `withConfig` does NOT add middleware - it only affects runtime config
-
-**Choose `withConfig` over wrapper class for:**
-- New implementations (simpler codebase)
-- Projects that value type safety and built-in LangChain features
-- When you don't need to customize `invoke`/`stream` behavior
+**Note:** This describes a potential implementation pattern. The actual `createAGUIAgent` function uses Approach B (see Section 2.8) - it creates middleware but does NOT bind callbacks automatically. Users must pass callbacks at runtime.
 
 ---
 
@@ -713,22 +667,19 @@ await agent.invoke(
 ```
 
 **Pros:**
-- ✅ **Transparent:** Clean separation of concerns
-- ✅ **Flexible:** User can add/omit callbacks per invocation
-- ✅ **No wrapper overhead:** Direct API access to agent
+- ✅ **Clean separation of concerns:** Middleware handles lifecycle, callbacks handle streaming
+- ✅ **Works with any LangChain model:** No dependency on withConfig support
+- ✅ **Explicit control:** Users control when callbacks are active
 - ✅ **Testing friendly:** Easy to test middleware and callbacks independently
 
 **Cons:**
-- ⚠️ **User friction:** Easy to forget to pass callbacks
-- ⚠️ **Error-prone:** Forgetting callbacks breaks AG-UI integration
-- ⚠️ **Inconsistent:** Different users might implement differently
-
-**Maintenance Burden:** **Zero** - Pure middleware and callbacks, no wrapper code
+- ⚠️ **User friction:** Easy to forget to pass callbacks at runtime
+- ⚠️ **Error-prone:** Forgetting callbacks breaks AG-UI streaming integration
 
 **When to Choose:**
-- Testing and development phases
+- Production applications (recommended)
 - When you need per-invocation callback flexibility
-- Educational/demonstration code
+- When working with models that don't support withConfig
 
 ---
 
@@ -792,14 +743,14 @@ await agent.runAgent({ messages: [...] });
 
 ### Approach Comparison Summary
 
-| Factor | Approach A (Wrapper) | Approach B (User Callbacks) | Approach C (Backend) |
-|--------|----------------------|------------------------|-----------------|
-| **Recommended** | ❌ Alternative | ✅ **⭐ Recommended** | ❌ Specialized |
-| **Plug-and-Play** | ✅ Yes | ⚠️ Explicit callbacks | ⚠️ Requires server |
+| Factor | Approach A (Agent Wrapper) | Approach B (createAGUIAgent) | Approach C (Backend) |
+|--------|---------------------------|------------------------------|----------------------|
+| **Status** | Alternative (Not Used) | ✅ **⭐ Recommended** | Alternative |
+| **Implementation** | `agent.withConfig({ callbacks })` | `createAGUIAgent()` | Server endpoint |
 | **Model Support** | ⚠️ Requires withConfig | ✅ Any model | ✅ Any model |
-| **Flexibility** | ⚠️ Medium | ✅ High (per-invocation) | ✅ High (endpoint) |
-| **Maintenance** | ⚠️ Low (wrapper) | ✅ Zero (pure) | ⚠️ High (server) |
-| **Best For** | Alternative when needed | Most use cases | Enterprise deployments |
+| **Best For** | When models support withConfig | Most use cases | Multi-tenant deployments |
+
+**Current Implementation:** Approach B (`createAGUIAgent`)
 
 **Recommendation:** Use **Approach B** for most applications. Use Approach A only when you need automatic callback binding and your model supports `withConfig`. Use Approach C for server deployments requiring full protocol control.
 

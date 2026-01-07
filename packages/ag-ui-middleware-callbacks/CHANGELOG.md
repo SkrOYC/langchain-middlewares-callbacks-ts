@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2 (2026-01-15)
+
+### Documentation
+- Updated README.md to be more concise and aligned with implementation
+- Updated SPEC.md with accurate implementation details
+- Added TOOL_CALL_START and TOOL_CALL_END to event tables
+- Clarified callback binding behavior in createAGUIAgent
+
+### Fixes
+- Fixed event source documentation (Middleware vs Callbacks)
+
 ## 0.1.1 (2026-01-07)
 
 ### Fixes

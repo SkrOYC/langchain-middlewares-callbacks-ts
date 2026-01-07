@@ -1,6 +1,6 @@
 {
   "name": "@skroyc/ag-ui-middleware-callbacks",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "LangChain.js integration providing middleware and callbacks for AG-UI protocol compatibility",
   "keywords": ["langchain", "ag-ui", "middleware", "callbacks", "agent", "streaming"],
   "author": "SkrOYC <oscar@ocmasesorias.com>",
