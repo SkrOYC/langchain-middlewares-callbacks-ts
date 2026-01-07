@@ -21,7 +21,7 @@ export const AGUIMiddlewareOptionsSchema = z.object({
 
   // Event control
   emitToolResults: z.boolean().default(true),
-  emitStateSnapshots: z.enum(["initial", "final", "all", "none"]).default("initial"),
+  emitStateSnapshots: z.enum(["initial", "final", "none"]).default("initial"),
   emitActivities: z.boolean().default(false),
 
   // Smart Emission Policy

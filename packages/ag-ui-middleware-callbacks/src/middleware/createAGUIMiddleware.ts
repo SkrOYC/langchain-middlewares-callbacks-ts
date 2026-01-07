@@ -562,26 +562,34 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           );
         }
 
-        // NEW: Emit STATE_DELTA for real-time state updates during streaming
-        // This provides efficient incremental updates instead of full snapshots
-        // Only emit when we're emitting state snapshots ("initial", "final", or "all")
-        if (
-          validated.emitStateSnapshots !== "none" &&
-          stateTracker.previousState !== undefined
-        ) {
-          const delta = computeStateDelta(stateTracker.previousState, state);
-          // Filter delta to only include UI-relevant paths (AG-UI spec compliance)
-          const filteredDelta = filterAndCleanStateDelta(delta);
-          if (filteredDelta.length > 0) {
+        // Emit STATE_SNAPSHOT after state-stabilizing events (not during streaming)
+        // Per AG-UI spec and LangGraph implementation: emit only when streaming has completed
+        // and state is stable. STATE_DELTA is NOT used in actual LangGraph implementations.
+        if (validated.emitStateSnapshots !== "none" && stateTracker.previousState !== undefined) {
+          // Only emit STATE_SNAPSHOT after streaming completes (state-stabilizing event)
+          // This follows the LangGraph pattern: emit after tool/text streaming ends
+          const filteredState = cleanLangChainData(state);
+          const snapshot = validated.stateMapper 
+            ? validated.stateMapper(filteredState) 
+            : filteredState;
+          
+          // Remove messages from state snapshot (messages are in MESSAGES_SNAPSHOT)
+          if (!validated.stateMapper && snapshot && typeof snapshot === "object") {
+            delete (snapshot as any).messages;
+          }
+          
+          // Only emit if we have meaningful state to share
+          const stateKeys = snapshot ? Object.keys(snapshot).filter(k => snapshot[k] !== undefined && snapshot[k] !== null) : [];
+          if (stateKeys.length > 0) {
             transport.emit({
-              type: "STATE_DELTA",
-              delta: filteredDelta,
+              type: "STATE_SNAPSHOT",
+              snapshot,
               timestamp: Date.now(),
             });
           }
         }
         
-        // Update state tracker for next delta computation
+        // Update state tracker for next computation
         stateTracker.previousState = cleanLangChainData(state);
       } catch {
         // Fail-safe
@@ -606,24 +614,11 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             delete (snapshot as any).messages;
           }
 
-           transport.emit({
-             type: "STATE_SNAPSHOT",
-             snapshot,
-             timestamp: Date.now(),
-           });
-           
-            if (validated.emitStateSnapshots === "all" && stateTracker.previousState !== undefined) {
-              const delta = computeStateDelta(stateTracker.previousState, state);
-              // Filter delta to only include UI-relevant paths (AG-UI spec compliance)
-              const filteredDelta = filterAndCleanStateDelta(delta);
-              if (filteredDelta.length > 0) {
-                transport.emit({
-                  type: "STATE_DELTA",
-                  delta: filteredDelta,
-                  timestamp: Date.now(),
-                });
-              }
-            }
+            transport.emit({
+              type: "STATE_SNAPSHOT",
+              snapshot,
+              timestamp: Date.now(),
+            });
         }
 
         const stateAny = state as any;
