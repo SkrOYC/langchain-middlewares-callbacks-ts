@@ -15,6 +15,14 @@ import {
   AGUIMiddlewareOptionsSchema,
   type AGUIMiddlewareOptions,
 } from "./types";
+import { createValidatingTransport } from "../utils/validation";
+
+/**
+ * Check if validateEvents mode is truthy (true or "strict").
+ */
+function isValidationEnabled(validateEvents: AGUIMiddlewareOptions['validateEvents']): boolean {
+  return validateEvents === true || validateEvents === "strict";
+}
 
 /**
  * Filter STATE_DELTA operations to include only UI-relevant state paths.
@@ -374,7 +382,14 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // Validate options at creation time
   const validated = AGUIMiddlewareOptionsSchema.parse(options);
   
-  const transport = validated.transport;
+  // Wrap transport with validation if enabled
+  // In "strict" mode, throw on invalid events; in true mode, log warnings
+  let transport = validated.transport;
+  if (isValidationEnabled(validated.validateEvents)) {
+    transport = createValidatingTransport(validated.transport, {
+      throwOnInvalid: validated.validateEvents === "strict",
+    });
+  }
   
   let threadId: string | undefined;
   let runId: string | undefined;

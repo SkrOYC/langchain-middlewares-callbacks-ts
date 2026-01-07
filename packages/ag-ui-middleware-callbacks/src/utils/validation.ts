@@ -97,7 +97,10 @@ export function isValidEvent(event: unknown): event is AGUIEvent {
 
 /**
  * Convert our event format to @ag-ui/core validation format.
- * Handles field name differences.
+ * Handles field name differences (e.g., tool_calls → toolCalls).
+ * 
+ * @param event - The event to convert
+ * @returns The converted event or null if conversion failed
  */
 function convertToValidationFormat(event: unknown): unknown {
   if (!event || typeof event !== 'object') {
@@ -105,25 +108,66 @@ function convertToValidationFormat(event: unknown): unknown {
   }
   
   const e = event as Record<string, unknown>;
+  const eventType = e.type as string;
   
-  // Handle MESSAGES_SNAPSHOT: convert tool_calls to toolCalls
-  if (e.type === 'MESSAGES_SNAPSHOT' && Array.isArray(e.messages)) {
+  // Handle MESSAGES_SNAPSHOT: convert Message object field names
+  if (eventType === 'MESSAGES_SNAPSHOT' && Array.isArray(e.messages)) {
     return {
       ...e,
       messages: (e.messages as any[]).map(msg => ({
         ...msg,
+        // Convert tool_calls to toolCalls if present
         toolCalls: msg.tool_calls?.map((tc: any) => ({
           id: tc.id,
           type: tc.type,
           function: tc.function,
         })),
         tool_calls: undefined,
+        // Convert tool_call_id to toolCallId
         toolCallId: msg.tool_call_id,
         tool_call_id: undefined,
       })),
     };
   }
   
+  // Handle TOOL_CALL_START: convert tool_call_id to toolCallId
+  if (eventType === 'TOOL_CALL_START' && e.tool_call_id !== undefined) {
+    return {
+      ...e,
+      toolCallId: e.tool_call_id,
+      tool_call_id: undefined,
+    };
+  }
+  
+  // Handle TOOL_CALL_ARGS: convert tool_call_id to toolCallId
+  if (eventType === 'TOOL_CALL_ARGS' && e.tool_call_id !== undefined) {
+    return {
+      ...e,
+      toolCallId: e.tool_call_id,
+      tool_call_id: undefined,
+    };
+  }
+  
+  // Handle TOOL_CALL_END: convert tool_call_id to toolCallId
+  if (eventType === 'TOOL_CALL_END' && e.tool_call_id !== undefined) {
+    return {
+      ...e,
+      toolCallId: e.tool_call_id,
+      tool_call_id: undefined,
+    };
+  }
+  
+  // Handle TOOL_CALL_RESULT: convert tool_call_id to toolCallId
+  if (eventType === 'TOOL_CALL_RESULT' && e.tool_call_id !== undefined) {
+    return {
+      ...e,
+      toolCallId: e.tool_call_id,
+      tool_call_id: undefined,
+    };
+  }
+  
+  // Events that don't need conversion are returned as-is
+  // Our event definitions already use camelCase for @ag-ui/core compatible fields
   return event;
 }
 
