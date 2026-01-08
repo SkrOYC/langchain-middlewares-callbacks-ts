@@ -18,7 +18,7 @@
  * @packageDocumentation
  */
 
-import { type Operation } from "fast-json-patch";
+import type { Operation } from "fast-json-patch";
 
 // ============================================================================
 // Re-export @ag-ui/core types and schemas for optional validation
