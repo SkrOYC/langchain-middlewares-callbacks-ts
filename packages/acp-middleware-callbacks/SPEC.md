@@ -382,15 +382,17 @@ wrapToolCall: async (request, handler) => {
 **Interface:**
 
 ```typescript
+import * as acp from "@agentclientprotocol/sdk";
+
 interface ACPPermissionMiddlewareConfig {
   permissionPolicy: {
     [toolPattern: string]: {
-      kind: ToolKind;
+      kind: acp.ToolKind;
       requirePermission: boolean;
       allowedDecisions?: ("approve" | "edit" | "reject")[];
     };
   };
-  transport: ACPLinearTransport;
+  transport: acp.AgentSideConnection;
 }
 
 export function createACPPermissionMiddleware(
@@ -405,11 +407,11 @@ beforeModel: {
   canJumpTo: ["tools", "end"],
   hook: async (state, runtime) => {
     const pendingTools = extractPendingTools(state);
-    
+
     for (const tool of pendingTools) {
       if (requiresPermission(tool.name)) {
-        // Emit permission request
-        await transport.requestPermission({
+        // Emit permission request via ACP transport
+        const response = await transport.requestPermission({
           sessionId: getSessionId(runtime),
           toolCall: {
             toolCallId: tool.id,
@@ -420,16 +422,25 @@ beforeModel: {
             rawInput: tool.args,
           },
           options: [
-            { optionId: "approve", name: "Approve", kind: "allow_once" },
-            { optionId: "deny", name: "Deny", kind: "reject_once" },
+            { optionId: 'allow_once', name: 'Allow Once', kind: 'allow_once' },
+            { optionId: 'allow_always', name: 'Allow Always', kind: 'allow_always' },
+            { optionId: 'reject_once', name: 'Deny Once', kind: 'reject_once' },
+            { optionId: 'reject_always', name: 'Deny Always', kind: 'reject_always' },
           ],
         });
-        
-        // Interrupt execution
-        const decision = await waitForDecision();
-        
-        if (decision.outcome === "selected" && decision.optionId === "deny") {
-          return { jumpTo: "end" }; // Reject
+
+        // Handle response
+        if (response.outcome.outcome === 'cancelled') {
+          runtime.interrupt?.();
+          return { jumpTo: 'end' };
+        }
+
+        if (response.outcome.outcome === 'selected') {
+          if (response.outcome.optionId.startsWith('reject')) {
+            return { jumpTo: 'end' };
+          }
+          // User approved - continue execution
+          return {};
         }
       }
     }
@@ -513,7 +524,9 @@ The middleware listens for mode change requests from the client and updates the 
 
 #### 3.3.5 Plan Middleware (`createACPPlanMiddleware`) - OPTIONAL
 
-**Purpose:** Manages ACP plan updates for planning-mode agents.
+**Purpose:** Manages plan updates for planning-mode agents.
+
+**⚠️ Important:** Plan updates are **NOT part of the standard ACP protocol**. This middleware implements a custom extension using the `extNotification` method. Clients must explicitly support this extension.
 
 **What Triggers Plan Emission:**
 - Mode is set to `planning` (see Mode Middleware)
@@ -668,21 +681,60 @@ class ACPCallbackHandler {
 |-------------------------|-------------------|-------|
 | `text` | `text` | Direct mapping |
 | `reasoning` | `agent_thought_chunk` | Separate event type |
+| `user_message` | `user_message_chunk` | Echo user input to client |
 | `image` | `image` | Pass through with base64 |
 | `audio` | `audio` | Pass through with base64 |
-| `file` | `resource_link` | Reference without content |
+| `file` (reference only) | `resource_link` | Reference without content |
+| `file` (with content) | `resource` | Embedded resource with data |
 | `tool_call` | `tool_call` | Via tool middleware |
 | `server_tool_call_result` | `tool_call_update` | Via tool middleware |
+
+**Note on `user_message_chunk`:** This update type is used when agents need to reflect or acknowledge user input back to the client. This is typically used in multi-turn conversations or when the agent is processing user-provided context that should be visible in the conversation history.
 
 #### 3.5.2 Content Block Mapper Implementation
 
 ```typescript
 interface ContentBlockMapper {
+  // Maps to ACP ContentBlock for message chunks
   toACP(block: LangChainContentBlock): ACPContentBlock;
-  toLangChain(block: ACPContentBlock): LangChainContentBlock;
+  
+  // Indicates if this block requires a separate event (like reasoning)
+  requiresSeparateEvent(block: LangChainContentBlock): boolean;
+  
+  // Maps to SessionUpdate type for blocks that need separate events
+  toSessionUpdate(block: LangChainContentBlock, messageId: string): SessionUpdate | null;
 }
 
 class DefaultContentBlockMapper implements ContentBlockMapper {
+  requiresSeparateEvent(block: LangChainContentBlock): boolean {
+    return block.type === "reasoning" || block.type === "user_message";
+  }
+  
+  toSessionUpdate(block: LangChainContentBlock, messageId: string): SessionUpdate | null {
+    switch (block.type) {
+      case "reasoning":
+        return {
+          sessionUpdate: "agent_thought_chunk",
+          content: {
+            type: "text",
+            text: block.text,
+          },
+        };
+        
+      case "user_message":
+        return {
+          sessionUpdate: "user_message_chunk",
+          content: {
+            type: "text",
+            text: block.text,
+          },
+        };
+        
+      default:
+        return null;
+    }
+  }
+  
   toACP(block: LangChainContentBlock): ACPContentBlock {
     switch (block.type) {
       case "text":
@@ -691,25 +743,37 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
           text: block.text,
           annotations: mapAnnotations(block.annotations),
         };
-      
-      case "reasoning":
-        // Emit via separate event, not as message chunk
-        return null; // Special handling
-      
+
       case "image":
         return {
           type: "image",
           data: block.url || block.data,
           mimeType: block.mimeType || "image/png",
         };
-      
+
       case "file":
-        return {
-          type: "resource_link",
-          uri: block.uri || block.url,
-          name: block.name || "file",
-        };
-      
+        // If file has content, use embedded resource; otherwise use link
+        if (block.content) {
+          return {
+            type: "resource",
+            resource: {
+              uri: block.uri || block.url,
+              mimeType: block.mimeType || "application/octet-stream",
+              blob: block.content, // Base64 encoded
+            },
+          };
+        } else {
+          return {
+            type: "resource_link",
+            uri: block.uri || block.url,
+            name: block.name || "file",
+            title: block.title,
+            description: block.description,
+            mimeType: block.mimeType,
+            size: block.size,
+          };
+        }
+
       default:
         return { type: "text", text: String(block) };
     }
@@ -727,22 +791,60 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
 
 ```typescript
 interface MCPToolLoaderConfig {
+  // Server configurations (matches MultiServerMCPClient)
   mcpServers: {
-    [serverName: string]: {
-      transport: "stdio" | "http" | "sse";
-      command?: string;
-      args?: string[];
-      url?: string;
-      headers?: Record<string, string>;
-    };
+    [serverName: string]: MCPStdioConnection | MCPHTTPConnection | MCPSSEConnection;
   };
-  toolOptions?: {
-    prefixToolNameWithServerName?: boolean;
-    useStandardContentBlocks?: boolean;
-  };
+  // Client-level options
+  throwOnLoadError?: boolean;
+  prefixToolNameWithServerName?: boolean;
+  additionalToolNamePrefix?: string;
+  useStandardContentBlocks?: boolean;
+  onConnectionError?: "throw" | "ignore" | ((params: { serverName: string; error: Error }) => void);
+  outputHandling?: OutputHandling;
+  defaultToolTimeout?: number;
 }
 
-export async function loadMCPTools(
+type MCPStdioConnection = {
+  transport: "stdio";
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  encoding?: string;
+  stderr?: "overlapped" | "pipe" | "ignore" | "inherit";
+  restart?: {
+    enabled?: boolean;
+    maxAttempts?: number;
+    delayMs?: number;
+  };
+  outputHandling?: OutputHandling;
+  defaultToolTimeout?: number;
+};
+
+type MCPHTTPConnection = {
+  transport: "http" | "sse";
+  url: string;
+  headers?: Record<string, string>;
+  reconnect?: {
+    enabled?: boolean;
+    maxAttempts?: number;
+    delayMs?: number;
+  };
+  automaticSSEFallback?: boolean;
+  outputHandling?: OutputHandling;
+  defaultToolTimeout?: number;
+};
+
+type OutputHandling = {
+  text?: "content" | "artifact";
+  image?: "content" | "artifact";
+  audio?: "content" | "artifact";
+  resource?: "content" | "artifact";
+  resource_link?: "content" | "artifact";
+};
+
+export async function loadMcpTools(
   config: MCPToolLoaderConfig
 ): Promise<StructuredTool[]>;
 ```
@@ -750,24 +852,37 @@ export async function loadMCPTools(
 **Usage in Middleware:**
 
 ```typescript
-const acpMiddleware = createACPSessionMiddleware({
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const mcpClient = new MultiServerMCPClient({
   mcpServers: {
     filesystem: {
       transport: "stdio",
       command: "npx",
       args: ["-y", "@modelcontextprotocol/server-filesystem"],
+      restart: { enabled: true, maxAttempts: 3 },
+      outputHandling: {
+        text: "content",
+        image: "artifact",
+        resource: "artifact",
+        resource_link: "content",
+      },
     },
     math: {
-      transport: "stdio", 
+      transport: "stdio",
       command: "npx",
       args: ["-y", "@modelcontextprotocol/server-math"],
     },
   },
-  mcpToolOptions: {
-    prefixToolNameWithServerName: true,
-    useStandardContentBlocks: true,
+  prefixToolNameWithServerName: true,
+  additionalToolNamePrefix: "mcp",
+  onConnectionError: (params) => {
+    console.warn(`MCP connection failed: ${params.serverName}`, params.error);
   },
 });
+
+const tools = await mcpClient.getTools();
+// Tool names like: "mcp__filesystem__read_file", "mcp__math__add"
 ```
 
 #### 3.6.1 MCP Tool Kind Mapping
@@ -776,16 +891,32 @@ The package should map MCP tools to ACP tool kinds based on their characteristic
 
 | Tool Pattern | ACP Tool Kind | Examples |
 |--------------|---------------|----------|
-| `read*`, `get*`, `list*`, `search*` | `read` | read_file, get_config, list_dir |
+| `read*`, `get*`, `list*`, `search*` | `read` | read_file, get_config, list_dir, search_files |
 | `write*`, `create*`, `update*`, `edit*` | `edit` | write_file, create_file, edit_content |
 | `delete*`, `remove*` | `delete` | delete_file, remove_dir |
 | `move*`, `rename*` | `move` | move_file, rename_file |
 | `run*`, `exec*`, `execute*`, `command*` | `execute` | run_command, exec_script |
 | `think*`, `reason*`, `analyze*` | `think` | think_step, analyze_problem |
 | `fetch*`, `get*url*`, `download*` | `fetch` | fetch_url, download_file |
+| `switch*mode*`, `change*mode*` | `switch_mode` | switch_mode, change_mode |
 | Default | `other` | Unknown tool types |
 
 **Implementation Reference:** See `@langchain/mcp-adapters` documentation for tool conversion patterns. The tool's description and input schema should inform the kind mapping.
+
+**Tool Name Prefixing:**
+When using `prefixToolNameWithServerName: true` with `@langchain/mcp-adapters`, tool names follow this pattern:
+
+```
+additionalToolNamePrefix + "__" + serverName + "__" + toolName
+```
+
+**Examples:**
+- `mcp__filesystem__read_file`
+- `mcp__filesystem__write_file`
+- `mcp__math__add`
+- `mcp__calculator__multiply`
+
+Permission policies should match the prefixed names when required.
 
 ---
 
@@ -859,7 +990,22 @@ type SessionUpdateNotification = {
   params: SessionNotification;
 };
 
-// Request (requires response)
+// SessionUpdate types (discriminated union)
+type SessionUpdate =
+  | { sessionUpdate: "user_message_chunk"; content: ContentBlock }
+  | { sessionUpdate: "agent_message_chunk"; content: ContentBlock }
+  | { sessionUpdate: "agent_thought_chunk"; content: ContentBlock }
+  | { sessionUpdate: "tool_call"; toolCallId: string; /* ToolCall fields */ }
+  | { sessionUpdate: "tool_call_update"; /* ToolCallUpdate fields */ }
+  | { sessionUpdate: "plan"; /* Custom extension - not standard */ }
+  | { sessionUpdate: "available_commands_update"; commands: string[] }
+  | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }
+  | { sessionUpdate: "config_option_update"; configOptions: SessionConfigOption[] }
+  | { sessionUpdate: "session_info_update"; title?: string; updatedAt?: string };
+```
+
+**Request (requires response):**
+```typescript
 type PermissionRequest = {
   jsonrpc: "2.0";
   method: "session/request_permission";
@@ -950,8 +1096,10 @@ const permissionRequest = {
       rawInput: { path: "/etc/config.json" },
     },
     options: [
-      { optionId: "allow", name: "Allow", kind: "allow_once" },
-      { optionId: "deny", name: "Deny", kind: "reject_once" },
+      { optionId: "allow_once", name: "Allow Once", kind: "allow_once" },
+      { optionId: "allow_always", name: "Allow Always", kind: "allow_always" },
+      { optionId: "reject_once", name: "Deny Once", kind: "reject_once" },
+      { optionId: "reject_always", name: "Deny Always", kind: "reject_always" },
     ],
   },
   id: 123,
@@ -1033,40 +1181,91 @@ beforeModel: {
 }
 ```
 
-#### 3.7.5 Transport Interface
+#### 3.7.5 Transport Integration
+
+**IMPORTANT:** This package uses the ACP SDK's built-in transport layer. Do not implement custom transport.
+
+The ACP SDK provides `AgentSideConnection` which handles all protocol communication, JSON-RPC encoding, and stdio streaming.
+
+**Using ACP SDK Transport:**
+
+```typescript
+import * as acp from "@agentclientprotocol/sdk";
+import { Writable, Readable } from "stream";
+
+// Create NDJSON stdio stream
+const stream = acp.ndJsonStream(
+  Writable.toWeb(process.stdin),
+  Readable.toWeb(process.stdout)
+);
+
+// Create agent connection
+const connection = new acp.AgentSideConnection(
+  (conn) => agentImplementation,
+  stream
+);
+
+// Middleware receives connection for protocol operations
+const middleware = createACPPermissionMiddleware({
+  permissionPolicy: {...},
+  transport: connection,  // ACP AgentSideConnection instance
+});
+```
+
+**Available Transport Methods (from AgentSideConnection):**
+
+```typescript
+// Session updates (notifications)
+await connection.sessionUpdate({
+  sessionId: string,
+  update: SessionUpdate,
+});
+
+// Permission requests (wait for response)
+const response = await connection.requestPermission({
+  sessionId: string,
+  toolCall: ToolCallUpdate,
+  options: PermissionOption[],
+});
+
+// Client resources
+const fileContent = await connection.readTextFile({
+  sessionId: string,
+  path: string,
+  line?: number,
+  limit?: number,
+});
+
+await connection.writeTextFile({
+  sessionId: string,
+  path: string,
+  content: string,
+});
+
+// Terminal operations
+const { terminalId } = await connection.createTerminal({
+  sessionId: string,
+  command: string,
+  args?: string[],
+  cwd?: string,
+});
+```
+
+**Transport Configuration Interface:**
 
 ```typescript
 interface ACPStdioTransportConfig {
-  mode: "agent"; // We only implement "agent" mode
+  mode: "agent"; // Only agent mode is implemented
   sessionId?: string; // Optional default session ID
-  onPrompt?: (params: PromptRequest) => Promise<PromptResponse>;
-  onCancel?: (params: CancelNotification) => Promise<void>;
-  onSetMode?: (params: SetSessionModeRequest) => Promise<void>;
-  onLoadSession?: (params: LoadSessionRequest) => Promise<LoadSessionResponse>;
 }
-
-interface ACPTransport {
-  // Lifecycle
-  start(): Promise<void>;
-  close(): Promise<void>;
-  
-  // Send message (no response)
-  emit(method: string, params: unknown): void;
-  
-  // Send request and wait for response
-  request<T>(method: string, params: unknown, timeout?: number): Promise<T>;
-  
-  // Read single message
-  readMessage<T>(): Promise<T>;
-  
-  // Send error
-  sendError(id: number | null, error: { code: number; message: string; data?: unknown }): void;
-}
-
-export function createACPStdioTransport(
-  config: ACPStdioTransportConfig
-): ACPTransport;
 ```
+
+**Do NOT Implement Custom Transport:**
+- The ACP SDK provides complete transport implementation
+- All JSON-RPC 2.0 protocol details are handled internally
+- Stdio NDJSON encoding is built-in
+- Error handling and reconnection are managed automatically
+
 
 ---
 
@@ -1075,45 +1274,58 @@ export function createACPStdioTransport(
 #### 3.8.1 stopReason Values
 
 ```typescript
-type ACPStopReason = 
-  | "completion"        // Normal completion
-  | "error"             // Execution error
-  | "max_tokens"        // Token limit reached
-  | "content_filter"    // Content filtered
-  | "tool_use"          // Tool invocation
-  | "stop_sequence"     // Stop sequence encountered
-  | "other";            // Unknown reason
+type ACPStopReason =
+  | "end_turn"              // Normal completion
+  | "max_tokens"            // Context window exceeded
+  | "max_turn_requests"     // Step limit reached
+  | "refusal"               // Agent refused to respond
+  | "cancelled"             // User cancelled the operation
 ```
 
 #### 3.8.2 Mapper Implementation
 
 ```typescript
 export function mapToStopReason(state: any): ACPStopReason {
-  // Check for explicit error
+  // Check for explicit error - ACP doesn't have "error" stop reason
+  // Errors are communicated via sessionUpdate events, not stopReason
   if (state.error) {
-    return "error";
+    // Return end_turn and emit error via sessionUpdate instead
+    return "end_turn";
   }
-  
+
   // Check last message for tool calls
+  // ACP agents return control to client after tools, so this is end_turn
   const lastMessage = state.messages?.[state.messages.length - 1];
   if (lastMessage?.tool_calls?.length > 0) {
-    return "tool_use";
+    // Tool calls are handled via tool_call/tool_call_update events
+    // The agent returns end_turn after tools complete
+    return "end_turn";
   }
-  
-  // Check for max tokens signal
+
+  // Check for context length signal
   if (state.llmOutput?.finish_reason === "length") {
     return "max_tokens";
   }
-  
-  // Default to completion
-  return "completion";
+
+  // Check for user cancellation
+  if (state.cancelled) {
+    return "cancelled";
+  }
+
+  // Check for refusal from model
+  if (state.llmOutput?.finish_reason === "refusal") {
+    return "refusal";
+  }
+
+  // Default to normal completion
+  return "end_turn";
 }
 ```
 
 #### 3.8.3 Error Mapping
 
 ```typescript
-export function mapErrorToContent(error: Error): ACPContentBlock[] {
+export function mapErrorToContent(error: Error): ToolCallContent[] {
   return [
     {
       type: "content",
@@ -1207,9 +1419,100 @@ export interface ACPAgentConfig {
 
 ---
 
-## 4. Implementation
+### 4. Implementation
 
-### 4.1 Build Instructions
+### 4.1 Agent Implementation Pattern
+
+This package provides middleware and callbacks, but the ACP agent must implement the `Agent` interface from the ACP SDK.
+
+#### 4.1.1 Required Agent Methods
+
+All ACP agents must implement these methods:
+
+| Method | Purpose | Return |
+|--------|---------|--------|
+| `initialize` | Connection handshake, capability negotiation | `InitializeResponse` |
+| `newSession` | Create new conversation session | `NewSessionResponse` with `sessionId` |
+| `prompt` | Process user input | `PromptResponse` with `stopReason` |
+| `cancel` | Handle cancellation | `void` |
+| `setSessionMode` | Change agent mode | `SetSessionModeResponse` |
+| `loadSession` | Resume existing session (optional) | `LoadSessionResponse` |
+
+#### 4.1.2 Initialization Handshake
+
+The `initialize` method is called first. It must return:
+
+```typescript
+async initialize(params: acp.InitializeRequest): Promise<acp.InitializeResponse> {
+  return {
+    agentInfo: {
+      name: 'my-agent',
+      title: 'My ACP Agent',
+      version: '0.1.0',
+    },
+    agentCapabilities: {
+      loadSession: true,  // Optional: support session loading
+      promptCapabilities: {
+        image: true,
+        audio: true,
+        embeddedContext: true,
+      },
+      mcp: {
+        http: true,  // If using MCP via HTTP
+        sse: true,   // If using MCP via SSE
+      },
+    },
+    authMethods: [],  // Empty if no authentication
+  };
+}
+```
+
+#### 4.1.3 Session Management
+
+Create LangChain agent instances per session:
+
+```typescript
+const sessionStore = new Map<string, SessionState>();
+
+async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+  const sessionId = crypto.randomUUID();
+
+  const session: SessionState = {
+    sessionId,
+    cwd: params.cwd,
+    mcpServers: params.mcpServers,
+    // Agent created on first prompt
+    agent: null,
+  };
+
+  sessionStore.set(sessionId, session);
+  return { sessionId };
+}
+
+async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+  const session = sessionStore.get(params.sessionId);
+  if (!session) {
+    throw new Error(`Session not found: ${params.sessionId}`);
+  }
+
+  // Get or create agent
+  const agent = await getOrCreateAgent(session);
+
+  // Convert ACP content to LangChain messages
+  const messages = params.prompt.map(block =>
+    contentBlockMapper.toLangChain(block)
+  );
+
+  // Invoke with callbacks
+  await agent.invoke({ messages }, {
+    callbacks: [new ACPCallbackHandler({ transport: connection })],
+  });
+
+  return { stopReason: 'end_turn' };
+}
+```
+
+### 4.2 Build Instructions
 
 ```bash
 # Install dependencies
@@ -1226,7 +1529,7 @@ bun test
 bun run lint
 ```
 
-### 4.2 Dependencies
+### 4.3 Dependencies
 
 ```json
 {
@@ -1244,108 +1547,470 @@ bun run lint
 }
 ```
 
-### 4.3 Usage Examples
+**Note:** `@langchain/mcp-adapters` v1.1.0 provides `MultiServerMCPClient` with full stdio and HTTP/SSE transport support.
+
+### 4.4 Usage Examples
 
 #### 4.3.1 Basic ACP Agent
 
+This example shows how to implement a complete ACP agent that wraps a LangChain agent.
+
 ```typescript
+import * as acp from "@agentclientprotocol/sdk";
 import { createAgent } from "langchain";
 import { createACPSessionMiddleware, ACPCallbackHandler } from "@skroyc/acp-middleware-callbacks";
-import { createACPStdioTransport } from "@skroyc/acp-middleware-callbacks/stdio";
 
-// Create ACP transport
-const transport = createACPStdioTransport({
-  mode: "agent",
-  sessionId: process.env.ACP_SESSION_ID || "default",
-  onPermissionRequest: async (request) => {
-    // In stdio mode, permissions are handled via interruption
-    throw new Error("Permissions not implemented in basic mode");
+// 1. Implement ACP Agent interface
+const acpAgentImplementation: acp.Agent = {
+  // Required: Initialize connection handshake
+  async initialize(params: acp.InitializeRequest): Promise<acp.InitializeResponse> {
+    console.log(`Initializing with ${params.clientInfo?.name}`);
+
+    if (params.clientCapabilities) {
+      console.log('Client capabilities:', params.clientCapabilities);
+    }
+
+    return {
+      agentInfo: {
+        name: 'acp-middleware-agent',
+        title: 'ACP LangChain Agent',
+        version: '0.1.0',
+      },
+      agentCapabilities: {
+        loadSession: true,
+        promptCapabilities: {
+          image: true,
+          audio: true,
+          embeddedContext: true,
+        },
+        mcp: {
+          http: true,
+          sse: true,
+        },
+      },
+      authMethods: [], // No authentication required
+    };
   },
-});
 
-// Create middleware
-const middleware = createACPSessionMiddleware({
-  emitStateSnapshots: "initial",
-});
+  // Required: Create new session
+  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+    const sessionId = crypto.randomUUID();
 
-// Create agent
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools: [readFileTool, writeFileTool],
-  middleware: [middleware],
-  callbacks: [new ACPCallbackHandler({ transport })],
-});
+    // Store session state
+    sessionStore.set(sessionId, {
+      sessionId,
+      cwd: params.cwd,
+      mcpServers: params.mcpServers,
+    });
 
-// Start listening for prompts (stdio)
-transport.start();
+    return { sessionId };
+  },
+
+  // Required: Process prompt
+  async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${params.sessionId}`);
+    }
+
+    // Get or create LangChain agent for this session
+    const agent = await getOrCreateAgent(session);
+
+    // Convert ACP content blocks to LangChain messages
+    const messages = params.prompt.map(block =>
+      contentBlockMapper.toLangChain(block)
+    );
+
+    // Invoke agent with callback handler for streaming
+    await agent.invoke({
+      messages,
+    }, {
+      callbacks: [new ACPCallbackHandler({ transport: connection })],
+    });
+
+    // Return when complete
+    return { stopReason: 'end_turn' };
+  },
+
+  // Required: Handle cancellation
+  async cancel(params: acp.CancelNotification): Promise<void> {
+    const session = sessionStore.get(params.sessionId);
+    if (session && session.abortController) {
+      session.abortController.abort();
+      console.log(`Session ${params.sessionId} cancelled`);
+    }
+  },
+
+  // Required: Handle mode changes
+  async setSessionMode(params: acp.SetSessionModeRequest): Promise<acp.SetSessionModeResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (session) {
+      session.mode = params.modeId;
+      console.log(`Session ${params.sessionId} mode set to ${params.modeId}`);
+    }
+    return {};
+  },
+
+  // Optional: Load existing session
+  async loadSession(params: acp.LoadSessionRequest): Promise<acp.LoadSessionResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${params.sessionId}`);
+    }
+    return {};
+  },
+};
+
+// 2. Create ACP connection with stdio transport
+const connection = new acp.AgentSideConnection(
+  (conn) => acpAgentImplementation,
+  acp.ndJsonStream(
+    Writable.toWeb(process.stdin),
+    Readable.toWeb(process.stdout)
+  )
+);
+
+// 3. Helper: Get or create LangChain agent per session
+async function getOrCreateAgent(session: SessionState) {
+  if (session.agent) {
+    return session.agent;
+  }
+
+  const middleware = createACPSessionMiddleware({
+    emitStateSnapshots: "initial",
+  });
+
+  const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [readFileTool, writeFileTool],
+    middleware: [middleware],
+  });
+
+  session.agent = agent;
+  return agent;
+}
+
+// 4. Session state management
+interface SessionState {
+  sessionId: string;
+  cwd: string;
+  mcpServers: acp.McpServer[];
+  mode?: string;
+  agent?: any;
+  abortController?: AbortController;
+}
+
+const sessionStore = new Map<string, SessionState>();
+
+// 5. Start listening (this runs the agent process)
+console.log('ACP Agent ready');
 ```
+
+**Key Points:**
+- Agent implements all required ACP methods: `initialize`, `newSession`, `prompt`, `cancel`, `setSessionMode`
+- Connection uses ACP SDK's `AgentSideConnection` with NDJSON stdio stream
+- Each session gets its own LangChain agent instance
+- Callback handler streams updates via `connection.sessionUpdate()`
 
 #### 4.3.2 ACP Agent with MCP Servers
 
-```typescript
-import { createACPSessionMiddleware } from "@skroyc/acp-middleware-callbacks";
-import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+This example shows integration with MCP servers using `@langchain/mcp-adapters`.
 
+```typescript
+import * as acp from "@agentclientprotocol/sdk";
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+import { createACPSessionMiddleware } from "@skroyc/acp-middleware-callbacks";
+
+// MCP client (shared across sessions)
 const mcpClient = new MultiServerMCPClient({
   mcpServers: {
     filesystem: {
       transport: "stdio",
       command: "npx",
       args: ["-y", "@modelcontextprotocol/server-filesystem"],
+      restart: { enabled: true, maxAttempts: 3 },
+      outputHandling: {
+        text: "content",
+        image: "artifact",
+        resource: "artifact",
+        resource_link: "content",
+      },
     },
-  },
-});
-
-const tools = await mcpClient.getTools();
-
-const middleware = createACPSessionMiddleware({
-  mcpServers: {
-    filesystem: {
+    math: {
       transport: "stdio",
       command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-filesystem"],
+      args: ["-y", "@modelcontextprotocol/server-math"],
     },
+  },
+  prefixToolNameWithServerName: true,
+  additionalToolNamePrefix: "mcp",
+  onConnectionError: (params) => {
+    console.warn(`MCP connection failed: ${params.serverName}`, params.error);
   },
 });
 
-const agent = createAgent({
-  model: "anthropic:claude-sonnet-4",
-  tools,
-  middleware: [middleware],
-});
+const acpAgentImplementation: acp.Agent = {
+  async initialize(params: acp.InitializeRequest): Promise<acp.InitializeResponse> {
+    return {
+      agentInfo: {
+        name: 'acp-mcp-agent',
+        title: 'ACP Agent with MCP',
+        version: '0.1.0',
+      },
+      agentCapabilities: {
+        loadSession: true,
+        promptCapabilities: {
+          image: true,
+          audio: true,
+          embeddedContext: true,
+        },
+        mcp: {
+          http: true,
+          sse: true,
+        },
+      },
+      authMethods: [],
+    };
+  },
+
+  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+    const sessionId = crypto.randomUUID();
+
+    // Load MCP tools for this session's servers
+    const tools = await mcpClient.getTools();
+
+    // Store session with tools
+    sessionStore.set(sessionId, {
+      sessionId,
+      cwd: params.cwd,
+      mcpServers: params.mcpServers,
+      tools,
+    });
+
+    return { sessionId };
+  },
+
+  async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${params.sessionId}`);
+    }
+
+    const agent = await getOrCreateAgent(session);
+
+    const messages = params.prompt.map(block =>
+      contentBlockMapper.toLangChain(block)
+    );
+
+    await agent.invoke({
+      messages,
+    }, {
+      callbacks: [new ACPCallbackHandler({ transport: connection })],
+    });
+
+    return { stopReason: 'end_turn' };
+  },
+
+  async cancel(params: acp.CancelNotification): Promise<void> {
+    const session = sessionStore.get(params.sessionId);
+    if (session && session.abortController) {
+      session.abortController.abort();
+    }
+  },
+
+  async setSessionMode(params: acp.SetSessionModeRequest): Promise<acp.SetSessionModeResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (session) {
+      session.mode = params.modeId;
+    }
+    return {};
+  },
+};
+
+async function getOrCreateAgent(session: SessionState) {
+  if (session.agent) {
+    return session.agent;
+  }
+
+  const middleware = createACPSessionMiddleware({
+    emitStateSnapshots: "initial",
+  });
+
+  const agent = createAgent({
+    model: "anthropic:claude-sonnet-4",
+    tools: session.tools, // MCP tools
+    middleware: [middleware],
+  });
+
+  session.agent = agent;
+  return agent;
+}
+
+const connection = new acp.AgentSideConnection(
+  (conn) => acpAgentImplementation,
+  acp.ndJsonStream(
+    Writable.toWeb(process.stdin),
+    Readable.toWeb(process.stdout)
+  )
+);
+
+console.log('ACP MCP Agent ready');
 ```
+
+**Tool Name Pattern:**
+With `prefixToolNameWithServerName: true` and `additionalToolNamePrefix: "mcp"`:
+- `mcp__filesystem__read_file`
+- `mcp__filesystem__write_file`
+- `mcp__math__add`
+- `mcp__math__multiply`
 
 #### 4.3.3 ACP Agent with Permission Handling
 
+This example shows how to implement human-in-the-loop approval for tool calls.
+
 ```typescript
-import { createACPSessionMiddleware, createACPPermissionMiddleware } from "@skroyc/acp-middleware-callbacks";
+import * as acp from "@agentclientprotocol/sdk";
+import { createAgent } from "langchain";
+import {
+  createACPSessionMiddleware,
+  createACPPermissionMiddleware,
+  ACPCallbackHandler
+} from "@skroyc/acp-middleware-callbacks";
 
-const permissionMiddleware = createACPPermissionMiddleware({
-  permissionPolicy: {
-    "write_file": {
-      kind: "edit",
-      requirePermission: true,
-      allowedDecisions: ["approve", "reject"],
-    },
-    "read_file": {
-      kind: "read",
-      requirePermission: false, // Auto-approved
-    },
-    "execute_command": {
-      kind: "execute",
-      requirePermission: true,
-      allowedDecisions: ["approve", "edit", "reject"],
-    },
+const permissionPolicy = {
+  "write_file": {
+    kind: "edit" as const,
+    requirePermission: true,
+    allowedDecisions: ["allow_once", "allow_always", "reject_once", "reject_always"],
   },
-  transport,
-});
+  "read_file": {
+    kind: "read" as const,
+    requirePermission: false, // Auto-approved
+  },
+  "execute_command": {
+    kind: "execute" as const,
+    requirePermission: true,
+    allowedDecisions: ["allow_once", "allow_always", "reject_once", "reject_always"],
+  },
+  "mcp__filesystem__write_file": {
+    kind: "edit" as const,
+    requirePermission: true,
+  },
+  "mcp__filesystem__read_file": {
+    kind: "read" as const,
+    requirePermission: false,
+  },
+};
 
-const agent = createAgent({
-  model,
-  tools: [writeFileTool, readFileTool, executeCommandTool],
-  middleware: [permissionMiddleware],
-});
+const acpAgentImplementation: acp.Agent = {
+  async initialize(params: acp.InitializeRequest): Promise<acp.InitializeResponse> {
+    return {
+      agentInfo: {
+        name: 'acp-permission-agent',
+        title: 'ACP Agent with Permissions',
+        version: '0.1.0',
+      },
+      agentCapabilities: {
+        loadSession: true,
+        promptCapabilities: {
+          image: true,
+          audio: true,
+          embeddedContext: true,
+        },
+      },
+      authMethods: [],
+    };
+  },
+
+  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+    const sessionId = crypto.randomUUID();
+    sessionStore.set(sessionId, { sessionId, cwd: params.cwd });
+    return { sessionId };
+  },
+
+  async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${params.sessionId}`);
+    }
+
+    const agent = await getOrCreateAgent(session);
+
+    const messages = params.prompt.map(block =>
+      contentBlockMapper.toLangChain(block)
+    );
+
+    await agent.invoke({
+      messages,
+    }, {
+      callbacks: [new ACPCallbackHandler({ transport: connection })],
+    });
+
+    return { stopReason: 'end_turn' };
+  },
+
+  async cancel(params: acp.CancelNotification): Promise<void> {
+    const session = sessionStore.get(params.sessionId);
+    if (session && session.abortController) {
+      session.abortController.abort();
+    }
+  },
+
+  async setSessionMode(params: acp.SetSessionModeRequest): Promise<acp.SetSessionModeResponse> {
+    const session = sessionStore.get(params.sessionId);
+    if (session) {
+      session.mode = params.modeId;
+    }
+    return {};
+  },
+};
+
+async function getOrCreateAgent(session: SessionState) {
+  if (session.agent) {
+    return session.agent;
+  }
+
+  // Create permission middleware with ACP transport integration
+  const permissionMiddleware = createACPPermissionMiddleware({
+    permissionPolicy,
+    transport: connection, // ACP AgentSideConnection instance
+  });
+
+  const sessionMiddleware = createACPSessionMiddleware({
+    emitStateSnapshots: "initial",
+  });
+
+  const agent = createAgent({
+    model,
+    tools: [writeFileTool, readFileTool, executeCommandTool],
+    middleware: [permissionMiddleware, sessionMiddleware],
+  });
+
+  session.agent = agent;
+  return agent;
+}
+
+const connection = new acp.AgentSideConnection(
+  (conn) => acpAgentImplementation,
+  acp.ndJsonStream(
+    Writable.toWeb(process.stdin),
+    Readable.toWeb(process.stdout)
+  )
+);
+
+console.log('ACP Permission Agent ready');
 ```
+
+**Permission Flow:**
+1. Agent generates tool call
+2. Permission middleware checks policy
+3. If required, middleware calls `connection.requestPermission()`
+4. Client shows permission dialog to user
+5. User selects option (Allow Once, Allow Always, Deny Once, Deny Always)
+6. Client sends response back via ACP protocol
+7. Middleware receives response and approves/rejects tool call
+8. If rejected, middleware returns `{ jumpTo: 'end' }` to stop execution
 
 ---
 
@@ -1396,13 +2061,14 @@ const agent = createAgent({
 **Protocol Conformance Test:**
 ```typescript
 // Verify all ACP sessionUpdate types are supported
-const sessionUpdates: SessionUpdate[] = [
+const sessionUpdates: acp.SessionUpdate[] = [
   { sessionUpdate: "agent_message_chunk", content: textContent },
   { sessionUpdate: "agent_thought_chunk", content: textContent },
-  { sessionUpdate: "tool_call", ... },
-  { sessionUpdate: "tool_call_update", ... },
-  { sessionUpdate: "plan", ... },
-  { sessionUpdate: "current_mode_update", ... },
+  { sessionUpdate: "tool_call", toolCallId: "call-1", /* ... */ },
+  { sessionUpdate: "tool_call_update", toolCallId: "call-1", /* ... */ },
+  { sessionUpdate: "current_mode_update", mode: { modeIds: [], selectedModeId: "agentic" } },
+  { sessionUpdate: "config_option_update", configOptions: [] },
+  { sessionUpdate: "session_info_update", title: "New title", updatedAt: "2026-01-08" },
 ];
 
 // All must serialize/deserialize correctly
@@ -1414,32 +2080,50 @@ for (const update of sessionUpdates) {
 **Middleware Integration Test:**
 ```typescript
 // Verify middleware emits correct events
-const transport = createMockTransport();
+import * as acp from "@agentclientprotocol/sdk";
+
+const mockConnection: Partial<acp.AgentSideConnection> = {
+  sessionUpdate: jest.fn().mockResolvedValue(undefined),
+  requestPermission: jest.fn().mockResolvedValue({
+    outcome: { outcome: 'selected', optionId: 'allow_once' }
+  }),
+};
+
 const agent = createAgent({
-  middleware: [createACPSessionMiddleware({ transport })],
+  middleware: [createACPSessionMiddleware({
+    transport: mockConnection as acp.AgentSideConnection,
+  })],
 });
 
 await agent.invoke({ messages: [new HumanMessage("test")] });
 
-expect(transport.emittedEvents).toContainEqual({
-  type: "session_started",
-  // ...
-});
-
-expect(transport.emittedEvents).toContainEqual({
-  type: "session_finished",
-  stopReason: "completion",
-  // ...
-});
+expect(mockConnection.sessionUpdate).toHaveBeenCalledWith(
+  expect.objectContaining({
+    sessionId: expect.any(String),
+    update: expect.objectContaining({
+      sessionUpdate: expect.any(String),
+    }),
+  })
+);
 ```
 
 **Permission Flow Test:**
 ```typescript
 // Verify permission interruption works
+import * as acp from "@agentclientprotocol/sdk";
+
+const mockConnection: Partial<acp.AgentSideConnection> = {
+  requestPermission: jest.fn().mockResolvedValue({
+    outcome: { outcome: 'selected', optionId: 'allow_once' }
+  }),
+  sessionUpdate: jest.fn().mockResolvedValue(undefined),
+};
+
 const permissionMiddleware = createACPPermissionMiddleware({
   permissionPolicy: {
-    write_file: { kind: "edit", requirePermission: true },
+    write_file: { kind: 'edit', requirePermission: true },
   },
+  transport: mockConnection as acp.AgentSideConnection,
 });
 
 const agent = createAgent({
@@ -1448,16 +2132,29 @@ const agent = createAgent({
 });
 
 // Mock permission response
-transport.mockPermissionResponse({
-  outcome: "selected",
-  optionId: "approve",
+mockConnection.requestPermission.mockResolvedValue({
+  outcome: { outcome: 'selected', optionId: 'allow_once' }
 });
 
 const result = await agent.invoke({
   messages: [new HumanMessage("Write to file")],
 });
 
-expect(result.status).toBe("approved");
+expect(mockConnection.requestPermission).toHaveBeenCalledWith(
+  expect.objectContaining({
+    sessionId: expect.any(String),
+    toolCall: expect.objectContaining({
+      toolCallId: expect.any(String),
+      kind: 'edit',
+    }),
+    options: expect.arrayContaining([
+      expect.objectContaining({ kind: 'allow_once' }),
+      expect.objectContaining({ kind: 'allow_always' }),
+      expect.objectContaining({ kind: 'reject_once' }),
+      expect.objectContaining({ kind: 'reject_always' }),
+    ]),
+  })
+);
 ```
 
 ### 6.3 Post-Production Validation
@@ -1522,6 +2219,18 @@ expect(result.status).toBe("approved");
 | Tool failed | `tool_call_update` (failed) |
 | Permission denied | `tool_call_update` (failed) + rejection reason |
 
+### B.3 StopReason Mapping
+
+| LangChain State | ACP StopReason |
+|----------------|----------------|
+| Normal completion | `end_turn` |
+| Context window exceeded | `max_tokens` |
+| User cancelled | `cancelled` |
+| Model refused to respond | `refusal` |
+| Step/turn limit reached | `max_turn_requests` |
+
+**Note:** In ACP, errors are communicated via `tool_call_update` (status: failed) events, not via stopReason. The stopReason indicates why the agent returned control to the client.
+
 ---
 
-**END OF SPEC**
+**END OF SPEC** (Updated: 2026-01-08 - Fixed protocol compliance issues)
