@@ -690,7 +690,7 @@ class ACPCallbackHandler {
 | LangChain Content Block | ACP Session Update | Notes |
 |-------------------------|-------------------|-------|
 | `text` | `agent_message_chunk` | User-facing response content |
-| `reasoning` | `agent_thought_chunk` | **INTERNAL** reasoning (hidden from users by default) |
+| `reasoning` | `agent_thought_chunk` | Internal reasoning traces (always exposed to users) |
 | `image` | `agent_message_chunk` (image content) | Pass through with base64 |
 | `audio` | `agent_message_chunk` (audio content) | Pass through with base64 |
 | `file` (reference only) | `resource_link` | Reference without content |
