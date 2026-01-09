@@ -82,7 +82,7 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
 - Handling permission requests via interruption
 - Returning a valid `stopReason`
 
-**REQ-2:** The package must automatically convert LangChain `AIMessage` content to ACP `agent_message_chunk` events. For reasoning content, emit as `agent_thought_chunk` with `audience: ["assistant"]` annotation.
+**REQ-2:** The package must automatically convert LangChain `AIMessage` content to ACP `agent_message_chunk` events. For reasoning content, emit as `agent_thought_chunk` with `audience: ['assistant']` annotation (using Role type from SDK).
 
 **REQ-3:** The package must convert LangChain `ToolMessage` to ACP `tool_call_update` events with proper status lifecycle.
 
@@ -232,12 +232,16 @@ The SDK defines the following ToolKind values for categorizing tool operations:
 
 ```typescript
 type ToolKind =
-  | 'read'              // File reading operations
-  | 'write'             // File writing operations
-  | 'edit'              // File editing operations
-  | 'bash'              // Command execution
-  | 'mcp'               // Model Context Protocol tools
-  | 'custom';           // Uncategorized tools
+  | 'read'
+  | 'edit'
+  | 'delete'
+  | 'move'
+  | 'search'
+  | 'execute'
+  | 'think'
+  | 'fetch'
+  | 'switch_mode'
+  | 'other';
 ```
 
 **ToolKind Mapping Guide:**
@@ -245,11 +249,15 @@ type ToolKind =
 | Tool Category | Recommended ToolKind | Examples |
 |---------------|---------------------|----------|
 | File reading | `read` | `read_file`, `get_file`, `view` |
-| File writing | `write` | `write_file`, `create_file`, `writeTextFile` |
 | File editing | `edit` | `edit_file`, `modify_file`, `apply_patch` |
-| Shell commands | `bash` | `run_command`, `exec`, `bash`, `shell` |
-| MCP tools | `mcp` | Any tool from MCP servers |
-| Custom | `custom` | Any tool that doesn't fit above categories |
+| File deletion | `delete` | `delete_file`, `remove_file`, `unlink` |
+| File moving | `move` | `move_file`, `rename_file`, `mv` |
+| Search operations | `search` | `search_files`, `grep`, `find` |
+| Command execution | `execute` | `run_command`, `exec`, `bash`, `shell`, `command` |
+| Internal reasoning | `think` | `reason`, `think`, `analyze` |
+| Network requests | `fetch` | `http_get`, `fetch_url`, `curl` |
+| Mode switching | `switch_mode` | `set_mode`, `change_mode`, `switch_context` |
+| Other | `other` | Any tool that doesn't fit above categories |
 
 **Interface:**
 
@@ -272,23 +280,52 @@ export function createACPToolMiddleware(
 function mapToolKind(toolName: string): ToolKind {
   const name = toolName.toLowerCase();
   
-  if (name.includes('read') || name.includes('get') || name.includes('view')) {
+  // File reading operations
+  if (name.includes('read') || name.includes('get') || name.includes('view') || name.includes('load')) {
     return 'read';
   }
-  if (name.includes('write') || name.includes('create') || name.includes('save')) {
-    return 'write';
-  }
-  if (name.includes('edit') || name.includes('modify') || name.includes('patch')) {
+  
+  // File editing operations
+  if (name.includes('edit') || name.includes('modify') || name.includes('patch') || name.includes('update')) {
     return 'edit';
   }
-  if (name.includes('bash') || name.includes('run') || name.includes('exec') || name.includes('shell') || name.includes('command')) {
-    return 'bash';
-  }
-  if (name.startsWith('mcp__')) {
-    return 'mcp';
+  
+  // File deletion operations
+  if (name.includes('delete') || name.includes('remove') || name.includes('unlink') || name.includes('rm')) {
+    return 'delete';
   }
   
-  return 'custom';
+  // File moving/renaming operations
+  if (name.includes('move') || name.includes('rename') || name.includes('mv')) {
+    return 'move';
+  }
+  
+  // Search operations
+  if (name.includes('search') || name.includes('grep') || name.includes('find') || name.includes('query')) {
+    return 'search';
+  }
+  
+  // Command execution
+  if (name.includes('bash') || name.includes('run') || name.includes('exec') || name.includes('shell') || name.includes('command') || name.includes('execute')) {
+    return 'execute';
+  }
+  
+  // Internal reasoning/thinking
+  if (name.includes('think') || name.includes('reason') || name.includes('analyze')) {
+    return 'think';
+  }
+  
+  // Network requests
+  if (name.includes('fetch') || name.includes('http') || name.includes('curl') || name.includes('wget') || name.includes('url')) {
+    return 'fetch';
+  }
+  
+  // Mode switching
+  if (name.includes('mode') || name.includes('context') || name.includes('switch')) {
+    return 'switch_mode';
+  }
+  
+  return 'other';
 }
 ```
 
@@ -668,6 +705,8 @@ export type ContentBlock =
 **TextContent:**
 
 ```typescript
+import type { Role } from '@agentclientprotocol/sdk';
+
 export type TextContent = {
   _meta?: Record<string, unknown> | null;
   annotations?: Annotations | null;
@@ -676,7 +715,7 @@ export type TextContent = {
 
 export type Annotations = {
   _meta?: Record<string, unknown> | null;
-  audience?: Array<'user' | 'assistant' | 'system' | 'developer'> | null;
+  audience?: Array<Role> | null;
   lastModified?: string | null;
   priority?: number | null;
 };
@@ -746,11 +785,13 @@ export type EmbeddedResource = {
 | `file` (with content) | `resource` | Embedded resource |
 | `reasoning` | `agent_message_chunk` | With audience annotation |
 
-**Note on Reasoning:** ACP supports both `agent_message_chunk` for user-facing content and `agent_thought_chunk` for internal reasoning content. For reasoning content, emit as `agent_thought_chunk` with `audience: ["assistant"]` annotation to indicate internal content. Use `agent_message_chunk` only for user-facing responses.
+**Note on Reasoning:** ACP supports both `agent_message_chunk` for user-facing content and `agent_thought_chunk` for internal reasoning content. For reasoning content, emit as `agent_thought_chunk` with `audience: ['assistant']` annotation (using Role type from SDK) to indicate internal content. Use `agent_message_chunk` only for user-facing responses.
 
 ### 6.4 Content Block Mapper Implementation
 
 ```typescript
+import type { Role } from '@agentclientprotocol/sdk';
+
 class DefaultContentBlockMapper implements ContentBlockMapper {
   toACP(block: LangChainContentBlock): ContentBlock {
     switch (block.type) {
@@ -767,7 +808,7 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
           type: "text",
           _meta: { _internal: true, reasoning: true },
           annotations: {
-            audience: ["assistant"],
+            audience: ['assistant'] as Role[],
             priority: block.priority || null,
           },
           text: block.reasoning,
@@ -1072,40 +1113,47 @@ const permissionMiddleware = createACPPermissionMiddleware({
 ### 9.1 stopReason Values
 
 ```typescript
-type ACPStopReason =
-  | "end_turn"              // Normal completion
-  | "max_tokens"            // Context window exceeded
-  | "max_turn_requests"     // Step limit reached
-  | "refusal"               // Agent refused to respond
-  | "cancelled"             // User cancelled the operation
+type StopReason =
+  | 'user_requested'
+  | 'tool_calls'
+  | 'context_length'
+  | 'max_steps'
+  | 'completed'
+  | 'error';
 ```
 
 ### 9.2 stopReason Mapper
 
 ```typescript
-export function mapToStopReason(state: any): ACPStopReason {
+export function mapToStopReason(state: any): StopReason {
   // Check for user cancellation
   if (state.cancelled || state.permissionDenied) {
-    return "cancelled";
+    return 'user_requested';
   }
 
-  // Check for refusal from model
-  if (state.llmOutput?.finish_reason === "refusal") {
-    return "refusal";
+  // Check for tool calls completion
+  if (state.tool_calls_pending === false && state.last_tool_call_result) {
+    return 'tool_calls';
   }
 
   // Check for context length signal
-  if (state.llmOutput?.finish_reason === "length") {
-    return "max_tokens";
+  if (state.llmOutput?.finish_reason === 'length') {
+    return 'context_length';
+  }
+
+  // Check for max steps limit
+  if (state.turns >= state.max_turns) {
+    return 'max_steps';
   }
 
   // Check for explicit error
   if (state.error) {
-    return "end_turn";  // Emit error via sessionUpdate instead
+    return 'error';  // Emit error via sessionUpdate instead
   }
 
   // Default to normal completion
-  return "end_turn";
+  return 'completed';
+```
 }
 ```
 
@@ -1245,15 +1293,13 @@ class RequestError {
 
 ```typescript
 type ACPErrorCode =
-  | -32700  // Parse error
-  | -32600  // Invalid request
-  | -32601  // Method not found
-  | -32602  // Invalid params
-  | -32603  // Internal error
-  | -32800  // Not authenticated
-  | -32000  // Authentication required
-  | -32001  // Session not found
-  | -32002  // Resource not found
+  | -32700  // Parse error (JSON-RPC standard)
+  | -32600  // Invalid request (JSON-RPC standard)
+  | -32601  // Method not found (JSON-RPC standard)
+  | -32602  // Invalid params (JSON-RPC standard)
+  | -32603  // Internal error (JSON-RPC standard)
+  | -32000  // Authentication required (ACP-specific)
+  | -32002  // Resource not found (ACP-specific)
 ```
 
 **LangChain to ACP Error Mapping:**
@@ -1261,7 +1307,10 @@ type ACPErrorCode =
 | LangChain Error | ACP Error Code | RequestError Method | Example Usage |
 |----------------|---------------|---------------------|---------------|
 | Invalid input params | -32602 | `RequestError.invalidParams()` | `RequestError.invalidParams({ field: 'path' })` |
-| Session not found | -32001 | Manual construction | `new RequestError(-32001, 'Session not found')` |
+| Resource file not found | -32002 | `RequestError.resourceNotFound()` | `RequestError.resourceNotFound('/path/to/file')` |
+| Unauthorized | -32000 | `RequestError.authRequired()` | `RequestError.authRequired()` |
+| Internal agent error | -32603 | `RequestError.internalError()` | `RequestError.internalError({ details: '...' })` |
+| Unknown method | -32601 | `RequestError.methodNotFound()` | `RequestError.methodNotFound('unknown_method')` |
 | Resource file not found | -32002 | `RequestError.resourceNotFound()` | `RequestError.resourceNotFound('/path/to/file')` |
 | Unauthorized | -32800 | Manual construction | `new RequestError(-32800, 'Not authenticated')` |
 | Internal agent error | -32603 | `RequestError.internalError()` | `RequestError.internalError({ details: '...' })` |
@@ -1990,7 +2039,7 @@ describe("ContentBlockMapper", () => {
       type: "text",
       _meta: { _internal: true, reasoning: true },
       annotations: {
-        audience: ["assistant"],
+        audience: ['assistant'] as const,
         priority: 1,
         lastModified: null,
         _meta: null
