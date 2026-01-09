@@ -226,6 +226,31 @@ const agent = createAgent({
 
 Intercepts LangChain tool calls and emits ACP `tool_call` / `tool_call_update` events.
 
+**ToolKind Enum Values:**
+
+The SDK defines the following ToolKind values for categorizing tool operations:
+
+```typescript
+type ToolKind =
+  | 'read'              // File reading operations
+  | 'write'             // File writing operations
+  | 'edit'              // File editing operations
+  | 'bash'              // Command execution
+  | 'mcp'               // Model Context Protocol tools
+  | 'custom';           // Uncategorized tools
+```
+
+**ToolKind Mapping Guide:**
+
+| Tool Category | Recommended ToolKind | Examples |
+|---------------|---------------------|----------|
+| File reading | `read` | `read_file`, `get_file`, `view` |
+| File writing | `write` | `write_file`, `create_file`, `writeTextFile` |
+| File editing | `edit` | `edit_file`, `modify_file`, `apply_patch` |
+| Shell commands | `bash` | `run_command`, `exec`, `bash`, `shell` |
+| MCP tools | `mcp` | Any tool from MCP servers |
+| Custom | `custom` | Any tool that doesn't fit above categories |
+
 **Interface:**
 
 ```typescript
@@ -241,6 +266,32 @@ export function createACPToolMiddleware(
 ): AgentMiddleware;
 ```
 
+**Tool Kind Mapper Implementation:**
+
+```typescript
+function mapToolKind(toolName: string): ToolKind {
+  const name = toolName.toLowerCase();
+  
+  if (name.includes('read') || name.includes('get') || name.includes('view')) {
+    return 'read';
+  }
+  if (name.includes('write') || name.includes('create') || name.includes('save')) {
+    return 'write';
+  }
+  if (name.includes('edit') || name.includes('modify') || name.includes('patch')) {
+    return 'edit';
+  }
+  if (name.includes('bash') || name.includes('run') || name.includes('exec') || name.includes('shell') || name.includes('command')) {
+    return 'bash';
+  }
+  if (name.startsWith('mcp__')) {
+    return 'mcp';
+  }
+  
+  return 'custom';
+}
+```
+
 **Tool Call Lifecycle:**
 
 ```typescript
@@ -254,7 +305,7 @@ wrapToolCall: async (request, handler) => {
     update: {
       sessionUpdate: "tool_call",
       toolCallId,
-      title: `Calling \${name}`,
+      title: `Calling ${name}`,
       kind: mapToolKind(name),
       status: "pending",
       _meta: null,
@@ -322,20 +373,33 @@ pending → in_progress → completed
                     → failed
 ```
 
-**Tool Kinds:**
-
-```typescript
-type ToolKind =
-  | 'fs_read_text_file'   // File reading operations
-  | 'fs_write_text_file'  // File modification operations
-  | 'terminal'            // Command execution
-  | 'mcp'                 // Model Context Protocol tools
-  | 'custom';             // Uncategorized tools
-```
-
 ### 4.3 Permission Middleware (`createACPPermissionMiddleware`)
 
 Implements HITL-style interruption for ACP permission requests.
+
+**Permission System Overview:**
+
+The permission system operates at two levels:
+1. **Capability-based permissions:** Declared during initialization handshake
+2. **Runtime permission requests:** User authorization for specific operations
+
+**PermissionOptionKind Values:**
+
+```typescript
+type PermissionOptionKind =
+  | 'allow_once'     // Allow this specific action once
+  | 'allow_always'   // Allow this action permanently
+  | 'reject_once'    // Deny this specific action once
+  | 'reject_always'; // Deny this action permanently
+```
+
+**RequestPermissionOutcome Structure:**
+
+```typescript
+type RequestPermissionOutcome =
+  | { outcome: 'cancelled' }
+  | ({ outcome: 'selected' } & { optionId: string });
+```
 
 **Interface:**
 
@@ -369,7 +433,7 @@ wrapToolCall: async (request, handler) => {
     sessionId,
     toolCall: {
       toolCallId: toolCall.id,
-      title: `Calling \${toolCall.name}`,
+      title: `Calling ${toolCall.name}`,
       kind: mapToolKind(toolCall.name),
       status: "pending",
       _meta: null,
@@ -386,7 +450,7 @@ wrapToolCall: async (request, handler) => {
     ],
   });
 
-  // 2. Handle response
+  // 2. Handle cancelled outcome
   if (response.outcome.outcome === "cancelled") {
     await connection.sessionUpdate({
       sessionId,
@@ -399,37 +463,61 @@ wrapToolCall: async (request, handler) => {
           type: "text", 
           _meta: null, 
           annotations: null, 
-          text: "Permission cancelled" 
+          text: "Permission request cancelled" 
         }],
       },
     });
-    throw new Error("Permission cancelled by user");
+    throw new Error("Permission request cancelled by user");
   }
 
-  if (response.outcome.outcome === "selected" &&
-      (response.outcome.optionId === "reject" || response.outcome.optionId === "never")) {
-    await connection.sessionUpdate({
-      sessionId,
-      update: {
-        sessionUpdate: "tool_call_update",
-        toolCallId: toolCall.id,
-        status: "failed",
-        _meta: null,
-        content: [{ 
-          type: "text", 
-          _meta: null, 
-          annotations: null, 
-          text: "Permission denied" 
-        }],
-      },
-    });
-    throw new Error("Permission denied");
+  // 3. Handle selected outcome with optionId
+  if (response.outcome.outcome === "selected") {
+    const { optionId } = response.outcome;
+    
+    // Check for denial options
+    if (optionId === "rejectOnce" || optionId === "rejectAlways") {
+      await connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: toolCall.id,
+          status: "failed",
+          _meta: null,
+          content: [{ 
+            type: "text", 
+            _meta: null, 
+            annotations: null, 
+            text: "Permission denied by user" 
+          }],
+        },
+      });
+      throw new Error("Permission denied by user");
+    }
+    
+    // Handle persistent permissions for "allowAlways"
+    if (optionId === "allowAlways") {
+      // Store persistent permission in client's permission store
+      await connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "permission_update",
+          toolPattern: toolCall.name,
+          permission: "granted",
+        },
+      });
+    }
   }
 
-  // User approved - continue execution
+  // 4. User approved - continue execution
   return await handler(request);
 }
 ```
+
+**Kind Descriptions:**
+- `allow_once`: Permits the specific action one time only. Future similar actions will require new requests.
+- `allow_always`: Creates a persistent permission stored by the client for future similar actions.
+- `reject_once`: Denies the specific action this time only. Future similar actions will prompt again.
+- `reject_always`: Creates a persistent denial stored by the client to auto-deny future requests.
 
 ### 4.4 Mode Middleware (`createACPModeMiddleware`) - Optional
 
@@ -774,7 +862,103 @@ type SessionUpdate =
 
 ## 8. Stdio Transport Implementation
 
-### 8.1 Initialization Handshake
+### 8.1 Connection Architecture
+
+The ACP SDK uses a robust connection architecture that ensures reliable message delivery through several mechanisms:
+
+**Internal Connection Class:**
+```typescript
+class Connection {
+  #pendingResponses: Map<string | number | null, PendingResponse> = new Map();
+  #nextRequestId: number = 0;
+  #writeQueue: Promise<void> = Promise.resolve();
+  #abortController: AbortController;
+  #stream: Stream;
+  #requestHandler: (method: string, params: unknown) => Promise<unknown>;
+  #notificationHandler: (method: string, params: unknown) => Promise<void>;
+}
+
+interface PendingResponse {
+  resolve: (value: unknown) => void;
+  reject: (error: unknown) => void;
+}
+```
+
+**Key Mechanisms:**
+- **Pending Response Tracking:** The `#pendingResponses` Map correlates outgoing requests with their expected responses using request IDs
+- **Sequential Request IDs:** The `#nextRequestId` counter generates sequential identifiers for new requests
+- **Write Queue Serialization:** The `#writeQueue` Promise chain serializes all outgoing messages to prevent interleaving
+- **Abort Controller:** Enables graceful shutdown of the receive loop when the connection closes
+
+### 8.2 Write Queue Serialization
+
+The connection uses a Promise chain to serialize outgoing messages, ensuring that concurrent writes do not interleave:
+
+```typescript
+async #sendMessage(message: AnyMessage): Promise<void> {
+  this.#writeQueue = this.#writeQueue
+    .then(async () => {
+      const writer = this.#stream.writable.getWriter();
+      try {
+        await writer.write(JSON.stringify(message) + '\n');
+      } finally {
+        writer.releaseLock();
+      }
+    });
+  return this.#writeQueue;
+}
+```
+
+This pattern ensures:
+- **Message Ordering:** All messages are sent in the order they were initiated
+- **No Interleaving:** Concurrent operations don't corrupt the message stream
+- **Protocol Compliance:** NDJSON format requires clean message boundaries
+
+### 8.3 Request-Response Correlation
+
+When a request is initiated, the connection creates a pending response entry:
+
+```typescript
+async sendRequest<Req, Resp>(method: string, params?: Req): Promise<Resp> {
+  const id = this.#nextRequestId++;
+  const responsePromise = new Promise((resolve, reject) => {
+    this.#pendingResponses.set(id, { resolve, reject });
+  });
+  
+  await this.#sendMessage({
+    jsonrpc: '2.0',
+    id,
+    method,
+    params
+  });
+  
+  return responsePromise as Promise<Resp>;
+}
+```
+
+### 8.4 NDJSON Stream Implementation
+
+The SDK provides the `ndJsonStream` utility for stdio communication:
+
+```typescript
+import * as acp from "@agentclientprotocol/sdk";
+
+// Create NDJSON stdio stream for subprocess communication
+const stream = acp.ndJsonStream(
+  Writable.toWeb(process.stdin),
+  Readable.toWeb(process.stdout)
+);
+
+// Create agent connection using callback pattern
+const connection = new acp.AgentSideConnection(
+  (conn) => agentImplementation,  // Callback receives AgentSideConnection, returns Agent
+  stream
+);
+```
+
+**NDJSON Format:** Each message is a JSON object followed by a newline character, enabling streaming parsing.
+
+### 8.5 Initialization Handshake
 
 The agent must perform an initialization handshake:
 
@@ -787,7 +971,7 @@ async function initializeTransport(
   
   // 2. Validate protocol version
   if (initRequest.protocolVersion !== 1) {
-    throw new Error(`Unsupported protocol version: \${initRequest.protocolVersion}`);
+    throw new Error(`Unsupported protocol version: ${initRequest.protocolVersion}`);
   }
   
   // 3. Extract client capabilities
@@ -819,40 +1003,16 @@ async function initializeTransport(
 }
 ```
 
-### 8.2 Using ACP SDK Transport
+### 8.6 Available Transport Methods
 
 ```typescript
-import * as acp from "@agentclientprotocol/sdk";
-
-// Create NDJSON stdio stream
-const stream = acp.ndJsonStream(
-  Writable.toWeb(process.stdin),
-  Readable.toWeb(process.stdout)
-);
-
-// Create agent connection
-const connection = new acp.AgentSideConnection(
-  (conn) => agentImplementation,
-  stream
-);
-
-// Middleware receives connection for protocol operations
-const permissionMiddleware = createACPPermissionMiddleware({
-  permissionPolicy: {...},
-  transport: connection,
-});
-```
-
-### 8.3 Available Transport Methods
-
-```typescript
-// Session updates (notifications)
+// Session updates (notifications - fire and forget)
 await connection.sessionUpdate({
   sessionId: string,
   update: SessionUpdate,
 });
 
-// Permission requests (wait for response)
+// Permission requests (waits for user response)
 const response = await connection.requestPermission({
   sessionId: string,
   toolCall: ToolCallUpdate,
@@ -871,6 +1031,37 @@ await connection.writeTextFile({
   sessionId: string,
   path: string,
   content: string,
+});
+```
+
+### 8.7 Complete Stdio Transport Example
+
+```typescript
+import { spawn } from 'child_process';
+import * as acp from "@agentclientprotocol/sdk";
+import { ndJsonStream } from '@agentclientprotocol/sdk';
+
+// Spawn the agent process
+const agentProcess = spawn('node', ['agent.js'], {
+  stdio: ['pipe', 'pipe', 'pipe']
+});
+
+// Create the NDJSON stream
+const stream = acp.ndJsonStream(
+  Writable.toWeb(agentProcess.stdin!),
+  Readable.toWeb(agentProcess.stdout!)
+);
+
+// Create the agent connection
+const connection = new acp.AgentSideConnection(
+  (conn) => agentImplementation,
+  stream
+);
+
+// Middleware receives connection for protocol operations
+const permissionMiddleware = createACPPermissionMiddleware({
+  permissionPolicy: {...},
+  transport: connection,
 });
 ```
 
@@ -929,9 +1120,128 @@ ACP has no 'error' stopReason. Errors are communicated through:
 | Client cancels operation | `stopReason: "cancelled"` |
 | Tool execution failure | `tool_call_update` with `status: "failed"` |
 
-### 9.4 ACP Error Codes
+### 9.4 ACP Error Codes & RequestError Class
 
-ACP uses JSON-RPC 2.0 error codes with ACP-specific extensions:
+ACP uses JSON-RPC 2.0 error codes with ACP-specific extensions. The SDK provides the `RequestError` class for type-safe error creation:
+
+**RequestError Class Structure:**
+
+```typescript
+class RequestError extends Error {
+  data?: unknown;
+  
+  constructor(
+    public code: number,
+    message: string,
+    data?: unknown
+  ) {
+    super(message);
+    this.name = 'RequestError';
+    this.data = data;
+  }
+  
+  toResult<T>(): Result<T> {
+    return {
+      error: {
+        code: this.code,
+        message: this.message,
+        data: this.data
+      }
+    };
+  }
+  
+  toErrorResponse(): ErrorResponse {
+    return {
+      code: this.code,
+      message: this.message,
+      data: this.data
+    };
+  }
+}
+```
+
+**RequestError Factory Methods:**
+
+```typescript
+class RequestError {
+  // JSON-RPC 2.0 Standard Errors
+  static parseError(
+    data?: unknown,
+    additionalMessage?: string
+  ): RequestError {
+    return new RequestError(
+      -32700,
+      additionalMessage ?? 'Parse error' + (data ? `: ${JSON.stringify(data)}` : ''),
+      data
+    );
+  }
+  
+  static invalidRequest(
+    data?: unknown,
+    additionalMessage?: string
+  ): RequestError {
+    return new RequestError(
+      -32600,
+      additionalMessage ?? 'Invalid request' + (data ? `: ${JSON.stringify(data)}` : ''),
+      data
+    );
+  }
+  
+  static methodNotFound(method: string): RequestError {
+    return new RequestError(
+      -32601,
+      `Method not found: ${method}`
+    );
+  }
+  
+  static invalidParams(
+    data?: unknown,
+    additionalMessage?: string
+  ): RequestError {
+    return new RequestError(
+      -32602,
+      additionalMessage ?? 'Invalid params' + (data ? `: ${JSON.stringify(data)}` : ''),
+      data
+    );
+  }
+  
+  static internalError(
+    data?: unknown,
+    additionalMessage?: string
+  ): RequestError {
+    return new RequestError(
+      -32603,
+      additionalMessage ?? 'Internal error' + (data ? `: ${JSON.stringify(data)}` : ''),
+      data
+    );
+  }
+  
+  // ACP-Specific Errors
+  static authRequired(
+    data?: unknown,
+    additionalMessage?: string
+  ): RequestError {
+    return new RequestError(
+      -32000,
+      additionalMessage ?? 'Authentication required',
+      data
+    );
+  }
+  
+  static resourceNotFound(
+    uri?: string,
+    data?: unknown
+  ): RequestError {
+    return new RequestError(
+      -32002,
+      uri ? `Resource not found: ${uri}` : 'Resource not found',
+      data
+    );
+  }
+}
+```
+
+**Error Code Reference:**
 
 ```typescript
 type ACPErrorCode =
@@ -943,18 +1253,40 @@ type ACPErrorCode =
   | -32800  // Not authenticated
   | -32000  // Authentication required
   | -32001  // Session not found
-  | -32002  // Resource not found;
+  | -32002  // Resource not found
 ```
 
 **LangChain to ACP Error Mapping:**
 
-| LangChain Error | ACP Error Code | ACP Error Message |
-|----------------|---------------|-------------------|
-| Invalid input params | -32602 | "Invalid parameters" |
-| Session not found | -32001 | "Session not found" |
-| Resource file not found | -32002 | "Resource not found" |
-| Unauthorized | -32800 | "Not authenticated" |
-| Internal agent error | -32603 | "Internal error" |
+| LangChain Error | ACP Error Code | RequestError Method | Example Usage |
+|----------------|---------------|---------------------|---------------|
+| Invalid input params | -32602 | `RequestError.invalidParams()` | `RequestError.invalidParams({ field: 'path' })` |
+| Session not found | -32001 | Manual construction | `new RequestError(-32001, 'Session not found')` |
+| Resource file not found | -32002 | `RequestError.resourceNotFound()` | `RequestError.resourceNotFound('/path/to/file')` |
+| Unauthorized | -32800 | Manual construction | `new RequestError(-32800, 'Not authenticated')` |
+| Internal agent error | -32603 | `RequestError.internalError()` | `RequestError.internalError({ details: '...' })` |
+| Unknown method | -32601 | `RequestError.methodNotFound()` | `RequestError.methodNotFound('unknown_method')` |
+
+**Usage Examples:**
+
+```typescript
+import { RequestError } from '@agentclientprotocol/sdk';
+
+// Protocol errors
+throw RequestError.methodNotFound('unknown_method');
+throw RequestError.invalidParams(validationErrors);
+throw RequestError.internalError({ details: 'Something went wrong' });
+
+// ACP-specific errors
+throw RequestError.authRequired();
+throw RequestError.resourceNotFound('/path/to/file');
+
+// With additional data
+throw RequestError.invalidParams(
+  { field: 'path', issue: 'must be absolute' },
+  'Invalid file path'
+);
+```
 
 ---
 
@@ -1039,6 +1371,7 @@ const agentImplementation: acp.Agent = {
 ```typescript
 import * as acp from "@agentclientprotocol/sdk";
 
+// Re-export all protocol types
 export type {
   SessionNotification,
   SessionUpdate,
@@ -1064,7 +1397,65 @@ export type {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  SessionId,
+  PROTOCOL_VERSION,
 } from "@agentclientprotocol/sdk";
+
+// Re-export validation schemas for runtime type checking
+export {
+  zSessionId,
+  zContentBlock,
+  zTextContent,
+  zImageContent,
+  zAudioContent,
+  zResourceLink,
+  zEmbeddedResource,
+  zToolCall,
+  zToolCallUpdate,
+  zRequestPermissionRequest,
+} from "@agentclientprotocol/sdk/schema";
+```
+
+**Core Protocol Types:**
+
+```typescript
+// Session identifier type
+export type SessionId = string;
+
+// Protocol version constant
+export const PROTOCOL_VERSION = 1;
+```
+
+**Validation Schemas:**
+
+The SDK exports Zod validation schemas for runtime type checking:
+
+```typescript
+import * as schema from '@agentclientprotocol/sdk/schema';
+
+// Validate session IDs
+const sessionIdValidation = schema.zSessionId.safeParse(sessionId);
+if (!sessionIdValidation.success) {
+  throw new Error(`Invalid session ID: ${sessionIdValidation.error}`);
+}
+
+// Validate content blocks
+const contentValidation = schema.zContentBlock.safeParse(contentBlock);
+if (!contentValidation.success) {
+  throw new Error(`Invalid content block: ${contentValidation.error}`);
+}
+
+// Validate tool calls
+const toolCallValidation = schema.zToolCall.safeParse(toolCall);
+if (!toolCallValidation.success) {
+  throw new Error(`Invalid tool call: ${toolCallValidation.error}`);
+}
+
+// Validate permission requests
+const permissionValidation = schema.zRequestPermissionRequest.safeParse(request);
+if (!permissionValidation.success) {
+  throw new Error(`Invalid permission request: ${permissionValidation.error}`);
+}
 ```
 
 ### 11.2 Package-Specific Types
@@ -1198,6 +1589,8 @@ export type JumpToTarget = "model" | "tools" | "end";
 
 ### 13.4 Runtime Type
 
+The `Runtime` object is passed to all middleware hooks and provides access to agent execution context, control mechanisms, and state management capabilities.
+
 ```typescript
 export type Runtime<TContext = unknown> = Partial<
   Omit<LangGraphRuntime<TContext>, "context" | "configurable">
@@ -1212,6 +1605,92 @@ export type Runtime<TContext = unknown> = Partial<
     interrupt?: ((interruptInfo: InterruptInfo) => unknown) | undefined;
     store?: BaseStore | undefined;
   };
+```
+
+**Runtime Properties:**
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `context` | `TContext` | Per-invocation data validated by contextSchema (read-only) |
+| `configurable` | `object` | Configuration including thread_id for checkpoint retrieval |
+| `signal` | `AbortSignal` | Abort signal for cancellation and timeout handling |
+| `writer` | `function` | Emit custom streaming data to the client |
+| `interrupt` | `function` | Human-in-the-loop interruption for permission requests |
+| `store` | `BaseStore` | Key-value store for agent state across invocations |
+
+**interrupt() Method - Critical for HITL:**
+
+The `interrupt()` method enables human-in-the-loop (HITL) workflows by pausing execution to await user input:
+
+```typescript
+interface InterruptInfo {
+  type: 'permission' | 'approval' | 'correction';
+  request: {
+    title: string;
+    description?: string;
+    data?: unknown;
+  };
+  allowedResponses: string[];
+}
+
+runtime.interrupt?: ((interruptInfo: InterruptInfo) => unknown) | undefined;
+```
+
+**Usage Pattern for Permission Handling:**
+
+```typescript
+wrapToolCall: async (request, handler) => {
+  // Permission required - interrupt execution
+  if (requiresPermission(request.toolCall.name)) {
+    const result = await runtime.interrupt?.({
+      type: 'permission',
+      request: {
+        title: `Permission required: ${request.toolCall.name}`,
+        description: `The agent wants to perform: ${JSON.stringify(request.toolCall.args)}`,
+        data: {
+          toolName: request.toolCall.name,
+          arguments: request.toolCall.args,
+        }
+      },
+      allowedResponses: ['allow', 'deny', 'allow_always']
+    });
+    
+    if (result === 'deny') {
+      throw new Error('Permission denied by user');
+    }
+    
+    // Continue with execution if allowed
+    if (result === 'allow' || result === 'allow_always') {
+      return await handler(request);
+    }
+  }
+  
+  return await handler(request);
+}
+```
+
+**signal AbortSignal Usage:**
+
+The `signal` property enables proper cancellation handling:
+
+```typescript
+beforeModel: async (state, runtime) => {
+  // Check if execution was cancelled
+  if (runtime.signal?.aborted) {
+    return { messages: [] }; // Early exit on cancellation
+  }
+  
+  // Create timeout for long-running operations
+  const timeout = new AbortController();
+  const timeoutId = setTimeout(() => timeout.abort(), 30000);
+  
+  try {
+    const result = await makeApiCall(state, { signal: timeout.signal });
+    return { messages: [result] };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 ```
 
 ### 13.5 RunnableConfig
@@ -1303,6 +1782,290 @@ export abstract class BaseCallbackHandler {
 - **Reasoning Content:** Use `agent_thought_chunk` with appropriate annotations for internal reasoning content. Use `agent_message_chunk` for user-facing text.
 - **Message Ordering:** ACP provides NO ordering guarantee. Clients handle out-of-order messages by merging partial updates.
 - **Session Concurrency:** ACP is strictly sequential per session. Concurrent prompts require separate sessions.
+
+---
+
+## 15. Testing Patterns
+
+### 15.1 Unit Testing Middleware Hooks
+
+**Mocking the Runtime Object:**
+
+```typescript
+import { createMiddleware } from "langchain";
+import * as z from "zod";
+
+// Create mock runtime for testing
+function createMockRuntime(overrides?: Partial<Runtime>): Runtime {
+  return {
+    context: {},
+    configurable: {
+      thread_id: "test-session-123",
+      ...overrides?.configurable,
+    },
+    signal: new AbortController().signal,
+    writer: jest.fn(),
+    interrupt: jest.fn(),
+    store: new Map(),
+    ...overrides,
+  };
+}
+
+// Test beforeAgent hook
+describe("ACPSessionMiddleware", () => {
+  it("should extract session ID from config", async () => {
+    const middleware = createACPSessionMiddleware({
+      sessionIdExtractor: (config) => config.configurable?.sessionId,
+    });
+    
+    const state = { messages: [] };
+    const runtime = createMockRuntime({
+      configurable: { sessionId: "test-session-123" }
+    });
+    
+    // Access the hook function
+    const hook = middleware.beforeAgent as any;
+    const result = await hook(state, runtime);
+    
+    expect(result).toHaveProperty("sessionId", "test-session-123");
+  });
+});
+```
+
+### 15.2 Mocking Transport Layer
+
+**Mock Connection for Testing:**
+
+```typescript
+import * as acp from "@agentclientprotocol/sdk";
+
+// Create mock connection for testing middleware
+function createMockConnection(): jest.Mocked<acp.AgentSideConnection> {
+  return {
+    sessionUpdate: jest.fn().mockResolvedValue(undefined),
+    requestPermission: jest.fn().mockResolvedValue({
+      outcome: { outcome: "selected", optionId: "allowOnce" }
+    }),
+    readTextFile: jest.fn().mockResolvedValue({ content: "test file content" }),
+    writeTextFile: jest.fn().mockResolvedValue({}),
+    // Add other methods as needed
+  } as any;
+}
+
+// Test permission middleware
+describe("ACPPermissionMiddleware", () => {
+  it("should request permission for restricted tools", async () => {
+    const connection = createMockConnection();
+    
+    const middleware = createACPPermissionMiddleware({
+      permissionPolicy: {
+        "delete_file": { kind: "write" as const, requirePermission: true },
+      },
+      transport: connection,
+    });
+    
+    // Simulate tool call
+    const request = {
+      toolCall: {
+        id: "call-123",
+        name: "delete_file",
+        args: { path: "/test/file.txt" }
+      },
+      tool: {} as any,
+      state: { messages: [] },
+      runtime: createMockRuntime()
+    };
+    
+    const handler = jest.fn().mockResolvedValue({
+      content: [{ type: "text", text: "File deleted" }]
+    });
+    
+    const wrapToolCall = (middleware as any).wrapToolCall;
+    await wrapToolCall(request, handler);
+    
+    expect(connection.requestPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          title: "Calling delete_file",
+          status: "pending"
+        }),
+        options: expect.arrayContaining([
+          expect.objectContaining({ kind: "allow_once" }),
+          expect.objectContaining({ kind: "allow_always" })
+        ])
+      })
+    );
+  });
+});
+```
+
+### 15.3 Integration Testing with LangChain Agents
+
+**Testing Complete Agent Workflow:**
+
+```typescript
+import { createAgent } from "langchain";
+import { createACPSessionMiddleware, createACPToolMiddleware } from "@skroyc/acp-middleware-callbacks";
+import * as acp from "@agentclientprotocol/sdk";
+
+describe("ACP Agent Integration", () => {
+  it("should handle complete prompt workflow", async () => {
+    const connection = createMockConnection();
+    
+    // Create middleware stack
+    const sessionMiddleware = createACPSessionMiddleware({
+      sessionIdExtractor: (config) => config.configurable?.sessionId,
+    });
+    
+    const toolMiddleware = createACPToolMiddleware({
+      toolKindMapper: (name) => {
+        if (name.includes("read")) return "read";
+        if (name.includes("bash")) return "bash";
+        return "custom";
+      }
+    });
+    
+    // Create agent with middleware
+    const agent = createAgent({
+      model: mockModel, // Mock language model
+      tools: [mockFileTool, mockBashTool],
+      middleware: [sessionMiddleware, toolMiddleware],
+    });
+    
+    // Invoke agent
+    const result = await agent.invoke({
+      messages: [{ role: "user", content: "Read the config file" }]
+    }, {
+      configurable: { sessionId: "test-session" },
+      callbacks: [new ACPCallbackHandler({ transport: connection })]
+    });
+    
+    // Verify session updates were sent
+    expect(connection.sessionUpdate).toHaveBeenCalled();
+    
+    // Verify tool call was emitted
+    const toolCallUpdates = (connection.sessionUpdate as jest.Mock).mock.calls
+      .filter(call => call[0]?.update?.sessionUpdate === "tool_call");
+    
+    expect(toolCallUpdates.length).toBeGreaterThan(0);
+  });
+});
+```
+
+### 15.4 Testing Content Block Mapping
+
+**Content Mapper Unit Tests:**
+
+```typescript
+import { DefaultContentBlockMapper } from "./contentMapper";
+
+describe("ContentBlockMapper", () => {
+  let mapper: DefaultContentBlockMapper;
+  
+  beforeEach(() => {
+    mapper = new DefaultContentBlockMapper();
+  });
+  
+  it("should map text content correctly", () => {
+    const input = { type: "text", text: "Hello world" };
+    const result = mapper.toACP(input);
+    
+    expect(result).toEqual({
+      type: "text",
+      _meta: null,
+      annotations: null,
+      text: "Hello world"
+    });
+  });
+  
+  it("should map reasoning content with audience annotation", () => {
+    const input = { 
+      type: "reasoning", 
+      reasoning: "Let me think about this...",
+      priority: 1
+    };
+    const result = mapper.toACP(input);
+    
+    expect(result).toEqual({
+      type: "text",
+      _meta: { _internal: true, reasoning: true },
+      annotations: {
+        audience: ["assistant"],
+        priority: 1,
+        lastModified: null,
+        _meta: null
+      },
+      text: "Let me think about this..."
+    });
+  });
+  
+  it("should handle unknown content types gracefully", () => {
+    const input = { type: "unknown", customField: "value" } as any;
+    const result = mapper.toACP(input);
+    
+    expect(result.type).toBe("text");
+    expect(result.text).toContain("Unknown");
+  });
+});
+```
+
+### 15.5 Common Testing Pitfalls
+
+**1. Async/Await Handling:**
+```typescript
+// ❌ Wrong: Not awaiting async hook
+it("should fail without await", async () => {
+  const result = hook(state, runtime);
+  expect(result).toHaveProperty("sessionId");
+});
+
+// ✅ Correct: Properly awaiting async hooks
+it("should work with proper await", async () => {
+  const result = await hook(state, runtime);
+  expect(result).toHaveProperty("sessionId");
+});
+```
+
+**2. State Mutation:**
+```typescript
+// ❌ Wrong: Mutating state in place
+hook: (state) => {
+  state.sessionId = "new-id"; // Wrong!
+  return state;
+}
+
+// ✅ Correct: Returning partial state
+hook: (state) => {
+  return { sessionId: "new-id" }; // Correct!
+}
+```
+
+**3. AbortSignal Testing:**
+```typescript
+// ❌ Wrong: Not handling aborted signal
+it("should handle cancellation", async () => {
+  const signal = new AbortController().signal;
+  signal.abort(); // Abort immediately
+  
+  const runtime = createMockRuntime({ signal });
+  const result = await hook(state, runtime);
+  
+  // Should check for abort signal
+  expect(result).toBeDefined();
+});
+
+// ✅ Correct: Checking abort signal
+it("should handle cancellation", async () => {
+  const controller = new AbortController();
+  const runtime = createMockRuntime({ signal: controller.signal });
+  
+  // Abort after a tick
+  setTimeout(() => controller.abort(), 0);
+  
+  const result = await hook(state, runtime);
+  expect(result).toEqual({ messages: [] }); // Early exit
+});
+```
 
 ---
 
