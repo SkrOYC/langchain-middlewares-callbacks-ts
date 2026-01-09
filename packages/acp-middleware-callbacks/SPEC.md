@@ -82,7 +82,7 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
 - Handling permission requests via interruption
 - Returning a valid `stopReason`
 
-**REQ-2:** The package must automatically convert LangChain `AIMessage` content to ACP `agent_message_chunk` events. For reasoning content, emit as `agent_message_chunk` with `audience: ["assistant"]` annotation.
+**REQ-2:** The package must automatically convert LangChain `AIMessage` content to ACP `agent_message_chunk` events. For reasoning content, emit as `agent_thought_chunk` with `audience: ["assistant"]` annotation.
 
 **REQ-3:** The package must convert LangChain `ToolMessage` to ACP `tool_call_update` events with proper status lifecycle.
 
@@ -303,7 +303,12 @@ wrapToolCall: async (request, handler) => {
         toolCallId,
         status: "failed",
         _meta: null,
-        content: [{ type: "content", content: { type: "text", text: error.message } }],
+        content: [{ 
+          type: "text", 
+          _meta: null, 
+          annotations: null, 
+          text: error.message 
+        }],
       },
     });
     throw error;
@@ -321,16 +326,11 @@ pending → in_progress → completed
 
 ```typescript
 type ToolKind =
-  | 'read'         // File reading operations
-  | 'edit'         // File modification operations
-  | 'delete'       // File deletion operations
-  | 'move'         // File relocation operations
-  | 'search'       // Search operations
-  | 'execute'      // Command execution
-  | 'think'        // Reasoning/thought operations
-  | 'fetch'        // Data fetching operations
-  | 'switch_mode'  // Mode switching
-  | 'other';       // Uncategorized tools
+  | 'fs_read_text_file'   // File reading operations
+  | 'fs_write_text_file'  // File modification operations
+  | 'terminal'            // Command execution
+  | 'mcp'                 // Model Context Protocol tools
+  | 'custom';             // Uncategorized tools
 ```
 
 ### 4.3 Permission Middleware (`createACPPermissionMiddleware`)
@@ -379,10 +379,10 @@ wrapToolCall: async (request, handler) => {
       rawOutput: null,
     },
     options: [
-      { optionId: "allow", name: "Allow", kind: "allow_once" },
-      { optionId: "always", name: "Always Allow", kind: "allow_always" },
-      { optionId: "reject", name: "Deny", kind: "reject_once" },
-      { optionId: "never", name: "Never Allow", kind: "reject_always" },
+      { optionId: "allowOnce", name: "Allow", kind: "allow_once" },
+      { optionId: "allowAlways", name: "Always Allow", kind: "allow_always" },
+      { optionId: "rejectOnce", name: "Deny", kind: "reject_once" },
+      { optionId: "rejectAlways", name: "Never Allow", kind: "reject_always" },
     ],
   });
 
@@ -395,7 +395,12 @@ wrapToolCall: async (request, handler) => {
         toolCallId: toolCall.id,
         status: "failed",
         _meta: null,
-        content: [{ type: "content", content: { type: "text", text: "Permission cancelled" } }],
+        content: [{ 
+          type: "text", 
+          _meta: null, 
+          annotations: null, 
+          text: "Permission cancelled" 
+        }],
       },
     });
     throw new Error("Permission cancelled by user");
@@ -410,7 +415,12 @@ wrapToolCall: async (request, handler) => {
         toolCallId: toolCall.id,
         status: "failed",
         _meta: null,
-        content: [{ type: "content", content: { type: "text", text: "Permission denied" } }],
+        content: [{ 
+          type: "text", 
+          _meta: null, 
+          annotations: null, 
+          text: "Permission denied" 
+        }],
       },
     });
     throw new Error("Permission denied");
@@ -491,7 +501,11 @@ beforeAgent: async (state, runtime) => {
 
 ### 5.1 ACPCallbackHandler
 
-Handles streaming events (token generation, message chunks).
+Handles streaming events at the **LLM level** (token generation, message chunks). This is the **classic LangChain callback pattern** and is appropriate for intercepting model-level streaming events.
+
+**When to Use Callbacks vs Middleware:**
+- **Callbacks (`ACPCallbackHandler`):** Use for LLM-level token streaming, model start/end events, and when you need fine-grained control over model output chunks
+- **Middleware:** Use for agent-level session management, tool execution lifecycle, and permission handling
 
 **Interface:**
 
@@ -644,7 +658,7 @@ export type EmbeddedResource = {
 | `file` (with content) | `resource` | Embedded resource |
 | `reasoning` | `agent_message_chunk` | With audience annotation |
 
-**Note on Reasoning:** ACP does not have `agent_thought_chunk`. Emit reasoning as `agent_message_chunk` with `audience: ["assistant"]` annotation to indicate internal content.
+**Note on Reasoning:** ACP supports both `agent_message_chunk` for user-facing content and `agent_thought_chunk` for internal reasoning content. For reasoning content, emit as `agent_thought_chunk` with `audience: ["assistant"]` annotation to indicate internal content. Use `agent_message_chunk` only for user-facing responses.
 
 ### 6.4 Content Block Mapper Implementation
 
@@ -716,6 +730,8 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
         }
 
       default:
+        // Log warning for unexpected content block types to aid debugging
+        console.warn(`Unknown content block type: ${block.type}, converting to text`);
         return { type: "text", _meta: null, annotations: null, text: String(block) };
     }
   }
@@ -744,23 +760,15 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
 type SessionUpdate =
   | { sessionUpdate: "user_message_chunk"; content: ContentBlock }
   | { sessionUpdate: "agent_message_chunk"; content: ContentBlock }
+  | { sessionUpdate: "agent_thought_chunk"; content: ContentBlock }
   | { sessionUpdate: "tool_call"; toolCallId: string; /* ToolCall fields */ }
   | { sessionUpdate: "tool_call_update"; /* ToolCallUpdate fields */ }
-  | { sessionUpdate: "available_commands_update"; commands: string[] }
   | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }
-  | { sessionUpdate: "config_option_update"; configOptions: SessionConfigOption[] }
-  | { sessionUpdate: "session_info_update"; title?: string; updatedAt?: string };
 ```
 
-### 7.2 Custom Extensions
+**Note:** Some SessionUpdate types like `available_commands_update` and `config_option_update` are optional/extension features. Verify client support before using these types.
 
-**Plan Updates (Custom Extension - Not Standard):**
-
-```typescript
-| { sessionUpdate: "plan"; plan: Plan }
-```
-
-The `plan` type is a custom extension. Clients must explicitly support this extension.
+**Note on Session Updates:** The SessionUpdate types above represent the core ACP protocol. Additional types like `plan` are custom extensions that require explicit client support and should not be used in production without verification.
 
 ---
 
@@ -920,6 +928,33 @@ ACP has no 'error' stopReason. Errors are communicated through:
 | Agent refuses to respond | `stopReason: "refusal"` in PromptResponse |
 | Client cancels operation | `stopReason: "cancelled"` |
 | Tool execution failure | `tool_call_update` with `status: "failed"` |
+
+### 9.4 ACP Error Codes
+
+ACP uses JSON-RPC 2.0 error codes with ACP-specific extensions:
+
+```typescript
+type ACPErrorCode =
+  | -32700  // Parse error
+  | -32600  // Invalid request
+  | -32601  // Method not found
+  | -32602  // Invalid params
+  | -32603  // Internal error
+  | -32800  // Not authenticated
+  | -32000  // Authentication required
+  | -32001  // Session not found
+  | -32002  // Resource not found;
+```
+
+**LangChain to ACP Error Mapping:**
+
+| LangChain Error | ACP Error Code | ACP Error Message |
+|----------------|---------------|-------------------|
+| Invalid input params | -32602 | "Invalid parameters" |
+| Session not found | -32001 | "Session not found" |
+| Resource file not found | -32002 | "Resource not found" |
+| Unauthorized | -32800 | "Not authenticated" |
+| Internal agent error | -32603 | "Internal error" |
 
 ---
 
@@ -1257,7 +1292,7 @@ export abstract class BaseCallbackHandler {
 | LangChain Message | ACP Event | Notes |
 |-------------------|-----------|-------|
 | `AIMessage` (text) | `agent_message_chunk` | User-facing response |
-| `AIMessage` (reasoning) | `agent_message_chunk` | With audience annotation |
+| `AIMessage` (reasoning) | `agent_thought_chunk` | Internal reasoning content |
 | `HumanMessage` | Not echoed | Client displays user input |
 | `ToolMessage` | `tool_call_update` | Status: completed/failed |
 | `SystemMessage` | Ignored | Merged into context |
@@ -1265,7 +1300,7 @@ export abstract class BaseCallbackHandler {
 ### 14.2 Protocol Notes
 
 - ```user_message_chunk```: Used ONLY for `session/load` (replaying history). Normal `session/prompt` flow does NOT echo user input.
-- **No `agent_thought_chunk`:** ACP does not have this type. Emit reasoning as `agent_message_chunk` with appropriate annotations.
+- **Reasoning Content:** Use `agent_thought_chunk` with appropriate annotations for internal reasoning content. Use `agent_message_chunk` for user-facing text.
 - **Message Ordering:** ACP provides NO ordering guarantee. Clients handle out-of-order messages by merging partial updates.
 - **Session Concurrency:** ACP is strictly sequential per session. Concurrent prompts require separate sessions.
 
