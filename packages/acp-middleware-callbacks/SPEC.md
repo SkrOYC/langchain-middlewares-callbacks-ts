@@ -4,7 +4,7 @@
 
 ### 1.1 Purpose
 
-This package provides TypeScript middleware and callbacks that bridge LangChain \`createAgent()\` implementations to the **Agent Client Protocol (ACP)** for code editors and AI development environments. The package enables any LangChain agent to become ACP-compliant with minimal configuration.
+This package provides TypeScript middleware and callbacks that bridge LangChain `createAgent()` implementations to the **Agent Client Protocol (ACP)** for code editors and AI development environments. The package enables any LangChain agent to become ACP-compliant with minimal configuration.
 
 **Core Features:**
 - **Middleware:** Lifecycle hooks for session management, tool execution, and permission handling
@@ -14,32 +14,32 @@ This package provides TypeScript middleware and callbacks that bridge LangChain 
 ### 1.2 Protocol Overview
 
 ACP is a protocol standardizing editor-to-agent communication with:
-- **Structured session management:** \`newSession\`, \`prompt\`, \`loadSession\`
-- **Permission-based tool execution:** \`requestPermission\` workflow
+- **Structured session management:** `newSession`, `prompt`, `loadSession`
+- **Permission-based tool execution:** `requestPermission` workflow
 - **Rich content blocks:** text, image, audio, resources
-- **Standardized updates:** \`sessionUpdate\` notifications
+- **Standardized updates:** `sessionUpdate` notifications
 - **Bidirectional communication:** JSON-RPC 2.0 over stdio
 
 ### 1.3 Key Differences from AG-UI
 
-This package shares architectural patterns with \`@skroyc/ag-ui-middleware-callbacks\` but is fundamentally different:
+This package shares architectural patterns with `@skroyc/ag-ui-middleware-callbacks` but is fundamentally different:
 
 | Aspect | AG-UI | ACP |
 |--------|-------|-----|
 | Communication | Backend → Frontend event streaming | Editor ↔ Agent bidirectional |
 | Transport | SSE/WebSocket | Stdio with JSON-RPC 2.0 |
 | Session State | No built-in session management | Full session lifecycle |
-| Permission Flow | No built-in support | \`requestPermission\` workflow |
+| Permission Flow | No built-in support | `requestPermission` workflow |
 | Content Model | Events-based | Content blocks with annotations |
 
 ### 1.4 LangChain Integration
 
 This package works with **LangChain v1.0.0+** which uses LangGraph under the hood:
 
-- \`\`\`createAgent()\`\`\`: High-level API that compiles a StateGraph with middleware support
-- \`\`\`thread_id\`\`\`: Session identifier via \`configurable.thread_id\` for checkpoint retrieval
+- ```createAgent()```: High-level API that compiles a StateGraph with middleware support
+- ```thread_id```: Session identifier via `configurable.thread_id` for checkpoint retrieval
 - **Checkpoint:** Persisted state snapshot containing messages, custom state, and middleware state
-- **Checkpointer:** Storage backend (e.g., \`MemorySaver\`, database) for checkpoints
+- **Checkpointer:** Storage backend (e.g., `MemorySaver`, database) for checkpoints
 
 ### 1.5 Version Compatibility
 
@@ -52,7 +52,7 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
 | **TypeScript** | >=5.0.0 | Strict mode required |
 | **ACP Protocol** | v1 | Current stable version |
 
-**Minimum Runtime:** Node.js 18 (for \`structuredClone\`, \`ReadableStream\`, \`TextEncoder\`)
+**Minimum Runtime:** Node.js 18 (for `structuredClone`, `ReadableStream`, `TextEncoder`)
 
 ---
 
@@ -62,31 +62,31 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
 
 | Priority | Requirement | Description |
 |----------|-------------|-------------|
-| **MUST** | ACP Session Integration | Support \`session/new\`, \`session/prompt\`, \`session/update\` flow |
-| **MUST** | Tool Call Lifecycle | Emit \`tool_call\`, \`tool_call_update\` events with ACP format |
-| **MUST** | Permission Handling | Implement HITL-style interruption for ACP \`requestPermission\` |
+| **MUST** | ACP Session Integration | Support `session/new`, `session/prompt`, `session/update` flow |
+| **MUST** | Tool Call Lifecycle | Emit `tool_call`, `tool_call_update` events with ACP format |
+| **MUST** | Permission Handling | Implement HITL-style interruption for ACP `requestPermission` |
 | **MUST** | Content Block Mapping | Convert LangChain messages to ACP content blocks |
-| **MUST** | MCP Server Support | Integrate \`@langchain/mcp-adapters\` for MCP tool loading |
+| **MUST** | MCP Server Support | Integrate `@langchain/mcp-adapters` for MCP tool loading |
 | **MUST** | Stdio Transport | ACP-compliant stdio communication pattern |
-| **MUST** | Error Mapping | Map LangChain errors to ACP \`stopReason\` values |
-| **SHOULD** | Reasoning Content | Map LangChain \`reasoning\` blocks to \`agent_message_chunk\` with audience annotation |
-| **SHOULD** | Mode Middleware | Optional middleware for \`current_mode_update\` handling |
-| **SHOULD** | Plan Updates | Optional middleware for \`plan\` session updates (custom extension) |
+| **MUST** | Error Mapping | Map LangChain errors to ACP `stopReason` values |
+| **SHOULD** | Reasoning Content | Map LangChain `reasoning` blocks to `agent_message_chunk` with audience annotation |
+| **SHOULD** | Mode Middleware | Optional middleware for `current_mode_update` handling |
+| **SHOULD** | Plan Updates | Optional middleware for `plan` session updates (custom extension) |
 | **COULD** | Multi-Modal Support | Pass through image/audio content blocks |
 | **WON'T** | Client Implementation | Only backend ACP layer, no frontend code |
 
 ### 2.2 Functional Requirements
 
-**REQ-1:** A LangChain agent wrapped with this package must respond to ACP \`session/prompt\` requests by:
-- Emitting streaming \`sessionUpdate\` notifications
+**REQ-1:** A LangChain agent wrapped with this package must respond to ACP `session/prompt` requests by:
+- Emitting streaming `sessionUpdate` notifications
 - Handling permission requests via interruption
-- Returning a valid \`stopReason\`
+- Returning a valid `stopReason`
 
-**REQ-2:** The package must automatically convert LangChain \`AIMessage\` content to ACP \`agent_message_chunk\` events. For reasoning content, emit as \`agent_message_chunk\` with \`audience: ["assistant"]\` annotation.
+**REQ-2:** The package must automatically convert LangChain `AIMessage` content to ACP `agent_message_chunk` events. For reasoning content, emit as `agent_message_chunk` with `audience: ["assistant"]` annotation.
 
-**REQ-3:** The package must convert LangChain \`ToolMessage\` to ACP \`tool_call_update\` events with proper status lifecycle.
+**REQ-3:** The package must convert LangChain `ToolMessage` to ACP `tool_call_update` events with proper status lifecycle.
 
-**REQ-4:** The package must accept MCP server configurations and dynamically load tools using \`@langchain/mcp-adapters\`.
+**REQ-4:** The package must accept MCP server configurations and dynamically load tools using `@langchain/mcp-adapters`.
 
 ---
 
@@ -94,7 +94,7 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
 
 ### 3.1 High-Level Architecture
 
-\`\`\`
+```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      LangChain Agent (createAgent)               │
 ├─────────────────────────────────────────────────────────────────┤
@@ -118,11 +118,11 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
                     │ ACP Client      │
                     │ (Editor)        │
                     └─────────────────┘
-\`\`\`
+```
 
 ### 3.2 Package Structure
 
-\`\`\`
+```
 packages/acp-middleware-callbacks/
 ├── src/
 │   ├── index.ts                    # Main exports
@@ -166,13 +166,13 @@ packages/acp-middleware-callbacks/
 ├── tsconfig.json
 ├── tsup.config.ts
 └── README.md
-\`\`\`
+```
 
 ---
 
 ## 4. Middleware Implementation
 
-### 4.1 Session Middleware (\`createACPSessionMiddleware\`)
+### 4.1 Session Middleware (`createACPSessionMiddleware`)
 
 Manages ACP session lifecycle within LangChain execution.
 
@@ -184,7 +184,7 @@ Manages ACP session lifecycle within LangChain execution.
 
 **Interface:**
 
-\`\`\`typescript
+```typescript
 interface ACPSessionMiddlewareConfig {
   sessionIdExtractor?: (config: RunnableConfig) => string | undefined;
   emitStateSnapshots?: "initial" | "final" | "all" | "none";
@@ -194,11 +194,11 @@ interface ACPSessionMiddlewareConfig {
 export function createACPSessionMiddleware(
   config: ACPSessionMiddlewareConfig
 ): AgentMiddleware;
-\`\`\`
+```
 
 **Usage:**
 
-\`\`\`typescript
+```typescript
 const sessionMiddleware = createACPSessionMiddleware({
   sessionIdExtractor: (config) => config.configurable?.sessionId,
   emitStateSnapshots: "none",
@@ -208,27 +208,27 @@ const agent = createAgent({
   model: "claude-sonnet-4-20250529",
   middleware: [sessionMiddleware],
 });
-\`\`\`
+```
 
 **Session Lifecycle Events:**
-- \`newSession\`: Creates a new session (called once at conversation start)
-- \`session/prompt\`: Sends user message within existing session (called multiple times)
-- \`session/load\`: Restores existing session and streams conversation history
-- \`session/cancel\`: Handles cancellation gracefully
+- `newSession`: Creates a new session (called once at conversation start)
+- `session/prompt`: Sends user message within existing session (called multiple times)
+- `session/load`: Restores existing session and streams conversation history
+- `session/cancel`: Handles cancellation gracefully
 
 **Session Load Flow:**
 1. Agent restores internal session state (checkpoints, MCP connections)
-2. Agent streams entire conversation history via \`user_message_chunk\` and \`agent_message_chunk\`
+2. Agent streams entire conversation history via `user_message_chunk` and `agent_message_chunk`
 3. Client receives notifications and reconstructs full conversation UI
 4. Agent proceeds with next prompt using restored context
 
-### 4.2 Tool Middleware (\`createACPToolMiddleware\`)
+### 4.2 Tool Middleware (`createACPToolMiddleware`)
 
-Intercepts LangChain tool calls and emits ACP \`tool_call\` / \`tool_call_update\` events.
+Intercepts LangChain tool calls and emits ACP `tool_call` / `tool_call_update` events.
 
 **Interface:**
 
-\`\`\`typescript
+```typescript
 interface ACPToolMiddlewareConfig {
   emitToolResults?: boolean;
   emitToolStart?: boolean;
@@ -239,11 +239,11 @@ interface ACPToolMiddlewareConfig {
 export function createACPToolMiddleware(
   config: ACPToolMiddlewareConfig
 ): AgentMiddleware;
-\`\`\`
+```
 
 **Tool Call Lifecycle:**
 
-\`\`\`typescript
+```typescript
 wrapToolCall: async (request, handler) => {
   const { toolCallId, name, args } = request;
   const sessionId = runtime.config.configurable?.sessionId;
@@ -254,7 +254,7 @@ wrapToolCall: async (request, handler) => {
     update: {
       sessionUpdate: "tool_call",
       toolCallId,
-      title: \`Calling \${name}\`,
+      title: `Calling \${name}`,
       kind: mapToolKind(name),
       status: "pending",
       _meta: null,
@@ -309,17 +309,17 @@ wrapToolCall: async (request, handler) => {
     throw error;
   }
 }
-\`\`\`
+```
 
 **Tool Call Status Flow:**
-\`\`\`
+```
 pending → in_progress → completed
                     → failed
-\`\`\`
+```
 
 **Tool Kinds:**
 
-\`\`\`typescript
+```typescript
 type ToolKind =
   | 'read'         // File reading operations
   | 'edit'         // File modification operations
@@ -331,15 +331,15 @@ type ToolKind =
   | 'fetch'        // Data fetching operations
   | 'switch_mode'  // Mode switching
   | 'other';       // Uncategorized tools
-\`\`\`
+```
 
-### 4.3 Permission Middleware (\`createACPPermissionMiddleware\`)
+### 4.3 Permission Middleware (`createACPPermissionMiddleware`)
 
 Implements HITL-style interruption for ACP permission requests.
 
 **Interface:**
 
-\`\`\`typescript
+```typescript
 import * as acp from "@agentclientprotocol/sdk";
 
 interface ACPPermissionMiddlewareConfig {
@@ -355,11 +355,11 @@ interface ACPPermissionMiddlewareConfig {
 export function createACPPermissionMiddleware(
   config: ACPPermissionMiddlewareConfig
 ): AgentMiddleware;
-\`\`\`
+```
 
 **Permission Flow:**
 
-\`\`\`typescript
+```typescript
 wrapToolCall: async (request, handler) => {
   const toolCall = request.toolCall;
   const sessionId = runtime.config.configurable?.sessionId;
@@ -369,7 +369,7 @@ wrapToolCall: async (request, handler) => {
     sessionId,
     toolCall: {
       toolCallId: toolCall.id,
-      title: \`Calling \${toolCall.name}\`,
+      title: `Calling \${toolCall.name}`,
       kind: mapToolKind(toolCall.name),
       status: "pending",
       _meta: null,
@@ -419,15 +419,15 @@ wrapToolCall: async (request, handler) => {
   // User approved - continue execution
   return await handler(request);
 }
-\`\`\`
+```
 
-### 4.4 Mode Middleware (\`createACPModeMiddleware\`) - Optional
+### 4.4 Mode Middleware (`createACPModeMiddleware`) - Optional
 
 Handles ACP mode changes via optional middleware.
 
 **Interface:**
 
-\`\`\`typescript
+```typescript
 interface ACPModeMiddlewareConfig {
   modes: {
     [modeId: string]: {
@@ -443,20 +443,20 @@ interface ACPModeMiddlewareConfig {
 export function createACPModeMiddleware(
   config: ACPModeMiddlewareConfig
 ): AgentMiddleware;
-\`\`\`
+```
 
 **Supported Modes:**
 
 | Mode | Behavior |
 |------|----------|
-| \`agentic\` | Full autonomy, can use all tools without restrictions |
-| \`interactive\` | Requires confirmation for sensitive operations |
-| \`readonly\` | No tool execution, only read operations |
-| \`planning\` | Emits \`plan\` updates; tool execution deferred |
+| `agentic` | Full autonomy, can use all tools without restrictions |
+| `interactive` | Requires confirmation for sensitive operations |
+| `readonly` | No tool execution, only read operations |
+| `planning` | Emits `plan` updates; tool execution deferred |
 
 **Mode Switching:**
 
-\`\`\`typescript
+```typescript
 beforeAgent: async (state, runtime) => {
   const currentMode = getCurrentMode(runtime.config) || this.config.defaultMode;
   const modeConfig = this.config.modes[currentMode];
@@ -483,7 +483,7 @@ beforeAgent: async (state, runtime) => {
 
   return {};
 },
-\`\`\`
+```
 
 ---
 
@@ -495,7 +495,7 @@ Handles streaming events (token generation, message chunks).
 
 **Interface:**
 
-\`\`\`typescript
+```typescript
 interface ACPCallbackHandlerConfig {
   transport: ACPTransport;
   emitTextChunks?: boolean;
@@ -516,11 +516,11 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   handleToolEnd?(output: string, runId: string): void;
   handleToolError?(error: Error, runId: string): void;
 }
-\`\`\`
+```
 
 **Token Streaming Implementation:**
 
-\`\`\`typescript
+```typescript
 async handleLLMNewToken(token: string, run: Run) {
   if (!token) return;
 
@@ -542,7 +542,7 @@ async handleLLMEnd(output: LLMResult, run: Run) {
   // ACP doesn't require explicit end marker
   // Agent proceeds to next phase or returns stopReason
 }
-\`\`\`
+```
 
 ---
 
@@ -552,20 +552,20 @@ async handleLLMEnd(output: LLMResult, run: Run) {
 
 ACP defines five content block types as a discriminated union:
 
-\`\`\`typescript
+```typescript
 export type ContentBlock =
   | (TextContent & { type: 'text'; })
   | (ImageContent & { type: 'image'; })
   | (AudioContent & { type: 'audio'; })
   | (ResourceLink & { type: 'resource_link'; })
   | (EmbeddedResource & { type: 'resource'; });
-\`\`\`
+```
 
 ### 6.2 Content Block Definitions
 
 **TextContent:**
 
-\`\`\`typescript
+```typescript
 export type TextContent = {
   _meta?: Record<string, unknown> | null;
   annotations?: Annotations | null;
@@ -578,11 +578,11 @@ export type Annotations = {
   lastModified?: string | null;
   priority?: number | null;
 };
-\`\`\`
+```
 
 **ImageContent:**
 
-\`\`\`typescript
+```typescript
 export type ImageContent = {
   _meta?: Record<string, unknown> | null;
   annotations?: Annotations | null;
@@ -590,22 +590,22 @@ export type ImageContent = {
   mimeType: string;
   uri?: string | null;
 };
-\`\`\`
+```
 
 **AudioContent:**
 
-\`\`\`typescript
+```typescript
 export type AudioContent = {
   _meta?: Record<string, unknown> | null;
   annotations?: Annotations | null;
   data: string;        // Base64-encoded
   mimeType: string;
 };
-\`\`\`
+```
 
 **ResourceLink:**
 
-\`\`\`typescript
+```typescript
 export type ResourceLink = {
   _meta?: Record<string, unknown> | null;
   annotations?: Annotations | null;
@@ -616,11 +616,11 @@ export type ResourceLink = {
   title?: string | null;
   uri: string;
 };
-\`\`\`
+```
 
 **EmbeddedResource:**
 
-\`\`\`typescript
+```typescript
 export type EmbeddedResource = {
   _meta?: Record<string, unknown> | null;
   annotations?: Annotations | null;
@@ -631,24 +631,24 @@ export type EmbeddedResource = {
     blob?: string;        // Base64-encoded for binary resources
   };
 };
-\`\`\`
+```
 
 ### 6.3 LangChain to ACP Mapping
 
 | LangChain Content | ACP Content Block | Notes |
 |-------------------|-------------------|-------|
-| \`text\` | \`agent_message_chunk\` | User-facing response |
-| \`image\` | \`agent_message_chunk\` | Base64-encoded image |
-| \`audio\` | \`agent_message_chunk\` | Base64-encoded audio |
-| \`file\` (reference) | \`resource_link\` | Reference without content |
-| \`file\` (with content) | \`resource\` | Embedded resource |
-| \`reasoning\` | \`agent_message_chunk\` | With audience annotation |
+| `text` | `agent_message_chunk` | User-facing response |
+| `image` | `agent_message_chunk` | Base64-encoded image |
+| `audio` | `agent_message_chunk` | Base64-encoded audio |
+| `file` (reference) | `resource_link` | Reference without content |
+| `file` (with content) | `resource` | Embedded resource |
+| `reasoning` | `agent_message_chunk` | With audience annotation |
 
-**Note on Reasoning:** ACP does not have \`agent_thought_chunk\`. Emit reasoning as \`agent_message_chunk\` with \`audience: ["assistant"]\` annotation to indicate internal content.
+**Note on Reasoning:** ACP does not have `agent_thought_chunk`. Emit reasoning as `agent_message_chunk` with `audience: ["assistant"]` annotation to indicate internal content.
 
 ### 6.4 Content Block Mapper Implementation
 
-\`\`\`typescript
+```typescript
 class DefaultContentBlockMapper implements ContentBlockMapper {
   toACP(block: LangChainContentBlock): ContentBlock {
     switch (block.type) {
@@ -732,7 +732,7 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
     };
   }
 }
-\`\`\`
+```
 
 ---
 
@@ -740,7 +740,7 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
 
 ### 7.1 Standard SessionUpdate Types
 
-\`\`\`typescript
+```typescript
 type SessionUpdate =
   | { sessionUpdate: "user_message_chunk"; content: ContentBlock }
   | { sessionUpdate: "agent_message_chunk"; content: ContentBlock }
@@ -750,17 +750,17 @@ type SessionUpdate =
   | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }
   | { sessionUpdate: "config_option_update"; configOptions: SessionConfigOption[] }
   | { sessionUpdate: "session_info_update"; title?: string; updatedAt?: string };
-\`\`\`
+```
 
 ### 7.2 Custom Extensions
 
 **Plan Updates (Custom Extension - Not Standard):**
 
-\`\`\`typescript
+```typescript
 | { sessionUpdate: "plan"; plan: Plan }
-\`\`\`
+```
 
-The \`plan\` type is a custom extension. Clients must explicitly support this extension.
+The `plan` type is a custom extension. Clients must explicitly support this extension.
 
 ---
 
@@ -770,7 +770,7 @@ The \`plan\` type is a custom extension. Clients must explicitly support this ex
 
 The agent must perform an initialization handshake:
 
-\`\`\`typescript
+```typescript
 async function initializeTransport(
   connection: acp.AgentSideConnection
 ): Promise<void> {
@@ -779,7 +779,7 @@ async function initializeTransport(
   
   // 2. Validate protocol version
   if (initRequest.protocolVersion !== 1) {
-    throw new Error(\`Unsupported protocol version: \${initRequest.protocolVersion}\`);
+    throw new Error(`Unsupported protocol version: \${initRequest.protocolVersion}`);
   }
   
   // 3. Extract client capabilities
@@ -809,11 +809,11 @@ async function initializeTransport(
     } as acp.InitializeResponse,
   });
 }
-\`\`\`
+```
 
 ### 8.2 Using ACP SDK Transport
 
-\`\`\`typescript
+```typescript
 import * as acp from "@agentclientprotocol/sdk";
 
 // Create NDJSON stdio stream
@@ -833,11 +833,11 @@ const permissionMiddleware = createACPPermissionMiddleware({
   permissionPolicy: {...},
   transport: connection,
 });
-\`\`\`
+```
 
 ### 8.3 Available Transport Methods
 
-\`\`\`typescript
+```typescript
 // Session updates (notifications)
 await connection.sessionUpdate({
   sessionId: string,
@@ -864,7 +864,7 @@ await connection.writeTextFile({
   path: string,
   content: string,
 });
-\`\`\`
+```
 
 ---
 
@@ -872,18 +872,18 @@ await connection.writeTextFile({
 
 ### 9.1 stopReason Values
 
-\`\`\`typescript
+```typescript
 type ACPStopReason =
   | "end_turn"              // Normal completion
   | "max_tokens"            // Context window exceeded
   | "max_turn_requests"     // Step limit reached
   | "refusal"               // Agent refused to respond
   | "cancelled"             // User cancelled the operation
-\`\`\`
+```
 
 ### 9.2 stopReason Mapper
 
-\`\`\`typescript
+```typescript
 export function mapToStopReason(state: any): ACPStopReason {
   // Check for user cancellation
   if (state.cancelled || state.permissionDenied) {
@@ -908,7 +908,7 @@ export function mapToStopReason(state: any): ACPStopReason {
   // Default to normal completion
   return "end_turn";
 }
-\`\`\`
+```
 
 ### 9.3 Error Communication
 
@@ -917,9 +917,9 @@ ACP has no 'error' stopReason. Errors are communicated through:
 | Error Scenario | Mechanism |
 |---------------|-----------|
 | Method execution failure | JSON-RPC error response |
-| Agent refuses to respond | \`stopReason: "refusal"\` in PromptResponse |
-| Client cancels operation | \`stopReason: "cancelled"\` |
-| Tool execution failure | \`tool_call_update\` with \`status: "failed"\` |
+| Agent refuses to respond | `stopReason: "refusal"` in PromptResponse |
+| Client cancels operation | `stopReason: "cancelled"` |
+| Tool execution failure | `tool_call_update` with `status: "failed"` |
 
 ---
 
@@ -931,16 +931,16 @@ All ACP agents must implement these methods:
 
 | Method | Purpose | Return |
 |--------|---------|--------|
-| \`initialize\` | Connection handshake, capability negotiation | \`InitializeResponse\` |
-| \`newSession\` | Create new conversation session | \`NewSessionResponse\` with \`sessionId\` |
-| \`prompt\` | Process user input | \`PromptResponse\` with \`stopReason\` |
-| \`cancel\` | Handle cancellation | \`void\` |
-| \`setSessionMode\` | Change agent mode | \`SetSessionModeResponse\` |
-| \`loadSession\` | Resume existing session (optional) | \`LoadSessionResponse\` |
+| `initialize` | Connection handshake, capability negotiation | `InitializeResponse` |
+| `newSession` | Create new conversation session | `NewSessionResponse` with `sessionId` |
+| `prompt` | Process user input | `PromptResponse` with `stopReason` |
+| `cancel` | Handle cancellation | `void` |
+| `setSessionMode` | Change agent mode | `SetSessionModeResponse` |
+| `loadSession` | Resume existing session (optional) | `LoadSessionResponse` |
 
 ### 10.2 Complete Agent Example
 
-\`\`\`typescript
+```typescript
 import * as acp from "@agentclientprotocol/sdk";
 import { createAgent, createACPSessionMiddleware, ACPCallbackHandler } from "@skroyc/acp-middleware-callbacks";
 
@@ -977,7 +977,7 @@ const agentImplementation: acp.Agent = {
   async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
     const session = sessionStore.get(params.sessionId);
     if (!session) {
-      throw new Error(\`Session not found: \${params.sessionId}\`);
+      throw new Error(`Session not found: \${params.sessionId}`);
     }
 
     const agent = await getOrCreateAgent(session);
@@ -993,7 +993,7 @@ const agentImplementation: acp.Agent = {
     // Handle cancellation gracefully
   },
 };
-\`\`\`
+```
 
 ---
 
@@ -1001,7 +1001,7 @@ const agentImplementation: acp.Agent = {
 
 ### 11.1 Core ACP Types (Re-exported)
 
-\`\`\`typescript
+```typescript
 import * as acp from "@agentclientprotocol/sdk";
 
 export type {
@@ -1030,11 +1030,11 @@ export type {
   PromptRequest,
   PromptResponse,
 } from "@agentclientprotocol/sdk";
-\`\`\`
+```
 
 ### 11.2 Package-Specific Types
 
-\`\`\`typescript
+```typescript
 export interface ACPMiddlewareConfig {
   sessionIdExtractor?: (config: RunnableConfig) => string | undefined;
   emitStateSnapshots?: "initial" | "final" | "all" | "none";
@@ -1060,7 +1060,7 @@ export interface ACPAgentConfig {
   callbacks?: CallbackHandler[];
   transport: ACPTransport;
 }
-\`\`\`
+```
 
 ---
 
@@ -1068,13 +1068,13 @@ export interface ACPAgentConfig {
 
 ### 12.1 Integration
 
-The package integrates \`@langchain/mcp-adapters\` to load MCP tools.
+The package integrates `@langchain/mcp-adapters` to load MCP tools.
 
 **For the authoritative current API, see:** [langchain-mcp-adapters README](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters)
 
 **Basic Usage:**
 
-\`\`\`typescript
+```typescript
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 
 const mcpClient = new MultiServerMCPClient({
@@ -1097,17 +1097,17 @@ const mcpClient = new MultiServerMCPClient({
 
 const tools = await mcpClient.getTools();
 // Tool names like: "mcp__filesystem__read_file", "mcp__math__add"
-\`\`\`
+```
 
 ---
 
 ## 13. Appendix: LangChain Type Reference
 
-### 13.1 \`createMiddleware()\` Function
+### 13.1 `createMiddleware()` Function
 
-**Location:** \`@langchain/langchain/agents\`
+**Location:** `@langchain/langchain/agents`
 
-\`\`\`typescript
+```typescript
 export function createMiddleware<
   TSchema extends InteropZodObject | undefined = undefined,
   TContextSchema extends InteropZodObject | undefined = undefined,
@@ -1116,13 +1116,13 @@ export function createMiddleware<
     | ServerTool
   )[],
 >(config: MiddlewareConfig<TSchema, TContextSchema, TTools>): AgentMiddleware;
-\`\`\`
+```
 
 ### 13.2 Hook Types
 
 **BeforeAgentHook / BeforeModelHook / AfterModelHook / AfterAgentHook:**
 
-\`\`\`typescript
+```typescript
 type BeforeAgentHandler<TSchema, TContext> = (
   state: TSchema,
   runtime: Runtime<TContext>
@@ -1131,11 +1131,11 @@ type BeforeAgentHandler<TSchema, TContext> = (
 export type BeforeAgentHook<TSchema, TContext> =
   | BeforeAgentHandler<TSchema, TContext>
   | { hook: BeforeAgentHandler<TSchema, TContext>; canJumpTo?: JumpToTarget[] };
-\`\`\`
+```
 
 **WrapToolCallHook:**
 
-\`\`\`typescript
+```typescript
 type ToolCallRequest<TSchema, TContext> = {
   toolCall: ToolCall;
   tool: ClientTool | ServerTool;
@@ -1149,21 +1149,21 @@ export type WrapToolCallHook<TSchema, TContext> = (
   request: ToolCallRequest<TSchema, TContext>,
   handler: ToolCallHandler<TSchema, TContext>
 ) => PromiseOrValue<ToolMessage | Command>;
-\`\`\`
+```
 
 ### 13.3 MiddlewareResult
 
-\`\`\`typescript
+```typescript
 export type MiddlewareResult<TState> =
   | (TState & { jumpTo?: JumpToTarget })
   | void;
 
 export type JumpToTarget = "model" | "tools" | "end";
-\`\`\`
+```
 
 ### 13.4 Runtime Type
 
-\`\`\`typescript
+```typescript
 export type Runtime<TContext = unknown> = Partial<
   Omit<LangGraphRuntime<TContext>, "context" | "configurable">
 > &
@@ -1177,11 +1177,11 @@ export type Runtime<TContext = unknown> = Partial<
     interrupt?: ((interruptInfo: InterruptInfo) => unknown) | undefined;
     store?: BaseStore | undefined;
   };
-\`\`\`
+```
 
 ### 13.5 RunnableConfig
 
-\`\`\`typescript
+```typescript
 export interface RunnableConfig<
   ConfigurableFieldType extends Record<string, any> = Record<string, any>,
 > extends BaseCallbackConfig {
@@ -1191,11 +1191,11 @@ export interface RunnableConfig<
   timeout?: number;
   signal?: AbortSignal;
 }
-\`\`\`
+```
 
 ### 13.6 Command Type
 
-\`\`\`typescript
+```typescript
 new Command(params: CommandParams)
 
 interface CommandParams {
@@ -1208,13 +1208,13 @@ type StateUpdate = {
   messages?: BaseMessage[];
   [key: string]: unknown;
 };
-\`\`\`
+```
 
 ### 13.7 BaseCallbackHandler
 
-**Location:** \`@langchain/core/callbacks/base\`
+**Location:** `@langchain/core/callbacks/base`
 
-\`\`\`typescript
+```typescript
 export interface BaseCallbackHandlerInput {
   ignoreLLM?: boolean;
   ignoreChain?: boolean;
@@ -1246,7 +1246,7 @@ export abstract class BaseCallbackHandler {
   handleToolEnd?(output: string, runId: string, ...): Promise<any>;
   handleToolError?(error: Error, runId: string): Promise<any>;
 }
-\`\`\`
+```
 
 ---
 
@@ -1256,16 +1256,16 @@ export abstract class BaseCallbackHandler {
 
 | LangChain Message | ACP Event | Notes |
 |-------------------|-----------|-------|
-| \`AIMessage\` (text) | \`agent_message_chunk\` | User-facing response |
-| \`AIMessage\` (reasoning) | \`agent_message_chunk\` | With audience annotation |
-| \`HumanMessage\` | Not echoed | Client displays user input |
-| \`ToolMessage\` | \`tool_call_update\` | Status: completed/failed |
-| \`SystemMessage\` | Ignored | Merged into context |
+| `AIMessage` (text) | `agent_message_chunk` | User-facing response |
+| `AIMessage` (reasoning) | `agent_message_chunk` | With audience annotation |
+| `HumanMessage` | Not echoed | Client displays user input |
+| `ToolMessage` | `tool_call_update` | Status: completed/failed |
+| `SystemMessage` | Ignored | Merged into context |
 
 ### 14.2 Protocol Notes
 
-- \`\`\`user_message_chunk\`\`\`: Used ONLY for \`session/load\` (replaying history). Normal \`session/prompt\` flow does NOT echo user input.
-- **No \`agent_thought_chunk\`:** ACP does not have this type. Emit reasoning as \`agent_message_chunk\` with appropriate annotations.
+- ```user_message_chunk```: Used ONLY for `session/load` (replaying history). Normal `session/prompt` flow does NOT echo user input.
+- **No `agent_thought_chunk`:** ACP does not have this type. Emit reasoning as `agent_message_chunk` with appropriate annotations.
 - **Message Ordering:** ACP provides NO ordering guarantee. Clients handle out-of-order messages by merging partial updates.
 - **Session Concurrency:** ACP is strictly sequential per session. Concurrent prompts require separate sessions.
 
