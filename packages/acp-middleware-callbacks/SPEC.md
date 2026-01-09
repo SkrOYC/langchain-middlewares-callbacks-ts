@@ -54,6 +54,44 @@ This package works with **LangChain v1.0.0+** which uses LangGraph under the hoo
 
 **Minimum Runtime:** Node.js 18 (for `structuredClone`, `ReadableStream`, `TextEncoder`)
 
+### 1.6 Protocol Version Negotiation
+
+The ACP protocol uses semantic version negotiation during the initialization handshake.
+
+**Negotiation Flow:**
+1. Client sends `initialize` request with supported `protocolVersion`
+2. Agent responds with agreed `protocolVersion` (may differ from client's request)
+3. If versions are incompatible, client SHOULD close the connection
+
+**Example:**
+```json
+// Client request
+{
+  "method": "initialize",
+  "params": {
+    "protocolVersion": 1,
+    "clientCapabilities": { /* fs, terminal, etc. */ },
+    "clientInfo": { "name": "editor", "version": "1.0.0" }
+  }
+}
+
+// Agent response
+{
+  "result": {
+    "protocolVersion": 1,
+    "agentCapabilities": { /* loadSession, promptCapabilities, mcp, etc. */ },
+    "agentInfo": { "name": "agent", "version": "0.1.0" }
+  }
+}
+```
+
+**Version Rules:**
+- Agent MUST respond with the highest version both parties support
+- Client MUST close connection if it cannot support the agent's version
+- Current stable version: `1`
+
+**Source:** [ACP Protocol Initialization](https://agentclientprotocol.com/protocol/initialization)
+
 ---
 
 ## 2. Requirements
@@ -426,6 +464,11 @@ The permission system operates at two levels:
 **PermissionOptionKind Values:**
 
 ```typescript
+/**
+ * Permission option kinds from official ACP protocol specification.
+ * 
+ * Source: /home/oscar/.local/share/librarian/repos/agentclientprotocol/acp-typescript-sdk/src/schema/zod.gen.ts
+ */
 type PermissionOptionKind =
   | 'allow_once'     // Allow this specific action once
   | 'allow_always'   // Allow this action permanently
@@ -436,9 +479,12 @@ type PermissionOptionKind =
 **RequestPermissionOutcome Structure:**
 
 ```typescript
+/**
+ * Source: /home/oscar/.local/share/librarian/repos/agentclientprotocol/acp-typescript-sdk/src/schema/zod.gen.ts
+ */
 type RequestPermissionOutcome =
   | { outcome: 'cancelled' }
-  | ({ outcome: 'selected' } & { optionId: string });
+  | ({ outcome: 'selected'; optionId: string });
 ```
 
 **Interface:**
@@ -461,14 +507,48 @@ export function createACPPermissionMiddleware(
 ): AgentMiddleware;
 ```
 
-**Permission Flow:**
+**Official Permission Flow (JSON-RPC 2.0):**
+
+The ACP protocol uses a request/response pattern for permissions:
+
+```typescript
+/**
+ * Permission request (Agent → Client):
+ * {
+ *   "jsonrpc": "2.0",
+ *   "id": 5,
+ *   "method": "session/request_permission",
+ *   "params": {
+ *     "sessionId": "sess_abc123",
+ *     "toolCall": { /* ToolCallUpdate fields */ },
+ *     "options": [
+ *       { "optionId": "allow-once", "name": "Allow once", "kind": "allow_once" },
+ *       { "optionId": "reject-once", "name": "Reject", "kind": "reject_once" }
+ *     ]
+ *   }
+ * }
+ * 
+ * Permission response (Client → Agent):
+ * {
+ *   "jsonrpc": "2.0",
+ *   "id": 5,
+ *   "result": {
+ *     "outcome": {
+ *       "outcome": "selected",  // or "cancelled"
+ *       "optionId": "allow-once"
+ *     }
+ *   }
+ * }
+ */
+
+**Permission Flow Implementation:**
 
 ```typescript
 wrapToolCall: async (request, handler) => {
   const toolCall = request.toolCall;
   const sessionId = runtime.config.configurable?.sessionId;
 
-  // 1. Emit permission request
+  // 1. Emit permission request (official protocol format)
   const response = await connection.requestPermission({
     sessionId,
     toolCall: {
@@ -722,20 +802,30 @@ export type Content = {
 **TextContent:**
 
 ```typescript
-import type { Role } from '@agentclientprotocol/sdk';
-
 export type TextContent = {
-  _meta?: Record<string, unknown> | null;
+  _meta?: { [key: string]: unknown } | null;
   annotations?: Annotations | null;
   text: string;
 };
 
+/**
+ * Annotations structure from official ACP protocol specification.
+ * 
+ * Source: /home/oscar/.local/share/librarian/repos/agentclientprotocol/acp-typescript-sdk/src/schema/types.gen.ts
+ */
 export type Annotations = {
-  _meta?: Record<string, unknown> | null;
-  audience?: Array<Role> | null;
+  _meta?: { [key: string]: unknown } | null;
+  audience?: Array<'assistant' | 'user'> | null;
   lastModified?: string | null;
   priority?: number | null;
 };
+
+/**
+ * Role enum from official ACP protocol specification.
+ * 
+ * Source: /home/oscar/.local/share/librarian/repos/agentclientprotocol/acp-typescript-sdk/src/schema/types.gen.ts
+ */
+export type Role = 'assistant' | 'user';
 ```
 
 **ImageContent:**
@@ -802,13 +892,13 @@ export type EmbeddedResource = {
 | `file` (with content) | `resource` | Embedded resource |
 | `reasoning` | `agent_message_chunk` | With audience annotation |
 
-**Note on Reasoning:** ACP supports both `agent_message_chunk` for user-facing content and `agent_thought_chunk` for internal reasoning content. For reasoning content, emit as `agent_thought_chunk` with `audience: ['assistant']` annotation (using Role type from SDK) to indicate internal content. Use `agent_message_chunk` only for user-facing responses.
+**Note on Reasoning:** ACP supports both `agent_message_chunk` for user-facing content and `agent_thought_chunk` for internal reasoning content.
+
+⚠️ **UNSTABLE:** `agent_thought_chunk` is not yet part of the stable protocol specification (only in `schema/schema.unstable.json`). For reasoning content, emit as `agent_thought_chunk` with `audience: ['assistant']` annotation (using `'assistant' | 'user'` Role type from SDK) to indicate internal content. Fallback to `agent_message_chunk` for production use. Use `agent_message_chunk` for user-facing responses.
 
 ### 6.4 Content Block Mapper Implementation
 
 ```typescript
-import type { Role } from '@agentclientprotocol/sdk';
-
 class DefaultContentBlockMapper implements ContentBlockMapper {
   toACP(block: LangChainContentBlock): ContentBlock {
     switch (block.type) {
@@ -825,7 +915,7 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
           type: "text",
           _meta: { _internal: true, reasoning: true },
           annotations: {
-            audience: ['assistant'] as Role[],
+            audience: ['assistant'] as Array<'assistant' | 'user'>,
             priority: block.priority || null,
           },
           text: block.reasoning,
@@ -888,7 +978,7 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
     if (!langChainAnnotations) return null;
     return {
       _meta: null,
-      audience: langChainAnnotations.audience as Annotations['audience'] || null,
+      audience: (langChainAnnotations.audience as Array<'assistant' | 'user'>) || null,
       lastModified: langChainAnnotations.lastModified as string || null,
       priority: langChainAnnotations.priority as number || null,
     };
@@ -902,19 +992,34 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
 
 ### 7.1 Standard SessionUpdate Types
 
+**Source:** [ACP TypeScript SDK](https://github.com/agentclientprotocol/acp-typescript-sdk/blob/main/src/schema/zod.gen.ts)
+
 ```typescript
+/**
+ * Session update types with stability indicators.
+ * 
+ * Legend:
+ * - STABLE: Guaranteed by protocol specification
+ * - ⚠️ UNSTABLE: May change in future protocol versions
+ * - EXPERIMENTAL: Likely to change; for testing only
+ */
 type SessionUpdate =
-  | { sessionUpdate: "user_message_chunk"; content: Content }
-  | { sessionUpdate: "agent_message_chunk"; content: Content }
-  | { sessionUpdate: "agent_thought_chunk"; content: Content }
-  | { sessionUpdate: "tool_call"; toolCallId: string; /* ToolCall fields */ }
-  | { sessionUpdate: "tool_call_update"; /* ToolCallUpdate fields */ }
-  | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }
+  | { sessionUpdate: "user_message_chunk"; content: Content }  // STABLE
+  | { sessionUpdate: "agent_message_chunk"; content: Content }  // STABLE
+  | { sessionUpdate: "agent_thought_chunk"; content: Content }  // ⚠️ UNSTABLE (not in stable schema)
+  | { sessionUpdate: "tool_call"; toolCallId: string; /* ToolCall fields */ }  // STABLE
+  | { sessionUpdate: "tool_call_update"; /* ToolCallUpdate fields */ }  // STABLE
+  | { sessionUpdate: "plan"; plan: Plan }  // STABLE
+  | { sessionUpdate: "available_commands_update"; /* AvailableCommandsUpdate */ }  // EXPERIMENTAL
+  | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }  // STABLE
+  | { sessionUpdate: "config_option_update"; /* ConfigOptionUpdate */ }  // EXPERIMENTAL
+  | { sessionUpdate: "session_info_update"; /* SessionInfoUpdate */ };  // STABLE
 ```
 
-**Note:** Some SessionUpdate types like `available_commands_update` and `config_option_update` are optional/extension features. Verify client support before using these types.
-
-**Note on Session Updates:** The SessionUpdate types above represent the core ACP protocol. Additional types like `plan` are custom extensions that require explicit client support and should not be used in production without verification.
+**Stability Notes:**
+- `agent_thought_chunk` is only in `schema/schema.unstable.json`, not the stable schema
+- `available_commands_update` and `config_option_update` are explicitly marked `@experimental`
+- `current_mode_update` and `session_info_update` are used in stable API methods despite lacking stability markers
 
 ---
 
@@ -1125,18 +1230,66 @@ const permissionMiddleware = createACPPermissionMiddleware({
 
 ---
 
+## 9. Connection Lifecycle Management
+
+### 9.1 Connection States
+
+An ACP connection progresses through the following states:
+
+| State | Description |
+|-------|-------------|
+| `connecting` | Initial handshake in progress |
+| `connected` | Protocol version agreed, ready for sessions |
+| `session_active` | At least one session is active |
+| `closing` | Graceful shutdown initiated |
+| `closed` | Connection terminated |
+
+### 9.2 Graceful Shutdown
+
+```typescript
+async function gracefulShutdown(connection: acp.AgentSideConnection): Promise<void> {
+  // 1. Close any active sessions
+  await closeAllSessions();
+  
+  // 2. Send close notification
+  await connection.sendNotification({
+    method: "session/close_all",
+    params: { reason: "shutdown" }
+  });
+  
+  // 3. Close connection
+  await connection.close();
+}
+```
+
+### 9.3 Error Recovery
+
+**Connection Errors:**
+- JSON-RPC errors are returned as error responses
+- Connection drops are detected via `connection.closed` Promise
+- Reconnection logic should be implemented by the client
+
+**Session Errors:**
+- Session-level errors use `stopReason: "end_turn"` in prompt response (emit error via sessionUpdate)
+- Tool execution errors use `tool_call_update` with `status: "failed"`
+
+**Source:** [ACP Protocol Overview](https://agentclientprotocol.com/protocol/overview)
+
+---
+
 ## 9. Error & stopReason Mapping
 
 ### 9.1 stopReason Values
 
+**Source:** [ACP Protocol Specification](https://agentclientprotocol.com/protocol/prompt-turn#stop-reason)
+
 ```typescript
 export type StopReason =
-  | 'user_requested'
-  | 'tool_calls'
-  | 'context_length'
-  | 'max_steps'
-  | 'completed'
-  | 'error';
+  | 'end_turn'            // The language model finishes responding without requesting more tools
+  | 'max_tokens'          // The maximum token limit is reached
+  | 'max_turn_requests'   // The maximum number of model requests in a single turn is exceeded
+  | 'refusal'             // The Agent refuses to continue
+  | 'cancelled';          // The Client cancels the turn
 ```
 
 ### 9.2 stopReason Mapper
@@ -1145,33 +1298,33 @@ export type StopReason =
 export function mapToStopReason(state: any): StopReason {
   // Check for user cancellation
   if (state.cancelled || state.permissionDenied) {
-    return 'user_requested';
+    return 'cancelled';
   }
 
-  // Check for tool calls completion
-  if (state.tool_calls_pending === false && state.last_tool_call_result) {
-    return 'tool_calls';
+  // Check for model refusing to continue
+  if (state.refusal || state.modelRefused) {
+    return 'refusal';
   }
 
-  // Check for context length signal
-  if (state.llmOutput?.finish_reason === 'length') {
-    return 'context_length';
+  // Check for token limit reached
+  if (state.llmOutput?.finish_reason === 'length' || state.tokenLimitReached) {
+    return 'max_tokens';
   }
 
-  // Check for max steps limit
-  if (state.turns >= state.max_turns) {
-    return 'max_steps';
+  // Check for max turn requests exceeded
+  if (state.turnRequests >= state.maxTurnRequests) {
+    return 'max_turn_requests';
   }
 
-  // Check for explicit error
+  // Check for explicit error (emit error via sessionUpdate instead)
   if (state.error) {
-    return 'error';  // Emit error via sessionUpdate instead
+    return 'end_turn';
   }
 
   // Default to normal completion
-  return 'completed';
-```
+  return 'end_turn';
 }
+```
 ```
 
 ### 9.3 Error Communication
@@ -1181,8 +1334,8 @@ Errors are communicated through:
 | Error Scenario | Mechanism |
 |---------------|-----------|
 | Method execution failure | JSON-RPC error response |
-| Agent encounters error | `stopReason: "error"` in PromptResponse |
-| Client cancels operation | `stopReason: "user_requested"` |
+| Agent encounters error | `stopReason: "end_turn"` in PromptResponse (emit error via sessionUpdate) |
+| Client cancels operation | `stopReason: "cancelled"` |
 | Tool execution failure | `tool_call_update` with `status: "failed"` |
 
 ### 9.4 ACP Error Codes & RequestError Class
@@ -1309,14 +1462,18 @@ class RequestError {
 **Error Code Reference:**
 
 ```typescript
+/**
+ * Source: /home/oscar/.local/share/librarian/repos/agentclientprotocol/acp-protocol-spec/src/error.rs
+ */
 type ACPErrorCode =
-  | -32700  // Parse error (JSON-RPC standard)
-  | -32600  // Invalid request (JSON-RPC standard)
-  | -32601  // Method not found (JSON-RPC standard)
-  | -32602  // Invalid params (JSON-RPC standard)
-  | -32603  // Internal error (JSON-RPC standard)
+  | -32700  // Parse error (JSON-RPC 2.0 standard)
+  | -32600  // Invalid request (JSON-RPC 2.0 standard)
+  | -32601  // Method not found (JSON-RPC 2.0 standard)
+  | -32602  // Invalid params (JSON-RPC 2.0 standard)
+  | -32603  // Internal error (JSON-RPC 2.0 standard)
   | -32000  // Authentication required (ACP-specific)
   | -32002  // Resource not found (ACP-specific)
+  | -32800; // Request cancelled (UNSTABLE - requires unstable_cancel_request feature)
 ```
 
 **LangChain to ACP Error Mapping:**
@@ -1584,11 +1741,22 @@ export interface ACPAgentConfig {
 
 The package integrates `@langchain/mcp-adapters` to load MCP tools.
 
+**⚠️ Important:** `MultiServerMCPClient` is from **`@langchain/mcp-adapters`**, NOT the official MCP SDK (`@modelcontextprotocol/client`).
+
 **For the authoritative current API, see:** [langchain-mcp-adapters README](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters)
 
 **Basic Usage:**
 
 ```typescript
+/**
+ * MultiServerMCPClient is available in @langchain/mcp-adapters v1.0.0+.
+ * 
+ * Source: @langchain/mcp-adapters (official LangChain.js package)
+ * GitHub: https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters
+ * 
+ * Note: The official @modelcontextprotocol/client SDK does NOT provide MultiServerMCPClient.
+ * For manual control, use the official MCP SDK and manage multiple server connections yourself.
+ */
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 
 const mcpClient = new MultiServerMCPClient({
@@ -2154,6 +2322,60 @@ it("should handle cancellation", async () => {
   expect(result).toEqual({ messages: [] }); // Early exit
 });
 ```
+
+---
+
+## 16. Appendix: Protocol Stability Indicators
+
+### 16.1 Stability Levels
+
+| Indicator | Meaning |
+|-----------|---------|
+| **STABLE** | Guaranteed by protocol specification; won't break |
+| **UNSTABLE** | May change in future protocol versions |
+| **EXPERIMENTAL** | Likely to change; for testing only |
+
+### 16.2 Current Stability Map
+
+**Session Update Types:**
+
+| Type | Stability | Notes |
+|------|-----------|-------|
+| `user_message_chunk` | STABLE | Core functionality |
+| `agent_message_chunk` | STABLE | Core functionality |
+| `agent_thought_chunk` | UNSTABLE | Not yet in stable schema |
+| `tool_call` | STABLE | Core functionality |
+| `tool_call_update` | STABLE | Core functionality |
+| `plan` | STABLE | Core functionality |
+| `available_commands_update` | EXPERIMENTAL | `@experimental` tag |
+| `current_mode_update` | STABLE | Used in stable API |
+| `config_option_update` | EXPERIMENTAL | `@experimental` tag |
+| `session_info_update` | STABLE | Used in stable API |
+
+**Error Codes:**
+
+| Code | Stability | Description |
+|------|-----------|-------------|
+| -32700 to -32603 | STABLE | JSON-RPC 2.0 standard |
+| -32000, -32002 | STABLE | ACP-specific |
+| -32800 | UNSTABLE | Requires feature flag |
+
+**Methods:**
+
+| Method | Stability | Notes |
+|--------|-----------|-------|
+| `initialize` | STABLE | Protocol handshake |
+| `session/new` | STABLE | Create session |
+| `session/prompt` | STABLE | Send prompt |
+| `session/cancel` | STABLE | Cancel turn |
+| `session/set_mode` | STABLE | Change mode |
+| `session/load` | STABLE | Load session |
+| `session/request_permission` | STABLE | Permission requests |
+| `session/list_sessions` | UNSTABLE | List sessions |
+| `session/fork` | UNSTABLE | Fork session |
+| `session/resume` | UNSTABLE | Resume session |
+
+**Source:** [ACP TypeScript SDK](https://github.com/agentclientprotocol/acp-typescript-sdk/blob/main/src/schema/zod.gen.ts)
 
 ---
 
