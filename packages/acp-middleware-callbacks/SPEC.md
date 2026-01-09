@@ -45,9 +45,20 @@ This package uses the **same architectural pattern** as `@skroyc/ag-ui-middlewar
 - AG-UI = "Backend → Frontend" event streaming
 - ACP = "Editor ↔ Agent" bidirectional protocol with session management
 
+### 1.4 LangChain + LangGraph Relationship
+
+**LangChain v1.0.0+** integrates LangGraph under the hood for stateful agent workflows. Key concepts:
+
+- **`createAgent()`**: High-level API that compiles a StateGraph with middleware support
+- **`thread_id`**: Session identifier passed via `configurable.thread_id` for checkpoint retrieval
+- **Checkpoint**: Persisted state snapshot containing messages, custom state, and middleware state
+- **Checkpointer**: Storage backend (e.g., `MemorySaver`, database) that manages checkpoints
+
+This package works with **high-level `createAgent()` APIs**, not lower-level LangGraph APIs directly.
+
 ---
 
-## 1.4 Version Compatibility
+## 1.5 Version Compatibility
 
 | Component | Version | Notes |
 |-----------|---------|-------|
@@ -248,16 +259,20 @@ packages/acp-middleware-callbacks/
 - Session maintains context, conversation history, and state across all turns
 - Agent runs as subprocess, spawned per session, handles one session at a time
 
-**Checkpoint Coupling:**
-- ACP sessionId maps **1:1** to LangGraph checkpoint thread_id
+**Checkpoint Coupling (HARD REQUIREMENT):**
+- ACP sessionId **MUST** equal LangGraph checkpoint thread_id
 - Middleware configures checkpointer to use sessionId as thread_id
 - Enables full state recovery across all turns in the session
+- Without checkpointer: sessionId still used but state not persisted between invocations
 
 **Session Load (`session/load`):**
-- No replay of message history - LangGraph checkpoint contains full state
-- Agent loads checkpoint by thread_id (which is the ACP sessionId)
-- State is restored automatically by the checkpointer
+- Agent restores internal session state (checkpoints, MCP connections)
+- Agent **streams the entire conversation history** back to client via notifications
+- Historical messages are sent as `user_message_chunk` and `agent_message_chunk`
+- Client receives notifications and reconstructs the full conversation UI
 - Agent proceeds with next prompt using restored context
+
+**Note:** This is distinct from `session/resume` (UNSTABLE) which does NOT replay history
 
 **Interface:**
 
@@ -2308,8 +2323,11 @@ expect(mockConnection.requestPermission).toHaveBeenCalledWith(
 **END OF SPEC** (Updated: 2026-01-08 - Comprehensive interview with ACP protocol research via librarian)
 
 **Key Updates from Interview:**
-- ACP session is multi-turn (covers entire conversation lifecycle)
-- ACP sessionId maps 1:1 to LangGraph checkpoint thread_id (same across all turns)
+- LangChain v1.0.0+ uses LangGraph under the hood for stateful agents
+- ACP sessionId **MUST** equal LangGraph checkpoint thread_id (hard requirement)
+- `createAgent()` uses high-level APIs - this package works at that level, not LangGraph directly
+- session/load **streams conversation history** via user_message_chunk and agent_message_chunk notifications
+- session/resume (UNSTABLE) does NOT replay history - just restores state
 - messageId does NOT exist in ACP - chunks are independent and ordered by streaming
 - agent_thought_chunk visibility: **NO protocol enforcement** - purely semantic convention; this implementation always shows thoughts
 - user_message_chunk is ONLY for session/load (no echo during normal prompts)
