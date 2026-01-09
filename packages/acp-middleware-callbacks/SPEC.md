@@ -462,13 +462,13 @@ export function createACPPermissionMiddleware(
 - If client denies or cancels: emit `tool_call_update` with `status: 'failed'` and throw to stop execution
 - If client allows: continue execution with modified `args` if edits were requested
 
-**Permission Options (Fixed 4 Standard):**
+**Permission Options (Standard 4 Options):**
 ```typescript
 options: [
-  { optionId: 'allow_once', name: 'Allow Once', kind: 'allow_once' },
-  { optionId: 'allow_always', name: 'Allow Always', kind: 'allow_always' },
-  { optionId: 'reject_once', name: 'Deny Once', kind: 'reject_once' },
-  { optionId: 'reject_always', name: 'Deny Always', kind: 'reject_always' },
+  { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+  { optionId: 'always', name: 'Always Allow', kind: 'allow_always' },
+  { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+  { optionId: 'never', name: 'Never Allow', kind: 'reject_always' },
 ]
 ```
 
@@ -1036,7 +1036,7 @@ type SessionUpdate =
   | { sessionUpdate: "plan"; /* Custom extension - not standard */ }
   | { sessionUpdate: "available_commands_update"; commands: string[] }
   | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }
-  | { sessionUpdate: "config_option_update"; configOptions: SessionConfigOption[] }
+  | { sessionUpdate: "config_option_update"; configOptions: SessionConfigOption[] } /* @experimental */
   | { sessionUpdate: "session_info_update"; title?: string; updatedAt?: string };
 ```
 
@@ -1136,10 +1136,10 @@ const permissionRequest = {
       rawInput: { path: "/etc/config.json" },
     },
     options: [
-      { optionId: "allow_once", name: "Allow Once", kind: "allow_once" },
-      { optionId: "allow_always", name: "Allow Always", kind: "allow_always" },
-      { optionId: "reject_once", name: "Deny Once", kind: "reject_once" },
-      { optionId: "reject_always", name: "Deny Always", kind: "reject_always" },
+      { optionId: "allow", name: "Allow", kind: "allow_once" },
+      { optionId: "always", name: "Always Allow", kind: "allow_always" },
+      { optionId: "reject", name: "Deny", kind: "reject_once" },
+      { optionId: "never", name: "Never Allow", kind: "reject_always" },
     ],
   },
   id: 123,
@@ -1168,7 +1168,7 @@ const denialResponse = {
   result: {
     outcome: {
       outcome: "selected",
-      optionId: "deny",
+      optionId: "reject",
     },
   },
 };
@@ -1214,7 +1214,7 @@ wrapToolCall: async (request, handler) => {
   }
 
   if (response.outcome.outcome === "selected" &&
-      (response.outcome.optionId === "deny" || response.outcome.optionId === "reject_once")) {
+      (response.outcome.optionId === "reject" || response.outcome.optionId === "never")) {
     // User denied - emit failed and throw
     transport.emit({
       type: "tool_call_update",
@@ -1225,7 +1225,7 @@ wrapToolCall: async (request, handler) => {
     throw new Error("Permission denied");
   }
 
-  // User approved (allow_once or allow_always) - continue execution
+  // User approved (allow or always) - continue execution
   return await handler(request);
 }
 ```
@@ -2159,7 +2159,7 @@ import * as acp from "@agentclientprotocol/sdk";
 const mockConnection: Partial<acp.AgentSideConnection> = {
   sessionUpdate: jest.fn().mockResolvedValue(undefined),
   requestPermission: jest.fn().mockResolvedValue({
-    outcome: { outcome: 'selected', optionId: 'allow_once' }
+    outcome: { outcome: 'selected', optionId: 'allow' }
   }),
 };
 
@@ -2188,7 +2188,7 @@ import * as acp from "@agentclientprotocol/sdk";
 
 const mockConnection: Partial<acp.AgentSideConnection> = {
   requestPermission: jest.fn().mockResolvedValue({
-    outcome: { outcome: 'selected', optionId: 'allow_once' }
+    outcome: { outcome: 'selected', optionId: 'allow' }
   }),
   sessionUpdate: jest.fn().mockResolvedValue(undefined),
 };
@@ -2207,7 +2207,7 @@ const agent = createAgent({
 
 // Mock permission response
 mockConnection.requestPermission.mockResolvedValue({
-  outcome: { outcome: 'selected', optionId: 'allow_once' }
+  outcome: { outcome: 'selected', optionId: 'allow' }
 });
 
 const result = await agent.invoke({
@@ -2255,7 +2255,7 @@ expect(mockConnection.requestPermission).toHaveBeenCalledWith(
 | `tool_call_update` | Agent → Client | Tool execution progress |
 | `plan` | Agent → Client | Planning mode output |
 | `current_mode_update` | Agent → Client | Mode change notification |
-| `config_option_update` | Agent → Client | Configuration change |
+| `config_option_update` | Agent → Client | Configuration change (UNSTABLE/@experimental) |
 | `available_commands_update` | Agent → Client | Available commands list |
 | `session_info_update` | Agent → Client | Session metadata update |
 
