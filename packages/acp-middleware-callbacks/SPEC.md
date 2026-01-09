@@ -484,7 +484,14 @@ type PermissionOptionKind =
  */
 type RequestPermissionOutcome =
   | { outcome: 'cancelled' }
-  | ({ outcome: 'selected'; optionId: string });
+  | (SelectedPermissionOutcome & { outcome: 'selected' });
+
+export type SelectedPermissionOutcome = {
+  _meta?: { [key: string]: unknown } | null;
+  optionId: PermissionOptionId;
+};
+
+export type PermissionOptionId = string;
 ```
 
 **Interface:**
@@ -734,15 +741,68 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   constructor(config: ACPCallbackHandlerConfig);
 
   // LLM Callbacks
-  handleLLMStart?(llm: Serialized, prompts: string[], runId: string): void;
-  handleLLMNewToken?(token: string, idx: NewTokenIndices, runId: string): void;
-  handleLLMEnd?(output: LLMResult, runId: string): void;
-  handleLLMError?(error: Error, runId: string): void;
+  handleLLMStart?(
+    llm: Serialized,
+    prompts: string[],
+    runId: string,
+    parentRunId?: string,
+    extraParams?: Record<string, unknown>,
+    tags?: string[],
+    metadata?: Record<string, unknown>,
+    runName?: string
+  ): Promise<void>;
+
+  handleLLMNewToken?(
+    token: string,
+    idx: NewTokenIndices,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    fields?: {
+      chunk?: GenerationChunk | ChatGenerationChunk
+    }
+  ): Promise<void>;
+
+  handleLLMEnd?(
+    output: LLMResult,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    extraParams?: Record<string, unknown>
+  ): Promise<void>;
+
+  handleLLMError?(
+    err: Error,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    extraParams?: Record<string, unknown>
+  ): Promise<void>;
 
   // Tool Callbacks
-  handleToolStart?(tool: Serialized, input: string, runId: string): void;
-  handleToolEnd?(output: string, runId: string): void;
-  handleToolError?(error: Error, runId: string): void;
+  handleToolStart?(
+    tool: Serialized,
+    input: string,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    metadata?: Record<string, unknown>,
+    runName?: string
+  ): Promise<void>;
+
+  handleToolEnd?(
+    output: any,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[]
+  ): Promise<void>;
+
+  handleToolError?(
+    err: Error,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[]
+  ): Promise<void>;
 }
 ```
 
@@ -1472,8 +1532,7 @@ type ACPErrorCode =
   | -32602  // Invalid params (JSON-RPC 2.0 standard)
   | -32603  // Internal error (JSON-RPC 2.0 standard)
   | -32000  // Authentication required (ACP-specific)
-  | -32002  // Resource not found (ACP-specific)
-  | -32800; // Request cancelled (UNSTABLE - requires unstable_cancel_request feature)
+  | -32002; // Resource not found (ACP-specific)
 ```
 
 **LangChain to ACP Error Mapping:**
@@ -2006,15 +2065,68 @@ export abstract class BaseCallbackHandler {
   awaitHandlers?: boolean;
 
   // LLM Callbacks
-  handleLLMStart?(llm: Serialized, prompts: string[], runId: string, ...): Promise<any>;
-  handleLLMNewToken?(token: string, idx: NewTokenIndices, runId: string, ...): Promise<any>;
-  handleLLMEnd?(output: LLMResult, runId: string, ...): Promise<any>;
-  handleLLMError?(error: Error, runId: string): Promise<any>;
+  handleLLMStart?(
+    llm: Serialized,
+    prompts: string[],
+    runId: string,
+    parentRunId?: string,
+    extraParams?: Record<string, unknown>,
+    tags?: string[],
+    metadata?: Record<string, unknown>,
+    runName?: string
+  ): Promise<void>;
+
+  handleLLMNewToken?(
+    token: string,
+    idx: NewTokenIndices,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    fields?: {
+      chunk?: GenerationChunk | ChatGenerationChunk
+    }
+  ): Promise<void>;
+
+  handleLLMEnd?(
+    output: LLMResult,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    extraParams?: Record<string, unknown>
+  ): Promise<void>;
+
+  handleLLMError?(
+    err: Error,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    extraParams?: Record<string, unknown>
+  ): Promise<void>;
 
   // Tool Callbacks
-  handleToolStart?(tool: Serialized, input: string, runId: string, ...): Promise<any>;
-  handleToolEnd?(output: string, runId: string, ...): Promise<any>;
-  handleToolError?(error: Error, runId: string): Promise<any>;
+  handleToolStart?(
+    tool: Serialized,
+    input: string,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[],
+    metadata?: Record<string, unknown>,
+    runName?: string
+  ): Promise<void>;
+
+  handleToolEnd?(
+    output: any,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[]
+  ): Promise<void>;
+
+  handleToolError?(
+    err: Error,
+    runId: string,
+    parentRunId?: string,
+    tags?: string[]
+  ): Promise<void>;
 }
 ```
 
@@ -2358,7 +2470,6 @@ it("should handle cancellation", async () => {
 |------|-----------|-------------|
 | -32700 to -32603 | STABLE | JSON-RPC 2.0 standard |
 | -32000, -32002 | STABLE | ACP-specific |
-| -32800 | UNSTABLE | Requires feature flag |
 
 **Methods:**
 
