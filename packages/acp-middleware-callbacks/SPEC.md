@@ -240,7 +240,24 @@ packages/acp-middleware-callbacks/
 - Initialize session state from `configurable.sessionId` or prompt request
 - Emit session lifecycle events via transport
 - Manage checkpoint → session state mapping
-- Handle session forking/loading if required by agent capabilities
+- **ACP session is multi-turn** - maintains conversation history across multiple `session/prompt` calls
+
+**Session Model (ACP Protocol):**
+- `session/new`: Creates a new session (called once at conversation start)
+- `session/prompt`: Sends user message within existing session (called multiple times)
+- Session maintains context, conversation history, and state across all turns
+- Agent runs as subprocess, spawned per session, handles one session at a time
+
+**Checkpoint Coupling:**
+- ACP sessionId maps **1:1** to LangGraph checkpoint thread_id
+- Middleware configures checkpointer to use sessionId as thread_id
+- Enables full state recovery across all turns in the session
+
+**Session Load (`session/load`):**
+- No replay of message history - LangGraph checkpoint contains full state
+- Agent loads checkpoint by thread_id (which is the ACP sessionId)
+- State is restored automatically by the checkpointer
+- Agent proceeds with next prompt using restored context
 
 **Interface:**
 
@@ -279,18 +296,30 @@ createMiddleware({
   
   afterAgent: async (state, runtime) => {
     const stopReason = mapToStopReason(state);
-    
+
     transport.emit({
       type: "session_finished",
       sessionId,
       stopReason,
       timestamp: Date.now(),
     });
-    
+
     return {};
   },
 });
 ```
+
+**Cancellation Handling (`session/cancel`):**
+- Graceful exit: finish current operation, then handle cancellation
+- If blocked on permission request: complete permission flow first
+- Emit `session_finished` with `stopReason: 'cancelled'`
+- Agent process remains available for next prompt in same session
+
+**Session Concurrency:**
+- ACP is **strictly sequential** per session - only one `session/prompt` at a time
+- If client sends concurrent prompts for the same session, agent implementation MUST handle it
+- Recommended pattern: cancel previous prompt when new one arrives (using AbortController)
+- For true parallelism: use separate sessions via `session/new` or `session/fork` (UNSTABLE)
 
 #### 3.3.2 Tool Middleware (`createACPToolMiddleware`)
 
@@ -318,12 +347,16 @@ export function createACPToolMiddleware(
 ): AgentMiddleware;
 ```
 
-**Tool Call Lifecycle:**
+**Tool Call Lifecycle (Atomic):**
+- Each tool call is atomic: one request → one result
+- Multiple streaming updates within a single call are not supported
+- For long-running tools with progress, emit intermediate updates with status='in_progress'
 
+**Tool Call Events:**
 ```typescript
 wrapToolCall: async (request, handler) => {
   const { toolCallId, name, args } = request;
-  
+
   // 1. Emit pending tool call
   transport.emit({
     type: "tool_call",
@@ -334,30 +367,31 @@ wrapToolCall: async (request, handler) => {
     locations: extractLocations(args),
     rawInput: args,
   });
-  
+
   // 2. Emit in_progress
   transport.emit({
     type: "tool_call_update",
     toolCallId,
     status: "in_progress",
   });
-  
+
   // 3. Execute tool
   try {
     const result = await handler(request);
-    
-    // 4. Emit completed
+
+    // 4. Emit completed with content blocks
+    // Note: content is primary; rawOutput is optional (for debug only)
     transport.emit({
       type: "tool_call_update",
       toolCallId,
       status: "completed",
-      content: mapToContent(result),
-      rawOutput: result,
+      content: mapToContentBlocks(result),
+      rawOutput: result, // Optional: for debugging/audit
     });
-    
+
     return result;
   } catch (error) {
-    // 4. Emit failed
+    // 4. Emit FAILED status (always required for tool failures)
     transport.emit({
       type: "tool_call_update",
       toolCallId,
@@ -369,6 +403,14 @@ wrapToolCall: async (request, handler) => {
 }
 ```
 
+**MCP Reconnection:**
+- **@langchain/mcp-adapters** (TypeScript) supports reconnection at the connection level
+- Stdio transport: `restart: { enabled: true, maxAttempts, delayMs }`
+- HTTP/SSE transport: `reconnect: { enabled: true, maxAttempts, delayMs }`
+- **Critical:** Reconnection is for **future tool calls only** - in-flight tool calls fail immediately on disconnect
+- The tool call that was executing when disconnect occurred fails with `status: 'failed'`
+- After successful reconnection, subsequent tool calls proceed normally
+
 #### 3.3.3 Permission Middleware (`createACPPermissionMiddleware`)
 
 **Purpose:** Implements HITL-style interruption for ACP permission requests.
@@ -376,8 +418,8 @@ wrapToolCall: async (request, handler) => {
 **Responsibilities:**
 - Intercept tool calls requiring permission
 - Emit ACP `session/request_permission` via stdio transport
-- Wait for client response via `Command({ resume })`
-- Approve, edit, or reject tool calls based on response
+- Wait for client response via `await connection.requestPermission()`
+- Approve or reject tool calls based on response (throw on denial)
 
 **Interface:**
 
@@ -389,7 +431,6 @@ interface ACPPermissionMiddlewareConfig {
     [toolPattern: string]: {
       kind: acp.ToolKind;
       requirePermission: boolean;
-      allowedDecisions?: ("approve" | "edit" | "reject")[];
     };
   };
   transport: acp.AgentSideConnection;
@@ -400,52 +441,20 @@ export function createACPPermissionMiddleware(
 ): AgentMiddleware;
 ```
 
-**Permission Flow:**
+**Permission Flow (Full Interruption):**
+- Agent execution **blocks** on `requestPermission` until client responds
+- Uses synchronous `await` pattern - agent pauses, waits for response
+- If client denies or cancels: emit `tool_call_update` with `status: 'failed'` and throw to stop execution
+- If client allows: continue execution with modified `args` if edits were requested
 
+**Permission Options (Fixed 4 Standard):**
 ```typescript
-beforeModel: {
-  canJumpTo: ["tools", "end"],
-  hook: async (state, runtime) => {
-    const pendingTools = extractPendingTools(state);
-
-    for (const tool of pendingTools) {
-      if (requiresPermission(tool.name)) {
-        // Emit permission request via ACP transport
-        const response = await transport.requestPermission({
-          sessionId: getSessionId(runtime),
-          toolCall: {
-            toolCallId: tool.id,
-            title: `Permission: ${tool.name}`,
-            kind: getToolKind(tool.name),
-            status: "in_progress",
-            locations: extractLocations(tool.args),
-            rawInput: tool.args,
-          },
-          options: [
-            { optionId: 'allow_once', name: 'Allow Once', kind: 'allow_once' },
-            { optionId: 'allow_always', name: 'Allow Always', kind: 'allow_always' },
-            { optionId: 'reject_once', name: 'Deny Once', kind: 'reject_once' },
-            { optionId: 'reject_always', name: 'Deny Always', kind: 'reject_always' },
-          ],
-        });
-
-        // Handle response
-        if (response.outcome.outcome === 'cancelled') {
-          runtime.interrupt?.();
-          return { jumpTo: 'end' };
-        }
-
-        if (response.outcome.outcome === 'selected') {
-          if (response.outcome.optionId.startsWith('reject')) {
-            return { jumpTo: 'end' };
-          }
-          // User approved - continue execution
-          return {};
-        }
-      }
-    }
-  },
-}
+options: [
+  { optionId: 'allow_once', name: 'Allow Once', kind: 'allow_once' },
+  { optionId: 'allow_always', name: 'Allow Always', kind: 'allow_always' },
+  { optionId: 'reject_once', name: 'Deny Once', kind: 'reject_once' },
+  { optionId: 'reject_always', name: 'Deny Always', kind: 'reject_always' },
+]
 ```
 
 #### 3.3.4 Mode Middleware (`createACPModeMiddleware`) - OPTIONAL
@@ -486,17 +495,20 @@ export function createACPModeMiddleware(
 ```
 
 **Mode Switching Flow:**
+- Mode changes take effect on the **next** `session/prompt`, not immediately
+- `setSessionMode` updates session state; new mode applies to next invocation
+
 ```typescript
 createMiddleware({
   name: "acp-mode",
-  
+
   beforeAgent: async (state, runtime) => {
     const currentMode = getCurrentMode(runtime.config) || this.config.defaultMode;
     const modeConfig = this.config.modes[currentMode];
-    
+
     // Update system message for this run
     const systemMessage = new SystemMessage(modeConfig.systemPrompt);
-    
+
     // Inject mode-specific configuration
     runtime.config.configurable = {
       ...runtime.config.configurable,
@@ -504,7 +516,7 @@ createMiddleware({
       acp_allowedTools: modeConfig.allowedTools,
       acp_requirePermission: modeConfig.requirePermission,
     };
-    
+
     // Emit mode change event
     transport.emit({
       type: "current_mode_update",
@@ -644,32 +656,30 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
 ```typescript
 class ACPCallbackHandler {
   async handleLLMStart(run: Run) {
-    const messageId = generateMessageId();
-    
-    transport.emit({
-      type: "agent_message_chunk",
-      messageId,
-      content: { type: "text", text: "" }, // Start of message
-    });
+    // No messageId in ACP - chunks are independent and ordered by streaming
   }
-  
+
   async handleLLMNewToken(token: string, run: Run) {
+    // Skip empty tokens
+    if (!token) return;
+
     transport.emit({
       type: "agent_message_chunk",
-      messageId: getMessageId(run),
       content: { type: "text", text: token },
     });
   }
-  
+
   async handleLLMEnd(output: LLMResult, run: Run) {
-    transport.emit({
-      type: "agent_message_chunk",
-      messageId: getMessageId(run),
-      content: { type: "text", text: "" }, // End marker
-    });
+    // End marker - ACP doesn't require explicit end marker
+    // Agent proceeds to next phase (tools) or returns stopReason
   }
 }
 ```
+
+**Empty Response Handling:**
+- Skip `agent_message_chunk` events with empty text
+- If agent produces no output (no text, no tools, no reasoning), skip all chunk events
+- Just return the `stopReason` in the response
 
 ---
 
@@ -677,19 +687,29 @@ class ACPCallbackHandler {
 
 #### 3.5.1 LangChain → ACP Mapping
 
-| LangChain Content Block | ACP Content Block | Notes |
+| LangChain Content Block | ACP Session Update | Notes |
 |-------------------------|-------------------|-------|
-| `text` | `text` | Direct mapping |
-| `reasoning` | `agent_thought_chunk` | Separate event type |
-| `user_message` | `user_message_chunk` | Echo user input to client |
-| `image` | `image` | Pass through with base64 |
-| `audio` | `audio` | Pass through with base64 |
+| `text` | `agent_message_chunk` | User-facing response content |
+| `reasoning` | `agent_thought_chunk` | **INTERNAL** reasoning (hidden from users by default) |
+| `image` | `agent_message_chunk` (image content) | Pass through with base64 |
+| `audio` | `agent_message_chunk` (audio content) | Pass through with base64 |
 | `file` (reference only) | `resource_link` | Reference without content |
 | `file` (with content) | `resource` | Embedded resource with data |
 | `tool_call` | `tool_call` | Via tool middleware |
 | `server_tool_call_result` | `tool_call_update` | Via tool middleware |
 
-**Note on `user_message_chunk`:** This update type is used when agents need to reflect or acknowledge user input back to the client. This is typically used in multi-turn conversations or when the agent is processing user-provided context that should be visible in the conversation history.
+**Key Distinction: `agent_message_chunk` vs `agent_thought_chunk`**
+- **`agent_message_chunk`**: User-facing response content that should be displayed prominently
+- **`agent_thought_chunk`**: Internal reasoning traces (from o1/o3 style models)
+- **Protocol has NO enforcement** for thought chunk visibility - purely semantic convention
+- **This implementation always exposes thoughts** to users for full transparency
+
+**Content Block Mapping Rule:**
+- AIMessage with `text` blocks → emit `agent_message_chunk`
+- AIMessage with `reasoning` blocks → emit **separate** `agent_thought_chunk` events
+- Both are sent concurrently as the model streams different content types
+
+**Note on `user_message_chunk`:** Per ACP protocol, `user_message_chunk` is used **ONLY for session/load** (replaying conversation history). During normal `session/prompt` flow, the client already displays user input - agents should NOT echo it back.
 
 #### 3.5.2 Content Block Mapper Implementation
 
@@ -697,39 +717,33 @@ class ACPCallbackHandler {
 interface ContentBlockMapper {
   // Maps to ACP ContentBlock for message chunks
   toACP(block: LangChainContentBlock): ACPContentBlock;
-  
+
   // Indicates if this block requires a separate event (like reasoning)
   requiresSeparateEvent(block: LangChainContentBlock): boolean;
-  
+
   // Maps to SessionUpdate type for blocks that need separate events
-  toSessionUpdate(block: LangChainContentBlock, messageId: string): SessionUpdate | null;
+  // Note: messageId does NOT exist in ACP - chunks are independent and ordered by streaming
+  toSessionUpdate(block: LangChainContentBlock): SessionUpdate | null;
 }
 
 class DefaultContentBlockMapper implements ContentBlockMapper {
   requiresSeparateEvent(block: LangChainContentBlock): boolean {
-    return block.type === "reasoning" || block.type === "user_message";
+    // Only reasoning blocks require separate agent_thought_chunk events
+    // user_message blocks are NOT echoed (handled by client)
+    return block.type === "reasoning";
   }
-  
-  toSessionUpdate(block: LangChainContentBlock, messageId: string): SessionUpdate | null {
+
+  toSessionUpdate(block: LangChainContentBlock): SessionUpdate | null {
     switch (block.type) {
       case "reasoning":
         return {
           sessionUpdate: "agent_thought_chunk",
           content: {
             type: "text",
-            text: block.text,
+            text: block.reasoning,
           },
         };
-        
-      case "user_message":
-        return {
-          sessionUpdate: "user_message_chunk",
-          content: {
-            type: "text",
-            text: block.text,
-          },
-        };
-        
+
       default:
         return null;
     }
@@ -742,6 +756,13 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
           type: "text",
           text: block.text,
           annotations: mapAnnotations(block.annotations),
+        };
+
+      case "reasoning":
+        // Note: reasoning blocks are sent via toSessionUpdate, not here
+        return {
+          type: "text",
+          text: block.reasoning,
         };
 
       case "image":
@@ -1026,6 +1047,14 @@ type ClientToAgentMessage =
   | { jsonrpc: "2.0"; method: "session/load"; params: LoadSessionRequest };
 ```
 
+**Message Ordering:**
+- ACP protocol provides **NO ordering guarantee** for `session/update` notifications
+- JSON-RPC notifications are fire-and-forget; messages may arrive out of order
+- Clients should handle out-of-order messages by:
+  - Merging partial tool call updates (all fields except `toolCallId` are optional)
+  - Appending content chunks regardless of arrival order
+  - Using `_meta` field for client-side sequencing if needed
+
 #### 3.7.3 Error Response Format
 
 All JSON-RPC errors follow this format:
@@ -1145,39 +1174,48 @@ const cancellationResponse = {
 };
 ```
 
-**Integration with HITL Command Pattern:**
+**Integration with Permission Middleware:**
 
 When using permission middleware, the agent execution is interrupted:
 
 ```typescript
 // Permission middleware flow
-beforeModel: {
-  canJumpTo: ["tools", "end"],
-  hook: async (state, runtime) => {
-    const toolCall = extractPendingToolCall(state);
-    
-    // 1. Emit permission request
-    const response = await transport.requestPermission({
-      sessionId: runtime.config.configurable?.sessionId,
-      toolCall: formatToolCallForACP(toolCall),
-      options: getPermissionOptions(toolCall.name),
+wrapToolCall: async (request, handler) => {
+  const toolCall = request.toolCall;
+
+  // 1. Emit permission request
+  const response = await transport.requestPermission({
+    sessionId: runtime.config.configurable?.sessionId,
+    toolCall: formatToolCallForACP(toolCall),
+    options: getPermissionOptions(toolCall.name),
+  });
+
+  // 2. Wait for response (transport handles stdin blocking)
+  if (response.outcome.outcome === "cancelled") {
+    // User dismissed dialog - emit failed and throw
+    transport.emit({
+      type: "tool_call_update",
+      toolCallId: toolCall.id,
+      status: "failed",
+      content: [{ type: "content", content: { type: "text", text: "Permission request cancelled" } }],
     });
-    
-    // 2. Wait for response (transport handles stdin blocking)
-    if (response.outcome.outcome === "cancelled") {
-      // User dismissed dialog - treat as denial
-      return { jumpTo: "end" };
-    }
-    
-    if (response.outcome.outcome === "selected" && 
-        response.outcome.optionId === "deny") {
-      // User denied - skip tool execution
-      return { jumpTo: "end" };
-    }
-    
-    // User approved - continue execution
-    return {};
-  },
+    throw new Error("Permission cancelled by user");
+  }
+
+  if (response.outcome.outcome === "selected" &&
+      (response.outcome.optionId === "deny" || response.outcome.optionId === "reject_once")) {
+    // User denied - emit failed and throw
+    transport.emit({
+      type: "tool_call_update",
+      toolCallId: toolCall.id,
+      status: "failed",
+      content: [{ type: "content", content: { type: "text", text: "Permission denied" } }],
+    });
+    throw new Error("Permission denied");
+  }
+
+  // User approved (allow_once or allow_always) - continue execution
+  return await handler(request);
 }
 ```
 
@@ -1308,7 +1346,7 @@ export function mapToStopReason(state: any): ACPStopReason {
   }
 
   // Check for user cancellation
-  if (state.cancelled) {
+  if (state.cancelled || state.permissionDenied) {
     return "cancelled";
   }
 
@@ -1323,6 +1361,38 @@ export function mapToStopReason(state: any): ACPStopReason {
 ```
 
 #### 3.8.3 Error Mapping
+
+**Agent-Level Errors (Custom Error Event):**
+- ACP has no 'error' stopReason - use custom sessionUpdate event
+- Errors are communicated via `session/update` with a custom update type
+
+```typescript
+// Custom error session update (not standard ACP)
+interface AgentErrorUpdate {
+  sessionUpdate: "agent_error";
+  error: {
+    type: "model_failure" | "configuration_error" | "uncaught_exception";
+    message: string;
+    recoverable: boolean;
+  };
+}
+
+// Emit error before returning stopReason
+await transport.sessionUpdate({
+  sessionId,
+  update: {
+    sessionUpdate: "agent_error",
+    error: {
+      type: "model_failure",
+      message: "Failed to call model API: timeout",
+      recoverable: false,
+    },
+  },
+});
+```
+
+**Tool-Level Errors:**
+- Use `tool_call_update` with `status: "failed"` (see Tool Call Lifecycle)
 
 ```typescript
 export function mapErrorToContent(error: Error): ToolCallContent[] {
@@ -1882,7 +1952,6 @@ const permissionPolicy = {
   "write_file": {
     kind: "edit" as const,
     requirePermission: true,
-    allowedDecisions: ["allow_once", "allow_always", "reject_once", "reject_always"],
   },
   "read_file": {
     kind: "read" as const,
@@ -1891,7 +1960,6 @@ const permissionPolicy = {
   "execute_command": {
     kind: "execute" as const,
     requirePermission: true,
-    allowedDecisions: ["allow_once", "allow_always", "reject_once", "reject_always"],
   },
   "mcp__filesystem__write_file": {
     kind: "edit" as const,
@@ -2009,8 +2077,9 @@ console.log('ACP Permission Agent ready');
 4. Client shows permission dialog to user
 5. User selects option (Allow Once, Allow Always, Deny Once, Deny Always)
 6. Client sends response back via ACP protocol
-7. Middleware receives response and approves/rejects tool call
-8. If rejected, middleware returns `{ jumpTo: 'end' }` to stop execution
+7. Middleware receives response and:
+   - If denied/cancelled: emits `tool_call_update` with `status: 'failed'` and throws
+   - If approved: continues execution with original or modified tool arguments
 
 ---
 
@@ -2202,12 +2271,15 @@ expect(mockConnection.requestPermission).toHaveBeenCalledWith(
 
 ### B.1 Message Role Mapping
 
-| LangChain Message | ACP Event |
-|-------------------|-----------|
-| `AIMessage` | `agent_message_chunk` + `agent_thought_chunk` |
-| `HumanMessage` | `user_message_chunk` (if streaming) |
-| `ToolMessage` | `tool_call_update` (status: completed/failed) |
-| `SystemMessage` | Ignored (merged into context) |
+| LangChain Message | ACP Event | Notes |
+|-------------------|-----------|-------|
+| `AIMessage` (text) | `agent_message_chunk` | User-facing response |
+| `AIMessage` (reasoning) | `agent_thought_chunk` | Internal reasoning |
+| `HumanMessage` | Not echoed | Client displays user input |
+| `ToolMessage` | `tool_call_update` | Status: completed/failed |
+| `SystemMessage` | Ignored | Merged into context |
+
+**Note on `user_message_chunk`:** Per ACP protocol, this is used ONLY for `session/load` (replaying history). Normal `session/prompt` flow does NOT echo user input.
 
 ### B.2 Tool Status Mapping
 
@@ -2229,8 +2301,22 @@ expect(mockConnection.requestPermission).toHaveBeenCalledWith(
 | Model refused to respond | `refusal` |
 | Step/turn limit reached | `max_turn_requests` |
 
-**Note:** In ACP, errors are communicated via `tool_call_update` (status: failed) events, not via stopReason. The stopReason indicates why the agent returned control to the client.
+**Note:** In ACP, errors are communicated via `tool_call_update` (status: failed) events or custom `agent_error` sessionUpdate, not via stopReason. The stopReason indicates why the agent returned control to the client.
 
 ---
 
-**END OF SPEC** (Updated: 2026-01-08 - Fixed protocol compliance issues)
+**END OF SPEC** (Updated: 2026-01-08 - Comprehensive interview with ACP protocol research via librarian)
+
+**Key Updates from Interview:**
+- ACP session is multi-turn (covers entire conversation lifecycle)
+- ACP sessionId maps 1:1 to LangGraph checkpoint thread_id (same across all turns)
+- messageId does NOT exist in ACP - chunks are independent and ordered by streaming
+- agent_thought_chunk visibility: **NO protocol enforcement** - purely semantic convention; this implementation always shows thoughts
+- user_message_chunk is ONLY for session/load (no echo during normal prompts)
+- Permission flow: throws on denial/cancellation, no `jumpTo` in ACP SDK
+- **ACP is strictly sequential** per session - concurrent prompts require separate sessions
+- **NO message ordering guarantee** in ACP - clients handle out-of-order via merging
+- Tool calls are atomic (one request → one result)
+- Tool failures always emit tool_call_update with status='failed'
+- MCP reconnection: **connection-level only** - in-flight tool calls still fail immediately
+- Cancellation: graceful exit with stopReason='cancelled'
