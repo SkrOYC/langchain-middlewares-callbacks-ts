@@ -353,7 +353,7 @@ wrapToolCall: async (request, handler) => {
     },
   });
 
-  // 2. Emit in_progress
+  // 2. Emit in_progress status
   await connection.sessionUpdate({
     sessionId,
     update: {
@@ -368,7 +368,7 @@ wrapToolCall: async (request, handler) => {
   try {
     const result = await handler(request);
 
-    // 4. Emit completed
+    // 4. Emit completed status
     await connection.sessionUpdate({
       sessionId,
       update: {
@@ -383,7 +383,7 @@ wrapToolCall: async (request, handler) => {
 
     return result;
   } catch (error) {
-    // 4. Emit failed
+    // 4. Emit failed status
     await connection.sessionUpdate({
       sessionId,
       update: {
@@ -1113,7 +1113,7 @@ const permissionMiddleware = createACPPermissionMiddleware({
 ### 9.1 stopReason Values
 
 ```typescript
-type StopReason =
+export type StopReason =
   | 'user_requested'
   | 'tool_calls'
   | 'context_length'
@@ -1159,13 +1159,13 @@ export function mapToStopReason(state: any): StopReason {
 
 ### 9.3 Error Communication
 
-ACP has no 'error' stopReason. Errors are communicated through:
+Errors are communicated through:
 
 | Error Scenario | Mechanism |
 |---------------|-----------|
 | Method execution failure | JSON-RPC error response |
-| Agent refuses to respond | `stopReason: "refusal"` in PromptResponse |
-| Client cancels operation | `stopReason: "cancelled"` |
+| Agent encounters error | `stopReason: "error"` in PromptResponse |
+| Client cancels operation | `stopReason: "user_requested"` |
 | Tool execution failure | `tool_call_update` with `status: "failed"` |
 
 ### 9.4 ACP Error Codes & RequestError Class
@@ -1309,10 +1309,6 @@ type ACPErrorCode =
 | Invalid input params | -32602 | `RequestError.invalidParams()` | `RequestError.invalidParams({ field: 'path' })` |
 | Resource file not found | -32002 | `RequestError.resourceNotFound()` | `RequestError.resourceNotFound('/path/to/file')` |
 | Unauthorized | -32000 | `RequestError.authRequired()` | `RequestError.authRequired()` |
-| Internal agent error | -32603 | `RequestError.internalError()` | `RequestError.internalError({ details: '...' })` |
-| Unknown method | -32601 | `RequestError.methodNotFound()` | `RequestError.methodNotFound('unknown_method')` |
-| Resource file not found | -32002 | `RequestError.resourceNotFound()` | `RequestError.resourceNotFound('/path/to/file')` |
-| Unauthorized | -32800 | Manual construction | `new RequestError(-32800, 'Not authenticated')` |
 | Internal agent error | -32603 | `RequestError.internalError()` | `RequestError.internalError({ details: '...' })` |
 | Unknown method | -32601 | `RequestError.methodNotFound()` | `RequestError.methodNotFound('unknown_method')` |
 
