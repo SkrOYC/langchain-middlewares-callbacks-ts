@@ -650,19 +650,35 @@ createMiddleware({
 
 ```typescript
 interface ACPCallbackHandlerConfig {
-  transport: ACPLinearTransport;
-  emitTextChunks?: boolean;
-  emitReasoningChunks?: boolean;
+  transport: ACPTransport;  // @agentclientprotocol/sdk.AgentSideConnection
+  emitTextChunks?: boolean;        // Default: true
+  emitReasoningChunks?: boolean;   // Default: true
   contentBlockMapper?: ContentBlockMapper;
 }
 
 export class ACPCallbackHandler extends BaseCallbackHandler {
   constructor(config: ACPCallbackHandlerConfig);
-  
-  handleLLMStart(run: Run): void;
-  handleLLMNewToken(token: string, run: Run): void;
-  handleLLMEnd(output: LLMResult, run: Run): void;
-  handleLLMError(error: Error, run: Run): void;
+
+  // Inherited from BaseCallbackHandler (see 3.9.3)
+  name: string;
+  ignoreLLM?: boolean;
+  ignoreChain?: boolean;
+  ignoreAgent?: boolean;
+  ignoreRetriever?: boolean;
+  ignoreCustomEvent?: boolean;
+  raiseError?: boolean;
+  awaitHandlers?: boolean;
+
+  // LLM Callbacks
+  handleLLMStart(llm: Serialized, prompts: string[], runId: string): void;
+  handleLLMNewToken(token: string, idx: NewTokenIndices, runId: string): void;
+  handleLLMEnd(output: LLMResult, runId: string): void;
+  handleLLMError(error: Error, runId: string): void;
+
+  // Tool Callbacks
+  handleToolStart(tool: Serialized, input: string, runId: string): void;
+  handleToolEnd(output: string, runId: string): void;
+  handleToolError(error: Error, runId: string): void;
 }
 ```
 
@@ -1490,6 +1506,298 @@ export interface ACPAgentConfig {
   callbacks?: CallbackHandler[];
   transport: ACPTransport;
 }
+```
+
+#### 3.9.3 LangChain Type Reference
+
+This section provides the complete LangChain type definitions needed to implement this package.
+
+##### 3.9.3.1 `createMiddleware()` Function
+
+**Location:** `@langchain/langchain/agents`
+
+```typescript
+export function createMiddleware<
+  TSchema extends InteropZodObject | undefined = undefined,
+  TContextSchema extends InteropZodObject | undefined = undefined,
+  TTools extends readonly (ClientTool | ServerTool)[] = readonly (
+    | ClientTool
+    | ServerTool
+  )[],
+>(config: MiddlewareConfig<TSchema, TContextSchema, TTools>): AgentMiddleware;
+```
+
+**MiddlewareConfig:**
+
+```typescript
+interface MiddlewareConfig<
+  TSchema extends InteropZodObject | undefined,
+  TContextSchema extends InteropZodObject | undefined,
+  TTools extends readonly (ClientTool | ServerTool)[],
+> {
+  name: string;
+  stateSchema?: TSchema;           // Persisted state between invocations
+  contextSchema?: TContextSchema;  // Read-only context, not persisted
+  tools?: TTools;                  // Additional tools
+  beforeAgent?: BeforeAgentHook<TSchema, TContextSchema>;
+  beforeModel?: BeforeModelHook<TSchema, TContextSchema>;
+  afterModel?: AfterModelHook<TSchema, TContextSchema>;
+  afterAgent?: AfterAgentHook<TSchema, TContextSchema>;
+  wrapToolCall?: WrapToolCallHook<TSchema, TContextSchema>;
+  wrapModelCall?: WrapModelCallHook<TSchema, TContextSchema>;
+}
+```
+
+**Returns:**
+
+```typescript
+interface AgentMiddleware {
+  [MIDDLEWARE_BRAND]: true;
+  name: string;
+  stateSchema?: TSchema;
+  contextSchema?: TContextSchema;
+  tools?: TTools;
+  beforeAgent?: BeforeAgentHook<...>;
+  beforeModel?: BeforeModelHook<...>;
+  afterModel?: AfterModelHook<...>;
+  afterAgent?: AfterAgentHook<...>;
+  wrapToolCall?: WrapToolCallHook<...>;
+  wrapModelCall?: WrapModelCallHook<...>;
+}
+```
+
+##### 3.9.3.2 Hook Types
+
+**BeforeAgentHook / BeforeModelHook / AfterModelHook / AfterAgentHook:**
+
+```typescript
+type BeforeAgentHandler<TSchema, TContext> = (
+  state: TSchema,
+  runtime: Runtime<TContext>
+) => PromiseOrValue<MiddlewareResult<TSchema>>;
+
+export type BeforeAgentHook<TSchema, TContext> =
+  | BeforeAgentHandler<TSchema, TContext>
+  | { hook: BeforeAgentHandler<TSchema, TContext>; canJumpTo?: JumpToTarget[] };
+```
+
+**WrapToolCallHook:**
+
+```typescript
+type ToolCallRequest<TSchema, TContext> = {
+  toolCall: ToolCall;
+  tool: ClientTool | ServerTool;
+  state: TSchema & AgentBuiltInState;
+  runtime: Runtime<TContext>;
+};
+
+type ToolCallHandler<TSchema, TContext> = (request: ToolCallRequest<TSchema, TContext>) => Promise<ToolMessage>;
+
+export type WrapToolCallHook<TSchema, TContext> = (
+  request: ToolCallRequest<TSchema, TContext>,
+  handler: ToolCallHandler<TSchema, TContext>
+) => PromiseOrValue<ToolMessage | Command>;
+```
+
+**WrapModelCallHook:**
+
+```typescript
+type ModelRequest<TSchema, TContext> = {
+  model: LanguageModelLike;
+  messages: BaseMessage[];
+  runtime: Runtime<TContext>;
+};
+
+type WrapModelCallHandler = (request: ModelRequest) => Promise<AIMessage>;
+
+export type WrapModelCallHook<TSchema, TContext> = (
+  request: ModelRequest<TSchema, TContext>,
+  handler: WrapModelCallHandler
+) => PromiseOrValue<AIMessage>;
+```
+
+##### 3.9.3.3 `MiddlewareResult` and `JumpToTarget`
+
+```typescript
+export type MiddlewareResult<TState> =
+  | (TState & { jumpTo?: JumpToTarget })
+  | void;
+
+export type JumpToTarget = "model" | "tools" | "end";
+```
+
+**Usage:**
+
+| jumpTo | Meaning |
+|--------|---------|
+| `"model"` | Jump back to LLM for another call |
+| `"tools"` | Jump to tool execution |
+| `"end"` | Terminate agent execution |
+
+##### 3.9.3.4 `Runtime<TContext>` Type
+
+**Location:** `@langchain/langchain/agents` (via LangGraph)
+
+```typescript
+export type Runtime<TContext = unknown> = Partial<
+  Omit<LangGraphRuntime<TContext>, "context" | "configurable">
+> &
+  WithMaybeContext<TContext> & {
+    configurable?: {
+      thread_id?: string;
+      [key: string]: unknown;
+    };
+  };
+```
+
+**Complete Properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `context` | `TContext` | Runtime context (read-only, from contextSchema) |
+| `configurable` | `{ thread_id?: string; [key: string]: unknown }` | Configurable fields including thread_id |
+| `signal` | `AbortSignal \| undefined` | Abort signal for cancellation |
+| `writer` | `((chunk: unknown) => void) \| undefined` | Stream writer for streaming output |
+| `interrupt` | `((interruptInfo: InterruptInfo) => unknown) \| undefined` | HITL pause mechanism |
+| `store` | `BaseStore \| undefined` | Persistent storage |
+
+##### 3.9.3.5 `RunnableConfig` Type
+
+**Location:** `@langchain/core/runnables`
+
+```typescript
+export interface RunnableConfig<
+  ConfigurableFieldType extends Record<string, any> = Record<string, any>,
+> extends BaseCallbackConfig {
+  configurable?: ConfigurableFieldType;
+  recursionLimit?: number;
+  maxConcurrency?: number;
+  timeout?: number;
+  signal?: AbortSignal;
+}
+
+export interface BaseCallbackConfig {
+  runName?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  callbacks?: Callbacks;
+  runId?: string;
+}
+```
+
+##### 3.9.3.6 `Command` Type
+
+**Location:** `@langchain/langgraph`
+
+```typescript
+new Command(params: CommandParams)
+
+interface CommandParams {
+  resume?: unknown;                    // Continue after interrupt()
+  update?: StateUpdate;                // Merge state updates
+  goto?: string | string[];            // Route to node(s)
+}
+
+type StateUpdate = {
+  messages?: BaseMessage[];
+  [key: string]: unknown;
+};
+```
+
+**Usage Patterns:**
+
+```typescript
+// Resume after interrupt (HITL)
+await agent.invoke(
+  new Command({ resume: humanInput }),
+  config
+);
+
+// State update + routing
+return new Command({
+  update: { messages: [...state.messages, newMessage] },
+  goto: "model",
+});
+```
+
+##### 3.9.3.7 `BaseCallbackHandler` Type
+
+**Location:** `@langchain/core/callbacks/base`
+
+```typescript
+export interface BaseCallbackHandlerInput {
+  ignoreLLM?: boolean;
+  ignoreChain?: boolean;
+  ignoreAgent?: boolean;
+  ignoreRetriever?: boolean;
+  ignoreCustomEvent?: boolean;
+  raiseError?: boolean;
+  awaitHandlers?: boolean;
+}
+
+export abstract class BaseCallbackHandler {
+  name: string;
+  ignoreLLM?: boolean;
+  ignoreChain?: boolean;
+  ignoreAgent?: boolean;
+  ignoreRetriever?: boolean;
+  ignoreCustomEvent?: boolean;
+  raiseError?: boolean;
+  awaitHandlers?: boolean;
+
+  // LLM Callbacks
+  handleLLMStart?(llm: Serialized, prompts: string[], runId: string, ...): Promise<any>;
+  handleLLMNewToken?(token: string, idx: NewTokenIndices, runId: string, ...): Promise<any>;
+  handleLLMEnd?(output: LLMResult, runId: string, ...): Promise<any>;
+  handleLLMError?(error: Error, runId: string): Promise<any>;
+
+  // Tool Callbacks
+  handleToolStart?(tool: Serialized, input: string, runId: string, ...): Promise<any>;
+  handleToolEnd?(output: string, runId: string, ...): Promise<any>;
+  handleToolError?(error: Error, runId: string): Promise<any>;
+
+  // Chain Callbacks
+  handleChainStart?(chain: Serialized, inputs: Record<string, any>, runId: string): Promise<any>;
+  handleChainEnd?(outputs: Record<string, any>, runId: string): Promise<any>;
+  handleChainError?(error: Error, runId: string): Promise<any>;
+}
+```
+
+##### 3.9.3.8 Supporting Types
+
+**LLMResult:**
+
+```typescript
+type LLMResult = {
+  generations: Generation[][];
+  llmOutput?: Record<string, unknown>;
+  run?: Run;
+};
+
+type Generation = {
+  text: string;
+  generationInfo?: Record<string, unknown>;
+  message?: AIMessage;
+};
+```
+
+**NewTokenIndices:**
+
+```typescript
+type NewTokenIndices = {
+  prompt: number;
+  completion: number;
+};
+```
+
+**Serialized:**
+
+```typescript
+type Serialized = {
+  id: string[];
+  kwargs: Record<string, unknown>;
+  _type: string;
+};
 ```
 
 ---
@@ -2328,3 +2636,4 @@ expect(mockConnection.requestPermission).toHaveBeenCalledWith(
 - Tool failures always emit tool_call_update with status='failed'
 - MCP reconnection: **connection-level only** - in-flight tool calls still fail immediately
 - Cancellation: graceful exit with stopReason='cancelled'
+- **Added section 3.9.3 LangChain Type Reference** - complete definitions for createMiddleware(), all hook types, Runtime, RunnableConfig, Command, BaseCallbackHandler, and supporting types
