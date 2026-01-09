@@ -391,11 +391,14 @@ wrapToolCall: async (request, handler) => {
         toolCallId,
         status: "failed",
         _meta: null,
-        content: [{ 
-          type: "text", 
-          _meta: null, 
-          annotations: null, 
-          text: error.message 
+        content: [{
+          type: "content",
+          content: {
+            type: "text",
+            _meta: null,
+            annotations: null,
+            text: error.message
+          }
         }],
       },
     });
@@ -496,11 +499,14 @@ wrapToolCall: async (request, handler) => {
         toolCallId: toolCall.id,
         status: "failed",
         _meta: null,
-        content: [{ 
-          type: "text", 
-          _meta: null, 
-          annotations: null, 
-          text: "Permission request cancelled" 
+        content: [{
+          type: "content",
+          content: {
+            type: "text",
+            _meta: null,
+            annotations: null,
+            text: "Permission request cancelled"
+          }
         }],
       },
     });
@@ -520,11 +526,14 @@ wrapToolCall: async (request, handler) => {
           toolCallId: toolCall.id,
           status: "failed",
           _meta: null,
-          content: [{ 
-            type: "text", 
-            _meta: null, 
-            annotations: null, 
-            text: "Permission denied by user" 
+          content: [{
+            type: "content",
+            content: {
+              type: "text",
+              _meta: null,
+              annotations: null,
+              text: "Permission denied by user"
+            }
           }],
         },
       });
@@ -668,10 +677,13 @@ async handleLLMNewToken(token: string, run: Run) {
     update: {
       sessionUpdate: "agent_message_chunk",
       content: {
-        type: "text",
-        _meta: null,
-        annotations: null,
-        text: token,
+        type: "content",
+        content: {
+          type: "text",
+          _meta: null,
+          annotations: null,
+          text: token,
+        },
       },
     },
   });
@@ -698,6 +710,11 @@ export type ContentBlock =
   | (AudioContent & { type: 'audio'; })
   | (ResourceLink & { type: 'resource_link'; })
   | (EmbeddedResource & { type: 'resource'; });
+
+export type Content = {
+  _meta?: { [key: string]: unknown } | null;
+  content: ContentBlock;
+};
 ```
 
 ### 6.2 Content Block Definitions
@@ -887,9 +904,9 @@ class DefaultContentBlockMapper implements ContentBlockMapper {
 
 ```typescript
 type SessionUpdate =
-  | { sessionUpdate: "user_message_chunk"; content: ContentBlock }
-  | { sessionUpdate: "agent_message_chunk"; content: ContentBlock }
-  | { sessionUpdate: "agent_thought_chunk"; content: ContentBlock }
+  | { sessionUpdate: "user_message_chunk"; content: Content }
+  | { sessionUpdate: "agent_message_chunk"; content: Content }
+  | { sessionUpdate: "agent_thought_chunk"; content: Content }
   | { sessionUpdate: "tool_call"; toolCallId: string; /* ToolCall fields */ }
   | { sessionUpdate: "tool_call_update"; /* ToolCallUpdate fields */ }
   | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }
@@ -1344,11 +1361,34 @@ All ACP agents must implement these methods:
 | Method | Purpose | Return |
 |--------|---------|--------|
 | `initialize` | Connection handshake, capability negotiation | `InitializeResponse` |
+| `authenticate` | Authenticate client with agent (if required) | `AuthenticateResponse` |
 | `newSession` | Create new conversation session | `NewSessionResponse` with `sessionId` |
 | `prompt` | Process user input | `PromptResponse` with `stopReason` |
 | `cancel` | Handle cancellation | `void` |
 | `setSessionMode` | Change agent mode | `SetSessionModeResponse` |
 | `loadSession` | Resume existing session (optional) | `LoadSessionResponse` |
+
+**Authenticate Method (Optional):**
+
+The `authenticate` method is only required if the agent declares authentication methods during initialization. It authenticates the client with the specified authentication method.
+
+```typescript
+async authenticate(params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse> {
+  const { methodId } = params;
+  
+  // Perform authentication based on the methodId
+  switch (methodId) {
+    case 'oauth_github':
+      // Handle GitHub OAuth authentication
+      return {};
+    case 'api_key':
+      // Handle API key authentication  
+      return {};
+    default:
+      throw new Error(`Unknown authentication method: ${methodId}`);
+  }
+}
+```
 
 ### 10.2 Complete Agent Example
 
@@ -1398,7 +1438,7 @@ const agentImplementation: acp.Agent = {
       callbacks: [new ACPCallbackHandler({ transport: connection })],
     });
 
-    return { stopReason: 'end_turn' };
+    return { stopReason: 'completed' };
   },
 
   async cancel(params: acp.CancelNotification): Promise<void> {
@@ -1426,6 +1466,7 @@ export type {
   ToolCallStatus,
   ToolKind,
   ContentBlock,
+  Content,
   TextContent,
   ImageContent,
   AudioContent,
@@ -1438,6 +1479,8 @@ export type {
   StopReason,
   InitializeRequest,
   InitializeResponse,
+  AuthenticateRequest,
+  AuthenticateResponse,
   NewSessionRequest,
   NewSessionResponse,
   PromptRequest,
