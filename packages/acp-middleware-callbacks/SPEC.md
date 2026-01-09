@@ -81,7 +81,7 @@ This package works with **high-level `createAgent()` APIs**, not lower-level Lan
 
 | Priority | Requirement | Description |
 |----------|-------------|-------------|
-| **MUST** | ACP Session Integration | Support `session/new`, `prompt`, `session/update` flow |
+| **MUST** | ACP Session Integration | Support `session/new`, `session/prompt`, `session/update` flow |
 | **MUST** | Tool Call Lifecycle | Emit `tool_call`, `tool_call_update` events with ACP format |
 | **MUST** | Permission Handling | Implement HITL-style interruption for ACP `requestPermission` |
 | **MUST** | Content Block Mapping | Convert LangChain messages to ACP content blocks |
@@ -248,7 +248,7 @@ packages/acp-middleware-callbacks/
 **Purpose:** Manages ACP session lifecycle within LangChain execution.
 
 **Responsibilities:**
-- Initialize session state from `configurable.sessionId` or prompt request
+- Initialize session state from `runtime.config.configurable?.sessionId` or prompt request
 - Emit session lifecycle events via transport
 - Manage checkpoint → session state mapping
 - **ACP session is multi-turn** - maintains conversation history across multiple `session/prompt` calls
@@ -1093,9 +1093,8 @@ const ERROR_CODES = {
   INVALID_PARAMS: -32602,
   INTERNAL_ERROR: -32603,
   // ACP-specific errors
-  SESSION_NOT_FOUND: -32000,
-  PERMISSION_DENIED: -32001,
-  TOOL_EXECUTION_FAILED: -32002,
+  AUTH_REQUIRED: -32000,
+  RESOURCE_NOT_FOUND: -32002,
 };
 ```
 
@@ -1114,11 +1113,8 @@ await transport.sendError(request.id, {
   message: `Session not found: ${sessionId}`,
 });
 
-// Permission denied
-await transport.sendError(request.id, {
-  code: ERROR_CODES.PERMISSION_DENIED,
-  message: "User denied permission for tool execution",
-});
+// Permission denied (use stopReason "refusal" or tool_call_update status "failed")
+// ACP has no specific permission denied error code
 ```
 
 #### 3.7.4 Permission Request Flow with Command Pattern
@@ -1377,32 +1373,26 @@ export function mapToStopReason(state: any): ACPStopReason {
 
 #### 3.8.3 Error Mapping
 
-**Agent-Level Errors (Custom Error Event):**
-- ACP has no 'error' stopReason - use custom sessionUpdate event
-- Errors are communicated via `session/update` with a custom update type
+**ACP Error Communication:**
+
+ACP has no 'error' stopReason. Errors are communicated through:
+
+| Error Scenario | Mechanism |
+|---------------|-----------|
+| Method execution failure | JSON-RPC error response |
+| Agent refuses to respond | `stopReason: "refusal"` in PromptResponse |
+| Client cancels operation | `stopReason: "cancelled"` |
+| Tool execution failure | `tool_call_update` with `status: "failed"` |
+| Custom agent errors | Extension notification via `_method` (not `sessionUpdate`) |
+
+**Note:** ACP does NOT allow custom `sessionUpdate` types. For custom error reporting, use the extension notification pattern:
 
 ```typescript
-// Custom error session update (not standard ACP)
-interface AgentErrorUpdate {
-  sessionUpdate: "agent_error";
-  error: {
-    type: "model_failure" | "configuration_error" | "uncaught_exception";
-    message: string;
-    recoverable: boolean;
-  };
-}
-
-// Emit error before returning stopReason
-await transport.sessionUpdate({
-  sessionId,
-  update: {
-    sessionUpdate: "agent_error",
-    error: {
-      type: "model_failure",
-      message: "Failed to call model API: timeout",
-      recoverable: false,
-    },
-  },
+// Custom error notification (via _method extension, NOT sessionUpdate)
+await connection.extNotification("agent_error", {
+  code: "VALIDATION_ERROR",
+  message: "Invalid input provided",
+  details: { field: "email", issue: "invalid format" }
 });
 ```
 
@@ -2316,7 +2306,7 @@ expect(mockConnection.requestPermission).toHaveBeenCalledWith(
 | Model refused to respond | `refusal` |
 | Step/turn limit reached | `max_turn_requests` |
 
-**Note:** In ACP, errors are communicated via `tool_call_update` (status: failed) events or custom `agent_error` sessionUpdate, not via stopReason. The stopReason indicates why the agent returned control to the client.
+**Note:** In ACP, errors are communicated via JSON-RPC error responses, `tool_call_update` (status: failed), or extension notifications - NOT via `stopReason`. The stopReason indicates why the agent returned control to the client.
 
 ---
 
