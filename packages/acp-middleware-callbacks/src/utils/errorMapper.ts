@@ -8,13 +8,17 @@
  * @packageDocumentation
  */
 
-import type { StopReason } from "../types/acp.js";
-
 // Re-export RequestError from @agentclientprotocol/sdk for convenience
 export {
   RequestError,
   type RequestError as ACPRequestError,
 } from "@agentclientprotocol/sdk";
+
+// Re-export stop reason utilities from stopReasonMapper
+export {
+  mapToStopReason,
+  isStopReason,
+} from "./stopReasonMapper.js";
 
 /**
  * ACP Error Codes as specified in the official protocol documentation.
@@ -58,75 +62,6 @@ export const ACP_ERROR_CODES = {
  * Type for the error code values.
  */
 export type ACPErrorCode = (typeof ACP_ERROR_CODES)[keyof typeof ACP_ERROR_CODES];
-
-/**
- * Maps LangChain agent state to ACP stop reason.
- * 
- * This function analyzes the agent state and determines the appropriate
- * stop reason based on the execution context. The mapping follows the
- * official ACP protocol specification for stop reasons.
- * 
- * Official StopReason values from @agentclientprotocol/sdk:
- * - 'end_turn': The agent successfully completed the task
- * - 'max_tokens': The maximum token limit was reached
- * - 'max_turn_requests': The maximum number of turn requests was exceeded
- * - 'refusal': The agent refused to continue
- * - 'cancelled': The user explicitly cancelled the operation
- * 
- * @param state - The LangChain agent state to analyze
- * @returns The corresponding ACP stop reason
- */
-export function mapToStopReason(state: Record<string, unknown>): StopReason {
-  // Check for user cancellation first
-  if (state.cancelled === true || 
-      state.permissionDenied === true ||
-      state.userRequested === true ||
-      state.interrupted === true) {
-    return 'cancelled';
-  }
-  
-  // Check for refusal
-  if (state.refusal === true || 
-      state.modelRefused === true) {
-    return 'refusal';
-  }
-  
-  // Check for token limit exceeded
-  if (state.llmOutput && typeof state.llmOutput === 'object') {
-    const llmOutput = state.llmOutput as Record<string, unknown>;
-    if (llmOutput.finish_reason === 'length' || 
-        llmOutput.finish_reason === 'context_length' ||
-        llmOutput.finish_reason === 'token_limit') {
-      return 'max_tokens';
-    }
-  }
-  
-  if (state.tokenLimitReached === true ||
-      state.contextLengthExceeded === true ||
-      state.maxTokensReached === true) {
-    return 'max_tokens';
-  }
-  
-  // Check for max turn requests exceeded
-  if (typeof state.turnRequests === 'number' && 
-      typeof state.maxTurnRequests === 'number' &&
-      state.turnRequests >= state.maxTurnRequests) {
-    return 'max_turn_requests';
-  }
-  
-  if (state.maxStepsReached === true ||
-      state.maxTurnsReached === true) {
-    return 'max_turn_requests';
-  }
-  
-  // Check for explicit errors
-  if (state.error !== undefined && state.error !== null) {
-    return 'end_turn';
-  }
-  
-  // Default to completed if no other condition matches
-  return 'end_turn';
-}
 
 /**
  * Maps a LangChain error to an ACP error code.
@@ -214,22 +149,6 @@ export function createACPErrorResponse(
     message,
     data,
   };
-}
-
-/**
- * Type guard to check if a value is a valid StopReason.
- * 
- * @param value - The value to check
- * @returns True if the value is a valid StopReason
- */
-export function isStopReason(value: unknown): value is StopReason {
-  return (
-    value === 'cancelled' ||
-    value === 'refusal' ||
-    value === 'max_tokens' ||
-    value === 'max_turn_requests' ||
-    value === 'end_turn'
-  );
 }
 
 /**
