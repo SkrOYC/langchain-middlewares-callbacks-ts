@@ -150,7 +150,7 @@ export class DefaultContentBlockMapper implements ContentBlockMapper {
         // Fallback for unknown types - convert to text representation
         // This ensures the function always returns a valid ContentBlock
         const typeName = typeof block === 'object' && block !== null 
-          ? (block as Record<string, unknown>).type || 'unknown' 
+          ? (block as unknown as Record<string, unknown>).type || 'unknown' 
           : typeof block;
         return {
           type: "text",
@@ -251,7 +251,7 @@ export class DefaultContentBlockMapper implements ContentBlockMapper {
   /**
    * Converts a file content block to either resource link or embedded resource.
    */
-  private fileToACP(block: LangChainContentBlock): ResourceLink | EmbeddedResource {
+  private fileToACP(block: LangChainContentBlock): ContentBlock {
     if (block.content) {
       const result: EmbeddedResource & { type: "resource" } = {
         type: "resource",
@@ -348,7 +348,7 @@ export class DefaultContentBlockMapper implements ContentBlockMapper {
       type: "file",
       uri: resource.uri,
       url: resource.uri,
-      mimeType: resource.mimeType,
+      mimeType: resource.mimeType ?? undefined,
       content: "text" in resource ? resource.text : resource.blob,
       annotations: this.unmapAnnotations(block.annotations),
       _meta: block._meta || undefined,
