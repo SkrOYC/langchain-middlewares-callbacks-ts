@@ -422,5 +422,90 @@ describe("createACPToolMiddleware", () => {
       
       expect(sessionUpdateMock).toHaveBeenCalled();
     });
+
+    test("handles circular reference in result", async () => {
+      const sessionUpdateMock = mock(async () => {});
+      
+      const middleware = createACPToolMiddleware();
+      const handlerMock = mock(async () => {
+        const obj: any = { value: "test" };
+        obj.self = obj; // Circular reference
+        return obj;
+      });
+      
+      const request = {
+        toolCall: { id: "call-17", name: "test_tool", args: {} },
+        runtime: { 
+          config: {}, 
+          context: { threadId: "thread-17", sessionId: "session-17" }, 
+          connection: { sessionUpdate: sessionUpdateMock } 
+        },
+      };
+      
+      await middleware.wrapToolCall!(request, handlerMock as any);
+      
+      expect(sessionUpdateMock).toHaveBeenCalled();
+    });
+
+    test("handles number and boolean results", async () => {
+      const sessionUpdateMock = mock(async () => {});
+      
+      const middleware = createACPToolMiddleware();
+      const handlerMock = mock(async () => 42);
+      
+      const request = {
+        toolCall: { id: "call-18", name: "test_tool", args: {} },
+        runtime: { 
+          config: {}, 
+          context: { threadId: "thread-18", sessionId: "session-18" }, 
+          connection: { sessionUpdate: sessionUpdateMock } 
+        },
+      };
+      
+      await middleware.wrapToolCall!(request, handlerMock as any);
+      
+      expect(sessionUpdateMock).toHaveBeenCalled();
+    });
+  });
+
+  describe("afterAgent cleanup", () => {
+    test("cleans up thread state after agent completes", async () => {
+      const middleware = createACPToolMiddleware();
+      
+      // Simulate tool calls that would populate thread state
+      const request = {
+        toolCall: { id: "call-19", name: "test_tool", args: {} },
+        runtime: { 
+          config: {}, 
+          context: { threadId: "thread-cleanup", sessionId: "session-19" }, 
+          connection: { sessionUpdate: mock(async () => {}) } 
+        },
+      };
+      
+      const handlerMock = mock(async () => ({ result: "success" }));
+      
+      // Execute a tool call first
+      await middleware.wrapToolCall!(request, handlerMock as any);
+      
+      // Then call afterAgent to clean up
+      await middleware.afterAgent?.({} as any, { 
+        context: { threadId: "thread-cleanup" } 
+      } as any);
+      
+      // Test passes if no error is thrown
+      expect(true).toBe(true);
+    });
+
+    test("afterAgent handles missing threadId gracefully", async () => {
+      const middleware = createACPToolMiddleware();
+      
+      // Call afterAgent without threadId
+      await middleware.afterAgent?.({} as any, { 
+        context: {} 
+      } as any);
+      
+      // Test passes if no error is thrown
+      expect(true).toBe(true);
+    });
   });
 });

@@ -203,6 +203,9 @@ export async function createMCPClient(
     mcpServers,
   }) as unknown as MultiServerMCPClientInterface;
   
+  // Get server names from our config since MultiServerMCPClient may not expose this
+  const serverNames = Object.keys(servers);
+  
   return {
     async getTools(): Promise<StructuredTool[]> {
       return client.getTools();
@@ -213,7 +216,7 @@ export async function createMCPClient(
     },
     
     getServerNames(): string[] {
-      return client.getServerNames();
+      return serverNames;
     },
   };
 }
