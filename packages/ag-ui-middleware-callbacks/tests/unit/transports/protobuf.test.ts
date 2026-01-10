@@ -5,6 +5,7 @@ import {
   AGUI_MEDIA_TYPE,
 } from "../../../src/transports/createProtobufTransport";
 import type { AGUIEvent } from "../../../src/events";
+import { EventType } from "../../../src/events";
 
 describe("Protobuf Transport", () => {
   describe("AGUI_MEDIA_TYPE", () => {
@@ -16,7 +17,7 @@ describe("Protobuf Transport", () => {
   describe("encodeEventWithFraming", () => {
     test("encodes RUN_STARTED event", () => {
       const event: AGUIEvent = {
-        type: "RUN_STARTED",
+        type: EventType.RUN_STARTED,
         threadId: "thread-123",
         runId: "run-456",
         timestamp: Date.now(),
@@ -30,7 +31,7 @@ describe("Protobuf Transport", () => {
 
     test("encodes TEXT_MESSAGE_CONTENT event", () => {
       const event: AGUIEvent = {
-        type: "TEXT_MESSAGE_CONTENT",
+        type: EventType.TEXT_MESSAGE_CONTENT,
         messageId: "msg-1",
         delta: "Hello world!",
         timestamp: Date.now(),
@@ -44,7 +45,7 @@ describe("Protobuf Transport", () => {
 
     test("encodes TOOL_CALL_START event", () => {
       const event: AGUIEvent = {
-        type: "TOOL_CALL_START",
+        type: EventType.TOOL_CALL_START,
         toolCallId: "tool-1",
         toolCallName: "calculator",
         timestamp: Date.now(),
@@ -58,7 +59,7 @@ describe("Protobuf Transport", () => {
 
     test("includes 4-byte Big-Endian length prefix", () => {
       const event: AGUIEvent = {
-        type: "RUN_STARTED",
+        type: EventType.RUN_STARTED,
         threadId: "thread-123",
         runId: "run-456",
       };
@@ -76,7 +77,7 @@ describe("Protobuf Transport", () => {
   describe("decodeEventWithFraming", () => {
     test("decodes RUN_STARTED event round-trip", () => {
       const original: AGUIEvent = {
-        type: "RUN_STARTED",
+        type: EventType.RUN_STARTED,
         threadId: "thread-123",
         runId: "run-456",
       };
@@ -84,14 +85,14 @@ describe("Protobuf Transport", () => {
       const encoded = encodeEventWithFraming(original);
       const decoded = decodeEventWithFraming(encoded);
       
-      expect(decoded.type).toBe("RUN_STARTED");
+      expect(decoded.type).toBe(EventType.RUN_STARTED);
       expect((decoded as any).threadId).toBe("thread-123");
       expect((decoded as any).runId).toBe("run-456");
     });
 
     test("decodes TEXT_MESSAGE_CONTENT event round-trip", () => {
       const original: AGUIEvent = {
-        type: "TEXT_MESSAGE_CONTENT",
+        type: EventType.TEXT_MESSAGE_CONTENT,
         messageId: "msg-1",
         delta: "Hello world!",
       };
@@ -99,7 +100,7 @@ describe("Protobuf Transport", () => {
       const encoded = encodeEventWithFraming(original);
       const decoded = decodeEventWithFraming(encoded);
       
-      expect(decoded.type).toBe("TEXT_MESSAGE_CONTENT");
+      expect(decoded.type).toBe(EventType.TEXT_MESSAGE_CONTENT);
       expect((decoded as any).messageId).toBe("msg-1");
       expect((decoded as any).delta).toBe("Hello world!");
     });
@@ -108,7 +109,7 @@ describe("Protobuf Transport", () => {
     // See: https://github.com/ag-ui-protocol/ag-ui/issues
     test.skip("decodes TOOL_CALL_RESULT event round-trip (not supported by @ag-ui/proto)", () => {
       const original: AGUIEvent = {
-        type: "TOOL_CALL_RESULT",
+        type: EventType.TOOL_CALL_RESULT,
         messageId: "msg-1",
         toolCallId: "tool-1",
         content: '{"result": 42}',
@@ -118,7 +119,7 @@ describe("Protobuf Transport", () => {
       const encoded = encodeEventWithFraming(original);
       const decoded = decodeEventWithFraming(encoded);
       
-      expect(decoded.type).toBe("TOOL_CALL_RESULT");
+      expect(decoded.type).toBe(EventType.TOOL_CALL_RESULT);
       expect((decoded as any).toolCallId).toBe("tool-1");
       expect((decoded as any).content).toBe('{"result": 42}');
     });
@@ -146,7 +147,7 @@ describe("Protobuf Transport", () => {
   describe("Complex Events", () => {
     test("encodes and decodes STATE_SNAPSHOT event", () => {
       const original: AGUIEvent = {
-        type: "STATE_SNAPSHOT",
+        type: EventType.STATE_SNAPSHOT,
         snapshot: {
           counter: 42,
           messages: [],
@@ -157,7 +158,7 @@ describe("Protobuf Transport", () => {
       const encoded = encodeEventWithFraming(original);
       const decoded = decodeEventWithFraming(encoded);
       
-      expect(decoded.type).toBe("STATE_SNAPSHOT");
+      expect(decoded.type).toBe(EventType.STATE_SNAPSHOT);
       expect((decoded as any).snapshot).toBeDefined();
     });
 
@@ -165,7 +166,7 @@ describe("Protobuf Transport", () => {
     // See: https://github.com/ag-ui-protocol/ag-ui/issues
     test.skip("encodes and decodes ACTIVITY_SNAPSHOT event (not supported by @ag-ui/proto)", () => {
       const original: AGUIEvent = {
-        type: "ACTIVITY_SNAPSHOT",
+        type: EventType.ACTIVITY_SNAPSHOT,
         messageId: "activity-1",
         activityType: "AGENT_STEP",
         content: {
@@ -178,13 +179,13 @@ describe("Protobuf Transport", () => {
       const encoded = encodeEventWithFraming(original);
       const decoded = decodeEventWithFraming(encoded);
       
-      expect(decoded.type).toBe("ACTIVITY_SNAPSHOT");
+      expect(decoded.type).toBe(EventType.ACTIVITY_SNAPSHOT);
       expect((decoded as any).activityType).toBe("AGENT_STEP");
     });
 
     test("encodes and decodes CUSTOM event", () => {
       const original: AGUIEvent = {
-        type: "CUSTOM",
+        type: EventType.CUSTOM,
         name: "user_feedback",
         value: { rating: 5, comment: "Great!" },
       };
@@ -192,7 +193,7 @@ describe("Protobuf Transport", () => {
       const encoded = encodeEventWithFraming(original);
       const decoded = decodeEventWithFraming(encoded);
       
-      expect(decoded.type).toBe("CUSTOM");
+      expect(decoded.type).toBe(EventType.CUSTOM);
       expect((decoded as any).name).toBe("user_feedback");
     });
   });

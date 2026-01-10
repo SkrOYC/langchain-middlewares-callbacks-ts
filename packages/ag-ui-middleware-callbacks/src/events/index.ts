@@ -19,6 +19,7 @@
  */
 
 import type { Operation } from "fast-json-patch";
+import type { EventType } from '@ag-ui/core';
 
 // ============================================================================
 // Re-export @ag-ui/core types and schemas for optional validation
@@ -61,7 +62,7 @@ export interface Message {
 // ============================================================================
 
 export interface RunStartedEvent {
-  type: "RUN_STARTED";
+  type: EventType.RUN_STARTED;
   threadId: string;
   runId: string;
   parentRunId?: string;
@@ -70,7 +71,7 @@ export interface RunStartedEvent {
 }
 
 export interface RunFinishedEvent {
-  type: "RUN_FINISHED";
+  type: EventType.RUN_FINISHED;
   threadId: string;
   runId: string;
   result?: unknown;
@@ -78,20 +79,20 @@ export interface RunFinishedEvent {
 }
 
 export interface RunErrorEvent {
-  type: "RUN_ERROR";
+  type: EventType.RUN_ERROR;
   message: string;
   code?: string;
   timestamp?: number;
 }
 
 export interface StepStartedEvent {
-  type: "STEP_STARTED";
+  type: EventType.STEP_STARTED;
   stepName: string;
   timestamp?: number;
 }
 
 export interface StepFinishedEvent {
-  type: "STEP_FINISHED";
+  type: EventType.STEP_FINISHED;
   stepName: string;
   timestamp?: number;
 }
@@ -101,21 +102,21 @@ export interface StepFinishedEvent {
 // ============================================================================
 
 export interface TextMessageStartEvent {
-  type: "TEXT_MESSAGE_START";
+  type: EventType.TEXT_MESSAGE_START;
   messageId: string;
   role?: "developer" | "system" | "assistant" | "user";
   timestamp?: number;
 }
 
 export interface TextMessageContentEvent {
-  type: "TEXT_MESSAGE_CONTENT";
+  type: EventType.TEXT_MESSAGE_CONTENT;
   messageId: string;
   delta: string;
   timestamp?: number;
 }
 
 export interface TextMessageEndEvent {
-  type: "TEXT_MESSAGE_END";
+  type: EventType.TEXT_MESSAGE_END;
   messageId: string;
   timestamp?: number;
 }
@@ -124,7 +125,7 @@ export interface TextMessageEndEvent {
  * TextMessageChunk (convenience): Auto-expands to Start → Content → End
  */
 export interface TextMessageChunkEvent {
-  type: "TEXT_MESSAGE_CHUNK";
+  type: EventType.TEXT_MESSAGE_CHUNK;
   messageId?: string;
   role?: "developer" | "system" | "assistant" | "user";
   delta?: string;
@@ -136,7 +137,7 @@ export interface TextMessageChunkEvent {
 // ============================================================================
 
 export interface ToolCallStartEvent {
-  type: "TOOL_CALL_START";
+  type: EventType.TOOL_CALL_START;
   toolCallId: string;
   toolCallName: string;
   parentMessageId?: string;
@@ -144,20 +145,20 @@ export interface ToolCallStartEvent {
 }
 
 export interface ToolCallArgsEvent {
-  type: "TOOL_CALL_ARGS";
+  type: EventType.TOOL_CALL_ARGS;
   toolCallId: string;
   delta: string;
   timestamp?: number;
 }
 
 export interface ToolCallEndEvent {
-  type: "TOOL_CALL_END";
+  type: EventType.TOOL_CALL_END;
   toolCallId: string;
   timestamp?: number;
 }
 
 export interface ToolCallResultEvent {
-  type: "TOOL_CALL_RESULT";
+  type: EventType.TOOL_CALL_RESULT;
   messageId: string;
   toolCallId: string;
   content: string;
@@ -169,7 +170,7 @@ export interface ToolCallResultEvent {
  * ToolCallChunk (convenience): Auto-expands to Start → Args → End
  */
 export interface ToolCallChunkEvent {
-  type: "TOOL_CALL_CHUNK";
+  type: EventType.TOOL_CALL_CHUNK;
   toolCallId?: string;
   toolCallName?: string;
   parentMessageId?: string;
@@ -182,19 +183,19 @@ export interface ToolCallChunkEvent {
 // ============================================================================
 
 export interface StateSnapshotEvent {
-  type: "STATE_SNAPSHOT";
+  type: EventType.STATE_SNAPSHOT;
   snapshot: unknown;
   timestamp?: number;
 }
 
 export interface StateDeltaEvent {
-  type: "STATE_DELTA";
+  type: EventType.STATE_DELTA;
   delta: Operation[];
   timestamp?: number;
 }
 
 export interface MessagesSnapshotEvent {
-  type: "MESSAGES_SNAPSHOT";
+  type: EventType.MESSAGES_SNAPSHOT;
   messages: Message[];
   timestamp?: number;
 }
@@ -204,7 +205,7 @@ export interface MessagesSnapshotEvent {
 // ============================================================================
 
 export interface ActivitySnapshotEvent {
-  type: "ACTIVITY_SNAPSHOT";
+  type: EventType.ACTIVITY_SNAPSHOT;
   messageId: string;
   activityType: string;
   content: Record<string, unknown>;
@@ -213,7 +214,7 @@ export interface ActivitySnapshotEvent {
 }
 
 export interface ActivityDeltaEvent {
-  type: "ACTIVITY_DELTA";
+  type: EventType.ACTIVITY_DELTA;
   messageId: string;
   activityType: string;
   patch: Operation[];
@@ -225,33 +226,33 @@ export interface ActivityDeltaEvent {
 // ============================================================================
 
 export interface ThinkingStartEvent {
-  type: "THINKING_START";
+  type: EventType.THINKING_START;
   title?: string;
   messageId?: string;
   timestamp?: number;
 }
 
 export interface ThinkingTextMessageStartEvent {
-  type: "THINKING_TEXT_MESSAGE_START";
+  type: EventType.THINKING_TEXT_MESSAGE_START;
   messageId: string;
   timestamp?: number;
 }
 
 export interface ThinkingTextMessageContentEvent {
-  type: "THINKING_TEXT_MESSAGE_CONTENT";
+  type: EventType.THINKING_TEXT_MESSAGE_CONTENT;
   messageId: string;
   delta: string;
   timestamp?: number;
 }
 
 export interface ThinkingTextMessageEndEvent {
-  type: "THINKING_TEXT_MESSAGE_END";
+  type: EventType.THINKING_TEXT_MESSAGE_END;
   messageId: string;
   timestamp?: number;
 }
 
 export interface ThinkingEndEvent {
-  type: "THINKING_END";
+  type: EventType.THINKING_END;
   timestamp?: number;
 }
 
@@ -260,13 +261,17 @@ export interface ThinkingEndEvent {
 // ============================================================================
 
 export interface RawEvent {
-  type: "RAW";
+  type: EventType.RAW;
   event: unknown;
   source?: string;
 }
 
+/**
+ * Custom event for application-specific functionality.
+ * Allows passing arbitrary named events with any payload.
+ */
 export interface CustomEvent {
-  type: "CUSTOM";
+  type: EventType.CUSTOM;
   name: string;
   value: unknown;
 }

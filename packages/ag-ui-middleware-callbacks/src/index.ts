@@ -49,6 +49,61 @@ export {
 
 // Types (backward compatible)
 export type { AGUIEvent, Message, ToolCall, MessageRole } from "./events";
+
+// Lifecycle Event Types
+export type {
+  RunStartedEvent,
+  RunFinishedEvent,
+  RunErrorEvent,
+  StepStartedEvent,
+  StepFinishedEvent,
+} from "./events";
+
+// Text Message Event Types
+export type {
+  TextMessageStartEvent,
+  TextMessageContentEvent,
+  TextMessageEndEvent,
+  TextMessageChunkEvent,
+} from "./events";
+
+// Tool Call Event Types
+export type {
+  ToolCallStartEvent,
+  ToolCallArgsEvent,
+  ToolCallEndEvent,
+  ToolCallResultEvent,
+  ToolCallChunkEvent,
+} from "./events";
+
+// State Event Types
+export type {
+  StateSnapshotEvent,
+  StateDeltaEvent,
+  MessagesSnapshotEvent,
+} from "./events";
+
+// Activity Event Types
+export type {
+  ActivitySnapshotEvent,
+  ActivityDeltaEvent,
+} from "./events";
+
+// Thinking Event Types
+export type {
+  ThinkingStartEvent,
+  ThinkingTextMessageStartEvent,
+  ThinkingTextMessageContentEvent,
+  ThinkingTextMessageEndEvent,
+  ThinkingEndEvent,
+} from "./events";
+
+// Special Event Types
+export type {
+  RawEvent,
+  CustomEvent,
+} from "./events";
+
 export type { AGUIMiddlewareOptions } from "./middleware/types";
 export { AGUIMiddlewareOptionsSchema } from "./middleware/types";
 

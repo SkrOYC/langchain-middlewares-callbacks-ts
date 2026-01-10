@@ -9,6 +9,7 @@ import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
 import { expandEvent } from "../utils/eventNormalizer";
 import type { AGUITransport } from "../transports/types";
+import { EventType, type TextMessageChunkEvent, type ToolCallChunkEvent } from "../events";
 
 /**
  * Configuration options for the callback handler.
@@ -81,11 +82,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     delta: string
   ): Promise<void> {
     const events = expandEvent({
-      type: "TEXT_MESSAGE_CHUNK",
+      type: EventType.TEXT_MESSAGE_CHUNK,
       messageId,
       role,
       delta,
-    } as any);
+    } as TextMessageChunkEvent);
     
     for (const event of events) {
       await this.transport.emit(event);
@@ -111,12 +112,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     parentMessageId?: string
   ): Promise<void> {
     const events = expandEvent({
-      type: "TOOL_CALL_CHUNK",
+      type: EventType.TOOL_CALL_CHUNK,
       toolCallId,
       toolCallName,
       delta,
       parentMessageId,
-    } as any);
+    } as ToolCallChunkEvent);
     
     for (const event of events) {
       await this.transport.emit(event);
@@ -158,7 +159,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       
       // Emit TEXT_MESSAGE_START (coordination with middleware)
       this.transport.emit({
-        type: "TEXT_MESSAGE_START",
+        type: EventType.TEXT_MESSAGE_START,
         messageId: middlewareMessageId,
         role: "assistant",
         timestamp: Date.now(),
@@ -174,7 +175,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       
       // Emit TEXT_MESSAGE_START (no middleware coordination)
       this.transport.emit({
-        type: "TEXT_MESSAGE_START",
+        type: EventType.TEXT_MESSAGE_START,
         messageId,
         role: "assistant",
         timestamp: Date.now(),
@@ -207,11 +208,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           thinkingId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for thinking
           this.thinkingIds.set(runId, thinkingId);
           this.transport.emit({
-            type: "THINKING_START",
+            type: EventType.THINKING_START,
             timestamp: Date.now(),
           });
           this.transport.emit({
-            type: "THINKING_TEXT_MESSAGE_START",
+            type: EventType.THINKING_TEXT_MESSAGE_START,
             messageId: thinkingId,
             timestamp: Date.now(),
           });
@@ -222,7 +223,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
 
         this.transport.emit({
-          type: "THINKING_TEXT_MESSAGE_CONTENT",
+          type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
           messageId: thinkingId,
           delta,
           timestamp: Date.now(),
@@ -232,7 +233,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
       if (token && token.length > 0) {
         this.transport.emit({
-          type: "TEXT_MESSAGE_CONTENT",
+          type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
           delta: token,
           timestamp: Date.now(),
@@ -319,7 +320,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       // Emit TEXT_MESSAGE_END
       if (messageId) {
         this.transport.emit({
-          type: "TEXT_MESSAGE_END",
+          type: EventType.TEXT_MESSAGE_END,
           messageId,
           timestamp: Date.now(),
         });
@@ -327,12 +328,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
       if (thinkingId) {
         this.transport.emit({
-          type: "THINKING_TEXT_MESSAGE_END",
+          type: EventType.THINKING_TEXT_MESSAGE_END,
           messageId: thinkingId,
           timestamp: Date.now(),
         });
         this.transport.emit({
-          type: "THINKING_END",
+          type: EventType.THINKING_END,
           timestamp: Date.now(),
         });
         this.thinkingIds.delete(runId);
@@ -492,7 +493,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     try {
       // Emit TOOL_CALL_START first
       this.transport.emit({
-        type: "TOOL_CALL_START",
+        type: EventType.TOOL_CALL_START,
         toolCallId,
         toolCallName,
         parentMessageId: messageId,
@@ -504,7 +505,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       const accumulatedArgs = this.accumulatedToolArgs.get(toolCallId);
       if (accumulatedArgs) {
         this.transport.emit({
-          type: "TOOL_CALL_ARGS",
+          type: EventType.TOOL_CALL_ARGS,
           toolCallId,
           delta: accumulatedArgs,
           timestamp: Date.now(),
@@ -546,7 +547,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       }
 
       this.transport.emit({
-        type: "TOOL_CALL_END",
+        type: EventType.TOOL_CALL_END,
         toolCallId: finalToolCallId,
         timestamp: Date.now(),
       });
@@ -575,7 +576,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     try {
       this.transport.emit({
-        type: "TOOL_CALL_END",
+        type: EventType.TOOL_CALL_END,
         toolCallId: toolInfo?.id ?? runId,
         timestamp: Date.now(),
       });
@@ -631,7 +632,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     
     if (contentSize <= this.maxUIPayloadSize) {
       this.transport.emit({
-        type: "TOOL_CALL_RESULT",
+        type: EventType.TOOL_CALL_RESULT,
         messageId: resultMessageId,
         toolCallId,
         content,
@@ -647,7 +648,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         // Use CUSTOM event or a new event type for large result chunks
         // to avoid collision with ToolCallChunk which is for arguments
         this.transport.emit({
-          type: "CUSTOM",
+          type: EventType.CUSTOM,
           name: "LARGE_RESULT_CHUNK",
           value: {
             toolCallId,
@@ -665,7 +666,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const truncatedContent = content.substring(0, Math.max(0, availableSpace)) + truncationMessage;
 
     this.transport.emit({
-      type: "TOOL_CALL_RESULT",
+      type: EventType.TOOL_CALL_RESULT,
       messageId: resultMessageId,
       toolCallId,
       content: truncatedContent,

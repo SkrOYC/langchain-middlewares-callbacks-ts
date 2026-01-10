@@ -16,6 +16,7 @@ import { AGUICallbackHandler, type AGUICallbackHandlerOptions } from "./callback
 import { createAGUIMiddleware } from "./middleware/createAGUIMiddleware";
 import type { AGUITransport } from "./transports/types";
 import type { AGUIMiddlewareOptions } from "./middleware/types";
+import { EventType } from "./events";
 
 /**
  * Configuration for creating an AG-UI enabled agent.
@@ -84,7 +85,7 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
           const threadId = run.config?.configurable?.threadId as string | undefined;
           const agentRunId = run.config?.configurable?.runId as string | undefined;
          config.transport.emit({
-           type: "RUN_ERROR",
+           type: EventType.RUN_ERROR,
            message: typeof run.error === "string" ? run.error : (run.error as any)?.message || "Agent execution failed",
            code: "AGENT_EXECUTION_ERROR",
            timestamp: Date.now(),
