@@ -16,6 +16,7 @@ export type {
   // Tool call types
   ToolCall,
   ToolCallUpdate,
+  ToolCallContent,
   ToolCallStatus,
   ToolKind,
   

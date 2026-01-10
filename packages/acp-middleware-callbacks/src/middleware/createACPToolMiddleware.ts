@@ -14,9 +14,10 @@ import type {
   ToolCall,
   ToolCallUpdate,
   SessionId,
+  ToolCallContent,
 } from "../types/acp.js";
 import type { ContentBlockMapper, DefaultContentBlockMapper } from "../utils/contentBlockMapper.js";
-import type { ContentBlock } from "../types/acp.js";
+import { extractLocations } from "../utils/extractLocations.js";
 
 /**
  * Configuration for the ACP tool middleware.
@@ -42,10 +43,10 @@ export interface ACPToolMiddlewareConfig {
   toolKindMapper?: (toolName: string) => ToolKind;
   
   /**
-   * Custom mapper function to convert tool results to ACP content blocks.
-   * Defaults to converting the result to a text content block.
+   * Custom mapper function to convert tool results to ACP ToolCallContent.
+   * Defaults to wrapping text content in a ToolCallContent structure.
    */
-  contentMapper?: (result: unknown) => ContentBlock[];
+  contentMapper?: (result: unknown) => Array<ToolCallContent>;
   
   /**
    * Custom content block mapper for converting between
@@ -55,53 +56,35 @@ export interface ACPToolMiddlewareConfig {
 }
 
 /**
- * Default content mapper that converts a tool result to a text content block.
+ * Default content mapper that converts a tool result to a ToolCallContent.
  * 
  * @param result - The tool result to convert
- * @returns Array containing a single text content block
+ * @returns Array containing a single ToolCallContent with wrapped text content
  */
-function defaultContentMapper(result: unknown): ContentBlock[] {
+function defaultContentMapper(result: unknown): Array<ToolCallContent> {
+  let text = "";
   if (result === undefined || result === null) {
-    return [{
-      type: "text",
-      _meta: null,
-      annotations: null,
-      text: String(result ?? ""),
-    }];
-  }
-  
-  if (typeof result === "string") {
-    return [{
-      type: "text",
-      _meta: null,
-      annotations: null,
-      text: result,
-    }];
-  }
-  
-  if (typeof result === "object") {
+    text = String(result ?? "");
+  } else if (typeof result === "string") {
+    text = result;
+  } else if (typeof result === "object") {
     try {
-      return [{
-        type: "text",
-        _meta: null,
-        annotations: null,
-        text: JSON.stringify(result, null, 2),
-      }];
+      text = JSON.stringify(result, null, 2);
     } catch {
-      return [{
-        type: "text",
-        _meta: null,
-        annotations: null,
-        text: String(result),
-      }];
+      text = String(result);
     }
+  } else {
+    text = String(result);
   }
   
   return [{
-    type: "text",
-    _meta: null,
-    annotations: null,
-    text: String(result),
+    type: "content",
+    content: {
+      type: "text",
+      _meta: null,
+      annotations: null,
+      text,
+    },
   }];
 }
 
@@ -171,35 +154,6 @@ export function mapToolKind(toolName: string): ToolKind {
   }
   
   return 'other';
-}
-
-/**
- * Extracts location information from tool arguments.
- * Looks for common path-related keys in the arguments.
- * 
- * @param args - The tool arguments
- * @returns Array of location objects with path property
- */
-function extractLocations(args: Record<string, unknown>): Array<{ path: string }> {
-  const locations: Array<{ path: string }> = [];
-  
-  // Check for common path keys
-  const pathKeys = ['path', 'file', 'filePath', 'filepath', 'targetPath', 'sourcePath', 'uri', 'url'];
-  
-  for (const key of pathKeys) {
-    if (args[key] && typeof args[key] === 'string') {
-      locations.push({ path: args[key] as string });
-    } else if (args[key] && Array.isArray(args[key])) {
-      // Handle array of paths
-      for (const item of args[key] as unknown[]) {
-        if (typeof item === 'string') {
-          locations.push({ path: item });
-        }
-      }
-    }
-  }
-  
-  return locations;
 }
 
 /**
@@ -345,23 +299,12 @@ export function createACPToolMiddleware(
         
         // 4. Emit completed status
         if (emitToolResults) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const toolContent: any = {
-            type: "content",
-            content: {
-              type: "text",
-              _meta: null,
-              annotations: null,
-              text: typeof result === "string" ? result : JSON.stringify(result, null, 2),
-            },
-          };
-          
           const completedUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
             sessionUpdate: "tool_call_update",
             toolCallId,
             status: "completed",
             _meta: null,
-            content: [toolContent],
+            content: contentMapper(result),
             rawOutput: result,
           };
           
@@ -381,23 +324,12 @@ export function createACPToolMiddleware(
       } catch (error) {
         // 4. Emit failed status
         const errorMessage = error instanceof Error ? error.message : String(error);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const errorContent: any = {
-          type: "content",
-          content: {
-            type: "text",
-            _meta: null,
-            annotations: null,
-            text: errorMessage,
-          },
-        };
-        
         const failedUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
           sessionUpdate: "tool_call_update",
           toolCallId,
           status: "failed",
           _meta: null,
-          content: [errorContent],
+          content: contentMapper(errorMessage),
           rawOutput: error,
         };
         

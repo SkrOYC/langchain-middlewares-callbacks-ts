@@ -9,9 +9,10 @@
 
 import { createMiddleware } from "langchain";
 import { z } from "zod";
-import type { ToolKind, ToolCall, ToolCallUpdate, SessionId, PermissionOptionKind, RequestPermissionRequest, RequestPermissionResponse } from "../types/acp.js";
+import type { ToolKind, ToolCall, ToolCallUpdate, SessionId, PermissionOptionKind, RequestPermissionRequest, RequestPermissionResponse, ToolCallContent } from "../types/acp.js";
 import type { PermissionPolicyConfig } from "../types/middleware.js";
 import { mapToolKind } from "./createACPToolMiddleware.js";
+import { extractLocations } from "../utils/extractLocations.js";
 
 /**
  * Structure of the selected permission outcome.
@@ -59,6 +60,30 @@ export interface ACPPermissionMiddlewareConfig {
    * Defaults to mapToolKind() from createACPToolMiddleware.
    */
   toolKindMapper?: (toolName: string) => ToolKind;
+  
+  /**
+   * Custom mapper function to convert error messages to ACP ToolCallContent.
+   * Defaults to wrapping message in a ToolCallContent structure.
+   */
+  contentMapper?: (message: string) => Array<ToolCallContent>;
+}
+
+/**
+ * Default content mapper that converts a message to a ToolCallContent.
+ * 
+ * @param message - The message to convert
+ * @returns Array containing a single ToolCallContent with wrapped text
+ */
+function defaultContentMapper(message: string): Array<ToolCallContent> {
+  return [{
+    type: "content",
+    content: {
+      type: "text",
+      _meta: null,
+      annotations: null,
+      text: message,
+    },
+  }];
 }
 
 /**
@@ -76,6 +101,17 @@ const DEFAULT_PERMISSION_OPTIONS: Array<{
 ];
 
 /**
+ * Escapes special regex characters in a string.
+ * Prevents ReDoS vulnerabilities when patterns contain regex operators.
+ * 
+ * @param str - The string to escape
+ * @returns The escaped string
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Checks if a tool name matches a pattern in the permission policy.
  * Supports exact matches and wildcard patterns.
  * 
@@ -91,7 +127,8 @@ function matchesPattern(toolName: string, pattern: string): boolean {
   
   // Wildcard match (e.g., "*", "file_*", "*_file")
   if (pattern.includes('*')) {
-    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+    const escapedPattern = escapeRegExp(pattern);
+    const regex = new RegExp('^' + escapedPattern.replace(/\*/g, '.*') + '$');
     return regex.test(toolName);
   }
   
@@ -117,33 +154,6 @@ function findMatchingPolicy(
   }
   
   return undefined;
-}
-
-/**
- * Extracts location information from tool arguments.
- * 
- * @param args - The tool arguments
- * @returns Array of location objects with path property
- */
-function extractLocations(args: Record<string, unknown>): Array<{ path: string }> {
-  const locations: Array<{ path: string }> = [];
-  
-  // Check for common path keys
-  const pathKeys = ['path', 'file', 'filePath', 'filepath', 'targetPath', 'sourcePath', 'uri', 'url'];
-  
-  for (const key of pathKeys) {
-    if (args[key] && typeof args[key] === 'string') {
-      locations.push({ path: args[key] as string });
-    } else if (args[key] && Array.isArray(args[key])) {
-      for (const item of args[key] as unknown[]) {
-        if (typeof item === 'string') {
-          locations.push({ path: item });
-        }
-      }
-    }
-  }
-  
-  return locations;
 }
 
 /**
@@ -183,6 +193,7 @@ export function createACPPermissionMiddleware(
   }
   
   const toolKindMapper = config.toolKindMapper ?? mapToolKind;
+  const contentMapper = config.contentMapper ?? defaultContentMapper;
   const { transport } = config;
   
   // Per-thread state for tracking permission context
@@ -205,6 +216,39 @@ export function createACPPermissionMiddleware(
    */
   function cleanupThreadState(threadId: string): void {
     threadState.delete(threadId);
+  }
+  
+  /**
+   * Emits a permission denied/failed update and throws an error.
+   * 
+   * @param reason - The reason for the failure
+   * @param toolCallId - The tool call ID
+   * @param sessionId - The session ID
+   * @throws Error with the failure reason
+   */
+  async function emitPermissionDenied(
+    reason: string,
+    toolCallId: string,
+    sessionId: SessionId
+  ): Promise<never> {
+    const failedUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      status: "failed",
+      _meta: null,
+      content: contentMapper(reason),
+    };
+    
+    try {
+      await transport.sessionUpdate({
+        sessionId,
+        update: failedUpdate,
+      });
+    } catch {
+      // Fail-safe: don't let emit errors break agent execution
+    }
+    
+    throw new Error(reason);
   }
   
   return createMiddleware({
@@ -296,35 +340,7 @@ export function createACPPermissionMiddleware(
       
       // Handle cancelled outcome
       if (outcome.outcome === "cancelled") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const errorContent: any = {
-          type: "content",
-          content: {
-            type: "text",
-            _meta: null,
-            annotations: null,
-            text: "Permission request cancelled by user",
-          },
-        };
-        
-        const failedUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
-          sessionUpdate: "tool_call_update",
-          toolCallId,
-          status: "failed",
-          _meta: null,
-          content: [errorContent],
-        };
-        
-        try {
-          await transport.sessionUpdate({
-            sessionId,
-            update: failedUpdate,
-          });
-        } catch {
-          // Fail-safe: don't let emit errors break agent execution
-        }
-        
-        throw new Error("Permission request cancelled by user");
+        await emitPermissionDenied("Permission request cancelled by user", toolCallId, sessionId);
       }
       
       // Handle selected outcome
@@ -333,35 +349,7 @@ export function createACPPermissionMiddleware(
         
         // Check for denial options
         if (optionId === "rejectOnce" || optionId === "rejectAlways") {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const errorContent: any = {
-            type: "content",
-            content: {
-              type: "text",
-              _meta: null,
-              annotations: null,
-              text: "Permission denied by user",
-            },
-          };
-          
-          const failedUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
-            sessionUpdate: "tool_call_update",
-            toolCallId,
-            status: "failed",
-            _meta: null,
-            content: [errorContent],
-          };
-          
-          try {
-            await transport.sessionUpdate({
-              sessionId,
-              update: failedUpdate,
-            });
-          } catch {
-            // Fail-safe: don't let emit errors break agent execution
-          }
-          
-          throw new Error("Permission denied by user");
+          await emitPermissionDenied("Permission denied by user", toolCallId, sessionId);
         }
         
         // Handle persistent permissions for "allowAlways"

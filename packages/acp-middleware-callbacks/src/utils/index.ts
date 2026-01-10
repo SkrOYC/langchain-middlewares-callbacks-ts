@@ -38,6 +38,9 @@ export {
   asStopReason,
 } from "./stopReasonMapper.js";
 
+// Shared Utilities
+export { extractLocations } from "./extractLocations.js";
+
 // MCP Tool Loader
 export type { 
   MCPToolServerConfig, 
