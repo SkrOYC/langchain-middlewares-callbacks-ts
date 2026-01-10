@@ -1071,7 +1071,7 @@ type SessionUpdate =
   | { sessionUpdate: "tool_call_update"; /* ToolCallUpdate fields */ }  // STABLE
   | { sessionUpdate: "plan"; plan: Plan }  // STABLE
   | { sessionUpdate: "available_commands_update"; /* AvailableCommandsUpdate */ }  // EXPERIMENTAL
-  | { sessionUpdate: "current_mode_update"; mode: { modeIds: string[]; selectedModeId: string } }  // STABLE
+  | { sessionUpdate: "current_mode_update"; currentModeId: string }  // STABLE
   | { sessionUpdate: "config_option_update"; /* ConfigOptionUpdate */ }  // EXPERIMENTAL
   | { sessionUpdate: "session_info_update"; /* SessionInfoUpdate */ };  // STABLE
 ```
@@ -1079,7 +1079,8 @@ type SessionUpdate =
 **Stability Notes:**
 - `agent_thought_chunk` is only in `schema/schema.unstable.json`, not the stable schema
 - `available_commands_update` and `config_option_update` are explicitly marked `@experimental`
-- `current_mode_update` and `session_info_update` are used in stable API methods despite lacking stability markers
+- `current_mode_update` and `session_info_update` use SDK's SessionUpdate type with proper stability markers
+- Note: `CurrentModeUpdate` (currentModeId) differs from `SessionModeState` (modeIds, currentModeId) - see SDK for details
 
 ---
 

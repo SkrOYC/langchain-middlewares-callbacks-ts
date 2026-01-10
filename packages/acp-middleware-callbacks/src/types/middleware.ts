@@ -12,6 +12,8 @@ import type {
   StopReason,
   ToolKind,
   SessionId,
+  SessionUpdate,
+  ToolCallContent,
 } from "./acp.js";
 import type { ContentBlockMapper } from "../utils/contentBlockMapper.js";
 
@@ -89,8 +91,10 @@ export interface SessionUpdateParams {
   
   /**
    * The session update payload.
+   * Uses the SessionUpdate type from the SDK which includes all variants:
+   * tool_call, tool_call_update, agent_thought_chunk, current_mode_update, etc.
    */
-  update: ToolCallUpdatePayload | ToolCallUpdateResultPayload;
+  update: SessionUpdate;
 }
 
 /**
@@ -156,8 +160,9 @@ export interface ToolCallUpdateResultPayload {
   
   /**
    * Content produced by the tool call.
+   * Uses ToolCallContent which wraps ContentBlock plus tool-specific types (diff, terminal).
    */
-  content?: Array<ContentBlock>;
+  content?: Array<ToolCallContent>;
   
   /**
    * Raw output from the tool.
@@ -405,6 +410,15 @@ export interface ACPCallbackHandlerConfig {
    * @default 50
    */
   maxMessagesInSnapshot?: number;
+  
+  /**
+   * Whether to emit reasoning content as agent_thought_chunk.
+   * When true, reasoning blocks are emitted as agent_thought_chunk with
+   * audience: ['assistant'] annotation per ACP protocol.
+   * When false, reasoning content falls back to agent_message_chunk.
+   * @default true
+   */
+  emitReasoningAsThought?: boolean;
 }
 
 /**

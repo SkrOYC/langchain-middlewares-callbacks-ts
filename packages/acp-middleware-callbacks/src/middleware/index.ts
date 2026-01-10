@@ -22,6 +22,14 @@ export type {
 } from "./createACPPermissionMiddleware.js";
 export { createACPPermissionMiddleware } from "./createACPPermissionMiddleware.js";
 
+// Mode Middleware
+export type { 
+  ACPModeMiddlewareConfig, 
+  ACPModeConfig,
+  ACPModeMiddlewareResult,
+} from "./createACPModeMiddleware.js";
+export { createACPModeMiddleware, STANDARD_MODES } from "./createACPModeMiddleware.js";
+
 // MCP Tool Loader (re-exported from utils for convenience)
 export type { 
   MCPToolServerConfig, 
