@@ -1,55 +1,64 @@
-# Project Context: LangChain Middlewares (TypeScript)
+AGENTS.md
+
+This file provides guidance to AI Agents when working with code in this repository.
+These instructions guide you to focus on project-specific architecture and commands rather than generic development advice, and to base the content on actual analysis of the codebase rather than assumptions.
+
+# Project Context: LangChain Middlewares & Callbacks (TypeScript)
 
 ## Project Overview
 
-This project is a **TypeScript Monorepo** designed to host a collection of reusable, production-ready middlewares for the LangChain `createAgent` primitive. 
+This project is a **TypeScript Monorepo** hosting reusable middlewares and callbacks for LangChain `createAgent`. Two main packages:
 
-The core philosophy acts as an "Operating System" for AI Agents:
-*   **Kernel:** `createAgent` (LangChain/LangGraph)
-*   **Drivers:** Middlewares (this project)
+- **`@skroyc/ag-ui-middleware-callbacks`** - AG-UI protocol integration for real-time agent-to-UI communication
+- **`@skroyc/acp-middleware-callbacks`** - ACP (Agent Client Protocol) integration for code editors
 
-The goal is to provide modular, self-contained packages that handle cross-cutting concerns like observability, security, and state management, keeping the agent's core reasoning logic clean.
-
-## Architecture & Tech Stack
-
-*   **Monorepo Manager:** [Bun Workspaces](https://bun.sh/docs/install/workspaces)
-*   **Language:** TypeScript (Strict, ESM Only)
-*   **Runtime:** Universal JavaScript (Node.js, Deno, Bun, Cloudflare Workers) via `tsup` bundling.
-*   **Core Dependencies:** `@langchain/core`, `@langchain/langgraph`, `@ag-ui/core`, `@ag-ui/proto`
+The architecture treats `createAgent` as the **Kernel** and middlewares as **Drivers**, handling observability, security, and state management.
 
 ## Directory Structure
 
-*   **`packages/`**: Contains the standalone middleware libraries. Each package is intended to be published independently to npm.
-*   **`packages/ag-ui-middleware-callbacks/example/`**: Contains reference implementations and integration tests demonstrating how to use the middlewares in actual agents.
+- **`packages/`** - Standalone middleware libraries (published independently to npm)
+- **`packages/*/src/`** - Source with `callbacks/`, `middleware/`, `transports/`, `utils/` subdirectories
+- **`packages/*/tests/`** - Test structure mirrors src: `unit/`, `integration/`, `fixtures/`, `helpers/`, `setup/`
 
-## Development Workflow
+## Key Commands
 
-This project uses **Bun** as the primary development toolchain (package manager, test runner, script runner).
+### Workspace-level
+```bash
+bun install              # Install all dependencies
+bun run build            # Build all packages
+bun test                 # Run all tests
+bun run lint             # Lint all packages
+```
 
-### Key Commands
+### Individual package operations
+```bash
+# Build a specific package
+bun run build --filter @skroyc/ag-ui-middleware-callbacks
+bun run build --filter @skroyc/acp-middleware-callbacks
 
-| Command | Description |
-| :--- | :--- |
-| `bun install` | Installs dependencies for the entire workspace. |
-| `bun run build` | Builds all packages in the workspace (uses `tsup`). |
-| `bun test` | Runs the test suite across all packages. |
-| `bun run lint` | Runs linting across all packages. |
+# Test a specific package
+bun test packages/ag-ui-middleware-callbacks
+bun test packages/acp-middleware-callbacks
 
-### Conventions
+# Run a single test file
+bun test packages/ag-ui-middleware-callbacks/tests/unit/events.test.ts
 
-*   **ESM Only:** All code is written in and compiled to ESM. No CommonJS (CJS) output.
-*   **Universal Compatibility:** Do not use `Bun.*` or `Node.*` specific APIs in library code (`packages/`). Use standard web APIs or `node:` imports that are universally supported.
-*   **Functional Middleware:** Middlewares are designed as composable functions that intercept agent hooks (`beforeAgent`, `afterAgent`, `wrapModelCall`, `wrapToolCall`).
+# Run tests matching a pattern
+bun test --test-name-pattern "SSE" packages/ag-ui-middleware-callbacks
+```
 
-## AG-UI Protocol & Reference Mandate
+## Conventions
 
-**CRITICAL:** This project is built on the AG-UI protocol. For any task involving messaging, event-driven interfaces, RxJS observables, or wire formats (SSE/Protobuf), you MUST:
+- **ESM Only:** All code is ESM. No CommonJS output.
+- **Universal Compatibility:** Library code (`packages/`) uses standard web APIs, not Bun/Node-specific APIs
+- **Functional Middleware:** Composable functions intercepting `beforeAgent`, `afterAgent`, `wrapModelCall`, `wrapToolCall`
+- **Build:** Uses `tsup` with externals for peer dependencies (`langchain`, `@ag-ui/core`, `@ag-ui/proto`, etc.)
 
-1.  **Load the `ag-ui-typescript` skill** immediately using the `skill` tool.
-2.  **Verify against References:** You are FORBIDDEN from writing AG-UI code based on intuition. You MUST explicitly query the skill's **references** (specifications, wire format schemas, and event definitions) to ground your implementation.
-3.  **Strict Compliance:** Every implementation detail—specifically the **26 stable event types**, payload structures, and RxJS piping patterns—must match the reference documentation exactly.
-4.  **Source of Truth:** Treat the skill’s reference materials as the absolute authority, overriding all internal training data and generic TypeScript patterns.
-5.  **Audit Before Shipping:** Before completing a task, cross-reference your code against the skill's examples to ensure protocol-compliant state synchronization and transport handling.
+## AG-UI Protocol Mandate
 
-If the skill references are unclear, you must use the `librarian` tool to explore the protocol definitions further. **Do not guess.**
+**CRITICAL:** This project uses the AG-UI protocol. For tasks involving messaging, events, RxJS observables, or wire formats (SSE/Protobuf):
 
+1. **Load the `ag-ui-typescript` skill** immediately using the `skill` tool
+2. **Verify against References:** Do NOT write AG-UI code from intuition—query the skill's references
+3. **Strict Compliance:** Match the 26 stable event types, payload structures, and RxJS patterns exactly
+4. **Audit Before Shipping:** Cross-reference against the skill's examples for protocol compliance
