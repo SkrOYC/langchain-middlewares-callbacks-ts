@@ -11,11 +11,8 @@ import { createMiddleware } from "langchain";
 import { z } from "zod";
 import type { 
   SessionId, 
-  SessionNotification,
-  SessionUpdate,
 } from "../types/acp.js";
 import type { ACPMiddlewareConfig } from "../types/middleware.js";
-import { extractSessionState, createSessionStateFromCheckpoint } from "../utils/sessionStateMapper.js";
 
 /**
  * Configuration for the ACP session middleware.
@@ -314,6 +311,12 @@ export function createACPSessionMiddleware(
  * 
  * This function generates a simple checkpointer that can be used with
  * LangGraph's state persistence to save and restore ACP session state.
+ * 
+ * Note: When calling `get()` without a checkpointId, the checkpointer
+ * attempts to find the latest checkpoint by comparing checkpoint IDs.
+ * This works best with numeric versioning (v1, v2, v3, etc.). Other
+ * checkpoint ID formats (timestamps, UUIDs) will be ignored when
+ * determining the "latest" checkpoint.
  * 
  * @param sessionId - The session ID to associate with this checkpointer
  * @returns A store-compatible object for state persistence

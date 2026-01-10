@@ -38,7 +38,3 @@ export * from "./middleware/index.js";
 
 // Callback Exports
 export * from "./callbacks/index.js";
-
-// Re-export middleware and callback functions
-export { createACPSessionMiddleware, createACPCheckpointer } from "./middleware/index.js";
-export { createACPCallbackHandler, ACPCallbackHandler } from "./callbacks/index.js";

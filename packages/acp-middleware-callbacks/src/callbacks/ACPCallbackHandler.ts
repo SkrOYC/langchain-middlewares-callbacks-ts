@@ -38,7 +38,6 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   private currentMessageId: string | null = null;
   private currentTextContent: string = "";
   private currentToolCallId: string | null = null;
-  private currentAgentMessageId: string | null = null;
   private sessionId: string | null = null;
 
   constructor(config: ACPCallbackHandlerConfig) {
@@ -343,16 +342,26 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
 
   /**
    * Generates a unique message ID.
+   * Uses a combination of timestamp, counter, and random suffix for uniqueness.
    */
   private generateMessageId(): string {
-    return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    const counter = (this as any)._messageCounter ?? ((this as any)._messageCounter = 0);
+    (this as any)._messageCounter = counter + 1;
+    return `msg-${timestamp}-${counter}-${random}`;
   }
 
   /**
    * Generates a unique tool call ID.
+   * Uses a combination of timestamp, counter, and random suffix for uniqueness.
    */
   private generateToolCallId(): string {
-    return `tool-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    const counter = (this as any)._toolCallCounter ?? ((this as any)._toolCallCounter = 0);
+    (this as any)._toolCallCounter = counter + 1;
+    return `tool-${timestamp}-${counter}-${random}`;
   }
 
   /**

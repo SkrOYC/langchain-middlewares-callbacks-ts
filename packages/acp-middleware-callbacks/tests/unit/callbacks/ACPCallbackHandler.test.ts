@@ -188,6 +188,29 @@ describe("ACPCallbackHandler", () => {
       expect(mockConnection.sendAgentMessage).toHaveBeenCalled();
     });
 
+    test("sends sessionUpdate when sessionId is set", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      // Set session ID to trigger sessionUpdate path
+      handler.setSessionId("test-session-123");
+      
+      await handler.handleToolStart({ name: "readFile" }, "path/to/file.txt", "run-1");
+      
+      // Should call sessionUpdate when sessionId is present
+      expect(mockConnection.sessionUpdate).toHaveBeenCalled();
+      
+      // Verify the sessionUpdate was called with correct structure
+      const sessionUpdateCall = mockConnection.sessionUpdate.mock.calls[0][0];
+      expect(sessionUpdateCall.sessionId).toBe("test-session-123");
+      expect(sessionUpdateCall.update.toolCallId).toBeDefined();
+      expect(sessionUpdateCall.update.kind).toBe("read");
+      expect(sessionUpdateCall.update.status).toBe("in_progress");
+      expect(sessionUpdateCall.update.rawInput).toBe("path/to/file.txt");
+    });
+
     test("handles multiple tool calls", async () => {
       const mockConnection = createMockConnection();
       const handler = new ACPCallbackHandler({
@@ -214,6 +237,29 @@ describe("ACPCallbackHandler", () => {
       expect(mockConnection.sendAgentMessage).toHaveBeenCalledTimes(2);
     });
 
+    test("sends sessionUpdate result when sessionId is set", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      // Set session ID to trigger sessionUpdate path
+      handler.setSessionId("test-session-123");
+      
+      await handler.handleToolStart({ name: "readFile" }, "file.txt", "run-1");
+      await handler.handleToolEnd("File content", "run-1");
+      
+      // Should call sessionUpdate for both start and end
+      expect(mockConnection.sessionUpdate).toHaveBeenCalledTimes(2);
+      
+      // Verify the second call (end) has result
+      const endCall = mockConnection.sessionUpdate.mock.calls[1][0];
+      expect(endCall.update.sessionUpdate).toBe("tool_call_update");
+      expect(endCall.update.toolCallId).toBeDefined();
+      expect(endCall.update.status).toBe("completed");
+      expect(endCall.update.rawOutput).toBe("File content");
+    });
+
     test("handles end without start gracefully", async () => {
       const mockConnection = createMockConnection();
       const handler = new ACPCallbackHandler({
@@ -237,6 +283,29 @@ describe("ACPCallbackHandler", () => {
       await handler.handleToolError(new Error("File not found"), "run-1");
       
       expect(mockConnection.sendAgentMessage).toHaveBeenCalledTimes(2);
+    });
+
+    test("sends sessionUpdate error when sessionId is set", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      // Set session ID to trigger sessionUpdate path
+      handler.setSessionId("test-session-123");
+      
+      await handler.handleToolStart({ name: "readFile" }, "file.txt", "run-1");
+      await handler.handleToolError(new Error("File not found"), "run-1");
+      
+      // Should call sessionUpdate for both start and error
+      expect(mockConnection.sessionUpdate).toHaveBeenCalledTimes(2);
+      
+      // Verify the error call
+      const errorCall = mockConnection.sessionUpdate.mock.calls[1][0];
+      expect(errorCall.update.sessionUpdate).toBe("tool_call_update");
+      expect(errorCall.update.toolCallId).toBeDefined();
+      expect(errorCall.update.status).toBe("failed");
+      expect(errorCall.update.rawOutput).toBeDefined();
     });
   });
 
@@ -300,7 +369,8 @@ describe("ACPCallbackHandler", () => {
       await handler.handleLLMNewToken("token", {}, "run-1");
       
       const call = mockConnection.sendAgentMessage.mock.calls[0][0];
-      expect(call.messageId).toMatch(/^msg-\d+-[a-z0-9]+$/);
+      // Format: msg-timestamp-counter-random
+      expect(call.messageId).toMatch(/^msg-\d+-\d+-[a-z0-9]+$/);
     });
   });
 
