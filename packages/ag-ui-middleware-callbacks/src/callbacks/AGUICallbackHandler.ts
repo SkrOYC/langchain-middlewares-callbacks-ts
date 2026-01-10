@@ -9,7 +9,7 @@ import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
 import { expandEvent } from "../utils/eventNormalizer";
 import type { AGUITransport } from "../transports/types";
-import { EventType } from "../events";
+import { EventType, type TextMessageChunkEvent, type ToolCallChunkEvent } from "../events";
 
 /**
  * Configuration options for the callback handler.
@@ -86,7 +86,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       messageId,
       role,
       delta,
-    } as any);
+    } as TextMessageChunkEvent);
     
     for (const event of events) {
       await this.transport.emit(event);
@@ -117,7 +117,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       toolCallName,
       delta,
       parentMessageId,
-    } as any);
+    } as ToolCallChunkEvent);
     
     for (const event of events) {
       await this.transport.emit(event);
