@@ -167,7 +167,7 @@ export class DefaultContentBlockMapper implements ContentBlockMapper {
    * @param block - The ACP content block to convert
    * @returns The equivalent LangChain content block
    */
-  fromACP(block: ContentBlock): ContentBlock {
+  fromACP(block: ContentBlock): LangChainContentBlock {
     switch (block.type) {
       case "text":
         return this.textFromACP(block);
@@ -227,7 +227,7 @@ export class DefaultContentBlockMapper implements ContentBlockMapper {
       type: "image",
       _meta: block._meta || null,
       annotations: this.mapAnnotations(block.annotations) ?? null,
-      data: block.data || block.url || "",
+      data: block.data || "",
       mimeType: block.mimeType || "image/png",
       uri: (block.url || null) as string | null,
     };
@@ -364,9 +364,9 @@ export class DefaultContentBlockMapper implements ContentBlockMapper {
     if (!langChainAnnotations) return null;
     return {
       _meta: null,
-      audience: (langChainAnnotations.audience as Array<Role>) || null,
-      lastModified: (langChainAnnotations.lastModified as string) || null,
-      priority: (langChainAnnotations.priority as number) || null,
+      audience: (langChainAnnotations.audience as Array<Role>) ?? null,
+      lastModified: (langChainAnnotations.lastModified as string) ?? null,
+      priority: (langChainAnnotations.priority as number) ?? null,
     };
   }
   

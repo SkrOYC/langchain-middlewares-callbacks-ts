@@ -27,11 +27,6 @@ type RunnableConfig = Record<string, unknown>;
 type AgentState = Record<string, unknown>;
 
 /**
- * Generic agent state type.
- */
-type AgentState = Record<string, unknown>;
-
-/**
  * Configuration for the ACP session middleware.
  * 
  * This middleware handles session lifecycle events and state management

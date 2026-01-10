@@ -14,10 +14,10 @@
  * ## Quick Start
  * 
  * ```typescript
- * import { createACPCompatibleAgent } from '@skroyc/acp-middleware-callbacks';
+ * import { createACPAgent } from '@skroyc/acp-middleware-callbacks';
  * 
  * // Create an ACP-compatible agent
- * const agent = createACPCompatibleAgent({
+ * const agent = createACPAgent({
  *   model: yourModel,
  *   tools: yourTools,
  *   transport: yourACPTransport,
