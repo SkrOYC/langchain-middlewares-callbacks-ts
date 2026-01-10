@@ -107,8 +107,8 @@ export function mapToolKind(toolName: string): ToolKind {
   const name = toolName.toLowerCase();
   
   // Network requests (check before generic "get")
-  if (name.includes('fetch') || name.includes('http') || name.includes('curl') || 
-      name.includes('wget') || name.includes('url')) {
+  if (name.includes('fetch') || name.includes('http') || name.includes('api') ||
+      name.includes('curl') || name.includes('wget') || name.includes('url')) {
     return 'fetch';
   }
   
@@ -220,29 +220,28 @@ export function createACPToolMiddleware(
     wrapToolCall: async (request, handler) => {
       // Extract tool call information from the request
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const toolCallId = (request as any).toolCallId ?? (request as any).id ?? "unknown";
+      const requestAny = request as any;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const toolName = (request as any).name ?? (request as any).tool ?? "unknown_tool";
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const args = (request as any).args ?? (request as any).input ?? {};
+      const runtimeAny = requestAny.runtime as any;
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const runtimeAny = (handler as any).runtime as any;
-      const agentConfig = runtimeAny.config ?? {};
-      const threadId = runtimeAny.context?.threadId ?? 
-                       runtimeAny.context?.thread_id ?? 
-                       (agentConfig.configurable?.thread_id as string) ??
+      const toolCallId = requestAny.toolCall?.id ?? "unknown";
+      const toolName = requestAny.toolCall?.name ?? "unknown_tool";
+      const args = requestAny.toolCall?.args ?? {};
+      
+      const agentConfig = runtimeAny?.config ?? {};
+      const threadId = runtimeAny?.context?.threadId ?? 
+                       runtimeAny?.context?.thread_id ?? 
+                       (agentConfig?.configurable?.thread_id as string) ??
                        "default";
       
       const threadStateInstance = getThreadState(threadId);
       const sessionId = threadStateInstance.sessionId ?? 
-                        (runtimeAny.context?.sessionId ?? 
-                         runtimeAny.context?.session_id ?? 
-                         (agentConfig.configurable?.session_id as SessionId | undefined));
+                        (runtimeAny?.context?.sessionId ?? 
+                         runtimeAny?.context?.session_id ?? 
+                         (agentConfig?.configurable?.session_id as SessionId | undefined));
       
       const toolKind = toolKindMapper(toolName);
       const locations = extractLocations(args as Record<string, unknown>);
-      const contentBlockMapperInstance = contentBlockMapper;
       
       // 1. Emit pending tool call (with sessionUpdate discriminator)
       const toolCallPayload: ToolCall & { sessionUpdate: "tool_call" } = {
@@ -259,7 +258,7 @@ export function createACPToolMiddleware(
       };
       
       // Get the connection from runtime to send session updates
-      const connection = (runtimeAny as any).connection;
+      const connection = runtimeAny?.connection;
       
       if (connection?.sessionUpdate) {
         try {
