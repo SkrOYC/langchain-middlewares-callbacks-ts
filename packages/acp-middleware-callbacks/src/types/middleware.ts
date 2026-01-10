@@ -255,6 +255,12 @@ export interface PermissionPolicyConfig {
   requiresPermission?: boolean;
   
   /**
+   * The tool kind for categorization in permission requests.
+   * If not specified, will be inferred from the tool name.
+   */
+  kind?: ToolKind;
+  
+  /**
    * Human-readable description of what the tool does.
    * Shown to users when requesting permission.
    */
