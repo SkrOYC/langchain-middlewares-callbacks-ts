@@ -22,6 +22,7 @@ export type {
   
   // Content block types
   ContentBlock,
+  ContentChunk,
   TextContent,
   ImageContent,
   AudioContent,
