@@ -5,37 +5,37 @@ import { EventType, EventSchemas } from "../../src/events";
 describe("Event Type Definitions", () => {
   test("ACTIVITY_SNAPSHOT event has correct structure", () => {
     const event: AGUIEvent = {
-      type: "ACTIVITY_SNAPSHOT",
+      type: EventType.ACTIVITY_SNAPSHOT,
       messageId: "activity-1",
       activityType: "PLAN",
       content: { tasks: ["task1"] },
       replace: true
     };
-    expect(event.type).toBe("ACTIVITY_SNAPSHOT");
+    expect(event.type).toBe(EventType.ACTIVITY_SNAPSHOT);
   });
 
   test("ACTIVITY_DELTA event has correct structure", () => {
     const event: AGUIEvent = {
-      type: "ACTIVITY_DELTA",
+      type: EventType.ACTIVITY_DELTA,
       messageId: "activity-1",
       activityType: "PLAN",
       patch: [{ op: "add", path: "/tasks/-", value: "task2" }]
     };
-    expect(event.type).toBe("ACTIVITY_DELTA");
+    expect(event.type).toBe(EventType.ACTIVITY_DELTA);
   });
 
   test("THINKING_START event has correct structure", () => {
     const event: AGUIEvent = {
-      type: "THINKING_START",
+      type: EventType.THINKING_START,
       messageId: "think-1",
       title: "Analyzing request"
     };
-    expect(event.type).toBe("THINKING_START");
+    expect(event.type).toBe(EventType.THINKING_START);
   });
 
   test("MESSAGES_SNAPSHOT event uses Message objects", () => {
     const event: AGUIEvent = {
-      type: "MESSAGES_SNAPSHOT",
+      type: EventType.MESSAGES_SNAPSHOT,
       messages: [
         {
           id: "msg-1",
@@ -53,7 +53,7 @@ describe("Event Type Definitions", () => {
         }
       ]
     };
-    expect(event.type).toBe("MESSAGES_SNAPSHOT");
+    expect(event.type).toBe(EventType.MESSAGES_SNAPSHOT);
     expect(event.messages).toHaveLength(2);
   });
 });

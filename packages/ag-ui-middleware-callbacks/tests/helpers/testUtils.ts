@@ -10,6 +10,7 @@ import { tool } from "langchain";
 import { AIMessage, HumanMessage, AIMessageChunk } from "@langchain/core/messages";
 import { expect } from "bun:test";
 import type { AGUITransport } from "../../src/transports/types";
+import type { EventType } from "../../src/events";
 
 // ============================================================================
 // Mock Transport Factory
@@ -479,14 +480,14 @@ export function createTestAgent(
 /**
  * Extract event types from transport emissions
  */
-export function getEventTypes(transport: MockTransport): string[] {
+export function getEventTypes(transport: MockTransport): EventType[] {
   return transport.events.map((event: any) => event.type);
 }
 
 /**
  * Get events of a specific type
  */
-export function getEventsByType(transport: MockTransport, type: string): any[] {
+export function getEventsByType(transport: MockTransport, type: EventType | string): any[] {
   return transport.events.filter((event: any) => event.type === type);
 }
 
@@ -495,7 +496,7 @@ export function getEventsByType(transport: MockTransport, type: string): any[] {
  */
 export function expectEventCount(
   transport: MockTransport,
-  type: string,
+  type: EventType | string,
   expectedCount: number
 ): void {
   const actualCount = getEventsByType(transport, type).length;
@@ -507,7 +508,7 @@ export function expectEventCount(
  */
 export function expectEvent(
   transport: MockTransport,
-  type: string,
+  type: EventType | string,
   validator?: (event: any) => void
 ): any {
   const events = getEventsByType(transport, type);
@@ -523,7 +524,7 @@ export function expectEvent(
  */
 export function expectEventOrder(
   transport: MockTransport,
-  expectedOrder: string[]
+  expectedOrder: (EventType | string)[]
 ): void {
   const actualOrder = getEventTypes(transport);
   
@@ -538,7 +539,7 @@ export function expectEventOrder(
 /**
  * Get the index of a specific event type
  */
-export function getEventIndex(transport: MockTransport, type: string): number {
+export function getEventIndex(transport: MockTransport, type: EventType | string): number {
   return getEventTypes(transport).indexOf(type);
 }
 

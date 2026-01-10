@@ -1,5 +1,6 @@
 import { test, expect, mock } from "bun:test";
 import { createSSETransport } from "../../../src/transports/createSSETransport";
+import { EventType } from "../../../src/events";
 
 test("SSE transport sets correct headers", async () => {
   const mockReq = {
@@ -26,10 +27,10 @@ test("SSE transport emits events as SSE data", async () => {
   const transport = createSSETransport(mockReq, mockRes);
 
   const event = {
-    type: "TEXT_MESSAGE_START",
+    type: EventType.TEXT_MESSAGE_START,
     messageId: "msg-123",
     role: "assistant"
-  } as const;
+  };
 
   transport.emit(event);
   expect(mockRes.write).toHaveBeenCalledWith(`data: ${JSON.stringify(event)}\n\n`);
@@ -77,7 +78,7 @@ test("SSE transport handles backpressure with queue", async () => {
 
   // Emit multiple events rapidly
   for (let i = 0; i < 10; i++) {
-    transport.emit({ type: "RUN_STARTED", threadId: "test", runId: `run-${i}` });
+    transport.emit({ type: EventType.RUN_STARTED, threadId: "test", runId: `run-${i}` });
   }
 
   expect(mockRes.write).toHaveBeenCalledTimes(10);
@@ -156,7 +157,7 @@ test("SSE transport handles write errors in drain gracefully", async () => {
 
   // Should not throw despite write error in drain()
   expect(() => {
-    transport.emit({ type: "RUN_STARTED", threadId: "test", runId: "run-1" });
+    transport.emit({ type: EventType.RUN_STARTED, threadId: "test", runId: "run-1" });
   }).not.toThrow();
 
   // Write was attempted but error caught

@@ -3,10 +3,13 @@ import type {
   TextMessageStartEvent,
   TextMessageContentEvent,
   TextMessageEndEvent,
+  TextMessageChunkEvent,
   ToolCallStartEvent,
   ToolCallArgsEvent,
   ToolCallEndEvent,
+  ToolCallChunkEvent,
 } from "../events";
+import { EventType } from "../events";
 import { generateId } from "./idGenerator";
 
 /**
@@ -17,30 +20,31 @@ import { generateId } from "./idGenerator";
  */
 export function expandEvent(event: AGUIEvent): AGUIEvent[] {
   switch (event.type) {
-    case "TEXT_MESSAGE_CHUNK": {
-      const messageId = event.messageId || generateId();
+    case EventType.TEXT_MESSAGE_CHUNK: {
+      const chunkEvent = event as TextMessageChunkEvent;
+      const messageId = chunkEvent.messageId || generateId();
       const results: AGUIEvent[] = [];
 
-      if (event.role) {
+      if (chunkEvent.role) {
         results.push({
-          type: "TEXT_MESSAGE_START",
+          type: EventType.TEXT_MESSAGE_START,
           messageId,
-          role: event.role,
+          role: chunkEvent.role,
         } as TextMessageStartEvent);
       }
 
-      if (event.delta) {
+      if (chunkEvent.delta) {
         results.push({
-          type: "TEXT_MESSAGE_CONTENT",
+          type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
-          delta: event.delta,
+          delta: chunkEvent.delta,
         } as TextMessageContentEvent);
       }
 
       // If it has a role and delta, we assume it's a complete short message
-      if (event.role && event.delta) {
+      if (chunkEvent.role && chunkEvent.delta) {
         results.push({
-          type: "TEXT_MESSAGE_END",
+          type: EventType.TEXT_MESSAGE_END,
           messageId,
         } as TextMessageEndEvent);
       }
@@ -48,32 +52,33 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
       return results.length > 0 ? results : [event];
     }
 
-    case "TOOL_CALL_CHUNK": {
-      const toolCallId = event.toolCallId || generateId();
+    case EventType.TOOL_CALL_CHUNK: {
+      const chunkEvent = event as ToolCallChunkEvent;
+      const toolCallId = chunkEvent.toolCallId || generateId();
       const results: AGUIEvent[] = [];
 
-      if (event.toolCallName) {
+      if (chunkEvent.toolCallName) {
         results.push({
-          type: "TOOL_CALL_START",
+          type: EventType.TOOL_CALL_START,
           toolCallId,
-          toolCallName: event.toolCallName,
-          parentMessageId: event.parentMessageId,
+          toolCallName: chunkEvent.toolCallName,
+          parentMessageId: chunkEvent.parentMessageId,
         } as ToolCallStartEvent);
       }
 
-      if (event.delta) {
+      if (chunkEvent.delta) {
         results.push({
-          type: "TOOL_CALL_ARGS",
+          type: EventType.TOOL_CALL_ARGS,
           toolCallId,
-          delta: event.delta,
+          delta: chunkEvent.delta,
         } as ToolCallArgsEvent);
       }
 
-      if (event.toolCallName && event.delta) {
+      if (chunkEvent.toolCallName && chunkEvent.delta) {
         results.push({
-          type: "TOOL_CALL_END",
+          type: EventType.TOOL_CALL_END,
           toolCallId,
-          parentMessageId: event.parentMessageId,
+          parentMessageId: chunkEvent.parentMessageId,
         } as ToolCallEndEvent);
       }
 

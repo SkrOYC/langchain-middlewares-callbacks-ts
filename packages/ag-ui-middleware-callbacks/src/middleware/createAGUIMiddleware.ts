@@ -15,6 +15,7 @@ import {
   type AGUIMiddlewareOptions,
 } from "./types";
 import { createValidatingTransport } from "../utils/validation";
+import { EventType } from "../events";
 
 /**
  * Check if validateEvents mode is truthy (true or "strict").
@@ -100,7 +101,7 @@ async function emitActivityUpdate(
     activityTracker.activityContent = finalContent;
 
     transport.emit({
-      type: "ACTIVITY_SNAPSHOT",
+      type: EventType.ACTIVITY_SNAPSHOT,
       messageId: activityId,
       activityType: "AGENT_STEP",
       content: finalContent,
@@ -113,7 +114,7 @@ async function emitActivityUpdate(
       activityTracker.activityContent = finalContent;
 
       transport.emit({
-        type: "ACTIVITY_DELTA",
+        type: EventType.ACTIVITY_DELTA,
         messageId: activityId,
         activityType: "AGENT_STEP",
         patch,
@@ -190,7 +191,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
       try {
         transport.emit({
-          type: "RUN_STARTED",
+          type: EventType.RUN_STARTED,
           threadId,
           runId,
           input: cleanLangChainData(runtimeAny.config?.input),
@@ -210,17 +211,17 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             delete (snapshot as any).messages;
           }
 
-           transport.emit({
-             type: "STATE_SNAPSHOT",
-             snapshot,
-             timestamp: Date.now(),
-           });
-         }
+          transport.emit({
+            type: EventType.STATE_SNAPSHOT,
+            snapshot,
+            timestamp: Date.now(),
+          });
+        }
          
          const stateAny = state as any;
          if (stateAny.messages && Array.isArray(stateAny.messages)) {
            transport.emit({
-             type: "MESSAGES_SNAPSHOT",
+             type: EventType.MESSAGES_SNAPSHOT,
              messages: stateAny.messages.map(mapLangChainMessageToAGUI),
              timestamp: Date.now(),
            });
@@ -261,7 +262,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
       try {
         transport.emit({
-          type: "STEP_STARTED",
+          type: EventType.STEP_STARTED,
           stepName,
           timestamp: Date.now(),
           // REMOVED: runId, threadId
@@ -299,7 +300,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // It uses the same messageId from metadata coordination
 
         transport.emit({
-          type: "STEP_FINISHED",
+          type: EventType.STEP_FINISHED,
           stepName: currentStepName || "",
           timestamp: Date.now(),
           // REMOVED: runId, threadId
@@ -343,7 +344,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           const stateKeys = snapshot ? Object.keys(snapshot).filter(k => snapshot[k] !== undefined && snapshot[k] !== null) : [];
            if (stateKeys.length > 0) {
              transport.emit({
-               type: "STATE_SNAPSHOT",
+               type: EventType.STATE_SNAPSHOT,
                snapshot,
                timestamp: Date.now(),
              });
@@ -373,7 +374,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           }
 
             transport.emit({
-              type: "STATE_SNAPSHOT",
+              type: EventType.STATE_SNAPSHOT,
               snapshot,
               timestamp: Date.now(),
             });
@@ -384,7 +385,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           const error = stateAny.error;
           const errorMessage = error instanceof Error ? error.message : String(error);
           transport.emit({
-            type: "RUN_ERROR",
+            type: EventType.RUN_ERROR,
             message:
               validated.errorDetailLevel === "full" ||
               validated.errorDetailLevel === "message"
@@ -396,7 +397,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           });
         } else {
           transport.emit({
-            type: "RUN_FINISHED",
+            type: EventType.RUN_FINISHED,
             threadId: threadId!,
             runId: runId!,
             result: validated.resultMapper ? validated.resultMapper(state) : undefined,

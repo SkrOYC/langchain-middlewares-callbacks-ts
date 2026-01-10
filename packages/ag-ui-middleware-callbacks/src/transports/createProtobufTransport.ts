@@ -15,8 +15,9 @@
  */
 
 import { encode, decode, AGUI_MEDIA_TYPE } from '@ag-ui/proto';
-import type { AGUIEvent } from "../events";
+import type { AGUIEvent, MessagesSnapshotEvent } from "../events";
 import type { AGUITransport, ProtobufTransport } from "./types";
+import { EventType } from "../events";
 
 /**
  * Re-export the official AG-UI media type for content negotiation.
@@ -102,21 +103,24 @@ function convertToProtobufEvent(event: AGUIEvent): any {
   const baseEvent: any = { ...event };
   
   // Handle Message objects in MESSAGES_SNAPSHOT
-  if (event.type === "MESSAGES_SNAPSHOT" && event.messages) {
-    baseEvent.messages = event.messages.map((msg: any) => ({
-      ...msg,
-      // Convert tool_calls to toolCalls if present
-      toolCalls: msg.tool_calls?.map((tc: any) => ({
-        id: tc.id,
-        type: tc.type,
-        function: tc.function,
-      })),
-      // Remove snake_case version
-      tool_calls: undefined,
-      // Convert tool_call_id to toolCallId
-      toolCallId: msg.tool_call_id,
-      tool_call_id: undefined,
-    }));
+  if (event.type === EventType.MESSAGES_SNAPSHOT) {
+    const messagesEvent = event as MessagesSnapshotEvent;
+    if (messagesEvent.messages) {
+      baseEvent.messages = messagesEvent.messages.map((msg: any) => ({
+        ...msg,
+        // Convert tool_calls to toolCalls if present
+        toolCalls: msg.tool_calls?.map((tc: any) => ({
+          id: tc.id,
+          type: tc.type,
+          function: tc.function,
+        })),
+        // Remove snake_case version
+        tool_calls: undefined,
+        // Convert tool_call_id to toolCallId
+        toolCallId: msg.tool_call_id,
+        tool_call_id: undefined,
+      }));
+    }
   }
   
   return baseEvent;
@@ -130,21 +134,23 @@ function convertFromProtobufEvent(event: any): AGUIEvent {
   const result: any = { ...event };
   
   // Handle Message objects in MESSAGES_SNAPSHOT
-  if (event.type === "MESSAGES_SNAPSHOT" && event.messages) {
-    result.messages = event.messages.map((msg: any) => ({
-      ...msg,
-      // Convert toolCalls to tool_calls if present
-      tool_calls: msg.toolCalls?.map((tc: any) => ({
-        id: tc.id,
-        type: tc.type,
-        function: tc.function,
-      })),
-      // Remove camelCase version
-      toolCalls: undefined,
-      // Convert toolCallId to tool_call_id
-      tool_call_id: msg.toolCallId,
-      toolCallId: undefined,
-    }));
+  if (event.type === EventType.MESSAGES_SNAPSHOT) {
+    if (event.messages) {
+      result.messages = event.messages.map((msg: any) => ({
+        ...msg,
+        // Convert toolCalls to tool_calls if present
+        tool_calls: msg.toolCalls?.map((tc: any) => ({
+          id: tc.id,
+          type: tc.type,
+          function: tc.function,
+        })),
+        // Remove camelCase version
+        toolCalls: undefined,
+        // Convert toolCallId to tool_call_id
+        tool_call_id: msg.toolCallId,
+        toolCallId: undefined,
+      }));
+    }
   }
   
   return result;
