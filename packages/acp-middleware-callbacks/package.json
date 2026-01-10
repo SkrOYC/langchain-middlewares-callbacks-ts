@@ -1,0 +1,57 @@
+{
+  "name": "@skroyc/acp-middleware-callbacks",
+  "version": "0.1.0",
+  "description": "LangChain.js integration providing middleware and callbacks for ACP protocol compatibility",
+  "keywords": [
+    "langchain",
+    "acp",
+    "agent-client-protocol",
+    "middleware",
+    "callbacks",
+    "agent",
+    "streaming"
+  ],
+  "author": "SkrOYC <oscar@ocmasesorias.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skrOYC/langchain-middlewares-callbacks-ts.git",
+    "directory": "packages/acp-middleware-callbacks"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "peerDependencies": {
+    "typescript": ">=5"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.12.0",
+    "langchain": "^1.2.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "bun test",
+    "lint": "bun lint"
+  }
+}
