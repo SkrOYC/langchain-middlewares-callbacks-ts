@@ -16,6 +16,161 @@ import type {
 import type { ContentBlockMapper } from "../utils/contentBlockMapper.js";
 
 /**
+ * Connection interface for ACP communication in callback handlers.
+ * This provides a simplified interface that can be implemented by various
+ * transport mechanisms while providing the specific methods needed by
+ * the callback handler.
+ */
+export interface ACPConnection {
+  /**
+   * Sends an agent message to the ACP client.
+   */
+  sendAgentMessage(params: AgentMessageParams): Promise<void>;
+  
+  /**
+   * Sends a session update event to the ACP client.
+   * Used for tool calls, state updates, and other session-level events.
+   */
+  sessionUpdate(params: SessionUpdateParams): Promise<void>;
+  
+  /**
+   * Closes the connection.
+   */
+  close(): Promise<void>;
+}
+
+/**
+ * Parameters for sending an agent message.
+ */
+export interface AgentMessageParams {
+  /**
+   * Unique identifier for this message.
+   */
+  messageId: string;
+  
+  /**
+   * The role of the message sender.
+   */
+  role: "user" | "agent" | "assistant" | "tool";
+  
+  /**
+   * The content blocks of the message.
+   */
+  content: ContentBlock[];
+  
+  /**
+   * The format of the content.
+   */
+  contentFormat: string;
+  
+  /**
+   * Optional text delta for streaming.
+   */
+  delta?: {
+    type: string;
+    text: string;
+  };
+  
+  /**
+   * Optional stop reason for the message.
+   */
+  stopReason?: StopReason;
+}
+
+/**
+ * Parameters for sending a session update.
+ * Used for tool calls and other session-level events.
+ */
+export interface SessionUpdateParams {
+  /**
+   * The session ID for this update.
+   */
+  sessionId: SessionId;
+  
+  /**
+   * The session update payload.
+   */
+  update: ToolCallUpdatePayload | ToolCallUpdateResultPayload;
+}
+
+/**
+ * Payload for tool call creation/update.
+ */
+export interface ToolCallUpdatePayload {
+  /**
+   * Type of session update.
+   */
+  sessionUpdate: "tool_call";
+  
+  /**
+   * Unique identifier for this tool call.
+   */
+  toolCallId: string;
+  
+  /**
+   * Human-readable title for the tool call.
+   */
+  title: string;
+  
+  /**
+   * Category of tool being invoked.
+   */
+  kind?: ToolKind;
+  
+  /**
+   * Current execution status.
+   */
+  status: "pending" | "in_progress";
+  
+  /**
+   * Files involved in this operation.
+   */
+  locations?: Array<{
+    path: string;
+  }>;
+  
+  /**
+   * Raw input parameters.
+   */
+  rawInput?: unknown;
+}
+
+/**
+ * Payload for tool call status updates (completion/failure).
+ */
+export interface ToolCallUpdateResultPayload {
+  /**
+   * Type of session update.
+   */
+  sessionUpdate: "tool_call_update";
+  
+  /**
+   * Unique identifier for this tool call.
+   */
+  toolCallId: string;
+  
+  /**
+   * Updated execution status.
+   */
+  status: "completed" | "failed";
+  
+  /**
+   * Content produced by the tool call.
+   */
+  content?: Array<ContentBlock>;
+  
+  /**
+   * Raw output from the tool.
+   */
+  rawOutput?: unknown;
+  
+  /**
+   * Metadata for the update.
+   */
+  _meta?: Record<string, unknown> | null;
+}
+
+/**
  * Configuration object for Runnable operations.
  * This is a simplified type to avoid direct LangChain dependencies in foundation phase.
  */
@@ -206,10 +361,17 @@ export interface MCPToolOptions {
  */
 export interface ACPCallbackHandlerConfig {
   /**
-   * The transport mechanism for sending ACP events.
-   * Typically created using createACPTransport().
+   * The connection for sending events to the ACP client.
+   * Must implement the ACPConnection interface.
    */
-  transport: ACPTransport;
+  connection: ACPConnection;
+  
+  /**
+   * Optional session ID for this callback handler.
+   * If provided, tool calls will use sessionUpdate events.
+   * Can be set later via setSessionId() method.
+   */
+  sessionId?: string;
   
   /**
    * Whether to emit text content as individual chunks.
