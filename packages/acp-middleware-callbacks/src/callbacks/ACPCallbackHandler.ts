@@ -409,48 +409,66 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   /**
    * Processes content blocks and emits appropriate ACP events.
    * Emits reasoning blocks as agent_thought_chunk with audience: ['assistant'].
+   * Processes blocks in their original order to preserve the intended flow.
    * 
    * @param contentBlocks - Array of content blocks from LangChain
-   * @param messageId - The message ID to use
+   * @param messageId - The message ID to use for agent_message chunks
    */
   private async processContentBlocks(
     contentBlocks: Array<{ type: string; reasoning?: string; text?: string; [key: string]: unknown }>,
     messageId: string | null
   ): Promise<void> {
-    const reasoningBlocks: Array<{ reasoning: string; index?: number }> = [];
-    const textBlocks: Array<{ text: string; index?: number }> = [];
+    // Sort blocks by index to preserve original order if index is available
+    const sortedBlocks = [...contentBlocks].sort((a, b) => {
+      const indexA = (a.index ?? 0) as number;
+      const indexB = (b.index ?? 0) as number;
+      return indexA - indexB;
+    });
     
-    // Separate reasoning and text blocks
-    for (const block of contentBlocks) {
+    // Track accumulated text for consecutive text blocks
+    let accumulatedText = "";
+    let hasAnyContent = false;
+    
+    for (const block of sortedBlocks) {
       if (block.type === "reasoning" && block.reasoning) {
-        reasoningBlocks.push({ 
-          reasoning: block.reasoning, 
-          index: block.index as number | undefined 
-        });
+        // Flush any accumulated text before emitting reasoning
+        if (accumulatedText.length > 0 && messageId) {
+          const textContent: TextContent & { type: "text" } = {
+            type: "text",
+            text: accumulatedText,
+            _meta: null,
+            annotations: null,
+          };
+          
+          await this.connection.sendAgentMessage({
+            messageId,
+            role: "agent",
+            content: [textContent as ContentBlock],
+            contentFormat: "text",
+          });
+          accumulatedText = "";
+        }
+        
+        // Emit reasoning as agent_thought_chunk
+        const thoughtMessageId = this.generateMessageId();
+        await this.sendAgentThoughtChunk(
+          thoughtMessageId,
+          block.reasoning,
+          block.reasoning
+        );
+        hasAnyContent = true;
       } else if (block.type === "text" && block.text) {
-        textBlocks.push({ 
-          text: block.text, 
-          index: block.index as number | undefined 
-        });
+        // Accumulate text blocks
+        accumulatedText += block.text;
+        hasAnyContent = true;
       }
     }
     
-    // Emit reasoning blocks as agent_thought_chunk
-    for (const block of reasoningBlocks) {
-      const thoughtMessageId = this.generateMessageId();
-      await this.sendAgentThoughtChunk(
-        thoughtMessageId,
-        block.reasoning,
-        block.reasoning
-      );
-    }
-    
-    // Emit text blocks as agent_message_chunk
-    if (textBlocks.length > 0 && messageId) {
-      const combinedText = textBlocks.map(b => b.text).join("");
+    // Flush remaining accumulated text
+    if (accumulatedText.length > 0 && messageId) {
       const textContent: TextContent & { type: "text" } = {
         type: "text",
-        text: combinedText,
+        text: accumulatedText,
         _meta: null,
         annotations: null,
       };
@@ -679,6 +697,10 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
         role: "agent",
         content: [textContent as ContentBlock],
         contentFormat: "text",
+        delta: {
+          type: "text",
+          text: delta,
+        },
       });
       return;
     }

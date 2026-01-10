@@ -664,8 +664,10 @@ describe("ACPCallbackHandler", () => {
       // Should have emitted 2 thought chunks for reasoning blocks
       expect(mockConnection.sessionUpdate).toHaveBeenCalledTimes(2);
       
-      // Should have emitted 1 message for combined text blocks
-      expect(mockConnection.sendAgentMessage).toHaveBeenCalledTimes(1);
+      // Should have emitted 2 messages for text blocks:
+      // - First text block flushed before second thought
+      // - Second text block flushed at end
+      expect(mockConnection.sendAgentMessage).toHaveBeenCalledTimes(2);
     });
 
     test("handles output without content blocks", async () => {

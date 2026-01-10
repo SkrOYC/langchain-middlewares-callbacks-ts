@@ -332,6 +332,9 @@ export function createACPModeMiddleware(
         acp_requirePermission: modeConfig.requirePermission,
       };
       
+      // Assign updated configuration back to agent config
+      agentConfig.configurable = updatedConfigurable;
+      
       // Emit current mode update
       await emitModeUpdate(sessionId, currentModeId);
       
