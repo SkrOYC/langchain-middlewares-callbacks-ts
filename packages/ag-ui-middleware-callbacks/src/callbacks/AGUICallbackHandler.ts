@@ -15,6 +15,14 @@ import { EventType, type TextMessageChunkEvent, type ToolCallChunkEvent } from "
  * Configuration options for the callback handler.
  */
 export interface AGUICallbackHandlerOptions {
+  /** Master toggle - when false, no events are emitted (default: true) */
+  enabled?: boolean;
+  /** Emit TEXT_MESSAGE events: START, CONTENT, END (default: true) */
+  emitTextMessages?: boolean;
+  /** Emit TOOL_CALL events: START, ARGS, END, RESULT (default: true) */
+  emitToolCalls?: boolean;
+  /** Emit THINKING events: START, TEXT_MESSAGE_*, END (default: true) */
+  emitThinking?: boolean;
   /** Maximum payload size in bytes for UI events (default: 50KB) */
   maxUIPayloadSize?: number;
   /** Whether to chunk large payloads instead of truncating */
@@ -39,15 +47,62 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private pendingToolCalls = new Map<string, string[]>();
   private accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
   private transport: AGUITransport;
-  
+
+  private _enabled: boolean;
+  private _emitTextMessages: boolean;
+  private _emitToolCalls: boolean;
+  private _emitThinking: boolean;
+
   private maxUIPayloadSize: number;
   private chunkLargeResults: boolean;
 
   constructor(transport: AGUITransport, options?: AGUICallbackHandlerOptions) {
     super({ raiseError: false });
     this.transport = transport;
+    this._enabled = options?.enabled ?? true;
+    this._emitTextMessages = options?.emitTextMessages ?? true;
+    this._emitToolCalls = options?.emitToolCalls ?? true;
+    this._emitThinking = options?.emitThinking ?? true;
     this.maxUIPayloadSize = options?.maxUIPayloadSize ?? 50 * 1024;
     this.chunkLargeResults = options?.chunkLargeResults ?? false;
+  }
+
+  // ==================== Public Accessors for Runtime Toggle ====================
+
+  /** Master toggle - when false, no events are emitted */
+  get enabled(): boolean {
+    return this._enabled;
+  }
+
+  set enabled(value: boolean) {
+    this._enabled = value;
+  }
+
+  /** Control TEXT_MESSAGE event emission */
+  get emitTextMessages(): boolean {
+    return this._emitTextMessages;
+  }
+
+  set emitTextMessages(value: boolean) {
+    this._emitTextMessages = value;
+  }
+
+  /** Control TOOL_CALL event emission */
+  get emitToolCalls(): boolean {
+    return this._emitToolCalls;
+  }
+
+  set emitToolCalls(value: boolean) {
+    this._emitToolCalls = value;
+  }
+
+  /** Control THINKING event emission */
+  get emitThinking(): boolean {
+    return this._emitThinking;
+  }
+
+  set emitThinking(value: boolean) {
+    this._emitThinking = value;
   }
 
   dispose(): void {
@@ -81,6 +136,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     role: "assistant" | "user" | "system" | "developer" = "assistant",
     delta: string
   ): Promise<void> {
+    if (!this.enabled || !this.emitTextMessages) return;
+
     const events = expandEvent({
       type: EventType.TEXT_MESSAGE_CHUNK,
       messageId,
@@ -111,6 +168,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     delta: string,
     parentMessageId?: string
   ): Promise<void> {
+    if (!this.enabled || !this.emitToolCalls) return;
+
     const events = expandEvent({
       type: EventType.TOOL_CALL_CHUNK,
       toolCallId,
@@ -136,6 +195,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _metadata?: Record<string, unknown>,
     _runName?: string
   ): Promise<void> {
+    if (!this.enabled || !this.emitTextMessages) return;
+
     // Priority: metadata.agui_messageId (from middleware) > metadata.run_id > parentRunId > runId
     const agentRunId =
       ((_metadata as any)?.agui_runId as string | undefined) ||
@@ -191,14 +252,16 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _tags?: string[],
     fields?: any
   ): Promise<void> {
+    if (!this.enabled) return;
+
     const messageId = this.messageIds.get(runId);
-    if (!messageId) return;
+    if (!messageId && !this.emitThinking) return;
 
     try {
       // Handle Reasoning Tokens (e.g., DeepSeek, OpenAI o1)
       const reasoningContent = fields?.chunk?.message?.additional_kwargs?.reasoning_content ||
                                fields?.chunk?.message?.additional_kwargs?.reasoning;
-      if (reasoningContent) {
+      if (reasoningContent && this.emitThinking) {
         let thinkingId = this.thinkingIds.get(runId);
         if (!thinkingId) {
           const agentRunId = this.agentRunIds.get(runId) ||
@@ -231,7 +294,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       }
 
       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
-      if (token && token.length > 0) {
+      if (token && token.length > 0 && this.emitTextMessages && messageId) {
         this.transport.emit({
           type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
@@ -242,7 +305,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
       // Emit TOOL_CALL_ARGS for streaming tool arguments (may contain partial JSON fragments)
       const toolCallChunks = fields?.chunk?.message?.tool_call_chunks;
-      if (toolCallChunks && Array.isArray(toolCallChunks)) {
+      if (toolCallChunks && Array.isArray(toolCallChunks) && this.emitToolCalls) {
         const agentRunId = this.agentRunIds.get(runId) || 
                           (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
                           _parentRunId || 
@@ -288,8 +351,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const messageId = this.messageIds.get(runId);
     const thinkingId = this.thinkingIds.get(runId);
 
-     try {
-      // Collect any tool calls from final output that we missed during streaming
+    // Collect tool calls from output for subsequent tool callbacks
+    // We collect even when disabled, so that tool callbacks have the data they need
+    // (tool callbacks will check their own emit flags before emitting)
+    try {
       if (_output && typeof _output === "object") {
         const toolCalls = _output.tool_calls || (_output.kwargs?.tool_calls);
         if (Array.isArray(toolCalls)) {
@@ -316,17 +381,29 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           this.pendingToolCalls.set(agentRunId, pending);
         }
       }
+    } catch {
+      // Fail-safe
+    }
 
-      // Emit TEXT_MESSAGE_END
-      if (messageId) {
-        this.transport.emit({
-          type: EventType.TEXT_MESSAGE_END,
-          messageId,
-          timestamp: Date.now(),
-        });
-      }
+    // Skip event emission if disabled
+    if (!this.enabled) {
+      this.messageIds.delete(runId);
+      this.thinkingIds.delete(runId);
+      return;
+    }
 
-      if (thinkingId) {
+    // Emit TEXT_MESSAGE_END
+    if (messageId && this.emitTextMessages) {
+      this.transport.emit({
+        type: EventType.TEXT_MESSAGE_END,
+        messageId,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Emit THINKING_END events
+    if (thinkingId) {
+      if (this.emitThinking) {
         this.transport.emit({
           type: EventType.THINKING_TEXT_MESSAGE_END,
           messageId: thinkingId,
@@ -336,14 +413,13 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           type: EventType.THINKING_END,
           timestamp: Date.now(),
         });
-        this.thinkingIds.delete(runId);
       }
-
-      // Cleanup
-      this.messageIds.delete(runId);
-    } catch {
-      // Fail-safe
+      // Always clean up - even if emitThinking was toggled off
+      this.thinkingIds.delete(runId);
     }
+
+    // Cleanup
+    this.messageIds.delete(runId);
   }
 
   override async handleLLMError(
@@ -351,6 +427,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     runId: string,
     _parentRunId?: string
   ): Promise<void> {
+    if (!this.enabled) return;
+
     this.messageIds.delete(runId);
     this.thinkingIds.delete(runId);
     const agentRunId = this.agentRunIds.get(runId) ||
@@ -372,6 +450,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     metadata?: Record<string, unknown>,
     runName?: string
   ): Promise<void> {
+    if (!this.enabled || !this.emitToolCalls) return;
+
     let toolCallId = runId;
     
     // Try to get tool name from various sources (in priority order):
@@ -523,6 +603,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     runId: string,
     parentRunId?: string
   ): Promise<void> {
+    if (!this.enabled || !this.emitToolCalls) return;
+
     const toolInfo = this.toolCallInfo.get(runId);
     this.toolCallInfo.delete(runId);
 
@@ -563,6 +645,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     runId: string,
     parentRunId?: string
   ): Promise<void> {
+    if (!this.enabled || !this.emitToolCalls) return;
+
     const toolInfo = this.toolCallInfo.get(runId);
     this.toolCallInfo.delete(runId);
     

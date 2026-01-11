@@ -274,4 +274,492 @@ describe("AGUICallbackHandler", () => {
       );
     });
   });
+
+  describe("Event Emission Control", () => {
+    describe("enabled toggle", () => {
+      test("when enabled=false, no LLM events are emitted", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { enabled: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+        await handler.handleLLMEnd({}, runId);
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+        expect((handler as any).messageIds.has(runId)).toBe(false);
+      });
+
+      test("when enabled=false, no tool events are emitted", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { enabled: false });
+        const toolRunId = "run-tool";
+        const parentRunId = "run-parent";
+
+        await handler.handleToolStart(
+          { name: "weather_tool" },
+          JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
+          toolRunId,
+          parentRunId
+        );
+        await handler.handleToolEnd('{"temp":72}', toolRunId, parentRunId);
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+
+      test("when enabled=false, no thinking events are emitted", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { enabled: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId);
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+
+      test("enabled can be toggled at runtime", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport);
+        const runId = "run-123";
+
+        // First call with enabled=true
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        expect(mockTransport.emit).toHaveBeenCalled();
+
+        // Reset mock
+        mockTransport.emit.mockClear();
+
+        // Disable and call again
+        handler.enabled = false;
+        const runId2 = "run-456";
+        await handler.handleLLMStart(null, ["prompt"], runId2);
+        await handler.handleLLMEnd({}, runId2);
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+
+        // Re-enable and verify events resume
+        handler.enabled = true;
+        const runId3 = "run-789";
+        await handler.handleLLMStart(null, ["prompt"], runId3);
+        expect(mockTransport.emit).toHaveBeenCalled();
+      });
+
+      test("tool calls are collected even when enabled=false but emitToolCalls=true", async () => {
+        // This verifies that handleLLMEnd collects tool calls from output
+        // even when disabled, so subsequent tool callbacks have the data they need
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { enabled: false, emitToolCalls: true });
+        const runId = "run-123";
+
+        // LLM outputs tool calls in its response
+        const output = {
+          tool_calls: [
+            { id: "tc-1", function: { name: "weather_tool", arguments: '{"city":"NYC"}' } }
+          ]
+        };
+
+        await handler.handleLLMEnd(output, runId);
+
+        // Verify tool call was collected for subsequent callbacks
+        const toolCallNames = (handler as any).toolCallNames;
+        expect(toolCallNames.get("tc-1")).toBe("weather_tool");
+
+        const accumulatedToolArgs = (handler as any).accumulatedToolArgs;
+        expect(accumulatedToolArgs.get("tc-1")).toBe('{"city":"NYC"}');
+
+        // But no events were emitted
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+
+      test("enabled=false is respected by emitTextChunk", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { enabled: false });
+
+        await handler.emitTextChunk("msg-123", "assistant", "Hello");
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+
+      test("enabled=false is respected by emitToolChunk", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { enabled: false });
+
+        await handler.emitToolChunk("tc-123", "weather_tool", '{"city":"NYC"}');
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("emitTextMessages toggle", () => {
+      test("when emitTextMessages=false, TEXT_MESSAGE events are suppressed", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { emitTextMessages: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+        await handler.handleLLMEnd({}, runId);
+
+        // No TEXT_MESSAGE events should be emitted
+        const emitCalls = mockTransport.emit.mock.calls;
+        const textMessageEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE")
+        );
+        expect(textMessageEvents).toHaveLength(0);
+      });
+
+      test("when emitTextMessages=false, thinking events still work", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { emitTextMessages: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId);
+
+        // Thinking events should still be emitted
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_START" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_START" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_CONTENT" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_END" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_END" })
+        );
+      });
+
+      test("emitTextMessages can be toggled at runtime", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport);
+        const runId = "run-123";
+
+        // First call with emitTextMessages=true
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        expect(mockTransport.emit).toHaveBeenCalled();
+
+        mockTransport.emit.mockClear();
+
+        // Disable and call again
+        handler.emitTextMessages = false;
+        const runId2 = "run-456";
+        await handler.handleLLMStart(null, ["prompt"], runId2);
+        await handler.handleLLMNewToken("Hello", null, runId2);
+        await handler.handleLLMEnd({}, runId2);
+
+        // No TEXT_MESSAGE events
+        const emitCalls = mockTransport.emit.mock.calls;
+        const textMessageEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE")
+        );
+        expect(textMessageEvents).toHaveLength(0);
+      });
+    });
+
+    describe("emitToolCalls toggle", () => {
+      test("when emitToolCalls=false, TOOL_CALL events are suppressed", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { emitToolCalls: false });
+        const toolRunId = "run-tool";
+        const parentRunId = "run-parent";
+
+        await handler.handleToolStart(
+          { name: "weather_tool" },
+          JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
+          toolRunId,
+          parentRunId
+        );
+        await handler.handleToolEnd('{"temp":72}', toolRunId, parentRunId);
+
+        // No TOOL_CALL events should be emitted
+        const emitCalls = mockTransport.emit.mock.calls;
+        const toolCallEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("TOOL_CALL")
+        );
+        expect(toolCallEvents).toHaveLength(0);
+      });
+
+      test("when emitToolCalls=false, TEXT_MESSAGE events still work", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { emitToolCalls: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+        await handler.handleLLMEnd({}, runId);
+
+        // TEXT_MESSAGE events should still be emitted
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_START" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_CONTENT" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
+      });
+
+      test("emitToolCalls can be toggled at runtime", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport);
+        const toolRunId = "run-tool";
+        const parentRunId = "run-parent";
+
+        // First call with emitToolCalls=true
+        await handler.handleToolStart(
+          { name: "weather_tool" },
+          JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
+          toolRunId,
+          parentRunId
+        );
+        expect(mockTransport.emit).toHaveBeenCalled();
+
+        mockTransport.emit.mockClear();
+
+        // Disable and call again
+        handler.emitToolCalls = false;
+        const toolRunId2 = "run-tool-2";
+        await handler.handleToolStart(
+          { name: "weather_tool" },
+          JSON.stringify({ id: "tc-2", name: "weather_tool", args: {} }),
+          toolRunId2,
+          parentRunId
+        );
+        await handler.handleToolEnd('{"temp":73}', toolRunId2, parentRunId);
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("emitThinking toggle", () => {
+      test("when emitThinking=false, THINKING events are suppressed", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { emitThinking: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId);
+
+        // No THINKING events should be emitted
+        const emitCalls = mockTransport.emit.mock.calls;
+        const thinkingEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("THINKING")
+        );
+        expect(thinkingEvents).toHaveLength(0);
+      });
+
+      test("when emitThinking=false, TEXT_MESSAGE events still work", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, { emitThinking: false });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+        await handler.handleLLMEnd({}, runId);
+
+        // TEXT_MESSAGE events should still be emitted
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_START" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_CONTENT" })
+        );
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
+      });
+
+      test("emitThinking can be toggled at runtime", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport);
+        const runId = "run-123";
+
+        // First call with emitThinking=true
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId);
+        expect(mockTransport.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_START" })
+        );
+
+        mockTransport.emit.mockClear();
+
+        // Disable and call again
+        handler.emitThinking = false;
+        const runId2 = "run-456";
+        await handler.handleLLMStart(null, [], runId2);
+        await handler.handleLLMNewToken("", null, runId2, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "more thinking"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId2);
+
+        // No THINKING events
+        const emitCalls = mockTransport.emit.mock.calls;
+        const thinkingEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("THINKING")
+        );
+        expect(thinkingEvents).toHaveLength(0);
+      });
+
+      test("thinkingIds is cleaned up even when emitThinking=false", async () => {
+        // Regression test: ensure thinkingIds map is cleaned up even when
+        // emitThinking is toggled off before handleLLMEnd
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport);
+        const runId = "run-123";
+
+        // Start LLM with thinking
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+
+        // Verify thinkingId was created
+        expect((handler as any).thinkingIds.has(runId)).toBe(true);
+
+        // Toggle emitThinking off before handleLLMEnd
+        handler.emitThinking = false;
+        await handler.handleLLMEnd({}, runId);
+
+        // thinkingIds should still be cleaned up (no memory leak)
+        expect((handler as any).thinkingIds.has(runId)).toBe(false);
+      });
+    });
+
+    describe("combined toggles", () => {
+      test("enabled=false overrides all other settings", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, {
+          enabled: false,
+          emitTextMessages: true,
+          emitToolCalls: true,
+          emitThinking: true
+        });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId);
+
+        expect(mockTransport.emit).not.toHaveBeenCalled();
+      });
+
+      test("emitTextMessages=false and emitThinking=false together", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, {
+          emitTextMessages: false,
+          emitThinking: false
+        });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+          chunk: {
+            message: {
+              additional_kwargs: {
+                reasoning_content: "thinking content"
+              }
+            }
+          }
+        });
+        await handler.handleLLMEnd({}, runId);
+
+        // Only TEXT_MESSAGE events should be suppressed, but we also disabled thinking
+        // So nothing should be emitted
+        const emitCalls = mockTransport.emit.mock.calls;
+        const eventsWithContent = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE") ||
+                          call[0]?.type?.startsWith("THINKING")
+        );
+        expect(eventsWithContent).toHaveLength(0);
+      });
+
+      test("all options can be configured via constructor", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport, {
+          enabled: true,
+          emitTextMessages: true,
+          emitToolCalls: true,
+          emitThinking: true
+        });
+
+        expect(handler.enabled).toBe(true);
+        expect(handler.emitTextMessages).toBe(true);
+        expect(handler.emitToolCalls).toBe(true);
+        expect(handler.emitThinking).toBe(true);
+      });
+
+      test("default values are all true", async () => {
+        const mockTransport = createMockTransport();
+        const handler = new AGUICallbackHandler(mockTransport);
+
+        expect(handler.enabled).toBe(true);
+        expect(handler.emitTextMessages).toBe(true);
+        expect(handler.emitToolCalls).toBe(true);
+        expect(handler.emitThinking).toBe(true);
+      });
+    });
+  });
 });
