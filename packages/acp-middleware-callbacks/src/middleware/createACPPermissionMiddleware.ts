@@ -268,7 +268,6 @@ function buildHITLRequest(
   
   for (const toolCall of toolCalls) {
     const policyConfig = findMatchingPolicy(toolCall.name, policy);
-    const locations = extractLocations(toolCall.args);
     
     // Build action request
     actionRequests.push({
@@ -602,9 +601,16 @@ export function createACPPermissionMiddleware(
         // 10. Update the last AIMessage to only include approved tool calls
         const stateAny = state as any;
         const messages = [...stateAny.messages];
-        const lastMessageIndex = messages.findIndex(
-          (msg: any) => msg && msg._getType && msg._getType() === 'ai'
-        );
+        
+        // Find the last AI message (iterate backwards to find the last match)
+        let lastMessageIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i] as any;
+          if (msg && msg._getType && msg._getType() === 'ai') {
+            lastMessageIndex = i;
+            break;
+          }
+        }
         
         if (lastMessageIndex !== -1) {
           // Combine auto-approved and revised (approved/edited) tool calls
