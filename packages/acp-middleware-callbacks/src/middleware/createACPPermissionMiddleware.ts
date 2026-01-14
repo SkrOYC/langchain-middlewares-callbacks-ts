@@ -2,15 +2,33 @@
  * ACP Permission Middleware
  * 
  * Implements HITL (Human-in-the-Loop) permission workflow for ACP agents.
- * Intercepts tool calls that require user permission and handles the request/response flow.
+ * Uses afterModel hook with interrupt() for proper LangGraph checkpointing,
+ * aligned with LangChain's built-in HITL middleware pattern.
  * 
  * @packageDocumentation
  */
 
 import { createMiddleware } from "langchain";
 import { z } from "zod";
-import type { ToolKind, ToolCall, ToolCallUpdate, SessionId, PermissionOptionKind, RequestPermissionRequest, RequestPermissionResponse, ToolCallContent } from "../types/acp.js";
-import type { PermissionPolicyConfig } from "../types/middleware.js";
+import type { 
+  ToolKind, 
+  ToolCall, 
+  ToolCallUpdate, 
+  SessionId, 
+  PermissionOptionKind,
+  ToolCallContent 
+} from "../types/acp.js";
+import type { 
+  PermissionPolicyConfig,
+  HITLRequest,
+  HITLResponse,
+  HITLDecision,
+  ActionRequest,
+  ReviewConfig,
+  ApproveDecision,
+  EditDecision,
+  RejectDecision,
+} from "../types/middleware.js";
 import { mapToolKind } from "./createACPToolMiddleware.js";
 import { extractLocations } from "../utils/extractLocations.js";
 
@@ -23,7 +41,7 @@ export interface SelectedPermissionOutcome {
 }
 
 /**
- * Possible outcomes from a permission request.
+ * Possible outcomes from a permission request (legacy pattern).
  */
 export type RequestPermissionOutcome =
   | { outcome: 'cancelled' }
@@ -40,20 +58,26 @@ export interface ACPPermissionMiddlewareConfig {
   permissionPolicy: Record<string, PermissionPolicyConfig>;
   
   /**
-   * The connection for sending permission requests to the client.
-   * Must implement the requestPermission method.
+   * The connection for sending notifications and updates to the client.
    */
   transport: {
     /**
-     * Sends a permission request to the client and waits for response.
+     * Sends a notification message to the client (fire-and-forget).
+     * Used for session/request_permission before interrupt.
      */
-    requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse>;
+    sendNotification(method: string, params: unknown): void;
     
     /**
      * Sends a session update to the client.
      */
     sessionUpdate(params: { sessionId: SessionId; update: ToolCall | ToolCallUpdate }): Promise<void>;
   };
+  
+  /**
+   * Optional callback for handling session cancellation.
+     * Called when client sends session/cancel notification during permission wait.
+   */
+  onSessionCancel?: (sessionId: SessionId) => void;
   
   /**
    * Custom mapper function to determine tool kind for specific tools.
@@ -66,6 +90,12 @@ export interface ACPPermissionMiddlewareConfig {
    * Defaults to wrapping message in a ToolCallContent structure.
    */
   contentMapper?: (message: string) => Array<ToolCallContent>;
+  
+  /**
+   * Optional description prefix for permission requests.
+   * @default "Tool execution requires approval"
+   */
+  descriptionPrefix?: string;
 }
 
 /**
@@ -87,17 +117,16 @@ function defaultContentMapper(message: string): Array<ToolCallContent> {
 }
 
 /**
- * Default permission options to present to the user.
+ * Default permission options for HITL decisions.
  */
 const DEFAULT_PERMISSION_OPTIONS: Array<{
   optionId: string;
   name: string;
   kind: PermissionOptionKind;
 }> = [
-  { optionId: "allowOnce", name: "Allow once", kind: "allow_once" },
-  { optionId: "allowAlways", name: "Always Allow", kind: "allow_always" },
-  { optionId: "rejectOnce", name: "Deny", kind: "reject_once" },
-  { optionId: "rejectAlways", name: "Never Allow", kind: "reject_always" },
+  { optionId: "approve", name: "Approve", kind: "allow_once" },
+  { optionId: "edit", name: "Edit", kind: "allow_once" },
+  { optionId: "reject", name: "Reject", kind: "reject_once" },
 ];
 
 /**
@@ -157,14 +186,172 @@ function findMatchingPolicy(
 }
 
 /**
+ * Extracts tool calls from the agent state.
+ * Looks for the last AIMessage and returns its tool_calls array.
+ * 
+ * @param state - The agent state
+ * @returns Array of tool calls from the last AIMessage, or undefined
+ */
+function extractToolCallsFromState(state: Record<string, unknown>): Array<{
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}> | undefined {
+  const stateAny = state as any;
+  const messages = stateAny.messages;
+  
+  if (!messages || !Array.isArray(messages)) {
+    return undefined;
+  }
+  
+  // Find the last AIMessage in the conversation
+  const lastMessage = [...messages].reverse().find(
+    (msg: any) => msg && msg._getType && msg._getType() === 'ai'
+  );
+  
+  if (!lastMessage || !lastMessage.tool_calls || !Array.isArray(lastMessage.tool_calls)) {
+    return undefined;
+  }
+  
+  return lastMessage.tool_calls.map((tc: any) => ({
+    id: tc.id ?? `tc-${Math.random().toString(36).slice(2, 9)}`,
+    name: tc.name ?? 'unknown',
+    args: tc.args ?? {},
+  }));
+}
+
+/**
+ * Categorizes tool calls into those requiring permission vs auto-approved.
+ * 
+ * @param toolCalls - Array of tool calls from the agent
+ * @param policy - Permission policy configuration
+ * @returns Object with permissionRequired and autoApproved arrays
+ */
+function categorizeToolCalls(
+  toolCalls: Array<{ name: string; id: string; args: Record<string, unknown> }>,
+  policy: Record<string, PermissionPolicyConfig>
+): {
+  permissionRequired: Array<{ name: string; id: string; args: Record<string, unknown> }>;
+  autoApproved: Array<{ name: string; id: string; args: Record<string, unknown> }>;
+} {
+  const permissionRequired: Array<{ name: string; id: string; args: Record<string, unknown> }> = [];
+  const autoApproved: Array<{ name: string; id: string; args: Record<string, unknown> }> = [];
+  
+  for (const toolCall of toolCalls) {
+    const policyConfig = findMatchingPolicy(toolCall.name, policy);
+    
+    if (policyConfig?.requiresPermission) {
+      permissionRequired.push(toolCall);
+    } else {
+      autoApproved.push(toolCall);
+    }
+  }
+  
+  return { permissionRequired, autoApproved };
+}
+
+/**
+ * Builds the HITL request structure for interrupt().
+ * 
+ * @param toolCalls - Tool calls requiring permission
+ * @param policy - Permission policy configuration
+ * @param descriptionPrefix - Optional prefix for descriptions
+ * @returns HITLRequest structure
+ */
+function buildHITLRequest(
+  toolCalls: Array<{ name: string; id: string; args: Record<string, unknown> }>,
+  policy: Record<string, PermissionPolicyConfig>,
+  descriptionPrefix: string = "Tool execution requires approval"
+): HITLRequest {
+  const actionRequests: ActionRequest[] = [];
+  const reviewConfigs: ReviewConfig[] = [];
+  
+  for (const toolCall of toolCalls) {
+    const policyConfig = findMatchingPolicy(toolCall.name, policy);
+    
+    // Build action request
+    actionRequests.push({
+      toolCallId: toolCall.id,
+      name: toolCall.name,
+      args: toolCall.args,
+      description: policyConfig?.description ?? `Calling ${toolCall.name}`,
+    });
+    
+    // Build review config
+    reviewConfigs.push({
+      actionName: toolCall.name,
+      allowedDecisions: policyConfig?.allowedResponses ?? ['approve', 'edit', 'reject'],
+      argsSchema: undefined, // Could add schema from tool definition
+    });
+  }
+  
+  return { actionRequests, reviewConfigs };
+}
+
+/**
+ * Processes HITL decisions and returns modified tool calls and any artificial messages.
+ * 
+ * @param decisions - Array of HITL decisions from human
+ * @param toolCalls - Original tool calls that were interrupted
+ * @param contentMapper - Function to convert messages to ToolCallContent
+ * @returns Object with revisedToolCalls and artificialMessages arrays
+ */
+function processDecisions(
+  decisions: HITLDecision[],
+  toolCalls: Array<{ name: string; id: string; args: Record<string, unknown> }>,
+  contentMapper: (message: string) => Array<ToolCallContent>
+): {
+  revisedToolCalls: Array<{ name: string; id: string; args: Record<string, unknown> }>;
+  artificialMessages: Array<{ role: string; content: Array<ToolCallContent>; tool_call_id: string; name: string }>;
+} {
+  const revisedToolCalls: Array<{ name: string; id: string; args: Record<string, unknown> }> = [];
+  const artificialMessages: Array<{ role: string; content: Array<ToolCallContent>; tool_call_id: string; name: string }> = [];
+  
+  for (let i = 0; i < decisions.length; i++) {
+    const decision = decisions[i]!;
+    const toolCall = toolCalls[i]!;
+    
+    switch (decision.type) {
+      case 'approve':
+        // Return tool call unchanged
+        revisedToolCalls.push(toolCall);
+        break;
+        
+      case 'edit':
+        // Return tool call with modified name/args
+        revisedToolCalls.push({
+          ...toolCall,
+          name: decision.editedAction.name,
+          args: decision.editedAction.args,
+        });
+        break;
+        
+      case 'reject':
+        // Create a tool message with rejection reason instead of executing
+        artificialMessages.push({
+          role: 'tool',
+          content: contentMapper(decision.message ?? 'Permission denied by user'),
+          tool_call_id: toolCall.id,
+          name: toolCall.name,
+        });
+        // Don't add to revisedToolCalls - causes model to see rejection
+        break;
+    }
+  }
+  
+  return { revisedToolCalls, artificialMessages };
+}
+
+/**
  * Creates permission middleware for ACP-compatible LangChain agents.
  * 
  * This middleware implements the HITL (Human-in-the-Loop) permission workflow:
- * 1. Check if tool requires permission via policy
- * 2. Emit tool_call with pending status
- * 3. Send requestPermission to client
- * 4. Handle outcome (cancelled/selected)
- * 5. Emit appropriate status updates
+ * 1. afterModel hook intercepts tool calls after the model generates them
+ * 2. Categorize tool calls: permission required vs auto-approved
+ * 3. Send session/request_permission notification for protocol compliance
+ * 4. Call interrupt() to checkpoint state and pause execution
+ * 5. Resume with Command({ resume: { decisions: [...] } })
+ * 6. Process decisions (approve/edit/reject) and update state
  * 
  * @param config - Configuration options for the permission middleware
  * @returns AgentMiddleware instance with permission enforcement hooks
@@ -195,6 +382,7 @@ export function createACPPermissionMiddleware(
   const toolKindMapper = config.toolKindMapper ?? mapToolKind;
   const contentMapper = config.contentMapper ?? defaultContentMapper;
   const { transport } = config;
+  const descriptionPrefix = config.descriptionPrefix ?? "Tool execution requires approval";
   
   // Per-thread state for tracking permission context
   const threadState = new Map<string, { sessionId?: SessionId }>();
@@ -219,92 +407,54 @@ export function createACPPermissionMiddleware(
   }
   
   /**
-   * Emits a permission denied/failed update and throws an error.
-   * 
-   * @param reason - The reason for the failure
-   * @param toolCallId - The tool call ID
-   * @param sessionId - The session ID
-   * @throws Error with the failure reason
+   * Extracts session ID from runtime.
    */
-  async function emitPermissionDenied(
-    reason: string,
-    toolCallId: string,
-    sessionId: SessionId
-  ): Promise<never> {
-    const failedUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
-      sessionUpdate: "tool_call_update",
-      toolCallId,
-      status: "failed",
-      _meta: null,
-      content: contentMapper(reason),
-    };
-    
-    try {
-      await transport.sessionUpdate({
-        sessionId,
-        update: failedUpdate,
-      });
-    } catch {
-      // Fail-safe: don't let emit errors break agent execution
-    }
-    
-    throw new Error(reason);
+  function getSessionId(runtime: any): SessionId | undefined {
+    return (
+      runtime.context?.sessionId ??
+      runtime.context?.session_id ??
+      runtime.config?.configurable?.session_id
+    );
   }
   
-  return createMiddleware({
-    name: "acp-permission-control",
+  /**
+   * Extracts thread ID from runtime.
+   */
+  function getThreadId(runtime: any): string {
+    return (
+      runtime.context?.threadId ??
+      runtime.context?.thread_id ??
+      runtime.config?.configurable?.thread_id ??
+      "default"
+    );
+  }
+  
+  /**
+   * Emits a tool call update with the specified status.
+   */
+  async function emitToolStatus(
+    sessionId: SessionId | undefined,
+    toolCallId: string,
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+    status: 'pending' | 'in_progress' | 'completed' | 'failed',
+    content?: Array<ToolCallContent>
+  ): Promise<void> {
+    if (!sessionId) return;
     
-    contextSchema: z.object({
-      thread_id: z.string().optional(),
-      threadId: z.string().optional(),
-      session_id: z.string().optional(),
-      sessionId: z.string().optional(),
-    }) as any,
+    const toolKind = toolKindMapper(toolName);
+    const locations = extractLocations(toolArgs);
     
-    wrapToolCall: async (request, handler) => {
-      // Extract tool call information from the request
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const requestAny = request as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const runtimeAny = requestAny.runtime as any;
-      
-      const toolCallId = requestAny.toolCall?.id ?? "unknown";
-      const toolName = requestAny.toolCall?.name ?? "unknown_tool";
-      const args = requestAny.toolCall?.args ?? {};
-      
-      const agentConfig = runtimeAny?.config ?? {};
-      const threadId = runtimeAny?.context?.threadId ?? 
-                       runtimeAny?.context?.thread_id ?? 
-                       (agentConfig?.configurable?.thread_id as string) ??
-                       "default";
-      
-      const threadStateInstance = getThreadState(threadId);
-      const sessionId = threadStateInstance.sessionId ?? 
-                        (runtimeAny?.context?.sessionId ?? 
-                         runtimeAny?.context?.session_id ?? 
-                         (agentConfig?.configurable?.session_id as SessionId | undefined));
-      
-      // Check if tool requires permission
-      const policyConfig = findMatchingPolicy(toolName, config.permissionPolicy);
-      
-      // If no policy match or permission not required, skip permission flow
-      if (!policyConfig || !policyConfig.requiresPermission) {
-        return handler(request);
-      }
-      
-      const toolKind = policyConfig.kind ?? toolKindMapper(toolName);
-      const locations = extractLocations(args as Record<string, unknown>);
-      
-      // 1. Emit pending tool call (with sessionUpdate discriminator)
+    if (status === 'pending') {
       const toolCallPayload: ToolCall & { sessionUpdate: "tool_call" } = {
         sessionUpdate: "tool_call",
         toolCallId,
-        title: `Calling ${toolName}`,
+        title: `${descriptionPrefix}: ${toolName}`,
         kind: toolKind,
         status: "pending",
         _meta: null,
         locations: locations.length > 0 ? locations : undefined,
-        rawInput: args,
+        rawInput: toolArgs,
         content: undefined,
         rawOutput: undefined,
       };
@@ -317,86 +467,186 @@ export function createACPPermissionMiddleware(
       } catch {
         // Fail-safe: don't let emit errors break agent execution
       }
-      
-      // 2. Send permission request to client
-      const permissionResponse = await transport.requestPermission({
-        sessionId,
-        toolCall: {
-          toolCallId,
-          title: `Calling ${toolName}`,
-          kind: toolKind,
-          status: "pending",
-          _meta: null,
-          locations: locations.length > 0 ? locations : undefined,
-          rawInput: args,
-          content: undefined,
-          rawOutput: undefined,
-        },
-        options: DEFAULT_PERMISSION_OPTIONS,
-      });
-      
-      // 3. Handle the permission outcome
-      const outcome = permissionResponse.outcome;
-      
-      // Handle cancelled outcome
-      if (outcome.outcome === "cancelled") {
-        await emitPermissionDenied("Permission request cancelled by user", toolCallId, sessionId);
-      }
-      
-      // Handle selected outcome
-      if (outcome.outcome === "selected") {
-        const { optionId } = outcome;
-        
-        // Check for denial options
-        if (optionId === "rejectOnce" || optionId === "rejectAlways") {
-          await emitPermissionDenied("Permission denied by user", toolCallId, sessionId);
-        }
-        
-        // Handle persistent permissions for "allowAlways"
-        if (optionId === "allowAlways") {
-          // Emit permission_update for persistent allowance
-          try {
-            await transport.sessionUpdate({
-              sessionId,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              update: {
-                sessionUpdate: "permission_update" as any,
-                toolPattern: toolName,
-                permission: "granted",
-              } as any,
-            });
-          } catch {
-            // Fail-safe: don't let emit errors break agent execution
-          }
-        }
-      }
-      
-      // 4. Emit in_progress status after permission granted
-      const inProgressUpdate: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
+    } else {
+      const updatePayload: ToolCallUpdate & { sessionUpdate: "tool_call_update" } = {
         sessionUpdate: "tool_call_update",
         toolCallId,
-        status: "in_progress",
+        status,
         _meta: null,
+        content,
+        rawOutput: undefined,
       };
       
       try {
         await transport.sessionUpdate({
           sessionId,
-          update: inProgressUpdate,
+          update: updatePayload,
         });
       } catch {
         // Fail-safe: don't let emit errors break agent execution
       }
-      
-      // 5. User approved - continue execution
-      return handler(request);
+    }
+  }
+  
+  return createMiddleware({
+    name: "acp-permission-control",
+    
+    contextSchema: z.object({
+      thread_id: z.string().optional(),
+      threadId: z.string().optional(),
+      session_id: z.string().optional(),
+      sessionId: z.string().optional(),
+    }) as any,
+    
+    afterModel: {
+      canJumpTo: ["model"],
+      hook: async (state, runtime) => {
+        const runtimeAny = runtime as any;
+        const threadId = getThreadId(runtimeAny);
+        const sessionId = getSessionId(runtimeAny);
+        
+        // Store session ID in thread state for potential use in other hooks
+        const threadStateInstance = getThreadState(threadId);
+        if (sessionId) {
+          threadStateInstance.sessionId = sessionId;
+        }
+        
+        // 1. Extract tool calls from state
+        const toolCalls = extractToolCallsFromState(state);
+        if (!toolCalls || toolCalls.length === 0) {
+          return {};
+        }
+        
+        // 2. Categorize: interrupt vs auto-approve
+        const { permissionRequired, autoApproved } = categorizeToolCalls(
+          toolCalls,
+          config.permissionPolicy
+        );
+        
+        // 3. If no permission needed, continue with auto-approved tool calls
+        if (permissionRequired.length === 0) {
+          return {};
+        }
+        
+        // 4. Emit pending status for permission-required tools
+        for (const toolCall of permissionRequired) {
+          await emitToolStatus(
+            sessionId,
+            toolCall.id,
+            toolCall.name,
+            toolCall.args,
+            'pending'
+          );
+        }
+        
+        // 5. Build HITL request for interrupt
+        const hitlRequest = buildHITLRequest(
+          permissionRequired,
+          config.permissionPolicy,
+          descriptionPrefix
+        );
+        
+        // 6. Send session/request_permission notification before interrupting
+        // This provides ACP protocol compliance
+        if (transport.sendNotification && sessionId && permissionRequired.length > 0) {
+          const firstToolCall = permissionRequired[0]!;
+          try {
+            transport.sendNotification("session/request_permission", {
+              sessionId,
+              toolCall: {
+                toolCallId: firstToolCall.id,
+                title: `${descriptionPrefix}: ${firstToolCall.name}`,
+                kind: toolKindMapper(firstToolCall.name),
+                status: "pending",
+                _meta: null,
+                locations: extractLocations(firstToolCall.args),
+                rawInput: firstToolCall.args,
+                content: undefined,
+                rawOutput: undefined,
+              },
+              options: DEFAULT_PERMISSION_OPTIONS,
+            });
+          } catch {
+            // Fail-safe: don't let notification errors break agent execution
+          }
+        }
+        
+        // 7. Call interrupt() - checkpoints state and waits for Command.resume
+        // The runtime.interrupt function is provided by LangGraph
+        if (!runtime.interrupt) {
+          // Fallback for environments without interrupt support
+          throw new Error("Interrupt not supported in this runtime");
+        }
+        
+        const hitlResponse = (await runtime.interrupt(hitlRequest)) as HITLResponse;
+        
+        // 8. Process decisions from resume
+        const { revisedToolCalls, artificialMessages } = processDecisions(
+          hitlResponse.decisions,
+          permissionRequired,
+          contentMapper
+        );
+        
+        // 9. Emit in_progress status for approved/edited tools
+        for (const toolCall of revisedToolCalls) {
+          await emitToolStatus(
+            sessionId,
+            toolCall.id,
+            toolCall.name,
+            toolCall.args,
+            'in_progress'
+          );
+        }
+        
+        // 10. Update the last AIMessage to only include approved tool calls
+        const stateAny = state as any;
+        const messages = [...stateAny.messages];
+        
+        // Find the last AI message (iterate backwards to find the last match)
+        let lastMessageIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i] as any;
+          if (msg && msg._getType && msg._getType() === 'ai') {
+            lastMessageIndex = i;
+            break;
+          }
+        }
+        
+        if (lastMessageIndex !== -1) {
+          // Combine auto-approved and revised (approved/edited) tool calls
+          const finalToolCalls = [
+            ...autoApproved.map(tc => ({
+              id: tc.id,
+              name: tc.name,
+              args: tc.args,
+            })),
+            ...revisedToolCalls.map(tc => ({
+              id: tc.id,
+              name: tc.name,
+              args: tc.args,
+            })),
+          ];
+          
+          // Update the message's tool_calls
+          messages[lastMessageIndex] = {
+            ...messages[lastMessageIndex],
+            tool_calls: finalToolCalls,
+          };
+        }
+        
+        // 11. Check if any tool was rejected (jump back to model)
+        const hasRejections = hitlResponse.decisions.some(d => d.type === 'reject');
+        
+        return {
+          messages: [...messages, ...artificialMessages],
+          jumpTo: hasRejections ? "model" : undefined,
+        };
+      },
     },
     
     afterAgent: async (state, runtime) => {
       const runtimeAny = runtime as any;
-      const threadId = runtimeAny.context?.threadId ?? 
-                       runtimeAny.context?.thread_id ?? 
-                       "default";
+      const threadId = getThreadId(runtimeAny);
       
       // Clean up thread state after completion
       cleanupThreadState(threadId);
