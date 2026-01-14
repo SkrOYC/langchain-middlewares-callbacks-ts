@@ -450,4 +450,207 @@ describe("HITL Permission Workflow Integration", () => {
       expect(result?.jumpTo).toBeUndefined();
     });
   });
+
+  describe("Command resume pattern demonstration", () => {
+    test("demonstrates complete interrupt/resume workflow with Command pattern", async () => {
+      const notificationCalls: Array<{ method: string; params: any }> = [];
+      const sessionUpdateCalls: Array<any> = [];
+      
+      // Create mock functions using bun:test mock
+      const sendNotificationFn = mock((method: string, params: any) => {
+        notificationCalls.push({ method, params });
+      });
+      const sessionUpdateFn = mock(async (params: any) => {
+        sessionUpdateCalls.push(params);
+      });
+      
+      const mockTransport = {
+        sendNotification: sendNotificationFn,
+        sessionUpdate: sessionUpdateFn,
+      };
+      
+      const permissionMiddleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "write_file": { requiresPermission: true, kind: "edit" },
+          "read_file": { requiresPermission: false },
+        },
+        transport: mockTransport,
+      });
+      
+      // Initial agent state before interrupt
+      const agentState = {
+        messages: [
+          { _getType: () => 'human', content: "Write to file" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "tc-1", name: "write_file", args: { path: "file.txt", content: "Hello" } }
+            ]
+          }
+        ]
+      };
+      
+      // Simulate runtime.interrupt() - this is where LangGraph checkpoints
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: mock(async (hitlRequest: any) => {
+          // Verify HITL request structure (what gets passed to interrupt())
+          expect(hitlRequest.actionRequests).toHaveLength(1);
+          expect(hitlRequest.reviewConfigs).toHaveLength(1);
+          
+          // Simulate user's decisions via Command({ resume: { decisions: [...] } })
+          return {
+            decisions: [
+              { type: "approve" }
+            ]
+          };
+        }),
+      };
+      
+      // Execute middleware hook
+      const result = await permissionMiddleware.afterModel?.hook(
+        agentState as any,
+        runtime as any
+      );
+      
+      // Verify session/request_permission was sent
+      expect(sendNotificationFn).toHaveBeenCalled();
+      expect(sendNotificationFn.mock.calls[0][0]).toBe("session/request_permission");
+      
+      // Verify result reflects decisions
+      expect(result?.jumpTo).toBeUndefined(); // No rejections
+      
+      // Verify the AI message has tool calls preserved
+      const lastMessage = result?.messages?.find(
+        (m: any) => m && m._getType && m._getType() === 'ai'
+      );
+      expect(lastMessage?.tool_calls).toHaveLength(1);
+      expect(lastMessage?.tool_calls[0].name).toBe("write_file");
+    });
+    
+    test("demonstrates reject decision causes jumpTo model", async () => {
+      const mockTransport = {
+        sendNotification: mock(() => {}),
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const permissionMiddleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "delete_file": { requiresPermission: true, kind: "delete" },
+        },
+        transport: mockTransport,
+      });
+      
+      const agentState = {
+        messages: [
+          { _getType: () => 'human', content: "Delete file" },
+          { 
+            _getType: () => 'ai', 
+            content: "Processing",
+            tool_calls: [
+              { id: "tc-1", name: "delete_file", args: { path: "important.txt" } }
+            ]
+          }
+        ]
+      };
+      
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: mock(async () => {
+          // Reject the operation
+          return {
+            decisions: [
+              { type: "reject", message: "Too risky" }
+            ]
+          };
+        }),
+      };
+      
+      const result = await permissionMiddleware.afterModel?.hook(
+        agentState as any,
+        runtime as any
+      );
+      
+      // With rejection, should jump back to model for re-planning
+      expect(result?.jumpTo).toBe("model");
+      
+      // Verify rejection message was added
+      const toolMessages = result?.messages?.filter(
+        (m: any) => m && m.role === "tool"
+      );
+      expect(toolMessages).toHaveLength(1);
+      expect(toolMessages[0].content[0].content.text).toBe("Too risky");
+    });
+    
+    test("demonstrates state checkpoint verification after interrupt", async () => {
+      const mockTransport = {
+        sendNotification: mock(() => {}),
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const permissionMiddleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "dangerous_operation": { requiresPermission: true },
+        },
+        transport: mockTransport,
+      });
+      
+      // Complex state that would be checkpointed
+      const checkpointState = {
+        messages: [
+          { _getType: () => 'human', content: "Step 1: Check data" },
+          { _getType: () => 'ai', content: "Data checked, proceeding" },
+          { _getType: () => 'tool', content: "{\"verified\": true}", tool_call_id: "verify-call" },
+          { _getType: () => 'human', content: "Step 2: Perform dangerous operation" },
+          { 
+            _getType: () => 'ai', 
+            content: "Ready to proceed with dangerous operation",
+            tool_calls: [
+              { id: "tc-1", name: "dangerous_operation", args: { target: "production", force: true } }
+            ]
+          }
+        ],
+        checkpoint: {
+          verified: true,
+          userConfirmed: true,
+          timestamp: Date.now(),
+        }
+      };
+      
+      let capturedInterruptRequest: any;
+      
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: mock(async (hitlRequest: any) => {
+          // Capture the interrupt request - this is what gets checkpointed
+          capturedInterruptRequest = hitlRequest;
+          
+          // In a real scenario, the state (including messages and checkpoint)
+          // would be persisted by LangGraph's checkpointer here
+          expect(hitlRequest.actionRequests[0].args.target).toBe("production");
+          expect(hitlRequest.actionRequests[0].args.force).toBe(true);
+          
+          return { decisions: [{ type: "approve" }] };
+        }),
+      };
+      
+      const result = await permissionMiddleware.afterModel?.hook(
+        checkpointState as any,
+        runtime as any
+      );
+      
+      // Verify the interrupt request captured the correct data
+      expect(capturedInterruptRequest).toBeDefined();
+      expect(capturedInterruptRequest.actionRequests).toHaveLength(1);
+      expect(capturedInterruptRequest.actionRequests[0].name).toBe("dangerous_operation");
+      
+      // Verify state was preserved in result
+      expect(result?.messages).toBeDefined();
+      expect(result?.messages?.length).toBeGreaterThanOrEqual(5);
+    });
+  });
 });

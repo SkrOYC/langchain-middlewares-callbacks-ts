@@ -369,37 +369,165 @@ export function createACPToolMiddleware(
 
 Implements HITL (Human-in-the-Loop) permission workflow for ACP agents.
 
-**Pattern:** Uses `afterModel` hook, similar to LangChain's built-in HITL middleware.
+**Pattern:** Uses `afterModel` hook with `interrupt()` for durable execution, aligned with LangChain's built-in HITL middleware pattern.
 
-**PermissionOptionKind Values:**
-```typescript
-type PermissionOptionKind =
-  | 'allow_once'     // Allow this specific action once
-  | 'allow_always'   // Allow this action permanently
-  | 'reject_once'    // Deny this specific action once
-  | 'reject_always'; // Deny this action permanently
+#### 4.3.1 Architecture Overview
+
+The permission middleware intercepts tool calls after the model generates them and before execution. It categorizes tools into those requiring permission vs auto-approved, sends ACP protocol notifications, and uses LangGraph's `interrupt()` to checkpoint state and pause execution.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Agent Execution                              │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       afterModel Hook                                │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   extractToolCallsFromState()                        │
+│           Extract tool calls from last AIMessage                    │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                 categorizeToolCalls(policy)                          │
+│    ┌──────────────────────┐    ┌──────────────────────┐            │
+│    │  permissionRequired  │    │    autoApproved      │            │
+│    │  (needs approval)    │    │  (proceed directly)  │            │
+│    └──────────────────────┘    └──────────────────────┘            │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+           ┌────────────────┐          ┌────────────────┐
+           │ Auto-Approved  │          │ Permission     │
+           │ → Proceed      │          │ Required       │
+           └────────────────┘          └────────────────┘
+                                               │
+                                               ▼
+                                   ┌────────────────────────┐
+                                   │ emitToolStatus(pending)│
+                                   └────────────────────────┘
+                                               │
+                                               ▼
+                                   ┌────────────────────────┐
+                                   │session/request_permission│
+                                   │      notification       │
+                                   └────────────────────────┘
+                                               │
+                                               ▼
+                                   ┌────────────────────────┐
+                                   │   interrupt(HITLReq)   │
+                                   │  (checkpoint + pause)  │
+                                   └────────────────────────┘
+                                               │
+                              ┌────────────────┴────────────────┐
+                              ▼                                 ▼
+                      ┌──────────────┐                 ┌──────────────┐
+                      │   User UI    │                 │  LangGraph   │
+                      │  Reviews     │                 │  Checkpoints │
+                      │  Decision    │                 │  State       │
+                      └──────────────┘                 └──────────────┘
+                              │                                 │
+                              ▼                                 │
+                      ┌──────────────┐                          │
+                      │ Command({    │◄─────────────────────────┘
+                      │ resume: {    │
+                      │ decisions }) │
+                      └──────────────┘
+                              │
+                              ▼
+                   ┌────────────────────────┐
+                   │  processDecisions()    │
+                   │  approve / edit / reject│
+                   └────────────────────────┘
+                              │
+                              ▼
+                   ┌────────────────────────┐
+                   │  Update State & Return │
+                   │  jumpTo: "model" if    │
+                   │  rejection occurred    │
+                   └────────────────────────┘
 ```
 
-**Workflow:**
-1. Check if tool requires permission via policy
-2. Emit `tool_call` with pending status
-3. Call `interrupt()` to pause execution
-4. Wait for user decision (via `Command({ resume: { decisions: [...] } })`)
-5. Handle outcome (approve/edit/reject)
-6. Emit `tool_call_update` with appropriate status
+#### 4.3.2 HITL Types
 
-**Interface:**
+```typescript
+/**
+ * Request sent to interrupt() containing tools requiring approval
+ */
+interface HITLRequest {
+  /** Tools that require human approval */
+  actionRequests: Array<{
+    toolCallId: string;
+    name: string;
+    args: Record<string, unknown>;
+    description?: string;
+  }>;
+  /** Configuration for each tool's review UI */
+  reviewConfigs: Array<{
+    actionName: string;
+    allowedDecisions: Array<'approve' | 'edit' | 'reject'>;
+    argsSchema?: Record<string, unknown>;
+  }>;
+}
+
+/**
+ * Decision types from human review
+ */
+type HITLDecision =
+  | { type: 'approve'; toolCallId?: string }
+  | {
+      type: 'edit';
+      toolCallId?: string;
+      editedAction: { name: string; args: Record<string, unknown> };
+    }
+  | { type: 'reject'; toolCallId?: string; message?: string };
+
+/**
+ * Response structure passed to Command.resume
+ */
+interface HITLResponse {
+  decisions: HITLDecision[];
+}
+```
+
+#### 4.3.3 Middleware Interface
+
 ```typescript
 interface ACPPermissionMiddlewareConfig {
+  /** Permission policy: tool name pattern -> configuration */
   permissionPolicy: Record<string, PermissionPolicyConfig>;
+  
+  /** ACP transport for notifications */
+  transport: {
+    sendNotification(method: string, params: unknown): void;
+    sessionUpdate(params: {
+      sessionId: SessionId;
+      update: ToolCall | ToolCallUpdate;
+    }): Promise<void>;
+  };
+  
+  /** Optional: callback when session is cancelled */
+  onSessionCancel?: (sessionId: SessionId) => void;
+  
+  /** Optional: custom message mapper for decision responses */
+  contentMapper?: (message: string) => Array<ToolCallContent>;
+  
+  /** Optional: description prefix for permission requests */
+  descriptionPrefix?: string;
 }
 
 interface PermissionPolicyConfig {
+  /** Whether this tool requires permission (default: true) */
   requiresPermission?: boolean;
+  /** Tool kind for ACP protocol */
   kind?: ToolKind;
+  /** Human-readable description for approval UI */
   description?: string;
-  allowedResponses?: Array<'allow' | 'deny' | 'allow_always'>;
-  autoDeny?: boolean;
 }
 
 export function createACPPermissionMiddleware(
@@ -407,7 +535,122 @@ export function createACPPermissionMiddleware(
 ): AgentMiddleware;
 ```
 
-**Note:** Permission middleware uses `interrupt()` from `@langchain/langgraph` to pause execution. Developer handles resuming via `Command`.
+#### 4.3.4 Usage Example
+
+```typescript
+import { createAgent } from "langchain";
+import { createACPPermissionMiddleware } from "@skroyc/acp-middleware-callbacks";
+import { Command } from "@langchain/langgraph";
+
+// Create permission middleware with policy
+const permissionMiddleware = createACPPermissionMiddleware({
+  permissionPolicy: {
+    "delete_*": { requiresPermission: true, kind: "delete" },
+    "*_file": { requiresPermission: true, kind: "edit" },
+    "read_*": { requiresPermission: false },
+  },
+  transport: acpTransport,
+  descriptionPrefix: "File operation requires approval",
+});
+
+// Create agent with middleware
+const agent = createAgent({
+  model: "claude-sonnet-4-20250514",
+  middleware: [permissionMiddleware],
+});
+
+// Configuration for the agent run
+const config = {
+  configurable: {
+    thread_id: "user-session-123",
+    session_id: "acp-session-456",
+  },
+};
+
+// Invoke agent
+const initialResult = await agent.invoke(
+  { messages: [new HumanMessage("Delete old data and write config")] },
+  config
+);
+
+// If interrupted, check state
+const state = await agent.graph.getState(config);
+if (state.next?.length > 0) {
+  // Get interrupt data (contains tools awaiting approval)
+  const interruptData = state.tasks[0].interrupts[0].value as HITLRequest;
+  
+  // Display to user for approval in your UI...
+  // For each tool in interruptData.actionRequests, show approval UI
+  
+  // Resume with decisions via Command
+  const resumedResult = await agent.invoke(
+    new Command({
+      resume: {
+        decisions: [
+          {
+            type: "approve",
+            toolCallId: interruptData.actionRequests[0].toolCallId
+          },
+          {
+            type: "edit",
+            toolCallId: interruptData.actionRequests[1].toolCallId,
+            editedAction: {
+              name: "write_file",
+              args: { path: "safe_path.txt", content: "Sanitized content" }
+            }
+          }
+        ]
+      }
+    }),
+    config
+  );
+}
+```
+
+#### 4.3.5 Checkpointing Behavior
+
+The middleware leverages LangGraph's checkpoint system for durable HITL execution:
+
+1. **Before Interrupt:** The agent state (messages, tool calls, context) is captured
+2. **During Interrupt:** `interrupt()` triggers checkpoint creation via configured saver (MemorySaver, PostgresSaver, etc.)
+3. **After Resume:** State is restored from checkpoint, modified with decisions
+
+```typescript
+// Checkpointer must be configured in agent for checkpointing
+const agent = createAgent({
+  model: "claude-sonnet-4-20250514",
+  middleware: [permissionMiddleware],
+  checkpointer: new MemorySaver(),  // Or PostgresSaver, etc.
+});
+
+// After interrupt, state can be retrieved from checkpointer
+const state = await agent.graph.getState(config);
+// state.tasks[0].interrupts[0].value contains the HITLRequest
+// state.channel_values contains checkpointed state
+```
+
+#### 4.3.6 Workflow Summary
+
+| Step | Description | Hook/Method |
+|------|-------------|-------------|
+| 1 | Extract tool calls from AIMessage | `extractToolCallsFromState()` |
+| 2 | Categorize by permission policy | `categorizeToolCalls()` |
+| 3 | Emit pending status for tools | `emitToolStatus('pending')` |
+| 4 | Send ACP notification | `transport.sendNotification()` |
+| 5 | Checkpoint and pause | `runtime.interrupt()` |
+| 6 | Wait for Command resume | - |
+| 7 | Process decisions | `processDecisions()` |
+| 8 | Update state, handle rejections | Return `{ messages, jumpTo }` |
+
+#### 4.3.7 Decision Outcomes
+
+| Decision | Behavior | jumpTo |
+|----------|----------|--------|
+| `approve` | Tool proceeds unchanged | `undefined` |
+| `edit` | Tool args replaced with edited version | `undefined` |
+| `reject` | Tool removed, rejection message added | `"model"` |
+
+When any rejection occurs, `jumpTo: "model"` triggers re-planning by the LLM.
 
 ### 4.4 Mode Middleware (`createACPModeMiddleware`)
 
