@@ -18,7 +18,7 @@ describe("createACPPermissionMiddleware", () => {
 
     test("creates middleware with valid configuration", () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -36,7 +36,7 @@ describe("createACPPermissionMiddleware", () => {
 
     test("accepts custom toolKindMapper", () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -52,9 +52,9 @@ describe("createACPPermissionMiddleware", () => {
   });
 
   describe("permission workflow hooks", () => {
-    test("middleware has wrapToolCall hook", () => {
+    test("middleware has afterModel hook with canJumpTo configuration", () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -63,13 +63,14 @@ describe("createACPPermissionMiddleware", () => {
         transport: mockTransport,
       });
       
-      expect(middleware.wrapToolCall).toBeDefined();
-      expect(typeof middleware.wrapToolCall).toBe("function");
+      expect(middleware.afterModel).toBeDefined();
+      expect(typeof middleware.afterModel).toBe("object");
+      expect(middleware.afterModel?.canJumpTo).toContain("model");
     });
 
     test("middleware has afterAgent hook for cleanup", () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -102,7 +103,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("policy matching", () => {
     test("matches exact tool names", () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -118,7 +119,7 @@ describe("createACPPermissionMiddleware", () => {
 
     test("matches wildcard patterns", () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -134,14 +135,10 @@ describe("createACPPermissionMiddleware", () => {
     });
   });
 
-  describe("permission options", () => {
-    test("provides default permission options", async () => {
-      let capturedOptions: any = null;
+  describe("afterModel hook - no tool calls", () => {
+    test("returns empty when no tool calls in state", async () => {
       const mockTransport = {
-        requestPermission: mock(async (params: any) => {
-          capturedOptions = params.options;
-          return { outcome: { outcome: "cancelled" } };
-        }),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -150,278 +147,486 @@ describe("createACPPermissionMiddleware", () => {
         transport: mockTransport,
       });
       
-      // Trigger a permission request
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "test", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
+      const state = { messages: [] };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
       };
       
-      await middleware.wrapToolCall!(request, handlerMock as any).catch(() => {});
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      expect(result).toEqual({});
+      expect(mockTransport.sendNotification).not.toHaveBeenCalled();
+    });
+
+    test("returns empty when last message is not AIMessage", async () => {
+      const mockTransport = {
+        sendNotification: mock(() => {}),
+        sessionUpdate: mock(async () => {}),
+      };
       
-      expect(capturedOptions).toBeDefined();
-      expect(capturedOptions).toHaveLength(4);
-      expect(capturedOptions[0].optionId).toBe("allowOnce");
-      expect(capturedOptions[0].kind).toBe("allow_once");
-      expect(capturedOptions[1].optionId).toBe("allowAlways");
-      expect(capturedOptions[1].kind).toBe("allow_always");
-      expect(capturedOptions[2].optionId).toBe("rejectOnce");
-      expect(capturedOptions[2].kind).toBe("reject_once");
-      expect(capturedOptions[3].optionId).toBe("rejectAlways");
-      expect(capturedOptions[3].kind).toBe("reject_always");
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "test": { requiresPermission: true } },
+        transport: mockTransport,
+      });
+      
+      const state = { 
+        messages: [{ _getType: () => 'human', content: "Hello" }] 
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+      };
+      
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      expect(result).toEqual({});
     });
   });
 
-  describe("cancelled outcome handling", () => {
-    test("throws error when permission request is cancelled", async () => {
-      const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
-        sessionUpdate: mock(async () => {}),
-      };
-
-      const middleware = createACPPermissionMiddleware({
-        permissionPolicy: { "test_tool": { requiresPermission: true } },
-        transport: mockTransport,
-      });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "test_tool", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
-      };
-
-      await expect(middleware.wrapToolCall!(request, handlerMock as any))
-        .rejects.toThrow("Permission request cancelled by user");
-    });
-
-    test("emits failed update on cancelled outcome", async () => {
+  describe("afterModel hook - auto-approved tools", () => {
+    test("skips permission when policy not matched", async () => {
+      const sendNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const mockTransport = {
-        requestPermission: mock(async () => ({ outcome: { outcome: "cancelled" } })),
+        sendNotification: sendNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
-
-      const middleware = createACPPermissionMiddleware({
-        permissionPolicy: { "delete_file": { requiresPermission: true, kind: "delete" } },
-        transport: mockTransport,
-      });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "delete_file", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
-      };
-
-      await expect(middleware.wrapToolCall!(request, handlerMock as any))
-        .rejects.toThrow();
-
-      expect(sessionUpdateMock).toHaveBeenCalled();
-    });
-  });
-
-  describe("selected outcome with rejection", () => {
-    test("throws error when user rejects once", async () => {
-      const mockTransport = {
-        requestPermission: mock(async () => ({
-          outcome: { outcome: "selected", optionId: "rejectOnce" }
-        })),
-        sessionUpdate: mock(async () => {}),
-      };
-
-      const middleware = createACPPermissionMiddleware({
-        permissionPolicy: { "write_file": { requiresPermission: true, kind: "edit" } },
-        transport: mockTransport,
-      });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "write_file", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
-      };
-
-      await expect(middleware.wrapToolCall!(request, handlerMock as any))
-        .rejects.toThrow("Permission denied by user");
-    });
-
-    test("throws error when user rejects always", async () => {
-      const mockTransport = {
-        requestPermission: mock(async () => ({
-          outcome: { outcome: "selected", optionId: "rejectAlways" }
-        })),
-        sessionUpdate: mock(async () => {}),
-      };
-
-      const middleware = createACPPermissionMiddleware({
-        permissionPolicy: { "delete_file": { requiresPermission: true, kind: "delete" } },
-        transport: mockTransport,
-      });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "delete_file", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
-      };
-
-      await expect(middleware.wrapToolCall!(request, handlerMock as any))
-        .rejects.toThrow("Permission denied by user");
-    });
-  });
-
-  describe("selected outcome with approval", () => {
-    test("allows execution when user approves once", async () => {
-      const mockTransport = {
-        requestPermission: mock(async () => ({
-          outcome: { outcome: "selected", optionId: "allowOnce" }
-        })),
-        sessionUpdate: mock(async () => {}),
-      };
-
-      const middleware = createACPPermissionMiddleware({
-        permissionPolicy: { "read_file": { requiresPermission: true, kind: "read" } },
-        transport: mockTransport,
-      });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "read_file", args: { path: "/test.txt" } },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
-      };
-
-      const result = await middleware.wrapToolCall!(request, handlerMock as any);
-
-      expect(handlerMock).toHaveBeenCalled();
-    });
-
-    test("emits permission_update when user allows always", async () => {
-      const mockTransport = {
-        requestPermission: mock(async () => ({
-          outcome: { outcome: "selected", optionId: "allowAlways" }
-        })),
-        sessionUpdate: mock(async () => {}),
-      };
-
-      const middleware = createACPPermissionMiddleware({
-        permissionPolicy: { "search_*": { requiresPermission: true, kind: "search" } },
-        transport: mockTransport,
-      });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "search_files", args: { query: "test" } },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
-      };
-
-      await middleware.wrapToolCall!(request, handlerMock as any);
-
-      expect(handlerMock).toHaveBeenCalled();
-    });
-  });
-
-  describe("requiresPermission check", () => {
-    test("skips permission flow when policy not matched", async () => {
-      const requestPermissionMock = mock(async () => ({
-        outcome: { outcome: "selected", optionId: "allowOnce" }
-      }));
-      const mockTransport = {
-        requestPermission: requestPermissionMock,
-        sessionUpdate: mock(async () => {}),
-      };
-
+      
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: { "protected_tool": { requiresPermission: true } },
         transport: mockTransport,
       });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "unprotected_tool", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "unprotected_tool", args: {} }
+            ]
+          }
+        ]
       };
-
-      const result = await middleware.wrapToolCall!(request, handlerMock as any);
-
-      expect(handlerMock).toHaveBeenCalled();
-      expect(requestPermissionMock).not.toHaveBeenCalled();
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: mock(async () => ({ decisions: [] })),
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(sendNotificationMock).not.toHaveBeenCalled();
+      expect(sessionUpdateMock).not.toHaveBeenCalled();
     });
 
-    test("skips permission flow when requiresPermission is false", async () => {
-      const requestPermissionMock = mock(async () => ({
-        outcome: { outcome: "selected", optionId: "allowOnce" }
-      }));
+    test("skips permission when requiresPermission is false", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
       const mockTransport = {
-        requestPermission: requestPermissionMock,
-        sessionUpdate: mock(async () => {}),
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
       };
-
+      
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: { "tool": { requiresPermission: false } },
         transport: mockTransport,
       });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "tool", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "tool", args: {} }
+            ]
+          }
+        ]
       };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: mock(async () => ({ decisions: [] })),
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(sendNotificationMock).not.toHaveBeenCalled();
+    });
+  });
 
-      const result = await middleware.wrapToolCall!(request, handlerMock as any);
+  describe("afterModel hook - permission required", () => {
+    test("calls interrupt when permission required", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "test_tool": { requiresPermission: true } },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "test_tool", args: { param: "value" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(interruptMock).toHaveBeenCalled();
+      expect(sendNotificationMock).toHaveBeenCalledWith(
+        "session/request_permission",
+        expect.objectContaining({
+          sessionId: "session-1",
+        })
+      );
+    });
 
-      expect(handlerMock).toHaveBeenCalled();
-      expect(requestPermissionMock).not.toHaveBeenCalled();
+    test("emits pending status before interrupt", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "delete_file": { requiresPermission: true, kind: "delete" } },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "delete_file", args: { path: "/test.txt" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(sessionUpdateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-1",
+          update: expect.objectContaining({
+            sessionUpdate: "tool_call",
+            toolCallId: "call-1",
+            status: "pending",
+          }),
+        })
+      );
+    });
+
+    test("processes approve decision correctly", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "write_file": { requiresPermission: true, kind: "edit" } },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "write_file", args: { path: "/test.txt", content: "Hello" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      // Should not jump back to model on approval
+      expect(result?.jumpTo).toBeUndefined();
+    });
+
+    test("processes edit decision correctly", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{
+          type: "edit",
+          editedAction: {
+            name: "write_file",
+            args: { path: "/new.txt", content: "Modified" }
+          }
+        }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "write_file": { requiresPermission: true, kind: "edit" } },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "write_file", args: { path: "/test.txt", content: "Hello" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      // Should not jump back to model on edit
+      expect(result?.jumpTo).toBeUndefined();
+    });
+
+    test("processes reject decision and jumps to model", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{
+          type: "reject",
+          message: "I don't want to do that"
+        }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "delete_file": { requiresPermission: true, kind: "delete" } },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "delete_file", args: { path: "/test.txt" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      // Should jump back to model on rejection
+      expect(result?.jumpTo).toBe("model");
+      // Should add rejection message
+      expect(result?.messages).toBeDefined();
     });
   });
 
   describe("error handling", () => {
-    test("handles connection errors gracefully", async () => {
-      const sessionUpdateMock = mock(async () => { throw new Error("Connection failed"); });
+    test("throws when interrupt is not supported", async () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({
-          outcome: { outcome: "selected", optionId: "allowOnce" }
-        })),
-        sessionUpdate: sessionUpdateMock,
+        sendNotification: mock(() => {}),
+        sessionUpdate: mock(async () => {}),
       };
-
+      
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: { "test": { requiresPermission: true } },
         transport: mockTransport,
       });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "test", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "test", args: {} }
+            ]
+          }
+        ]
       };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        // No interrupt function
+      };
+      
+      await expect(middleware.afterModel?.hook(state as any, runtime as any))
+        .rejects.toThrow("Interrupt not supported in this runtime");
+    });
 
+    test("handles connection errors gracefully", async () => {
+      const sessionUpdateMock = mock(async () => { throw new Error("Connection failed"); });
+      const mockTransport = {
+        sendNotification: mock(() => { throw new Error("Notification failed"); }),
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { "test": { requiresPermission: true } },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "test", args: {} }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: mock(async (req: any) => ({
+          decisions: [{ type: "approve" }]
+        })),
+      };
+      
       // Should not throw even if sessionUpdate fails
-      const result = await middleware.wrapToolCall!(request, handlerMock as any);
-      expect(handlerMock).toHaveBeenCalled();
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      expect(result).toBeDefined();
     });
   });
 
   describe("thread state cleanup", () => {
     test("cleans up thread state after agent completes", async () => {
       const mockTransport = {
-        requestPermission: mock(async () => ({
-          outcome: { outcome: "selected", optionId: "allowOnce" }
-        })),
+        sendNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-
+      
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: { "test": { requiresPermission: true } },
         transport: mockTransport,
       });
-
-      const handlerMock = mock(async () => ({ result: "success" }));
-      const request = {
-        toolCall: { id: "call-1", name: "test", args: {} },
-        runtime: { config: {}, context: { threadId: "thread-1", sessionId: "session-1" } },
+      
+      const runtime = { 
+        context: { threadId: "thread-1" },
+        config: { configurable: { thread_id: "thread-1" } },
       };
-
-      await middleware.wrapToolCall!(request, handlerMock as any);
-
+      
       // afterAgent should clean up without error
-      await middleware.afterAgent?.({} as any, { context: { threadId: "thread-1" } } as any);
+      await middleware.afterAgent?.({} as any, runtime as any);
+    });
+  });
+
+  describe("mixed tool calls", () => {
+    test("handles mix of permission-required and auto-approved tools", async () => {
+      const sendNotificationMock = mock(() => {});
+      const sessionUpdateMock = mock(async () => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: sessionUpdateMock,
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: { 
+          "delete_file": { requiresPermission: true, kind: "delete" },
+          "read_file": { requiresPermission: false },  // Auto-approved
+        },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Hello" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll help you",
+            tool_calls: [
+              { id: "call-1", name: "read_file", args: { path: "/test.txt" } },  // Auto-approved
+              { id: "call-2", name: "delete_file", args: { path: "/old.txt" } }  // Requires permission
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      const result = await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      // Should only interrupt for delete_file, not read_file
+      expect(interruptMock).toHaveBeenCalled();
+      expect(sendNotificationMock).toHaveBeenCalled();
     });
   });
 });

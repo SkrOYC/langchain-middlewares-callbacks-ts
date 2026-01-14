@@ -273,9 +273,9 @@ export interface PermissionPolicyConfig {
   
   /**
    * List of allowed response options when permission is requested.
-   * @default ["allow", "deny"]
+   * @default ["approve", "reject"]
    */
-  allowedResponses?: Array<'allow' | 'deny' | 'allow_always'>;
+  allowedResponses?: Array<'approve' | 'edit' | 'reject'>;
   
   /**
    * Whether to automatically deny this tool.
@@ -284,6 +284,104 @@ export interface PermissionPolicyConfig {
    */
   autoDeny?: boolean;
 }
+
+// ============================================================
+// HITL (Human-in-the-Loop) Types for Permission Middleware
+// ============================================================
+
+/**
+ * Represents an action request for human review.
+ * Used in HITL permission workflow to describe tool calls needing approval.
+ */
+export interface ActionRequest {
+  /** The unique identifier for this tool call. */
+  toolCallId: string;
+  
+  /** The name of the action/tool being requested. */
+  name: string;
+  
+  /** Key-value pairs of arguments needed for the action. */
+  args: Record<string, unknown>;
+  
+  /** Human-readable description of the action. */
+  description?: string;
+}
+
+/**
+ * Review configuration for a specific action in HITL workflow.
+ */
+export interface ReviewConfig {
+  /** Name of the action associated with this review configuration. */
+  actionName: string;
+  
+  /** The decisions that are allowed for this request. */
+  allowedDecisions: Array<'approve' | 'edit' | 'reject'>;
+  
+  /** JSON schema for the arguments, used when edits are allowed. */
+  argsSchema?: Record<string, unknown>;
+}
+
+/**
+ * HITL Request structure passed to interrupt() for permission checkpoints.
+ */
+export interface HITLRequest {
+  /** List of agent actions awaiting human review. */
+  actionRequests: ActionRequest[];
+  
+  /** Review configuration for all possible actions. */
+  reviewConfigs: ReviewConfig[];
+}
+
+/**
+ * Decision types for HITL approval workflow.
+ */
+export type HITLDecision =
+  | ApproveDecision
+  | EditDecision
+  | RejectDecision;
+
+/**
+ * Approve decision - allows the tool call to proceed with original arguments.
+ */
+export interface ApproveDecision {
+  type: 'approve';
+}
+
+/**
+ * Edit decision - modifies the tool name and/or arguments before execution.
+ */
+export interface EditDecision {
+  type: 'edit';
+  
+  /** The modified action with new name and/or arguments. */
+  editedAction: {
+    name: string;
+    args: Record<string, unknown>;
+  };
+}
+
+/**
+ * Reject decision - denies the tool call and returns human feedback.
+ */
+export interface RejectDecision {
+  type: 'reject';
+  
+  /** Optional message to send back to the model explaining the rejection. */
+  message?: string;
+}
+
+/**
+ * HITL Response structure returned from Command.resume after human decision.
+ */
+export interface HITLResponse {
+  /** Array of decisions for each action request. */
+  decisions: HITLDecision[];
+}
+
+/**
+ * Callback for handling session cancellation during permission wait.
+ */
+export type SessionCancelCallback = (sessionId: SessionId) => void;
 
 /**
  * Configuration for MCP server connections.
