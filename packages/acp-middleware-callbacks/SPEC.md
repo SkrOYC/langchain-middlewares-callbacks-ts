@@ -477,15 +477,16 @@ interface HITLRequest {
 
 /**
  * Decision types from human review
+ * Aligned with LangChain's builtin HITL middleware pattern.
+ * Decisions are matched to tool calls by array order.
  */
 type HITLDecision =
-  | { type: 'approve'; toolCallId?: string }
+  | { type: 'approve' }
   | {
       type: 'edit';
-      toolCallId?: string;
       editedAction: { name: string; args: Record<string, unknown> };
     }
-  | { type: 'reject'; toolCallId?: string; message?: string };
+  | { type: 'reject'; message?: string };
 
 /**
  * Response structure passed to Command.resume

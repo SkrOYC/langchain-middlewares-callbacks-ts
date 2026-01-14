@@ -931,7 +931,7 @@ describe("createACPPermissionMiddleware", () => {
       expect(result).toBeDefined();
       expect(result?.messages).toBeDefined();
       
-      // tc-2 (delete_file) should cause jumpTo model due to reject
+      // tc-3 (read_file) should cause jumpTo model due to reject
       expect(result?.jumpTo).toBe("model");
     });
   });

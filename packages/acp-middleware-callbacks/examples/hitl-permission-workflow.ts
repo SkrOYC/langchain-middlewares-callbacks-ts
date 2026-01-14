@@ -16,6 +16,7 @@ import { createAgent } from "langchain";
 import { createACPPermissionMiddleware } from "../src/middleware/createACPPermissionMiddleware";
 import { Command } from "@langchain/langgraph";
 import { HumanMessage } from "@langchain/core/messages";
+import { MemorySaver } from "@langchain/langgraph-checkpoint";
 
 /**
  * Example 1: Basic HITL Permission Workflow
@@ -262,8 +263,6 @@ async function rejectionAndReplanningWorkflow() {
  */
 async function checkpointAndRecoveryWorkflow() {
   console.log("\n=== Example 4: Checkpoint and State Recovery ===\n");
-
-  import { MemorySaver } from "@langchain/langgraph-checkpoint";
 
   const checkpointer = new MemorySaver();
 
