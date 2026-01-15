@@ -309,6 +309,103 @@ describe("ACPCallbackHandler", () => {
     });
   });
 
+  describe("handleAgentError", () => {
+    test("sends error message on agent error", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      await handler.handleAgentError(new Error("Agent execution failed"), "run-1");
+      
+      expect(mockConnection.sendAgentMessage).toHaveBeenCalled();
+    });
+
+    test("generates unique message ID for each error", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      await handler.handleAgentError(new Error("First error"), "run-1");
+      await handler.handleAgentError(new Error("Second error"), "run-2");
+      
+      expect(mockConnection.sendAgentMessage).toHaveBeenCalledTimes(2);
+      
+      const firstCall = mockConnection.sendAgentMessage.mock.calls[0][0];
+      const secondCall = mockConnection.sendAgentMessage.mock.calls[1][0];
+      
+      expect(firstCall.messageId).not.toBe(secondCall.messageId);
+    });
+
+    test("includes ACP error code in error message", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      await handler.handleAgentError(new Error("Authentication required"), "run-1");
+      
+      expect(mockConnection.sendAgentMessage).toHaveBeenCalled();
+      const callArg = mockConnection.sendAgentMessage.mock.calls[0][0];
+      
+      // Should include error code in the message
+      expect(callArg.delta.text).toMatch(/\[Error -32000\]/);
+    });
+
+    test("handles different error types with appropriate codes", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      // Test validation error
+      await handler.handleAgentError(new Error("Validation error: invalid input"), "run-1");
+      const validationCall = mockConnection.sendAgentMessage.mock.calls[0][0];
+      expect(validationCall.delta.text).toMatch(/\[Error -32602\]/); // INVALID_PARAMS
+      
+      // Reset mock
+      mockConnection.sendAgentMessage.mockClear();
+      
+      // Test resource not found error
+      await handler.handleAgentError(new Error("Resource not found: file.txt"), "run-2");
+      const notFoundCall = mockConnection.sendAgentMessage.mock.calls[0][0];
+      expect(notFoundCall.delta.text).toMatch(/\[Error -32002\]/); // RESOURCE_NOT_FOUND
+    });
+
+    test("handles connection errors gracefully", async () => {
+      const errorConnection = {
+        sendAgentMessage: mock(async () => { throw new Error("Connection error"); }),
+        close: mock(async () => undefined)
+      };
+      
+      const handler = new ACPCallbackHandler({
+        connection: errorConnection as any
+      });
+      
+      // Should not throw even if connection fails
+      await expect(handler.handleAgentError(new Error("Test error"), "run-1")).resolves.toBeUndefined();
+    });
+
+    test("includes full error message with code", async () => {
+      const mockConnection = createMockConnection();
+      const handler = new ACPCallbackHandler({
+        connection: mockConnection as any
+      });
+      
+      const testError = new Error("Detailed error message for debugging");
+      await handler.handleAgentError(testError, "run-1");
+      
+      expect(mockConnection.sendAgentMessage).toHaveBeenCalled();
+      const callArg = mockConnection.sendAgentMessage.mock.calls[0][0];
+      
+      // Verify error code and message are included
+      expect(callArg.delta.text).toContain("[Error");
+      expect(callArg.delta.text).toContain("]");
+      expect(callArg.delta.text).toContain("Detailed error message for debugging");
+    });
+  });
+
   describe("dispose", () => {
     test("closes connection on dispose", async () => {
       const mockConnection = createMockConnection();
