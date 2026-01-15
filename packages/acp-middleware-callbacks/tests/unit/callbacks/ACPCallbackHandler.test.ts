@@ -350,7 +350,7 @@ describe("ACPCallbackHandler", () => {
       const callArg = mockConnection.sendAgentMessage.mock.calls[0][0];
       
       // Should include error code in the message
-      expect(callArg.delta.text).toMatch(/\[Error -32000\]/);
+      expect(callArg.content[0].text).toMatch(/\[Error -32000\]/);
     });
 
     test("handles different error types with appropriate codes", async () => {
@@ -362,7 +362,7 @@ describe("ACPCallbackHandler", () => {
       // Test validation error
       await handler.handleAgentError(new Error("Validation error: invalid input"), "run-1");
       const validationCall = mockConnection.sendAgentMessage.mock.calls[0][0];
-      expect(validationCall.delta.text).toMatch(/\[Error -32602\]/); // INVALID_PARAMS
+      expect(validationCall.content[0].text).toMatch(/\[Error -32602\]/); // INVALID_PARAMS
       
       // Reset mock
       mockConnection.sendAgentMessage.mockClear();
@@ -370,7 +370,7 @@ describe("ACPCallbackHandler", () => {
       // Test resource not found error
       await handler.handleAgentError(new Error("Resource not found: file.txt"), "run-2");
       const notFoundCall = mockConnection.sendAgentMessage.mock.calls[0][0];
-      expect(notFoundCall.delta.text).toMatch(/\[Error -32002\]/); // RESOURCE_NOT_FOUND
+      expect(notFoundCall.content[0].text).toMatch(/\[Error -32002\]/); // RESOURCE_NOT_FOUND
     });
 
     test("handles connection errors gracefully", async () => {
@@ -400,9 +400,9 @@ describe("ACPCallbackHandler", () => {
       const callArg = mockConnection.sendAgentMessage.mock.calls[0][0];
       
       // Verify error code and message are included
-      expect(callArg.delta.text).toContain("[Error");
-      expect(callArg.delta.text).toContain("]");
-      expect(callArg.delta.text).toContain("Detailed error message for debugging");
+      expect(callArg.content[0].text).toContain("[Error");
+      expect(callArg.content[0].text).toContain("]");
+      expect(callArg.content[0].text).toContain("Detailed error message for debugging");
     });
   });
 

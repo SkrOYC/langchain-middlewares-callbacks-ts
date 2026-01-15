@@ -631,13 +631,23 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
     const errorMessage = `[Error ${errorCode}] ${error.message}`;
     
     try {
-      await this.sendAgentMessageChunk(
+      await this.connection.sendAgentMessage({
         messageId,
-        errorMessage,
-        errorMessage
-      );
-    } catch {
+        role: "agent",
+        content: [
+          {
+            type: "text",
+            text: errorMessage,
+            _meta: null,
+            annotations: null,
+          } as ContentBlock,
+        ],
+        contentFormat: "text",
+      });
+    } catch (e) {
       // Fail-safe: don't let emit errors break agent execution
+      // Log the error for debugging purposes
+      console.error("ACPCallbackHandler: Failed to send agent error to client:", e);
     }
   }
 
