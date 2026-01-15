@@ -8,7 +8,7 @@
 
 // Session Middleware
 export type { ACPSessionMiddlewareConfig, ACPSessionMiddlewareResult } from "./createACPSessionMiddleware.js";
-export { createACPSessionMiddleware, createACPCheckpointer } from "./createACPSessionMiddleware.js";
+export { createACPSessionMiddleware } from "./createACPSessionMiddleware.js";
 
 // Tool Middleware
 export type { ACPToolMiddlewareConfig } from "./createACPToolMiddleware.js";
