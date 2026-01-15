@@ -16,6 +16,7 @@ import type {
 import type { ContentBlockMapper, DefaultContentBlockMapper } from "../utils/contentBlockMapper.js";
 import { defaultContentBlockMapper } from "../utils/contentBlockMapper.js";
 import type { ACPCallbackHandlerConfig, ACPConnection } from "../types/middleware.js";
+import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
 
 /**
  * Callback handler for ACP protocol streaming events.
@@ -602,6 +603,51 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
       }
       
       this.currentToolCallId = null;
+    }
+  }
+
+  /**
+   * Called when an agent encounters an error.
+   * 
+   * This method handles agent-level errors by mapping them to ACP error codes
+   * and sending the error as an agent_message_chunk to the ACP client.
+   * 
+   * @param error - The error that occurred
+   * @param runId - The run ID for this agent execution
+   * @param _parentRunId - The parent run ID if this is a nested call
+   */
+  override async handleAgentError(
+    error: Error,
+    runId: string,
+    _parentRunId?: string
+  ): Promise<void> {
+    // Map the LangChain error to an ACP error code
+    const errorCode = mapLangChainError(error);
+    
+    // Generate a message ID for the error message
+    const messageId = this.generateMessageId();
+    
+    // Format the error message with the ACP error code
+    const errorMessage = `[Error ${errorCode}] ${error.message}`;
+    
+    try {
+      await this.connection.sendAgentMessage({
+        messageId,
+        role: "agent",
+        content: [
+          {
+            type: "text",
+            text: errorMessage,
+            _meta: null,
+            annotations: null,
+          } as ContentBlock,
+        ],
+        contentFormat: "text",
+      });
+    } catch (e) {
+      // Fail-safe: don't let emit errors break agent execution
+      // Log the error for debugging purposes
+      console.error("ACPCallbackHandler: Failed to send agent error to client:", e);
     }
   }
 
