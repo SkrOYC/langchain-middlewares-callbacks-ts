@@ -697,12 +697,6 @@ export interface ACPSessionState {
 }
 
 /**
- * Type alias for ACP middleware state return values.
- * Combines ACPSessionState with Record<string, unknown> for LangChain compatibility.
- */
-export type ACPStateReturn = Partial<ACPSessionState> & Record<string, unknown>;
-
-/**
  * ACP middleware state return type compatible with LangChain's MiddlewareResult.
  * Includes optional jumpTo property for execution control.
  */
