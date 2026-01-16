@@ -616,7 +616,7 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
    * @param runId - The run ID for this agent execution
    * @param _parentRunId - The parent run ID if this is a nested call
    */
-  override async handleAgentError(
+  async handleAgentError(
     error: Error,
     runId: string,
     _parentRunId?: string
