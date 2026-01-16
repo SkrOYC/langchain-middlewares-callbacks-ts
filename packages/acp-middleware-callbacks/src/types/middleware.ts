@@ -646,6 +646,95 @@ export interface ACPAgentState {
    */
   lastToolCall?: string;
 }
+/**
+ * ACP session state for middleware state management.
+ * 
+ * This interface defines the typed state fields used by ACP middleware
+ * to track session lifecycle, mode information, and snapshot emission.
+ * All fields are optional since middleware returns partial state updates
+ * that get merged into the agent state.
+ */
+export interface ACPSessionState {
+  /**
+   * Current session ID for the agent execution.
+   */
+  acp_sessionId?: SessionId;
+  
+  /**
+   * Thread identifier for the current execution context.
+   */
+  acp_threadId?: string;
+  
+  /**
+   * Number of turns processed in the current session.
+   */
+  acp_turnCount?: number;
+  
+  /**
+   * Current mode identifier for the agent.
+   */
+  acp_mode?: string;
+  
+  /**
+   * Mode configuration for the current execution.
+   */
+  acp_modeConfig?: ACPModeConfig;
+  
+  /**
+   * Whether a state snapshot has been emitted.
+   */
+  acp_snapshotEmitted?: boolean;
+  
+  /**
+   * Whether a state snapshot should be emitted.
+   */
+  acp_shouldEmitSnapshot?: boolean;
+  
+  /**
+   * Final state mapping when snapshot emission is configured.
+   */
+  acp_finalState?: Record<string, unknown>;
+}
+
+/**
+ * ACP middleware state return type compatible with LangChain's MiddlewareResult.
+ * Includes optional jumpTo property for execution control.
+ */
+export type ACPMiddlewareStateReturn = Partial<ACPSessionState> & {
+  /**
+   * Optional jumpTo target for execution control.
+   */
+  jumpTo?: "model" | "tools" | "end";
+} & Record<string, unknown>;
+
+/**
+ * Configuration for a specific mode in the ACP mode middleware.
+ */
+export interface ACPModeConfig {
+  /**
+   * System prompt to use when this mode is active.
+   * This is prepended to the agent's existing system message.
+   */
+  systemPrompt: string;
+  
+  /**
+   * Human-readable description of this mode.
+   */
+  description?: string;
+  
+  /**
+   * List of tool names allowed in this mode.
+   * If undefined, all tools are allowed.
+   */
+  allowedTools?: string[];
+  
+  /**
+   * Whether this mode requires user permission for tool execution.
+   * @default false
+   */
+  requirePermission?: boolean;
+}
+
 
 /**
  * Type for language models supported by the agent.

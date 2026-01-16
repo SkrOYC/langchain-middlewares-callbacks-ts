@@ -10,34 +10,7 @@
 import { createMiddleware } from "langchain";
 import { z } from "zod";
 import type { SessionId } from "../types/acp.js";
-
-/**
- * Configuration for a specific mode in the ACP mode middleware.
- */
-export interface ACPModeConfig {
-  /**
-   * System prompt to use when this mode is active.
-   * This is prepended to the agent's existing system message.
-   */
-  systemPrompt: string;
-  
-  /**
-   * Human-readable description of this mode.
-   */
-  description?: string;
-  
-  /**
-   * List of tool names allowed in this mode.
-   * If undefined, all tools are allowed.
-   */
-  allowedTools?: string[];
-  
-  /**
-   * Whether this mode requires user permission for tool execution.
-   * @default false
-   */
-  requirePermission?: boolean;
-}
+import type { ACPSessionState, ACPModeConfig, ACPMiddlewareStateReturn } from "../types/middleware.js";
 
 /**
  * Transport interface for sending session updates.
@@ -343,7 +316,7 @@ export function createACPModeMiddleware(
         acp_mode: currentModeId,
         acp_modeConfig: modeConfig,
         acp_sessionId: sessionId,
-      } as any;
+      } as ACPMiddlewareStateReturn;
     },
     
     afterAgent: async (state, runtime) => {

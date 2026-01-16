@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { 
   SessionId, 
 } from "../types/acp.js";
-import type { ACPMiddlewareConfig } from "../types/middleware.js";
+import type { ACPMiddlewareConfig, ACPSessionState, ACPMiddlewareStateReturn } from "../types/middleware.js";
 
 /**
  * Configuration for the ACP session middleware.
@@ -148,7 +148,7 @@ export function createACPSessionMiddleware(
     beforeAgent: async (state, runtime) => {
       const runtimeAny = runtime as any;
       const agentConfig = runtimeAny.config ?? {};
-      const threadId = sessionIdExtractor(agentConfig) ?? 
+      const threadId: string = sessionIdExtractor(agentConfig) ?? 
         runtimeAny.context?.threadId ?? 
         runtimeAny.context?.thread_id ?? 
         "default";
@@ -179,19 +179,19 @@ export function createACPSessionMiddleware(
           acp_threadId: threadId,
           acp_sessionId: threadStateInstance.sessionId,
           acp_shouldEmitSnapshot: true,
-        } as any;
+        } as ACPMiddlewareStateReturn;
       }
 
       return {
         acp_threadId: threadId,
         acp_sessionId: threadStateInstance.sessionId,
-      } as any;
+      } as ACPMiddlewareStateReturn;
     },
 
     beforeModel: async (state, runtime) => {
       const runtimeAny = runtime as any;
       const agentConfig = runtimeAny.config ?? {};
-      const threadId = ((state as any).acp_threadId as string) ?? 
+      const threadId: string = ((state as any).acp_threadId as string) ?? 
         sessionIdExtractor(agentConfig) ?? 
         runtimeAny.context?.threadId ?? 
         runtimeAny.context?.thread_id ?? 
@@ -223,13 +223,13 @@ export function createACPSessionMiddleware(
         acp_sessionId: sessionId,
         acp_turnCount: threadStateInstance.turnCount,
         acp_shouldEmitSnapshot: shouldEmit,
-      } as any;
+      } as ACPMiddlewareStateReturn;
     },
 
     afterModel: async (state, runtime) => {
       const runtimeAny = runtime as any;
       // Get threadId from state first, then fallback to config/context
-      const threadId = ((state as any).acp_threadId as string) ?? 
+      const threadId: string = ((state as any).acp_threadId as string) ?? 
         sessionIdExtractor(runtimeAny.config ?? {}) ?? 
         runtimeAny.context?.threadId ?? 
         runtimeAny.context?.thread_id ?? 
@@ -251,7 +251,7 @@ export function createACPSessionMiddleware(
           acp_sessionId: sessionId,
           acp_turnCount: threadStateInstance.turnCount,
           acp_snapshotEmitted: true,
-        } as any;
+        } as ACPMiddlewareStateReturn;
       }
 
       return {
@@ -259,13 +259,13 @@ export function createACPSessionMiddleware(
         acp_sessionId: sessionId,
         acp_turnCount: threadStateInstance.turnCount,
         acp_shouldEmitSnapshot: shouldEmit,
-      } as any;
+      } as ACPMiddlewareStateReturn;
     },
 
     afterAgent: async (state, runtime) => {
       const runtimeAny = runtime as any;
       // Get threadId from state first, then fallback to config/context
-      const threadId = ((state as any).acp_threadId as string) ?? 
+      const threadId: string = ((state as any).acp_threadId as string) ?? 
         sessionIdExtractor(runtimeAny.config ?? {}) ?? 
         runtimeAny.context?.threadId ?? 
         runtimeAny.context?.thread_id ?? 
@@ -291,7 +291,7 @@ export function createACPSessionMiddleware(
           acp_turnCount: threadStateInstance.turnCount,
           acp_finalState: mappedState,
           acp_shouldEmitSnapshot: true,
-        } as any;
+        } as ACPMiddlewareStateReturn;
       }
 
       // Clean up thread state after completion
@@ -301,7 +301,7 @@ export function createACPSessionMiddleware(
         acp_threadId: threadId,
         acp_sessionId: sessionId,
         acp_turnCount: 0,
-      } as any;
+      } as ACPMiddlewareStateReturn;
     },
   });
 }
