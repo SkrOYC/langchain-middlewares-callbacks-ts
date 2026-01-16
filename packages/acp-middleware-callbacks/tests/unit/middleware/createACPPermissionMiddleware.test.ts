@@ -765,12 +765,12 @@ describe("createACPPermissionMiddleware", () => {
       // Interrupt should be called
       expect(interruptMock).toHaveBeenCalled();
       
-      // But only for the tool requiring permission
+      // Verify only the tool requiring permission triggered the interrupt
       const interruptCall = interruptMock.mock.calls[0][0];
       expect(interruptCall.actionRequests).toHaveLength(1);
       expect(interruptCall.actionRequests[0].name).toBe("sensitive_op");
       
-      // Final state should have all 3 tools preserved
+      // Verify all 3 tools are preserved in the final state
       const lastMessage = result?.messages?.find(
         (m: any) => m && m._getType && m._getType() === 'ai'
       );
@@ -990,6 +990,256 @@ describe("createACPPermissionMiddleware", () => {
       
       // Should NOT interrupt because delete_file matched first pattern with requiresPermission: false
       expect(sendNotificationMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("persistent options", () => {
+    test("accepts persistent options in permission policy configuration", () => {
+      const mockTransport = {
+        sendNotification: mock(() => {}),
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "delete_file": {
+            requiresPermission: true,
+            persistentOptions: [
+              { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
+              { optionId: "reject_always", name: "Always reject", kind: "reject_always" },
+            ],
+          },
+        },
+        transport: mockTransport,
+      });
+      
+      expect(middleware).toBeDefined();
+    });
+
+    test("merges persistent options with default options in permission request", async () => {
+      const sendNotificationMock = mock(() => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "delete_file": {
+            requiresPermission: true,
+            persistentOptions: [
+              { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
+              { optionId: "reject_always", name: "Always reject", kind: "reject_always" },
+            ],
+          },
+        },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Delete the file" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll delete the file",
+            tool_calls: [
+              { id: "call-1", name: "delete_file", args: { path: "/test.txt" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(sendNotificationMock).toHaveBeenCalledWith(
+        "session/request_permission",
+        expect.objectContaining({
+          sessionId: "session-1",
+          options: expect.arrayContaining([
+            expect.objectContaining({ optionId: "approve" }),
+            expect.objectContaining({ optionId: "edit" }),
+            expect.objectContaining({ optionId: "reject" }),
+            expect.objectContaining({ optionId: "allow_always" }),
+            expect.objectContaining({ optionId: "reject_always" }),
+          ]),
+        })
+      );
+    });
+
+    test("includes only default options when no persistent options configured", async () => {
+      const sendNotificationMock = mock(() => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "read_file": { requiresPermission: true },
+        },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Read the file" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll read the file",
+            tool_calls: [
+              { id: "call-1", name: "read_file", args: { path: "/test.txt" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(sendNotificationMock).toHaveBeenCalledWith(
+        "session/request_permission",
+        expect.objectContaining({
+          options: expect.arrayContaining([
+            expect.objectContaining({ optionId: "approve" }),
+            expect.objectContaining({ optionId: "edit" }),
+            expect.objectContaining({ optionId: "reject" }),
+          ]),
+        })
+      );
+      
+      // Should NOT include persistent options
+      const callArgs = sendNotificationMock.mock.calls[0][1];
+      expect(callArgs.options).not.toContainEqual(
+        expect.objectContaining({ optionId: "allow_always" })
+      );
+    });
+
+    test("handles empty persistent options array", async () => {
+      const sendNotificationMock = mock(() => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "write_file": {
+            requiresPermission: true,
+            persistentOptions: [],
+          },
+        },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Write the file" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll write the file",
+            tool_calls: [
+              { id: "call-1", name: "write_file", args: { path: "/test.txt", content: "hello" } }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      expect(sendNotificationMock).toHaveBeenCalledWith(
+        "session/request_permission",
+        expect.objectContaining({
+          options: expect.arrayContaining([
+            expect.objectContaining({ optionId: "approve" }),
+            expect.objectContaining({ optionId: "edit" }),
+            expect.objectContaining({ optionId: "reject" }),
+          ]),
+        })
+      );
+    });
+
+    test("preserves persistent option kinds correctly", async () => {
+      const sendNotificationMock = mock(() => {});
+      const interruptMock = mock(async (req: any) => ({
+        decisions: [{ type: "approve" }]
+      }));
+      
+      const mockTransport = {
+        sendNotification: sendNotificationMock,
+        sessionUpdate: mock(async () => {}),
+      };
+      
+      const middleware = createACPPermissionMiddleware({
+        permissionPolicy: {
+          "sensitive_operation": {
+            requiresPermission: true,
+            persistentOptions: [
+              { optionId: "always_allow", name: "Trust this operation", kind: "allow_always" },
+              { optionId: "always_deny", name: "Block this operation", kind: "reject_always" },
+            ],
+          },
+        },
+        transport: mockTransport,
+      });
+      
+      const state = {
+        messages: [
+          { _getType: () => 'human', content: "Run sensitive operation" },
+          { 
+            _getType: () => 'ai', 
+            content: "I'll run the sensitive operation",
+            tool_calls: [
+              { id: "call-1", name: "sensitive_operation", args: {} }
+            ]
+          }
+        ]
+      };
+      const runtime = {
+        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+        context: {},
+        interrupt: interruptMock,
+      };
+      
+      await middleware.afterModel?.hook(state as any, runtime as any);
+      
+      const callArgs = sendNotificationMock.mock.calls[0][1];
+      const persistentOptions = callArgs.options.filter(
+        (opt: any) => opt.optionId === "always_allow" || opt.optionId === "always_deny"
+      );
+      
+      expect(persistentOptions).toHaveLength(2);
+      expect(persistentOptions).toContainEqual(
+        expect.objectContaining({ optionId: "always_allow", kind: "allow_always" })
+      );
+      expect(persistentOptions).toContainEqual(
+        expect.objectContaining({ optionId: "always_deny", kind: "reject_always" })
+      );
     });
   });
 });

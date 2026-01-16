@@ -5,6 +5,22 @@
  * Uses afterModel hook with interrupt() for proper LangGraph checkpointing,
  * aligned with LangChain's built-in HITL middleware pattern.
  * 
+ * ## Persistent Permissions (Option B Pattern)
+ * 
+ * This middleware provides the mechanism for persistent permission options
+ * (allow_always, reject_always), but does NOT implement decision caching.
+ * 
+ * **Developer Responsibility:** When users select persistent options, it's the
+ * developer's responsibility to:
+ * 1. Store the persistent decisions (e.g., in localStorage, database, etc.)
+ * 2. Check cached decisions before showing permission dialogs
+ * 3. Automatically approve/deny based on cached decisions
+ * 4. Provide UI for managing/clearing persistent permissions
+ * 
+ * This approach gives developers full control over permission storage,
+ * security policies, and user experience while providing the protocol
+ * mechanism for persistent options.
+ * 
  * @packageDocumentation
  */
 
@@ -118,6 +134,9 @@ function defaultContentMapper(message: string): Array<ToolCallContent> {
 
 /**
  * Default permission options for HITL decisions.
+ * These are the standard one-time permission options that are always available.
+ * Persistent options (allow_always, reject_always) are conditionally added
+ * based on the permission policy configuration for each tool.
  */
 const DEFAULT_PERMISSION_OPTIONS: Array<{
   optionId: string;
@@ -128,6 +147,17 @@ const DEFAULT_PERMISSION_OPTIONS: Array<{
   { optionId: "edit", name: "Edit", kind: "allow_once" },
   { optionId: "reject", name: "Reject", kind: "reject_once" },
 ];
+
+/**
+ * Persistent permission options that can be configured in permission policy.
+ * These are NOT included by default - they are only added when explicitly
+ * configured for a specific tool pattern in the permission policy.
+ * 
+ * Note: The middleware does not implement decision caching. When these options
+ * are selected, it's the developer's responsibility to implement and store
+ * the persistent decisions (Option B pattern). This provides the mechanism
+ * while developers control the caching and security policy.
+ */
 
 /**
  * Escapes special regex characters in a string.
@@ -252,22 +282,40 @@ function categorizeToolCalls(
 
 /**
  * Builds the HITL request structure for interrupt().
+ * Also merges persistent options from the permission policy with default options.
  * 
  * @param toolCalls - Tool calls requiring permission
  * @param policy - Permission policy configuration
  * @param descriptionPrefix - Optional prefix for descriptions
- * @returns HITLRequest structure
+ * @returns Object containing HITL request structure and merged permission options
  */
 function buildHITLRequest(
   toolCalls: Array<{ name: string; id: string; args: Record<string, unknown> }>,
   policy: Record<string, PermissionPolicyConfig>,
   descriptionPrefix: string = "Tool execution requires approval"
-): HITLRequest {
+): {
+  hitlRequest: HITLRequest;
+  mergedOptions: Array<{ optionId: string; name: string; kind: PermissionOptionKind }>;
+} {
   const actionRequests: ActionRequest[] = [];
   const reviewConfigs: ReviewConfig[] = [];
   
+  // Collect all persistent options from matching policies
+  const persistentOptions: Array<{ optionId: string; name: string; kind: PermissionOptionKind }> = [];
+  
   for (const toolCall of toolCalls) {
     const policyConfig = findMatchingPolicy(toolCall.name, policy);
+    
+    // Collect persistent options from this tool's policy
+    if (policyConfig?.persistentOptions) {
+      for (const persistentOption of policyConfig.persistentOptions) {
+        persistentOptions.push({
+          optionId: persistentOption.optionId,
+          name: persistentOption.name,
+          kind: persistentOption.kind,
+        });
+      }
+    }
     
     // Build action request
     actionRequests.push({
@@ -285,7 +333,24 @@ function buildHITLRequest(
     });
   }
   
-  return { actionRequests, reviewConfigs };
+  // Deduplicate persistent options by optionId to avoid duplicates when multiple
+  // tools match the same policy or different policies with overlapping options
+  const seenOptionIds = new Set<string>();
+  const uniquePersistentOptions = persistentOptions.filter(opt => {
+    if (seenOptionIds.has(opt.optionId)) {
+      return false;
+    }
+    seenOptionIds.add(opt.optionId);
+    return true;
+  });
+  
+  // Merge default options with deduplicated persistent options
+  const mergedOptions = [...DEFAULT_PERMISSION_OPTIONS, ...uniquePersistentOptions];
+  
+  return {
+    hitlRequest: { actionRequests, reviewConfigs },
+    mergedOptions,
+  };
 }
 
 /**
@@ -540,11 +605,13 @@ export function createACPPermissionMiddleware(
         }
         
         // 5. Build HITL request for interrupt
-        const hitlRequest = buildHITLRequest(
+        const buildResult = buildHITLRequest(
           permissionRequired,
           config.permissionPolicy,
           descriptionPrefix
         );
+        const hitlRequest: HITLRequest = buildResult.hitlRequest;
+        const mergedOptions = buildResult.mergedOptions;
         
         // 6. Send session/request_permission notification before interrupting
         // This provides ACP protocol compliance
@@ -564,7 +631,7 @@ export function createACPPermissionMiddleware(
                 content: undefined,
                 rawOutput: undefined,
               },
-              options: DEFAULT_PERMISSION_OPTIONS,
+              options: mergedOptions,
             });
           } catch {
             // Fail-safe: don't let notification errors break agent execution

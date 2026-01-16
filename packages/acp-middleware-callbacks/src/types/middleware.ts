@@ -250,6 +250,35 @@ export interface ACPMiddlewareConfig {
 }
 
 /**
+ * Represents a persistent permission option that can be configured in the permission policy.
+ * Persistent options allow developers to expose allow_always and reject_always choices
+ * to users, enabling them to make permanent permission decisions.
+ * 
+ * Note: This provides the mechanism for persistent permissions. Decision caching and storage
+ * is the responsibility of the developer implementing this middleware (Option B pattern).
+ */
+export interface PersistentOption {
+  /**
+   * Unique identifier for this option, returned in permission outcomes.
+   * e.g., "allow_always", "reject_always"
+   */
+  optionId: string;
+  
+  /**
+   * Human-readable name shown in permission dialogs.
+   * e.g., "Always allow", "Always reject"
+   */
+  name: string;
+  
+  /**
+   * The type of persistent permission.
+   * - 'allow_always': Permanently allow matching actions
+   * - 'reject_always': Permanently deny matching actions
+   */
+  kind: 'allow_always' | 'reject_always';
+}
+
+/**
  * Permission policy configuration for a specific tool.
  */
 export interface PermissionPolicyConfig {
@@ -276,6 +305,28 @@ export interface PermissionPolicyConfig {
    * @default ["approve", "reject"]
    */
   allowedResponses?: Array<'approve' | 'edit' | 'reject'>;
+  
+  /**
+   * Persistent permission options to expose for this tool.
+   * These options enable users to make permanent allow/deny decisions.
+   * 
+   * When configured, these options are merged with the default one-time options
+   * (approve, edit, reject) and passed to the ACP protocol.
+   * 
+   * Example:
+   * ```typescript
+   * {
+   *   persistentOptions: [
+   *     { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
+   *     { optionId: "reject_always", name: "Always reject", kind: "reject_always" },
+   *   ]
+   * }
+   * ```
+   * 
+   * Note: The middleware does not cache these decisions. Developers must implement
+   * their own decision storage and caching mechanism if needed (Option B pattern).
+   */
+  persistentOptions?: PersistentOption[];
   
   /**
    * Whether to automatically deny this tool.
