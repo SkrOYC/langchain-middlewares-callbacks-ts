@@ -254,8 +254,13 @@ export interface ACPMiddlewareConfig {
  * Persistent options allow developers to expose allow_always and reject_always choices
  * to users, enabling them to make permanent permission decisions.
  * 
+ * This is a subset of the {@link PermissionOption} type from @agentclientprotocol/sdk,
+ * limited to the persistent option kinds (allow_always, reject_always).
+ * 
  * Note: This provides the mechanism for persistent permissions. Decision caching and storage
  * is the responsibility of the developer implementing this middleware (Option B pattern).
+ * 
+ * @see PermissionOption - Full permission option type from ACP protocol SDK
  */
 export interface PersistentOption {
   /**
