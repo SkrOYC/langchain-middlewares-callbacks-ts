@@ -223,11 +223,11 @@ See [SPEC.md](./SPEC.md#3-callback-handler) for detailed callback event mapping.
 
 | Utility | Purpose |
 |---------|---------|
-| `ContentBlockMapper` | Converts between LangChain content and ACP format |
-| `ACPErrorMapper` | Maps LangChain errors to ACP error codes |
-| `StopReasonMapper` | Maps LangChain agent state to ACP stop reasons |
-| `SessionStateMapper` | Helpers for managing ACP session state |
-| `MCPToolLoader` | Loads tools from MCP servers |
+| `ContentBlockMapper` (interface), `defaultContentBlockMapper` (instance) | Converts between LangChain content and ACP format |
+| `mapLangChainError` | Maps LangChain errors to ACP error codes |
+| `mapToStopReason` | Maps LangChain agent state to ACP stop reasons |
+| `extractSessionState`, `validateSessionState`, `serializeSessionState`, etc. | Helpers for managing ACP session state |
+| `createMCPClient`, `loadMCPTools` | Loads tools from MCP servers |
 
 See [SPEC.md](./SPEC.md#4-utility-mappers) for complete utility documentation.
 
@@ -312,6 +312,35 @@ middleware: [
 - Mode middleware should be early to enforce restrictions before tool execution
 - Tool middleware needs to run before permission middleware to emit tool events
 - Permission middleware must be last to intercept tool calls after all other processing
+
+**⚠️ Event Duplication Warning:**
+
+When using `createACPToolMiddleware` and `createACPPermissionMiddleware` together, both middlewares emit tool events, which can result in duplicate `tool_call` and `tool_call_update` events:
+
+1. Permission middleware emits `pending` → `in_progress` for tools requiring approval
+2. After approval, Tool middleware emits `pending` → `in_progress` → `completed` for the same tool
+
+This creates a confusing event sequence: `pending` → `in_progress` → `pending` → `in_progress` → `completed`
+
+**To avoid duplication:**
+- Disable event emission in `createACPToolMiddleware` when permission middleware handles events
+- Configure `createACPToolMiddleware({ emitToolStart: false, emitToolResults: false })` if using permission middleware
+- Or rely on permission middleware's events and omit `createACPToolMiddleware` entirely
+
+**Recommended when both are needed:**
+```typescript
+middleware: [
+  createACPSessionMiddleware({}),
+  createACPModeMiddleware({ defaultMode: "interactive" }),
+  createACPToolMiddleware({ 
+    emitToolStart: false,    // Disable to avoid duplication
+    emitToolResults: false,  // Disable to avoid duplication
+  }),
+  createACPPermissionMiddleware({ /* policy */ }),
+]
+```
+
+See [SPEC.md](./SPEC.md#23-permission-middleware) for detailed event emission patterns.
 
 ## Examples
 
