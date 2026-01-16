@@ -1,6 +1,24 @@
 import { mock, describe, expect, test } from "bun:test";
 import { createACPPermissionMiddleware, RequestPermissionOutcome } from "../../../src/middleware/createACPPermissionMiddleware";
 
+// Test helper functions for creating mock runtime and state objects
+const createMockRuntime = (interruptMock: any) => ({
+  config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
+  context: {},
+  interrupt: interruptMock,
+});
+
+const createMockState = (tool_calls: any[]) => ({
+  messages: [
+    { _getType: () => 'human', content: "Test prompt" },
+    { 
+      _getType: () => 'ai', 
+      content: "Test response",
+      tool_calls,
+    }
+  ]
+});
+
 describe("createACPPermissionMiddleware", () => {
   describe("initialization", () => {
     test("throws error without permissionPolicy", () => {
@@ -1040,25 +1058,12 @@ describe("createACPPermissionMiddleware", () => {
         transport: mockTransport,
       });
       
-      const state = {
-        messages: [
-          { _getType: () => 'human', content: "Delete the file" },
-          { 
-            _getType: () => 'ai', 
-            content: "I'll delete the file",
-            tool_calls: [
-              { id: "call-1", name: "delete_file", args: { path: "/test.txt" } }
-            ]
-          }
-        ]
-      };
-      const runtime = {
-        config: { configurable: { thread_id: "thread-1", session_id: "session-1" } },
-        context: {},
-        interrupt: interruptMock,
-      };
+      const state = createMockState([
+        { id: "call-1", name: "delete_file", args: { path: "/test.txt" } }
+      ]);
+      const runtime = createMockRuntime(interruptMock);
       
-      await middleware.afterModel?.hook(state as any, runtime as any);
+      await middleware.afterModel?.hook(state as any, runtime);
       
       expect(sendNotificationMock).toHaveBeenCalledWith(
         "session/request_permission",

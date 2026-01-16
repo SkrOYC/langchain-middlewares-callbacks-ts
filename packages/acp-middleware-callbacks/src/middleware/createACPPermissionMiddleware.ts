@@ -32,6 +32,7 @@ import type {
   ToolCallUpdate, 
   SessionId, 
   PermissionOptionKind,
+  PermissionOption,
   ToolCallContent 
 } from "../types/acp.js";
 import type { 
@@ -138,11 +139,7 @@ function defaultContentMapper(message: string): Array<ToolCallContent> {
  * Persistent options (allow_always, reject_always) are conditionally added
  * based on the permission policy configuration for each tool.
  */
-const DEFAULT_PERMISSION_OPTIONS: Array<{
-  optionId: string;
-  name: string;
-  kind: PermissionOptionKind;
-}> = [
+const DEFAULT_PERMISSION_OPTIONS: PermissionOption[] = [
   { optionId: "approve", name: "Approve", kind: "allow_once" },
   { optionId: "edit", name: "Edit", kind: "allow_once" },
   { optionId: "reject", name: "Reject", kind: "reject_once" },
@@ -295,26 +292,20 @@ function buildHITLRequest(
   descriptionPrefix: string = "Tool execution requires approval"
 ): {
   hitlRequest: HITLRequest;
-  mergedOptions: Array<{ optionId: string; name: string; kind: PermissionOptionKind }>;
+  mergedOptions: PermissionOption[];
 } {
   const actionRequests: ActionRequest[] = [];
   const reviewConfigs: ReviewConfig[] = [];
   
   // Collect all persistent options from matching policies
-  const persistentOptions: Array<{ optionId: string; name: string; kind: PermissionOptionKind }> = [];
+  const persistentOptions: PermissionOption[] = [];
   
   for (const toolCall of toolCalls) {
     const policyConfig = findMatchingPolicy(toolCall.name, policy);
     
     // Collect persistent options from this tool's policy
     if (policyConfig?.persistentOptions) {
-      for (const persistentOption of policyConfig.persistentOptions) {
-        persistentOptions.push({
-          optionId: persistentOption.optionId,
-          name: persistentOption.name,
-          kind: persistentOption.kind,
-        });
-      }
+      persistentOptions.push(...policyConfig.persistentOptions);
     }
     
     // Build action request
