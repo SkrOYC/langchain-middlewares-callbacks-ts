@@ -33,7 +33,8 @@ import type {
   SessionId,
   PermissionOptionKind,
   PermissionOption,
-  ToolCallContent
+  ToolCallContent,
+  AgentSideConnection,
 } from "@agentclientprotocol/sdk";
 import type {
   PermissionPolicyConfig,
@@ -78,7 +79,7 @@ export interface ACPPermissionMiddlewareConfig {
    * The AgentSideConnection for sending notifications and updates to the client.
    * This is provided by the SDK when creating an agent connection.
    */
-  transport: any; // AgentSideConnection - using any to avoid SDK dependency
+  transport: AgentSideConnection;
 
   /**
    * Optional callback for handling session cancellation.

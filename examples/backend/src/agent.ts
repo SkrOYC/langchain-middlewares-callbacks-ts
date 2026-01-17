@@ -21,6 +21,7 @@ import type {
   SetSessionModeResponse,
   AuthenticateRequest,
   AuthenticateResponse,
+  AgentSideConnection,
 } from "@agentclientprotocol/sdk";
 import {
   createACPSessionMiddleware,
@@ -61,7 +62,7 @@ interface ACPAgentConfig {
  */
 export class ACPAgent implements ACPAgentInterface {
   private config: ACPAgentConfig;
-  private connection: any = null; // AgentSideConnection
+  private connection: AgentSideConnection | null = null;
   private langchainAgent: any = null;
   private activeSessions: Map<string, any> = new Map();
   private callbackHandler: ACPCallbackHandler | null = null;

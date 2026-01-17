@@ -12,6 +12,7 @@ import type {
   ContentBlock,
   TextContent,
   ContentChunk,
+  AgentSideConnection,
 } from "@agentclientprotocol/sdk";
 import type { ContentBlockMapper, DefaultContentBlockMapper } from "../utils/contentBlockMapper.js";
 import { defaultContentBlockMapper } from "../utils/contentBlockMapper.js";
@@ -22,7 +23,7 @@ import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
  * Callback handler for ACP protocol streaming events.
  * Extends BaseCallbackHandler to integrate with LangChain's callback system
  * and emit events to ACP-compatible clients.
- * 
+ *
  * This handler manages:
  * - LLM token streaming via handleLLMNewToken → agent_message_chunk
  * - Reasoning content via handleLLMNewToken → agent_thought_chunk (with audience: ['assistant'])
@@ -32,7 +33,7 @@ import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
 export class ACPCallbackHandler extends BaseCallbackHandler {
   name = "acp-callback-handler";
 
-  protected connection: any; // AgentSideConnection - using any to avoid SDK dependency
+  protected connection: AgentSideConnection;
   protected contentBlockMapper: ContentBlockMapper;
   protected emitTextChunks: boolean;
   protected includeIntermediateStates: boolean;
