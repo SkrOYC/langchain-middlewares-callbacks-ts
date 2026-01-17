@@ -60,11 +60,13 @@ async function searchFiles(query: string, options?: {
   // Perform actual search on mock file system
   const results: SearchResult[] = [];
   const files = listMockFiles();
-  
-  // Filter files by pattern
+
+  // Filter files by pattern - convert glob to regex
   const filteredFiles = files.filter((file) => {
     if (filePattern === "*") return true;
-    return file.includes(filePattern.replace("*", ""));
+    // Convert glob pattern to regex
+    const regexPattern = new RegExp("^" + filePattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + "$");
+    return regexPattern.test(file);
   });
   
   for (const file of filteredFiles) {

@@ -40,9 +40,9 @@ async function editFile(
   if (!oldContent.includes(oldText)) {
     throw new Error(`Text not found in file: ${oldText}`);
   }
-  
-  // Apply the edit
-  const newContent = oldContent.replace(oldText, newText);
+
+  // Apply the edit - replace all occurrences
+  const newContent = oldContent.replaceAll(oldText, newText);
   setMockFileContent(normalizedPath, newContent);
   
   // Track the change

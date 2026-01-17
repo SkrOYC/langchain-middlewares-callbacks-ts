@@ -311,12 +311,10 @@ export class ACPAgent implements ACPAgentInterface {
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     const { sessionId } = params;
     const messages = params.prompt;
-    
-    // Ensure session exists
+
+    // Ensure session exists - create with requested sessionId (not generated)
     if (!this.activeSessions.has(sessionId)) {
-      // Create a session for this conversation
-      const newSessionId = `session-${Date.now()}`;
-      this.activeSessions.set(newSessionId, {
+      this.activeSessions.set(sessionId, {
         createdAt: new Date(),
         messages: [],
         state: {},
@@ -325,13 +323,13 @@ export class ACPAgent implements ACPAgentInterface {
         mode: "agentic",
       });
       if (this.callbackHandler) {
-        this.callbackHandler.setSessionId(newSessionId);
+        this.callbackHandler.setSessionId(sessionId);
       }
-      await this.sendAvailableCommands(newSessionId);
+      await this.sendAvailableCommands(sessionId);
     }
-    
+
     const session = this.activeSessions.get(sessionId)!;
-    
+
     // Add messages to session
     session.messages.push(...messages);
     
@@ -426,49 +424,6 @@ export class ACPAgent implements ACPAgentInterface {
         content: JSON.stringify(block),
       };
     });
-  }
-
-  /**
-   * Send agent response back to the client
-   */
-  private async sendAgentResponse(result: any, sessionId: string): Promise<void> {
-    const content = this.extractContentFromResult(result);
-
-    // Emit response as agent_message_chunk via sessionUpdate
-    const contentChunk = {
-      _meta: null,
-      content: {
-        type: "text",
-        text: content,
-        _meta: null,
-        annotations: null,
-      },
-    };
-
-    await this.connection.sessionUpdate({
-      sessionId,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        ...contentChunk,
-      },
-    });
-  }
-
-  /**
-   * Extract content from LangChain agent result
-   */
-  private extractContentFromResult(result: any): string {
-    if (typeof result === "string") {
-      return result;
-    }
-
-    if (result.content) {
-      return typeof result.content === "string"
-        ? result.content
-        : JSON.stringify(result.content);
-    }
-
-    return JSON.stringify(result);
   }
 
   /**

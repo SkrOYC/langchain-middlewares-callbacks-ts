@@ -156,15 +156,10 @@ export class ModelConfig implements ModelConfigInterface {
    * Create the LangChain model instance based on provider
    */
   private async createModel(): Promise<BaseChatModel> {
-    // Ensure API key is always set - some endpoints (like OpenCode) require it
+    // Get API key from config or environment
     // Priority: config.apiKey > env var > empty string
     const apiKey = this.apiKey || process.env.OPENAI_API_KEY || "";
-    
-    // Ensure environment variable is set for OpenAI SDK
-    if (!process.env.OPENAI_API_KEY) {
-      process.env.OPENAI_API_KEY = apiKey;
-    }
-    
+
     switch (this.provider) {
       case "openai":
         return this.createOpenAIModel(apiKey);

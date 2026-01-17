@@ -18,7 +18,6 @@ This example provides a production-like backend implementation that:
 ├── src/
 │   ├── index.ts           # Entry point (stdio transport)
 │   ├── agent.ts           # Agent interface implementation
-│   ├── adapter.ts         # AgentConnectionAdapter
 │   ├── model.ts           # LLM configuration
 │   └── tools/
 │       ├── index.ts       # Tool exports
@@ -58,9 +57,8 @@ npm install
 Optional environment variables for model configuration:
 
 ```bash
-export MODEL_PROVIDER=anthropic    # anthropic, openai, or local
-export MODEL_NAME=claude-sonnet-4-20250514
-export ANTHROPIC_API_KEY=your-api-key
+export MODEL_PROVIDER=openai        # openai, openai-responses, or local
+export MODEL_NAME=gpt-4o
 export OPENAI_API_KEY=your-api-key
 export TEMPERATURE=0.7
 export MAX_TOKENS=4096
@@ -367,7 +365,7 @@ mockFileSystem.set("path/to/file.txt", "File content");
 - Check that stdio transport is properly configured
 
 **API key errors:**
-- Set the appropriate environment variable (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`)
+- Set the appropriate environment variable (`OPENAI_API_KEY`)
 - Verify the API key is valid
 
 **Tool execution failures:**
