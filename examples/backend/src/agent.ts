@@ -68,6 +68,12 @@ export class ACPAgent implements ACPAgentInterface {
   private isInitialized = false;
 
   constructor(config: ACPAgentConfig) {
+    if (!config.modelConfig) {
+      throw new Error("ModelConfig is required in ACPAgentConfig");
+    }
+    if (!config.tools || !Array.isArray(config.tools)) {
+      throw new Error("Tools array is required in ACPAgentConfig");
+    }
     this.config = config;
   }
 
@@ -208,42 +214,30 @@ export class ACPAgent implements ACPAgentInterface {
    */
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
     const { sessionId } = params;
-    
+
     // Check if session exists
-    const session = this.activeSessions.get(sessionId);
+    let session = this.activeSessions.get(sessionId);
     if (!session) {
-      // Create session if it doesn't exist
-      await this.newSession({ cwd: params.cwd, mcpServers: params.mcpServers });
-      // Return the newly created session's state (sessionId will be in activeSessions)
-      const newSession = this.activeSessions.get(sessionId) || { mode: "agentic", currentModelId: "default" };
-      return {
-        models: {
-          availableModels: [
-            {
-              modelId: "default",
-              name: "Default Model",
-              description: "Default model for this agent",
-            },
-          ],
-          currentModelId: newSession.currentModelId || "default",
-        },
-        modes: {
-          availableModes: [
-            { id: "agentic", name: "Agentic", description: "Full autonomy mode" },
-            { id: "interactive", name: "Interactive", description: "Interactive mode" },
-            { id: "readonly", name: "Read-only", description: "Read-only mode" },
-          ],
-          currentModeId: newSession.mode || "agentic",
-        },
-      };
+      // Create session with the requested sessionId (not a new generated one)
+      this.activeSessions.set(sessionId, {
+        createdAt: new Date(),
+        messages: [],
+        state: {},
+        cwd: params.cwd,
+        currentModelId: "default",
+        mode: "agentic",
+      });
+      session = this.activeSessions.get(sessionId)!;
+
+      // Update callback handler with new session ID
+      if (this.callbackHandler) {
+        this.callbackHandler.setSessionId(sessionId);
+      }
+
+      // Send available commands update
+      await this.sendAvailableCommands(sessionId);
     }
-    
-    // Update callback handler with session ID
-    if (this.callbackHandler) {
-      this.callbackHandler.setSessionId(sessionId);
-    }
-    
-    // Return session loaded confirmation
+
     return {
       models: {
         availableModels: [
@@ -265,7 +259,7 @@ export class ACPAgent implements ACPAgentInterface {
       },
     };
   }
-  
+
   /**
    * Send available commands update to the client
    */
@@ -368,14 +362,9 @@ export class ACPAgent implements ACPAgentInterface {
       );
       
       // Consume the event stream to trigger full execution
-      let hasContent = false;
       for await (const event of eventStream) {
         // Events are emitted via callbacks → connection → Zed
         // We just need to consume the stream to let callbacks fire
-        if (event.event === "on_llm_new_token" ||
-            event.event === "on_chat_model_stream") {
-          hasContent = true;
-        }
       }
 
       return { stopReason: "end_turn" };

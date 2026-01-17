@@ -281,9 +281,9 @@ export class ModelConfig implements ModelConfigInterface {
    * Create a model configuration from environment variables
    */
   static fromEnvironment(): ModelConfig {
-    const provider = (process.env.MODEL_PROVIDER as ModelProvider) || "anthropic";
-    const modelName = process.env.MODEL_NAME || "claude-sonnet-4-20250514";
-    
+    const provider = (process.env.MODEL_PROVIDER as ModelProvider) || "openai";
+    const modelName = process.env.MODEL_NAME || "gpt-4o";
+
     return new ModelConfig({
       provider,
       modelName,
