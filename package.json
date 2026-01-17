@@ -13,5 +13,8 @@
   "devDependencies": {
     "typescript": "^5.0.0",
     "bun-types": "latest"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.13.0"
   }
 }

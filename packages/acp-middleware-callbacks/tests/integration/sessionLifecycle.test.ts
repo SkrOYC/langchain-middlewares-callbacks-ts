@@ -4,11 +4,11 @@ import { ACPCallbackHandler } from "../../src/callbacks/ACPCallbackHandler";
 
 // Mock connection factory for integration testing
 function createMockACPConnection() {
-  const sendAgentMessage = mock(async (_message: any) => undefined);
+  const sessionUpdate = mock(async (_params: any) => undefined);
   const close = mock(async () => undefined);
-  
+
   return {
-    sendAgentMessage,
+    sessionUpdate,
     close,
   };
 }
@@ -90,9 +90,9 @@ describe("Full Session Lifecycle Integration", () => {
       
       expect(finalResult.acp_shouldEmitSnapshot).toBe(true);
       expect(finalResult.acp_finalState).toBeDefined();
-      
+
       // Verify callback events were sent
-      expect(connection.sendAgentMessage).toHaveBeenCalled();
+      expect(connection.sessionUpdate).toHaveBeenCalled();
     });
 
     test("session with tool call lifecycle", async () => {
@@ -122,12 +122,12 @@ describe("Full Session Lifecycle Integration", () => {
       // Execute remaining lifecycle
       const afterModel = sessionMiddleware.afterModel as any;
       await afterModel({}, { config: { configurable: { thread_id: threadId } } });
-      
+
       const afterAgent = sessionMiddleware.afterAgent as any;
       await afterAgent({}, { config: { configurable: { thread_id: threadId } } });
-      
+
       // Verify tool events were sent
-      expect(connection.sendAgentMessage).toHaveBeenCalled();
+      expect(connection.sessionUpdate).toHaveBeenCalled();
     });
 
     test("error handling in full lifecycle", async () => {
@@ -161,13 +161,13 @@ describe("Full Session Lifecycle Integration", () => {
       });
       
       expect(modelResult.acp_turnCount).toBe(1);
-      
+
       // Simulate error in callback
       await callbackHandler.handleLLMStart({} as any, [], "run-1");
       await callbackHandler.handleLLMError(new Error("Model failed"), "run-1");
-      
+
       // Verify error was sent
-      expect(connection.sendAgentMessage).toHaveBeenCalled();
+      expect(connection.sessionUpdate).toHaveBeenCalled();
     });
 
     test("multiple turns in single session", async () => {
@@ -204,13 +204,13 @@ describe("Full Session Lifecycle Integration", () => {
       await callbackHandler.handleLLMStart({} as any, [], "run-2");
       await callbackHandler.handleLLMNewToken("Response 2", {}, "run-2");
       await callbackHandler.handleLLMEnd({} as any, "run-2");
-      
+
       const afterModel2 = sessionMiddleware.afterModel as any;
       const result2 = await afterModel2({}, { config: { configurable: { thread_id: threadId } } });
       expect(result2.acp_turnCount).toBe(2);
-      
+
       // Verify all LLM events were sent
-      expect(connection.sendAgentMessage).toHaveBeenCalled();
+      expect(connection.sessionUpdate).toHaveBeenCalled();
     });
   });
 
@@ -300,10 +300,10 @@ describe("Full Session Lifecycle Integration", () => {
       await callbackHandler2.handleLLMStart({} as any, [], "run-2");
       await callbackHandler2.handleLLMNewToken("Session 2 response", {}, "run-2");
       await callbackHandler2.handleLLMEnd({} as any, "run-2");
-      
+
       // Verify sessions are independent
-      expect(connection1.sendAgentMessage).toHaveBeenCalled();
-      expect(connection2.sendAgentMessage).toHaveBeenCalled();
+      expect(connection1.sessionUpdate).toHaveBeenCalled();
+      expect(connection2.sessionUpdate).toHaveBeenCalled();
     });
   });
 });

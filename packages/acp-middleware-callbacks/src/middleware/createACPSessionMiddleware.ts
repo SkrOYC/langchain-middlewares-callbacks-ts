@@ -1,17 +1,17 @@
 /**
  * ACP Session Middleware
- * 
+ *
  * Middleware for managing ACP session lifecycle events and state management.
  * Handles session ID extraction, checkpointer integration, and state snapshot emission.
- * 
+ *
  * @packageDocumentation
  */
 
 import { createMiddleware } from "langchain";
 import { z } from "zod";
-import type { 
-  SessionId, 
-} from "../types/acp.js";
+import type {
+  SessionId,
+} from "@agentclientprotocol/sdk";
 import type { ACPMiddlewareConfig, ACPSessionState, ACPMiddlewareStateReturn } from "../types/middleware.js";
 
 /**

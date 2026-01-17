@@ -26,16 +26,17 @@
 
 import { createMiddleware } from "langchain";
 import { z } from "zod";
-import type { 
-  ToolKind, 
-  ToolCall, 
-  ToolCallUpdate, 
-  SessionId, 
+import type {
+  ToolKind,
+  ToolCall,
+  ToolCallUpdate,
+  SessionId,
   PermissionOptionKind,
   PermissionOption,
-  ToolCallContent 
-} from "../types/acp.js";
-import type { 
+  ToolCallContent,
+  AgentSideConnection,
+} from "@agentclientprotocol/sdk";
+import type {
   PermissionPolicyConfig,
   HITLRequest,
   HITLResponse,
@@ -73,41 +74,31 @@ export interface ACPPermissionMiddlewareConfig {
    * Keys are tool name patterns (supports wildcards like "*").
    */
   permissionPolicy: Record<string, PermissionPolicyConfig>;
-  
+
   /**
-   * The connection for sending notifications and updates to the client.
+   * The AgentSideConnection for sending notifications and updates to the client.
+   * This is provided by the SDK when creating an agent connection.
    */
-  transport: {
-    /**
-     * Sends a notification message to the client (fire-and-forget).
-     * Used for session/request_permission before interrupt.
-     */
-    sendNotification(method: string, params: unknown): void;
-    
-    /**
-     * Sends a session update to the client.
-     */
-    sessionUpdate(params: { sessionId: SessionId; update: ToolCall | ToolCallUpdate }): Promise<void>;
-  };
-  
+  transport: AgentSideConnection;
+
   /**
    * Optional callback for handling session cancellation.
-     * Called when client sends session/cancel notification during permission wait.
+   * Called when client sends session/cancel notification during permission wait.
    */
   onSessionCancel?: (sessionId: SessionId) => void;
-  
+
   /**
    * Custom mapper function to determine tool kind for specific tools.
    * Defaults to mapToolKind() from createACPToolMiddleware.
    */
   toolKindMapper?: (toolName: string) => ToolKind;
-  
+
   /**
    * Custom mapper function to convert error messages to ACP ToolCallContent.
    * Defaults to wrapping message in a ToolCallContent structure.
    */
   contentMapper?: (message: string) => Array<ToolCallContent>;
-  
+
   /**
    * Optional description prefix for permission requests.
    * @default "Tool execution requires approval"
@@ -606,10 +597,11 @@ export function createACPPermissionMiddleware(
         
         // 6. Send session/request_permission notification before interrupting
         // This provides ACP protocol compliance
-        if (transport.sendNotification && sessionId && permissionRequired.length > 0) {
+        if (transport.extNotification && sessionId && permissionRequired.length > 0) {
           const firstToolCall = permissionRequired[0]!;
           try {
-            transport.sendNotification("session/request_permission", {
+            // Use extNotification for custom protocol notifications
+            await transport.extNotification("session/request_permission", {
               sessionId,
               toolCall: {
                 toolCallId: firstToolCall.id,

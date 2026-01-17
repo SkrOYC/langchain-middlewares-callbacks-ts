@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import type { StopReason } from "../types/acp.js";
+import type { StopReason } from "@agentclientprotocol/sdk";
 
 /**
  * Maps LangChain agent state to ACP stop reason.

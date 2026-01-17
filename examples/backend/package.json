@@ -1,0 +1,28 @@
+{
+  "name": "@skroyc/acp-backend-example",
+  "version": "0.1.0",
+  "description": "Complete Zed backend example demonstrating @skroyc/acp-middleware-callbacks integration with Zed editor via ACP protocol",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "build": "tsc",
+    "test": "echo 'No tests specified'"
+  },
+  "keywords": [
+    "acp",
+    "zed",
+    "agent",
+    "langchain",
+    "middleware",
+    "callbacks"
+  ],
+  "author": "SkrOYC",
+  "license": "MIT",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.12.0",
+    "@langchain/openai": "^1.2.2",
+    "langchain": "^1.2.10",
+    "zod": "^3.22.4"
+  }
+}

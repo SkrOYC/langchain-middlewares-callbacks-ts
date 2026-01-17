@@ -36,10 +36,10 @@ describe("createACPPermissionMiddleware", () => {
 
     test("creates middleware with valid configuration", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "delete_*": { requiresPermission: true, kind: "delete" },
@@ -47,24 +47,24 @@ describe("createACPPermissionMiddleware", () => {
         },
         transport: mockTransport,
       });
-      
+
       expect(middleware).toBeDefined();
       expect(middleware.name).toBe("acp-permission-control");
     });
 
     test("accepts custom toolKindMapper", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const customMapper = (_name: string) => "other";
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: { "test": { requiresPermission: true } },
         transport: mockTransport,
         toolKindMapper: customMapper,
       });
-      
+
       expect(middleware).toBeDefined();
     });
   });
@@ -72,7 +72,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("permission workflow hooks", () => {
     test("middleware has afterModel hook with canJumpTo configuration", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -88,7 +88,7 @@ describe("createACPPermissionMiddleware", () => {
 
     test("middleware has afterAgent hook for cleanup", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -121,7 +121,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("policy matching", () => {
     test("matches exact tool names", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -137,7 +137,7 @@ describe("createACPPermissionMiddleware", () => {
 
     test("matches wildcard patterns", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -156,7 +156,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("afterModel hook - no tool calls", () => {
     test("returns empty when no tool calls in state", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -173,12 +173,12 @@ describe("createACPPermissionMiddleware", () => {
       
       const result = await middleware.afterModel?.hook(state as any, runtime as any);
       expect(result).toEqual({});
-      expect(mockTransport.sendNotification).not.toHaveBeenCalled();
+      expect(mockTransport.extNotification).not.toHaveBeenCalled();
     });
 
     test("returns empty when last message is not AIMessage", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -202,23 +202,23 @@ describe("createACPPermissionMiddleware", () => {
 
   describe("afterModel hook - auto-approved tools", () => {
     test("skips permission when policy not matched", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
-      
+
       const middleware = createACPPermissionMiddleware({
         permissionPolicy: { "protected_tool": { requiresPermission: true } },
         transport: mockTransport,
       });
-      
+
       const state = {
         messages: [
           { _getType: () => 'human', content: "Hello" },
-          { 
-            _getType: () => 'ai', 
+          {
+            _getType: () => 'ai',
             content: "I'll help you",
             tool_calls: [
               { id: "call-1", name: "unprotected_tool", args: {} }
@@ -231,18 +231,18 @@ describe("createACPPermissionMiddleware", () => {
         context: {},
         interrupt: mock(async () => ({ decisions: [] })),
       };
-      
+
       await middleware.afterModel?.hook(state as any, runtime as any);
-      
-      expect(sendNotificationMock).not.toHaveBeenCalled();
+
+      expect(extNotificationMock).not.toHaveBeenCalled();
       expect(sessionUpdateMock).not.toHaveBeenCalled();
     });
 
     test("skips permission when requiresPermission is false", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -271,20 +271,20 @@ describe("createACPPermissionMiddleware", () => {
       
       await middleware.afterModel?.hook(state as any, runtime as any);
       
-      expect(sendNotificationMock).not.toHaveBeenCalled();
+      expect(extNotificationMock).not.toHaveBeenCalled();
     });
   });
 
   describe("afterModel hook - permission required", () => {
     test("calls interrupt when permission required", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -314,7 +314,7 @@ describe("createACPPermissionMiddleware", () => {
       const result = await middleware.afterModel?.hook(state as any, runtime as any);
       
       expect(interruptMock).toHaveBeenCalled();
-      expect(sendNotificationMock).toHaveBeenCalledWith(
+      expect(extNotificationMock).toHaveBeenCalledWith(
         "session/request_permission",
         expect.objectContaining({
           sessionId: "session-1",
@@ -323,14 +323,14 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("emits pending status before interrupt", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -372,14 +372,14 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("processes approve decision correctly", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -413,7 +413,7 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("processes edit decision correctly", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{
@@ -426,7 +426,7 @@ describe("createACPPermissionMiddleware", () => {
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -460,7 +460,7 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("processes reject decision and jumps to model", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{
@@ -470,7 +470,7 @@ describe("createACPPermissionMiddleware", () => {
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -509,7 +509,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("error handling", () => {
     test("throws when interrupt is not supported", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -543,7 +543,7 @@ describe("createACPPermissionMiddleware", () => {
     test("handles connection errors gracefully", async () => {
       const sessionUpdateMock = mock(async () => { throw new Error("Connection failed"); });
       const mockTransport = {
-        sendNotification: mock(() => { throw new Error("Notification failed"); }),
+        extNotification: mock(() => { throw new Error("Notification failed"); }),
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -581,7 +581,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("thread state cleanup", () => {
     test("cleans up thread state after agent completes", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -602,14 +602,14 @@ describe("createACPPermissionMiddleware", () => {
 
   describe("mixed tool calls", () => {
     test("handles mix of permission-required and auto-approved tools", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -644,18 +644,18 @@ describe("createACPPermissionMiddleware", () => {
       
       // Should only interrupt for delete_file, not read_file
       expect(interruptMock).toHaveBeenCalled();
-      expect(sendNotificationMock).toHaveBeenCalled();
+      expect(extNotificationMock).toHaveBeenCalled();
     });
   });
 
   describe("afterModel hook - interrupt control", () => {
     test("does NOT call interrupt when all tools are auto-approved", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async () => ({ decisions: [{ type: "approve" }] }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -690,18 +690,18 @@ describe("createACPPermissionMiddleware", () => {
       
       // Should NOT call interrupt when all tools are auto-approved
       expect(interruptMock).not.toHaveBeenCalled();
-      expect(sendNotificationMock).not.toHaveBeenCalled();
+      expect(extNotificationMock).not.toHaveBeenCalled();
       // Should return empty result
       expect(result).toEqual({});
     });
 
     test("does NOT call interrupt when policy not matched for any tool", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async () => ({ decisions: [{ type: "approve" }] }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -734,18 +734,18 @@ describe("createACPPermissionMiddleware", () => {
       
       // Should NOT call interrupt when policy not matched
       expect(interruptMock).not.toHaveBeenCalled();
-      expect(sendNotificationMock).not.toHaveBeenCalled();
+      expect(extNotificationMock).not.toHaveBeenCalled();
     });
 
     test("only interrupts for tools requiring permission when mixed", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -798,12 +798,12 @@ describe("createACPPermissionMiddleware", () => {
 
   describe("decision processing edge cases", () => {
     test("handles empty decisions array - tool not approved", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async () => ({ decisions: [] }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -845,7 +845,7 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("preserves tool calls when decisions match", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       const interruptMock = mock(async () => ({
         decisions: [
@@ -854,7 +854,7 @@ describe("createACPPermissionMiddleware", () => {
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -895,7 +895,7 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("preserves decision order in processing", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       
       // Track decision processing order
@@ -910,7 +910,7 @@ describe("createACPPermissionMiddleware", () => {
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -957,7 +957,7 @@ describe("createACPPermissionMiddleware", () => {
   describe("policy matching edge cases", () => {
     test("throws error for empty permission policy", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -969,11 +969,11 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("respects policy precedence - first match wins", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const sessionUpdateMock = mock(async () => {});
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: sessionUpdateMock,
       };
       
@@ -1007,14 +1007,14 @@ describe("createACPPermissionMiddleware", () => {
       const result = await middleware.afterModel?.hook(state as any, runtime as any);
       
       // Should NOT interrupt because delete_file matched first pattern with requiresPermission: false
-      expect(sendNotificationMock).not.toHaveBeenCalled();
+      expect(extNotificationMock).not.toHaveBeenCalled();
     });
   });
 
   describe("persistent options", () => {
     test("accepts persistent options in permission policy configuration", () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
       
@@ -1035,13 +1035,13 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("merges persistent options with default options in permission request", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: mock(async () => {}),
       };
       
@@ -1065,7 +1065,7 @@ describe("createACPPermissionMiddleware", () => {
       
       await middleware.afterModel?.hook(state as any, runtime);
       
-      expect(sendNotificationMock).toHaveBeenCalledWith(
+      expect(extNotificationMock).toHaveBeenCalledWith(
         "session/request_permission",
         expect.objectContaining({
           sessionId: "session-1",
@@ -1081,13 +1081,13 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("includes only default options when no persistent options configured", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: mock(async () => {}),
       };
       
@@ -1118,7 +1118,7 @@ describe("createACPPermissionMiddleware", () => {
       
       await middleware.afterModel?.hook(state as any, runtime as any);
       
-      expect(sendNotificationMock).toHaveBeenCalledWith(
+      expect(extNotificationMock).toHaveBeenCalledWith(
         "session/request_permission",
         expect.objectContaining({
           options: expect.arrayContaining([
@@ -1130,20 +1130,20 @@ describe("createACPPermissionMiddleware", () => {
       );
       
       // Should NOT include persistent options
-      const callArgs = sendNotificationMock.mock.calls[0][1];
+      const callArgs = extNotificationMock.mock.calls[0][1];
       expect(callArgs.options).not.toContainEqual(
         expect.objectContaining({ optionId: "allow_always" })
       );
     });
 
     test("handles empty persistent options array", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: mock(async () => {}),
       };
       
@@ -1177,7 +1177,7 @@ describe("createACPPermissionMiddleware", () => {
       
       await middleware.afterModel?.hook(state as any, runtime as any);
       
-      expect(sendNotificationMock).toHaveBeenCalledWith(
+      expect(extNotificationMock).toHaveBeenCalledWith(
         "session/request_permission",
         expect.objectContaining({
           options: expect.arrayContaining([
@@ -1190,13 +1190,13 @@ describe("createACPPermissionMiddleware", () => {
     });
 
     test("preserves persistent option kinds correctly", async () => {
-      const sendNotificationMock = mock(() => {});
+      const extNotificationMock = mock(() => {});
       const interruptMock = mock(async (req: any) => ({
         decisions: [{ type: "approve" }]
       }));
       
       const mockTransport = {
-        sendNotification: sendNotificationMock,
+        extNotification: extNotificationMock,
         sessionUpdate: mock(async () => {}),
       };
       
@@ -1233,7 +1233,7 @@ describe("createACPPermissionMiddleware", () => {
       
       await middleware.afterModel?.hook(state as any, runtime as any);
       
-      const callArgs = sendNotificationMock.mock.calls[0][1];
+      const callArgs = extNotificationMock.mock.calls[0][1];
       const persistentOptions = callArgs.options.filter(
         (opt: any) => opt.optionId === "always_allow" || opt.optionId === "always_deny"
       );

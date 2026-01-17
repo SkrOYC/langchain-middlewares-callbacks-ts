@@ -1,101 +1,24 @@
 /**
  * Middleware Configuration Types
- * 
+ *
  * Type definitions for configuring ACP middleware and callback handlers
  * for LangChain agent integration.
- * 
+ *
+ * Note: Protocol types are imported directly from @agentclientprotocol/sdk.
+ * This file contains only our package's configuration types.
+ *
  * @packageDocumentation
  */
 
-import type { 
-  ContentBlock, 
+import type {
+  ContentBlock,
   StopReason,
   ToolKind,
   SessionId,
   SessionUpdate,
   ToolCallContent,
-} from "./acp.js";
+} from "@agentclientprotocol/sdk";
 import type { ContentBlockMapper } from "../utils/contentBlockMapper.js";
-
-/**
- * Connection interface for ACP communication in callback handlers.
- * This provides a simplified interface that can be implemented by various
- * transport mechanisms while providing the specific methods needed by
- * the callback handler.
- */
-export interface ACPConnection {
-  /**
-   * Sends an agent message to the ACP client.
-   */
-  sendAgentMessage(params: AgentMessageParams): Promise<void>;
-  
-  /**
-   * Sends a session update event to the ACP client.
-   * Used for tool calls, state updates, and other session-level events.
-   */
-  sessionUpdate(params: SessionUpdateParams): Promise<void>;
-  
-  /**
-   * Closes the connection.
-   */
-  close(): Promise<void>;
-}
-
-/**
- * Parameters for sending an agent message.
- */
-export interface AgentMessageParams {
-  /**
-   * Unique identifier for this message.
-   */
-  messageId: string;
-  
-  /**
-   * The role of the message sender.
-   */
-  role: "user" | "agent" | "assistant" | "tool";
-  
-  /**
-   * The content blocks of the message.
-   */
-  content: ContentBlock[];
-  
-  /**
-   * The format of the content.
-   */
-  contentFormat: string;
-  
-  /**
-   * Optional text delta for streaming.
-   */
-  delta?: {
-    type: string;
-    text: string;
-  };
-  
-  /**
-   * Optional stop reason for the message.
-   */
-  stopReason?: StopReason;
-}
-
-/**
- * Parameters for sending a session update.
- * Used for tool calls and other session-level events.
- */
-export interface SessionUpdateParams {
-  /**
-   * The session ID for this update.
-   */
-  sessionId: SessionId;
-  
-  /**
-   * The session update payload.
-   * Uses the SessionUpdate type from the SDK which includes all variants:
-   * tool_call, tool_call_update, agent_thought_chunk, current_mode_update, etc.
-   */
-  update: SessionUpdate;
-}
 
 /**
  * Payload for tool call creation/update.
@@ -520,51 +443,51 @@ export interface MCPToolOptions {
 
 /**
  * Configuration for the ACP callback handler.
- * 
+ *
  * The callback handler is responsible for emitting events to the ACP client
  * during agent execution, including state updates, tool calls, and results.
  */
 export interface ACPCallbackHandlerConfig {
   /**
-   * The connection for sending events to the ACP client.
-   * Must implement the ACPConnection interface.
+   * The AgentSideConnection for sending events to the ACP client.
+   * This is provided by the SDK when creating an agent connection.
    */
-  connection: ACPConnection;
-  
+  connection: any; // AgentSideConnection - using any to avoid SDK dependency
+
   /**
    * Optional session ID for this callback handler.
    * If provided, tool calls will use sessionUpdate events.
    * Can be set later via setSessionId() method.
    */
   sessionId?: string;
-  
+
   /**
    * Whether to emit text content as individual chunks.
    * When true, text content is split into smaller chunks for streaming.
    * @default false
    */
   emitTextChunks?: boolean;
-  
+
   /**
    * Custom content block mapper for converting between
    * LangChain and ACP content formats.
    * Defaults to DefaultContentBlockMapper if not provided.
    */
   contentBlockMapper?: ContentBlockMapper;
-  
+
   /**
    * Whether to include intermediate states in updates.
    * @default true
    */
   includeIntermediateStates?: boolean;
-  
+
   /**
    * Maximum number of messages to include in state snapshots.
    * Useful for preventing overly large payloads.
    * @default 50
    */
   maxMessagesInSnapshot?: number;
-  
+
   /**
    * Whether to emit reasoning content as agent_thought_chunk.
    * When true, reasoning blocks are emitted as agent_thought_chunk with
@@ -573,81 +496,6 @@ export interface ACPCallbackHandlerConfig {
    * @default true
    */
   emitReasoningAsThought?: boolean;
-}
-
-/**
- * Transport interface for ACP communication.
- * 
- * Implementations should handle the specifics of message delivery
- * (e.g., stdio, HTTP, WebSocket) while providing this common interface.
- */
-export interface ACPTransport {
-  /**
-   * Sends an agent request message to the client.
-   */
-  sendRequest(method: string, params: unknown): Promise<unknown>;
-  
-  /**
-   * Sends a notification message to the client (fire-and-forget).
-   */
-  sendNotification(method: string, params: unknown): void;
-  
-  /**
-   * Closes the transport connection.
-   */
-  close(): void;
-}
-
-/**
- * Complete configuration for an ACP-compatible LangChain agent.
- */
-export interface ACPAgentConfig {
-  /**
-   * The language model to use for agent reasoning.
-   */
-  model: LanguageModel;
-  
-  /**
-   * List of tools available to the agent.
-   */
-  tools?: StructuredTool[];
-  
-  /**
-   * Additional middleware to apply to the agent.
-   */
-  middleware?: unknown[];
-  
-  /**
-   * Additional callback handlers to use with the agent.
-   */
-  callbacks?: CallbackHandler[];
-  
-  /**
-   * The transport mechanism for ACP communication.
-   */
-  transport: ACPTransport;
-  
-  /**
-   * Middleware configuration options.
-   */
-  middlewareConfig?: ACPMiddlewareConfig;
-  
-  /**
-   * Callback handler configuration options.
-   */
-  callbackConfig?: ACPCallbackHandlerConfig;
-  
-  /**
-   * Custom state schema for the agent (optional).
-   * Defaults to the standard agent state if not provided.
-   */
-  stateSchema?: Record<string, unknown>;
-  
-  /**
-   * Checkpointer for persisting agent state.
-   * Required for session management functionality.
-   */
-  checkpointer?: BaseStore;
 }
 
 /**
@@ -790,24 +638,3 @@ export interface ACPModeConfig {
    */
   requirePermission?: boolean;
 }
-
-
-/**
- * Type for language models supported by the agent.
- */
-export type LanguageModel = any;
-
-/**
- * Type for structured tools supported by the agent.
- */
-export type StructuredTool = any;
-
-/**
- * Type for callback handlers supported by the agent.
- */
-export type CallbackHandler = any;
-
-/**
- * Type for base store (checkpointer) supported by the agent.
- */
-export type BaseStore = any;
