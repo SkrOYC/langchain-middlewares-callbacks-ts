@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import type { SessionId } from "../types/acp.js";
+import type { SessionId } from "@agentclientprotocol/sdk";
 
 /**
  * Session state interface representing the complete state of an ACP session.

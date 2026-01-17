@@ -373,3 +373,134 @@ This package shares architectural patterns with `@skroyc/ag-ui-middleware-callba
 | Transport | SSE/WebSocket | Stdio/JSON-RPC |
 
 See [SPEC.md](./SPEC.md#how-this-differs-from-ag-ui) for complete comparison.
+
+## Zed Integration Guide
+
+This section provides guidance for implementing Zed-compatible ACP agents using our package.
+
+### Package Scope vs Developer Responsibility
+
+**Our Package Provides:**
+- Middleware hooks (session, tools, permissions, modes)
+- Callback handlers for event emission to ACP clients
+- Protocol type re-exports from `@agentclientprotocol/sdk`
+- Utility mappers for content blocks, errors, and stop reasons
+
+**Developer Must Implement:**
+- Agent interface implementation (initialize, newSession, prompt, cancel, etc.)
+- Session management and response structures
+- Zed-compatible response formatting (models, modes, authMethods)
+- Session/update notifications for UI features
+- Connection management and transport setup
+
+### Zed-Specific Requirements
+
+While the ACP protocol allows minimal responses, Zed expects additional fields for full UI integration:
+
+#### 1. Initialize Response
+
+```typescript
+{
+  protocolVersion: 1,
+  agentCapabilities: {
+    loadSession: true,
+    mcpCapabilities: { http: true, sse: true },  // Required for Zed
+    promptCapabilities: { /* ... */ },
+    sessionCapabilities: {},
+  },
+  agentInfo: {
+    name: "your-agent",
+    version: "1.0.0",
+  },
+  authMethods: [],  // Empty for no-auth agents
+}
+```
+
+**Key points:**
+- Set `mcpCapabilities.http` and `mcpCapabilities.sse` to `true`
+- Include `authMethods` array (empty for no-auth agents)
+- Provide complete `agentInfo`
+
+#### 2. Session/New Response
+
+```typescript
+{
+  sessionId: "uuid",
+  models: {  // Required for Zed model selection UI
+    availableModels: [
+      { modelId: "default", name: "Default", description: "Main model" },
+    ],
+    currentModelId: "default",
+  },
+  modes: {  // Required for Zed mode switching UI
+    availableModes: [
+      { id: "agentic", name: "Agentic", description: "Full autonomy" },
+      { id: "interactive", name: "Interactive", description: "With permissions" },
+    ],
+    currentModeId: "agentic",
+  },
+  authMethods: [],
+}
+```
+
+**Key points:**
+- Include `models` object with available models
+- Use `availableModes` array (not `modeIds`/`selectedModeId`)
+- Each mode needs `id`, `name`, and `description`
+
+#### 3. Session/Update Notifications
+
+After `session/new`, send notifications for UI features:
+
+```typescript
+// Available commands (slash commands)
+await connection.sessionUpdate({
+  sessionId,
+  update: {
+    sessionUpdate: "available_commands_update",
+    availableCommands: [
+      { name: "help", description: "Show help", input: null },
+      { name: "status", description: "Show status", input: null },
+    ],
+  },
+});
+
+// Mode changes
+await connection.sessionUpdate({
+  sessionId,
+  update: {
+    sessionUpdate: "current_mode_update",
+    currentModeId: "agentic",
+  },
+});
+```
+
+### Example Backend Reference
+
+See [`examples/backend/`](../../examples/backend/) for a complete Zed-compatible implementation demonstrating:
+
+- ✅ Proper initialize response with Zed-compatible fields
+- ✅ Session/new response with models and modes structure
+- ✅ Session/update notifications for available commands
+- ✅ Full agent interface implementation
+- ✅ Middleware integration using our package
+
+### Common Pitfalls
+
+1. **Missing mcpCapabilities**: Set to `{ http: true, sse: true }` even if not implementing MCP
+2. **Wrong modes structure**: Use `availableModes` array, not `modeIds`/`selectedModeId`
+3. **No session/update notifications**: Zed expects `available_commands_update` after session creation
+4. **Missing authMethods**: Include empty array `[]` for no-auth agents
+5. **Numeric IDs**: Ensure response IDs match request ID types (string/number)
+
+### Protocol vs Client Expectations
+
+| Feature | ACP Protocol | Zed Expectations |
+|---------|-------------|------------------|
+| Minimal response | ✅ Allowed | ❌ May fail UI |
+| Models in session/new | Optional | ✅ Required |
+| Available commands | Optional | ✅ Required |
+| Mode structure | Flexible | ✅ `availableModes` array |
+| MCP capabilities | Optional | ✅ `{ http: true, sse: true }` |
+
+For production Zed integration, implement all Zed-compatible features even though they're not strictly required by the ACP protocol.

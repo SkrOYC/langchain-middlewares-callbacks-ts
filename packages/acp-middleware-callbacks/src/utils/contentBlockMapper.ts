@@ -1,10 +1,10 @@
 /**
  * Content Block Mapper
- * 
+ *
  * Converts between LangChain content blocks and ACP content blocks.
  * This enables seamless interoperability between LangChain agents and
  * ACP-compatible clients.
- * 
+ *
  * @packageDocumentation
  */
 
@@ -17,7 +17,7 @@ import type {
   EmbeddedResource,
   Annotations,
   Role,
-} from "../types/acp.js";
+} from "@agentclientprotocol/sdk";
 
 /**
  * Interface for mapping content blocks between LangChain and ACP formats.

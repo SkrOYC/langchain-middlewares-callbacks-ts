@@ -1,21 +1,21 @@
 /**
  * ACP Callback Handler
- * 
+ *
  * Callback handler for emitting events to ACP clients during agent execution.
  * Handles LLM token streaming and tool call lifecycle events.
- * 
+ *
  * @packageDocumentation
  */
 
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
-import type { 
+import type {
   ContentBlock,
   TextContent,
   ContentChunk,
-} from "../types/acp.js";
+} from "@agentclientprotocol/sdk";
 import type { ContentBlockMapper, DefaultContentBlockMapper } from "../utils/contentBlockMapper.js";
 import { defaultContentBlockMapper } from "../utils/contentBlockMapper.js";
-import type { ACPCallbackHandlerConfig, ACPConnection } from "../types/middleware.js";
+import type { ACPCallbackHandlerConfig } from "../types/middleware.js";
 import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
 
 /**
@@ -31,8 +31,8 @@ import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
  */
 export class ACPCallbackHandler extends BaseCallbackHandler {
   name = "acp-callback-handler";
-  
-  protected connection: ACPConnection;
+
+  protected connection: any; // AgentSideConnection - using any to avoid SDK dependency
   protected contentBlockMapper: ContentBlockMapper;
   protected emitTextChunks: boolean;
   protected includeIntermediateStates: boolean;
@@ -65,14 +65,12 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   }
 
   /**
-   * Dispose of the callback handler and close the connection.
+   * Dispose of the callback handler.
+   * Note: Connection lifecycle is managed by the SDK, not this handler.
    */
   async dispose(): Promise<void> {
-    try {
-      await this.connection.close();
-    } catch {
-      // Fail-safe: don't let close errors break disposal
-    }
+    // Connection lifecycle is managed by AgentSideConnection
+    // No action needed here
   }
 
   /**
@@ -155,11 +153,11 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
     
     // Check for LangChain v1.0.0 structured content blocks in the chunk
     // The fields parameter may contain chunk data with content blocks
-    const chunkContent = this.extractChunkContent(fields);
+    const chunkContents = this.extractChunkContent(fields);
     
-    if (chunkContent) {
+    if (chunkContents.length > 0) {
       // We have structured content from LangChain v1.0.0
-      await this.processChunkContent(chunkContent, fields);
+      await this.processChunkContent(chunkContents, fields);
       return;
     }
     
@@ -224,56 +222,143 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   }
   
   /**
-   * Extracts content from a streaming chunk.
+   * Extracts content blocks from a streaming chunk.
    * LangChain v1.0.0 provides content blocks in various formats during streaming.
    * 
+   * The fields parameter contains chunk data from ChatGenerationChunk:
+   * - fields.chunk: The GenerationChunk or ChatGenerationChunk
+   * - fields.chunk.message: The AIMessageChunk
+   * - fields.chunk.message.content: Content (string or content blocks array)
+   * 
    * @param fields - The fields from handleLLMNewToken
-   * @returns Extracted content block or null
+   * @returns Array of extracted content blocks
    */
-  private extractChunkContent(fields?: any): { type: string; reasoning?: string; text?: string } | null {
-    if (!fields) return null;
+  private extractChunkContent(fields?: any): Array<{ type: string; reasoning?: string; text?: string }> {
+    if (!fields) return [];
     
-    // Check for direct content block in chunk
-    if (fields.content && Array.isArray(fields.content)) {
-      const blocks = fields.content.filter((b: any) => b && typeof b === 'object' && b.type);
-      if (blocks.length > 0) {
-        // Return first content block
-        return blocks[0];
-      }
-    }
-    
-    // Check for chunk property (some providers use this)
+    // Check for ChatGenerationChunk structure (most common in LangChain v1.0.0)
+    // fields.chunk.message.content contains the actual content
     if (fields.chunk && typeof fields.chunk === 'object') {
       const chunk = fields.chunk;
       
-      // Check for reasoning content
-      if (chunk.reasoning || (chunk.content && Array.isArray(chunk.content))) {
-        // If chunk has reasoning property, treat as reasoning block
-        if (chunk.reasoning) {
-          return { type: "reasoning", reasoning: chunk.reasoning };
+      // Check for message property (ChatGenerationChunk)
+      if (chunk.message && typeof chunk.message === 'object') {
+        const message = chunk.message;
+        
+        // Check for OpenAI/xAI reasoning_content in additional_kwargs FIRST
+        // LangChain stores delta.reasoning_content here for streaming responses
+        // This must be checked before content array (which may be empty)
+        if (message.additional_kwargs?.reasoning_content && 
+            typeof message.additional_kwargs.reasoning_content === "string") {
+          return [{ type: "reasoning", reasoning: message.additional_kwargs.reasoning_content }];
         }
         
-        // Check content blocks in chunk
-        if (Array.isArray(chunk.content)) {
-          const blocks = chunk.content.filter((b: any) => b && typeof b === 'object' && b.type);
-          if (blocks.length > 0) {
-            return blocks[0];
+        // Check for OpenAI Responses API reasoning format
+        // ChatOpenAIResponses stores reasoning in message.additional_kwargs.reasoning
+        // This must be checked BEFORE content array (which may be empty)
+        if (message.additional_kwargs?.reasoning && 
+            typeof message.additional_kwargs.reasoning === "object") {
+          const reasoning = message.additional_kwargs.reasoning;
+          // Extract summary text from reasoning object
+          if (reasoning.summary && Array.isArray(reasoning.summary)) {
+            const summaryText = reasoning.summary
+              .map((s: any) => s.text || "")
+              .join("");
+            if (summaryText) {
+              return [{ type: "reasoning", reasoning: summaryText }];
+            }
+          }
+        }
+        
+        // Check for content property on the message (can be string or array)
+        if (message.content !== undefined) {
+          const content = message.content;
+          
+          // If content is a string, return as single text block
+          if (typeof content === "string") {
+            return [{ type: "text", text: content }];
+          }
+          
+          // If content is an array of content blocks, return all blocks
+          if (Array.isArray(content)) {
+            const blocks: Array<{ type: string; reasoning?: string; text?: string }> = [];
+            for (const block of content) {
+              if (block && typeof block === "object") {
+                if (block.type === "text" && block.text) {
+                  blocks.push({ type: "text", text: block.text });
+                } else if (block.type === "reasoning" && block.reasoning) {
+                  blocks.push({ type: "reasoning", reasoning: block.reasoning });
+                }
+                // Handle Anthropic's thinking block - LangChain translates to reasoning
+                else if (block.type === "thinking" && block.thinking) {
+                  blocks.push({ type: "reasoning", reasoning: block.thinking });
+                }
+              }
+            }
+            return blocks;
           }
         }
       }
       
-      // Check for text content
-      if (chunk.text || chunk.content?.text) {
-        return { type: "text", text: chunk.text || chunk.content?.text };
+      // Check for direct reasoning property on chunk (older format)
+      if (chunk.reasoning && typeof chunk.reasoning === "string") {
+        return [{ type: "reasoning", reasoning: chunk.reasoning }];
       }
+      
+      // Check for direct text property on chunk (GenerationChunk)
+      if (chunk.text && typeof chunk.text === "string") {
+        return [{ type: "text", text: chunk.text }];
+      }
+      
+      // Check for OpenAI Responses API streaming format with reasoning directly on chunk
+      // Some streaming chunks from ChatOpenAIResponses have reasoning at chunk.additional_kwargs
+      // not inside chunk.message.additional_kwargs
+      if (chunk.additional_kwargs?.reasoning && 
+          typeof chunk.additional_kwargs.reasoning === "object") {
+        const reasoning = chunk.additional_kwargs.reasoning;
+        if (reasoning.summary && Array.isArray(reasoning.summary)) {
+          const summaryText = reasoning.summary
+            .map((s: any) => s.text || "")
+            .join("");
+          if (summaryText) {
+            return [{ type: "reasoning", reasoning: summaryText }];
+          }
+        }
+      }
+    }
+    
+    // Check for direct content blocks in fields (alternative structure)
+    if (fields.content && Array.isArray(fields.content)) {
+      const blocks: Array<{ type: string; reasoning?: string; text?: string }> = [];
+      for (const block of fields.content) {
+        if (block && typeof block === "object" && block.type) {
+          if (block.type === "text" && block.text) {
+            blocks.push({ type: "text", text: block.text });
+          } else if (block.type === "reasoning" && block.reasoning) {
+            blocks.push({ type: "reasoning", reasoning: block.reasoning });
+          }
+        }
+      }
+      return blocks;
     }
     
     // Check for explicit reasoning flag
     if (fields.reasoning === true && fields.text) {
-      return { type: "reasoning", reasoning: fields.text };
+      return [{ type: "reasoning", reasoning: fields.text }];
     }
     
-    return null;
+    // Check for OpenAI/xAI streaming format with delta.reasoning_content
+    // This is the standard streaming format where reasoning arrives in a separate delta field
+    if (fields.chunk?.delta && typeof fields.chunk.delta === "object") {
+      const delta = fields.chunk.delta;
+      
+      // OpenAI/xAI reasoning_content format
+      if (delta.reasoning_content && typeof delta.reasoning_content === "string") {
+        return [{ type: "reasoning", reasoning: delta.reasoning_content }];
+      }
+    }
+    
+    return [];
   }
   
   /**
@@ -284,26 +369,28 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
    * @param fields - Full fields from the callback
    */
   private async processChunkContent(
-    content: { type: string; reasoning?: string; text?: string },
-    fields?: any
+    contents: Array<{ type: string; reasoning?: string; text?: string }>,
+    _fields?: any
   ): Promise<void> {
-    if (content.type === "reasoning" && content.reasoning) {
-      // Emit as agent_thought_chunk
-      const thoughtMessageId = this.generateMessageId();
-      await this.sendAgentThoughtChunk(
-        thoughtMessageId,
-        content.reasoning,
-        content.reasoning
-      );
-    } else if (content.type === "text" && content.text) {
-      // Emit as agent_message_chunk
-      this.currentTextContent += content.text;
-      
-      await this.sendAgentMessageChunk(
-        this.currentMessageId!,
-        content.text,
-        this.currentTextContent
-      );
+    for (const content of contents) {
+      if (content.type === "reasoning" && content.reasoning) {
+        // Emit as agent_thought_chunk
+        const thoughtMessageId = this.generateMessageId();
+        await this.sendAgentThoughtChunk(
+          thoughtMessageId,
+          content.reasoning,
+          content.reasoning
+        );
+      } else if (content.type === "text" && content.text) {
+        // Emit as agent_message_chunk
+        this.currentTextContent += content.text;
+        
+        await this.sendAgentMessageChunk(
+          this.currentMessageId!,
+          content.text,
+          this.currentTextContent
+        );
+      }
     }
   }
 
@@ -317,7 +404,7 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
    * @param _extraParams - Additional parameters
    */
   override async handleLLMEnd(
-    output: any,
+    _output: any,
     runId: string,
     _parentRunId?: string,
     _tags?: string[],
@@ -334,156 +421,20 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
       } catch {
         // Fail-safe: don't let emit errors break agent execution
       }
-      
-      this.isInReasoningBlock = false;
-      this.currentReasoningContent = "";
-      this.currentThoughtMessageId = null;
-      this.reasoningBlockStartToken = null;
     }
     
-    // Check for LangChain v1.0.0 structured content blocks
-    // LangChain AIMessageChunk can have content as an array of content blocks
-    // including { type: "reasoning", reasoning: string }
-    const contentBlocks = this.extractContentBlocks(output);
-    
-    if (contentBlocks.length > 0) {
-      // Process structured content blocks
-      await this.processContentBlocks(contentBlocks, this.currentMessageId);
-      
-      this.currentMessageId = null;
-      this.currentTextContent = "";
-    } else if (this.currentMessageId) {
-      // Fallback to legacy text content handling
-      try {
-        // Send final agent message with complete content
-        const content = this.currentTextContent;
-        const textContent: TextContent & { type: "text" } = {
-          type: "text",
-          text: content,
-          _meta: null,
-          annotations: null,
-        };
-        
-        await this.connection.sendAgentMessage({
-          messageId: this.currentMessageId,
-          role: "agent",
-          content: [textContent as ContentBlock],
-          contentFormat: "text",
-        });
-      } catch {
-        // Fail-safe: don't let emit errors break agent execution
-      }
-      
-      this.currentMessageId = null;
-      this.currentTextContent = "";
-    }
+    // Clean up state - all content was emitted during streaming via handleLLMNewToken
+    // Client knows streaming is complete via stopReason in session/prompt response
+    this.isInReasoningBlock = false;
+    this.currentReasoningContent = "";
+    this.currentThoughtMessageId = null;
+    this.reasoningBlockStartToken = null;
+    this.currentMessageId = null;
+    this.currentTextContent = "";
   }
   
   /**
-   * Extracts content blocks from LLM output.
-   * Supports LangChain v1.0.0 AIMessageChunk content structure.
-   * 
-   * @param output - The LLM output
-   * @returns Array of content blocks if present, empty array otherwise
-   */
-  private extractContentBlocks(output: any): Array<{ type: string; reasoning?: string; text?: string; [key: string]: unknown }> {
-    if (!output) return [];
-    
-    // Check for LangChain v1.0.0 AIMessageChunk with contentBlocks or content
-    const content = output.content;
-    
-    if (Array.isArray(content)) {
-      // LangChain v1.0.0 structured content blocks
-      return content.filter((block: any) => 
-        block && typeof block === 'object' && block.type !== undefined
-      );
-    }
-    
-    // Check for raw AIMessageChunk with content property
-    if (content?.contentBlocks && Array.isArray(content.contentBlocks)) {
-      return content.contentBlocks;
-    }
-    
-    return [];
-  }
-  
-  /**
-   * Processes content blocks and emits appropriate ACP events.
-   * Emits reasoning blocks as agent_thought_chunk with audience: ['assistant'].
-   * Processes blocks in their original order to preserve the intended flow.
-   * 
-   * @param contentBlocks - Array of content blocks from LangChain
-   * @param messageId - The message ID to use for agent_message chunks
-   */
-  private async processContentBlocks(
-    contentBlocks: Array<{ type: string; reasoning?: string; text?: string; [key: string]: unknown }>,
-    messageId: string | null
-  ): Promise<void> {
-    // Sort blocks by index to preserve original order if index is available
-    const sortedBlocks = [...contentBlocks].sort((a, b) => {
-      const indexA = (a.index ?? 0) as number;
-      const indexB = (b.index ?? 0) as number;
-      return indexA - indexB;
-    });
-    
-    // Track accumulated text for consecutive text blocks
-    let accumulatedText = "";
-    let hasAnyContent = false;
-    
-    for (const block of sortedBlocks) {
-      if (block.type === "reasoning" && block.reasoning) {
-        // Flush any accumulated text before emitting reasoning
-        if (accumulatedText.length > 0 && messageId) {
-          const textContent: TextContent & { type: "text" } = {
-            type: "text",
-            text: accumulatedText,
-            _meta: null,
-            annotations: null,
-          };
-          
-          await this.connection.sendAgentMessage({
-            messageId,
-            role: "agent",
-            content: [textContent as ContentBlock],
-            contentFormat: "text",
-          });
-          accumulatedText = "";
-        }
-        
-        // Emit reasoning as agent_thought_chunk
-        const thoughtMessageId = this.generateMessageId();
-        await this.sendAgentThoughtChunk(
-          thoughtMessageId,
-          block.reasoning,
-          block.reasoning
-        );
-        hasAnyContent = true;
-      } else if (block.type === "text" && block.text) {
-        // Accumulate text blocks
-        accumulatedText += block.text;
-        hasAnyContent = true;
-      }
-    }
-    
-    // Flush remaining accumulated text
-    if (accumulatedText.length > 0 && messageId) {
-      const textContent: TextContent & { type: "text" } = {
-        type: "text",
-        text: accumulatedText,
-        _meta: null,
-        annotations: null,
-      };
-      
-      await this.connection.sendAgentMessage({
-        messageId,
-        role: "agent",
-        content: [textContent as ContentBlock],
-        contentFormat: "text",
-      });
-    }
-  }
-
-  /**
+   * Called when an LLM call encounters an error.
    * Called when an LLM call encounters an error.
    * 
    * @param _error - The error that occurred
@@ -497,23 +448,28 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     if (this.currentMessageId) {
       try {
-        await this.connection.sendAgentMessage({
-          messageId: this.currentMessageId,
-          role: "agent",
-          content: [
-            {
-              type: "text",
-              text: `Error: ${_error.message}`,
-              _meta: null,
-              annotations: null,
-            } as ContentBlock,
-          ],
-          contentFormat: "text",
+        // Emit error as agent_message_chunk via sessionUpdate
+        const contentChunk: ContentChunk = {
+          _meta: null,
+          content: {
+            type: "text",
+            text: `Error: ${_error.message}`,
+            _meta: null,
+            annotations: null,
+          } as ContentBlock,
+        };
+
+        await this.connection.sessionUpdate({
+          sessionId: this.sessionId || "default",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            ...contentChunk,
+          },
         });
       } catch {
         // Fail-safe: don't let emit errors break agent execution
       }
-      
+
       this.currentMessageId = null;
       this.currentTextContent = "";
     }
@@ -537,14 +493,11 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
     _parentRunId?: string,
     _tags?: string[],
     _metadata?: Record<string, unknown>,
-    _runName?: string
+    runName?: string
   ): Promise<void> {
-    // Extract tool name from various possible locations
-    const toolName = tool?.name || 
-                   tool?.kwargs?.name || 
-                   tool?._name || 
-                   tool?.func?.name || 
-                   "unknown_tool";
+    // Extract tool name following Callbacks Mastery pattern:
+    // runName (from LangChain) → fallback
+    const toolName = runName || "unknown_tool";
     
     this.currentToolCallId = this.generateToolCallId();
     
@@ -623,26 +576,28 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     // Map the LangChain error to an ACP error code
     const errorCode = mapLangChainError(error);
-    
-    // Generate a message ID for the error message
-    const messageId = this.generateMessageId();
-    
+
     // Format the error message with the ACP error code
     const errorMessage = `[Error ${errorCode}] ${error.message}`;
-    
+
     try {
-      await this.connection.sendAgentMessage({
-        messageId,
-        role: "agent",
-        content: [
-          {
-            type: "text",
-            text: errorMessage,
-            _meta: null,
-            annotations: null,
-          } as ContentBlock,
-        ],
-        contentFormat: "text",
+      // Emit error as agent_message_chunk via sessionUpdate
+      const contentChunk: ContentChunk = {
+        _meta: null,
+        content: {
+          type: "text",
+          text: errorMessage,
+          _meta: null,
+          annotations: null,
+        } as ContentBlock,
+      };
+
+      await this.connection.sessionUpdate({
+        sessionId: this.sessionId || "default",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          ...contentChunk,
+        },
       });
     } catch (e) {
       // Fail-safe: don't let emit errors break agent execution
@@ -653,7 +608,7 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
 
   /**
    * Sends an agent message chunk to the ACP client.
-   * 
+   *
    * @param messageId - Unique identifier for this message
    * @param delta - The text delta to send
    * @param currentText - The accumulated text so far
@@ -663,21 +618,30 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
     delta: string,
     currentText: string
   ): Promise<void> {
+    // Skip empty tokens to avoid unnecessary updates
+    if (!delta || delta.length === 0) {
+      return;
+    }
+
     const textContent: TextContent & { type: "text" } = {
       type: "text",
       text: delta,
       _meta: null,
       annotations: null,
     };
-    
-    await this.connection.sendAgentMessage({
-      messageId,
-      role: "agent",
-      content: [textContent as ContentBlock],
-      contentFormat: "text",
-      delta: {
-        type: "text",
-        text: delta,
+
+    // Wrap in ContentChunk for agent_message_chunk
+    const contentChunk: ContentChunk = {
+      _meta: null,
+      content: textContent as ContentBlock,
+    };
+
+    // Emit via sessionUpdate
+    await this.connection.sessionUpdate({
+      sessionId: this.sessionId || "default",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        ...contentChunk,
       },
     });
   }
@@ -685,11 +649,11 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
   /**
    * Sends an agent thought chunk to the ACP client.
    * Emits reasoning content as agent_thought_chunk with audience: ['assistant'].
-   * 
+   *
    * The agent_thought_chunk is a SessionUpdate variant that wraps a ContentChunk
    * containing reasoning content. The content block has audience: ['assistant']
    * annotation to indicate it's internal thought content.
-   * 
+   *
    * @param messageId - Unique identifier for this thought message
    * @param delta - The text delta to send
    * @param currentText - The accumulated reasoning content so far
@@ -711,50 +675,16 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
         priority: null,
       },
     };
-    
+
     // Wrap in ContentChunk for agent_thought_chunk
     const contentChunk: ContentChunk = {
       _meta: null,
       content: textContent as ContentBlock,
     };
-    
-    // Check if we should use agent_thought_chunk or fall back to agent_message_chunk
-    // agent_thought_chunk is not yet part of the stable protocol specification
-    if (!this.emitReasoningAsThought) {
-      // Fallback: emit as regular agent message with audience annotation
-      await this.connection.sendAgentMessage({
-        messageId,
-        role: "agent",
-        content: [textContent as ContentBlock],
-        contentFormat: "text",
-        delta: {
-          type: "text",
-          text: delta,
-        },
-      });
-      return;
-    }
-    
-    // Use agent_thought_chunk with sessionUpdate
-    if (!this.sessionId) {
-      // Cannot emit session update without session ID, fallback to agent message
-      await this.connection.sendAgentMessage({
-        messageId,
-        role: "agent",
-        content: [textContent as ContentBlock],
-        contentFormat: "text",
-        delta: {
-          type: "text",
-          text: delta,
-        },
-      });
-      return;
-    }
-    
+
     // Emit agent_thought_chunk via sessionUpdate
-    // The update object is a SessionUpdate variant with sessionUpdate discriminator
     await this.connection.sessionUpdate({
-      sessionId: this.sessionId,
+      sessionId: this.sessionId || "default",
       update: {
         sessionUpdate: "agent_thought_chunk",
         ...contentChunk,
@@ -945,26 +875,8 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
     toolName: string,
     input: string
   ): Promise<void> {
-    if (!this.sessionId) {
-      // Fallback: emit as agent message if no session ID
-      await this.connection.sendAgentMessage({
-        messageId: this.generateMessageId(),
-        role: "agent",
-        content: [
-          {
-            type: "text",
-            text: `Calling tool: ${toolName}`,
-            _meta: null,
-            annotations: null,
-          } as ContentBlock,
-        ],
-        contentFormat: "text",
-      });
-      return;
-    }
-
     await this.connection.sessionUpdate({
-      sessionId: this.sessionId,
+      sessionId: this.sessionId || "default",
       update: {
         sessionUpdate: "tool_call",
         toolCallId,
@@ -990,36 +902,25 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
     output: unknown,
     errorMessage?: string
   ): Promise<void> {
-    if (!this.sessionId) {
-      // Fallback: emit as agent message if no session ID
-      const content = status === "completed" 
-        ? `Tool completed: ${output}`
-        : `Tool error: ${errorMessage || output}`;
-      
-      await this.connection.sendAgentMessage({
-        messageId: this.generateMessageId(),
-        role: "agent",
-        content: [
-          {
-            type: "text",
-            text: content,
-            _meta: null,
-            annotations: null,
-          } as ContentBlock,
-        ],
-        contentFormat: "text",
-      });
-      return;
-    }
-
     // Wrap content in ToolCallContent structure
     // ToolCallContent expects: { type: "content", content: ContentBlock }
-    const toolCallContent = status === "completed" 
+    // Extract actual content from ToolMessage (output.content) rather than using String(output)
+    const extractContent = (obj: unknown): string => {
+      if (!obj) return "";
+      // Handle LangChain ToolMessage objects where content is in output.content
+      if (typeof obj === "object" && "content" in obj) {
+        const content = (obj as any).content;
+        return typeof content === "string" ? content : String(content);
+      }
+      return String(obj);
+    };
+
+    const toolCallContent = status === "completed"
       ? [{
           type: "content" as const,
           content: {
             type: "text" as const,
-            text: String(output),
+            text: extractContent(output),
             _meta: null,
             annotations: null,
           },
@@ -1028,14 +929,14 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
           type: "content" as const,
           content: {
             type: "text" as const,
-            text: errorMessage || String(output),
+            text: errorMessage || extractContent(output),
             _meta: null,
             annotations: null,
           },
         }];
 
     await this.connection.sessionUpdate({
-      sessionId: this.sessionId,
+      sessionId: this.sessionId || "default",
       update: {
         sessionUpdate: "tool_call_update",
         toolCallId,

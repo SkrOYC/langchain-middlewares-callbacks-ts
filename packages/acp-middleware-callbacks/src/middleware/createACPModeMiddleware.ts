@@ -1,26 +1,16 @@
 /**
  * ACP Mode Middleware
- * 
+ *
  * Middleware for managing ACP mode switching and mode-specific configuration.
  * Handles mode transitions, tool permissions, and session updates.
- * 
+ *
  * @packageDocumentation
  */
 
 import { createMiddleware } from "langchain";
 import { z } from "zod";
-import type { SessionId } from "../types/acp.js";
+import type { SessionId } from "@agentclientprotocol/sdk";
 import type { ACPSessionState, ACPModeConfig, ACPMiddlewareStateReturn } from "../types/middleware.js";
-
-/**
- * Transport interface for sending session updates.
- */
-export interface ModeTransport {
-  /**
-   * Sends a session update to the ACP client.
-   */
-  sessionUpdate(params: { sessionId: SessionId; update: unknown }): Promise<void>;
-}
 
 /**
  * Configuration for the ACP mode middleware.
@@ -31,18 +21,18 @@ export interface ACPModeMiddlewareConfig {
    * Keys are mode IDs used to reference the mode.
    */
   modes: Record<string, ACPModeConfig>;
-  
+
   /**
    * The default mode to use when no mode is specified.
    */
   defaultMode: string;
-  
+
   /**
-   * Transport for sending session updates.
+   * AgentSideConnection for sending session updates.
    * Required for emitting current_mode_update events.
    */
-  transport?: ModeTransport;
-  
+  transport?: any; // AgentSideConnection - using any to avoid SDK dependency
+
   /**
    * Custom function to extract session ID from agent configuration.
    * If not provided, defaults to extracting from config.configurable.session_id.

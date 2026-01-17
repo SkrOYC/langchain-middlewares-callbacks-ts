@@ -20,7 +20,7 @@ describe("HITL Permission Workflow Integration", () => {
       
       // Mock transport
       const mockTransport = {
-        sendNotification: mock((method: string, params: any) => {
+        extNotification: mock((method: string, params: any) => {
           notificationCalls.push({ method, params });
         }),
         sessionUpdate: mock(async (params: any) => {
@@ -118,10 +118,10 @@ describe("HITL Permission Workflow Integration", () => {
   describe("complete workflow with edit decision", () => {
     test("agent pauses, user edits arguments, execution proceeds with modified args", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "write_file": { requiresPermission: true, kind: "edit" },
@@ -179,10 +179,10 @@ describe("HITL Permission Workflow Integration", () => {
   describe("complete workflow with reject decision", () => {
     test("agent pauses, user rejects, execution jumps back to model", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "delete_file": { requiresPermission: true, kind: "delete" },
@@ -243,12 +243,12 @@ describe("HITL Permission Workflow Integration", () => {
   describe("mixed permission requirements", () => {
     test("only interrupts for tools requiring permission", async () => {
       const interruptMock = mock(async () => ({ decisions: [{ type: "approve" }] }));
-      
+
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "write_file": { requiresPermission: true, kind: "edit" },
@@ -303,12 +303,12 @@ describe("HITL Permission Workflow Integration", () => {
   describe("session cancel handling", () => {
     test("onSessionCancel callback is invoked when provided", async () => {
       let cancelCallbackInvoked = false;
-      
+
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "dangerous_tool": { requiresPermission: true },
@@ -344,10 +344,10 @@ describe("HITL Permission Workflow Integration", () => {
   describe("checkpointing behavior", () => {
     test("interrupt preserves state for durable execution", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "file_operation": { requiresPermission: true },
@@ -410,17 +410,17 @@ describe("HITL Permission Workflow Integration", () => {
   describe("error resilience", () => {
     test("continues execution when notifications fail", async () => {
       const mockTransport = {
-        sendNotification: mock(() => { throw new Error("Notification failed"); }),
+        extNotification: mock(() => { throw new Error("Notification failed"); }),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "test_tool": { requiresPermission: true },
         },
         transport: mockTransport,
       });
-      
+
       const initialState = {
         messages: [
           { _getType: () => 'human', content: "Hello" },
@@ -455,20 +455,20 @@ describe("HITL Permission Workflow Integration", () => {
     test("demonstrates complete interrupt/resume workflow with Command pattern", async () => {
       const notificationCalls: Array<{ method: string; params: any }> = [];
       const sessionUpdateCalls: Array<any> = [];
-      
+
       // Create mock functions using bun:test mock
-      const sendNotificationFn = mock((method: string, params: any) => {
+      const extNotificationFn = mock((method: string, params: any) => {
         notificationCalls.push({ method, params });
       });
       const sessionUpdateFn = mock(async (params: any) => {
         sessionUpdateCalls.push(params);
       });
-      
+
       const mockTransport = {
-        sendNotification: sendNotificationFn,
+        extNotification: extNotificationFn,
         sessionUpdate: sessionUpdateFn,
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "write_file": { requiresPermission: true, kind: "edit" },
@@ -514,14 +514,14 @@ describe("HITL Permission Workflow Integration", () => {
         agentState as any,
         runtime as any
       );
-      
+
       // Verify session/request_permission was sent
-      expect(sendNotificationFn).toHaveBeenCalled();
-      expect(sendNotificationFn.mock.calls[0][0]).toBe("session/request_permission");
-      
+      expect(extNotificationFn).toHaveBeenCalled();
+      expect(extNotificationFn.mock.calls[0][0]).toBe("session/request_permission");
+
       // Verify result reflects decisions
       expect(result?.jumpTo).toBeUndefined(); // No rejections
-      
+
       // Verify the AI message has tool calls preserved
       const lastMessage = result?.messages?.find(
         (m: any) => m && m._getType && m._getType() === 'ai'
@@ -532,10 +532,10 @@ describe("HITL Permission Workflow Integration", () => {
     
     test("demonstrates reject decision causes jumpTo model", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "delete_file": { requiresPermission: true, kind: "delete" },
@@ -587,10 +587,10 @@ describe("HITL Permission Workflow Integration", () => {
     
     test("demonstrates state checkpoint verification after interrupt", async () => {
       const mockTransport = {
-        sendNotification: mock(() => {}),
+        extNotification: mock(() => {}),
         sessionUpdate: mock(async () => {}),
       };
-      
+
       const permissionMiddleware = createACPPermissionMiddleware({
         permissionPolicy: {
           "dangerous_operation": { requiresPermission: true },

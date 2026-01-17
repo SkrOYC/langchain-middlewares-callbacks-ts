@@ -1,9 +1,9 @@
 /**
  * ACP Tool Middleware
- * 
+ *
  * Intercepts LangChain tool calls and emits ACP tool_call/tool_call_update events.
  * Handles tool lifecycle with status transitions: pending -> in_progress -> completed|failed.
- * 
+ *
  * @packageDocumentation
  */
 
@@ -15,7 +15,7 @@ import type {
   ToolCallUpdate,
   SessionId,
   ToolCallContent,
-} from "../types/acp.js";
+} from "@agentclientprotocol/sdk";
 import type { ContentBlockMapper, DefaultContentBlockMapper } from "../utils/contentBlockMapper.js";
 import { extractLocations } from "../utils/extractLocations.js";
 
