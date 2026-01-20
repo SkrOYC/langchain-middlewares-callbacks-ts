@@ -5,17 +5,17 @@
  */
 
 import { z } from "zod";
-import type { AGUITransport } from "../transports/types";
+import type { BaseEvent } from '@ag-ui/core';
 
 /**
  * Middleware options schema with Zod validation.
  */
 export const AGUIMiddlewareOptionsSchema = z.object({
-  // Transport (required)
-  transport: z.custom<AGUITransport>(
-    (val) => val && typeof (val as AGUITransport).emit === "function",
+  // Callback function (required)
+  onEvent: z.custom<((event: BaseEvent) => void)>(
+    (val) => typeof val === "function",
     {
-      message: "Transport must have an emit function",
+      message: "onEvent must be a function",
     }
   ),
 

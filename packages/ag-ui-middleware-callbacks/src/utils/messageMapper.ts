@@ -7,7 +7,31 @@ import {
   ChatMessage
 } from "@langchain/core/messages";
 import { generateId } from "./idGenerator";
-import type { Message, ToolCall } from "../events";
+
+// ============================================================================
+// Local type definitions (replaces removed exports from events)
+// ============================================================================
+
+export type MessageRole = "developer" | "system" | "assistant" | "user" | "tool" | "activity";
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface Message {
+  id: string;
+  role: MessageRole;
+  content?: string;
+  name?: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+  error?: string;
+}
 
 /**
  * Maps a LangChain BaseMessage to an AG-UI Protocol Message.

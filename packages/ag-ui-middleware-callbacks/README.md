@@ -2,6 +2,20 @@
 
 LangChain.js integration providing middleware and callbacks for AG-UI protocol compatibility.
 
+## Package Scope
+
+This package focuses exclusively on **intercepting LangChain execution and emitting AG-UI events as JavaScript objects**.
+
+**Package responsibility:**
+- Intercept LangChain execution via middleware + callbacks
+- Emit AG-UI events as JavaScript objects (using `@ag-ui/core` types)
+
+**Developer responsibility:**
+- All HTTP/server setup
+- Wire formatting (SSE framing, Protobuf framing)
+- Content negotiation
+- Client communication
+
 ## Installation
 
 ```bash
@@ -16,55 +30,42 @@ bun install ag-ui-middleware-callbacks
 |----------|-------------|
 | `createAGUIAgent(config)` | Creates LangChain agent with AG-UI integration |
 | `createAGUIMiddleware(options)` | Creates middleware for lifecycle events |
-| `createSSETransport(req, res)` | Server-Sent Events transport |
-| `createProtobufTransport(req, res)` | Protocol Buffer binary transport |
 
-### Utilities
+### Callback Handler
 
 | Export | Description |
 |--------|-------------|
 | `AGUICallbackHandler` | Callback handler for streaming events |
-| `encodeEventWithFraming(event)` | Encode protobuf with 4-byte length prefix |
-| `decodeEventWithFraming(data)` | Decode framed protobuf event |
-| `AGUI_MEDIA_TYPE` | `"application/vnd.ag-ui.event+proto"` |
-| `validateEvent(event)` | Validate event against @ag-ui/core schemas |
-| `isValidEvent(event)` | Boolean validation check |
-| `createValidatingTransport(transport, options)` | Wrap transport with validation |
-
-### Types
-
-| Type | Description |
-|------|-------------|
-| `AGUIAgentConfig` | Configuration for `createAGUIAgent` |
-| `AGUIMiddlewareOptions` | Middleware configuration options |
-| `AGUITransport` | Transport interface with `emit(event)` |
-| `ProtobufTransport` | Extended transport with `signal`, `encodeEvent`, `decodeEvent` |
-| `EventType` | Event type enum from @ag-ui/core |
-| `EventSchemas` | Zod discriminated union for all events |
 
 ## Quick Start
 
 ```typescript
-import { createAGUIAgent, createSSETransport, AGUICallbackHandler } from "ag-ui-middleware-callbacks";
+import { createAGUIAgent, AGUICallbackHandler } from "ag-ui-middleware-callbacks";
+import { EventType } from "@ag-ui/core";
 
-const transport = createSSETransport(req, res);
+// Create callback to handle events
+const handleEvent = (event) => {
+  console.log('AG-UI Event:', event.type, event);
+};
 
+// Create AG-UI enabled agent
 const agent = createAGUIAgent({
   model,
   tools,
-  transport,
+  onEvent: handleEvent,
 });
 
+// Stream events with callback handler
 const eventStream = await agent.streamEvents(
   { messages },
   {
     version: "v2",
-    callbacks: [new AGUICallbackHandler(transport)]
+    callbacks: [new AGUICallbackHandler({ onEvent: handleEvent })]
   }
 );
 
 for await (const event of eventStream) {
-  // Events automatically emitted via transport
+  // Events automatically emitted via callback
 }
 ```
 
@@ -72,7 +73,7 @@ for await (const event of eventStream) {
 
 ```typescript
 const middleware = createAGUIMiddleware({
-  transport,
+  onEvent: (event) => console.log(event),
   emitToolResults: true,
   emitStateSnapshots: "initial",  // "initial" | "final" | "all" | "none"
   emitActivities: false,
@@ -107,20 +108,32 @@ const middleware = createAGUIMiddleware({
 | `ACTIVITY_SNAPSHOT` | Middleware | New activity detected |
 | `ACTIVITY_DELTA` | Middleware | Activity update |
 
-## Protobuf Transport
+## Wire Formatting (Developer Responsibility)
+
+Developers must implement their own transport/wire formatting:
+
+### SSE Example
 
 ```typescript
-import { createProtobufTransport, AGUI_MEDIA_TYPE } from "ag-ui-middleware-callbacks";
+const handleEvent = (event) => {
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+};
+```
 
-const acceptProtobuf = req.headers.accept?.includes(AGUI_MEDIA_TYPE);
-const transport = acceptProtobuf
-  ? createProtobufTransport(req, res)
-  : createSSETransport(req, res);
+### Protobuf Example
+
+```typescript
+import { encode, decode } from "@ag-ui/proto";
+
+const handleEvent = (event) => {
+  const bytes = encode(event);
+  const lengthPrefix = createLengthPrefix(bytes);
+  res.write(Buffer.concat([lengthPrefix, bytes]));
+};
 ```
 
 ## Dependencies
 
 - `@ag-ui/core` (^0.0.42)
-- `@ag-ui/proto` (^0.0.42)
 - `langchain` (^1.2.3)
 - `zod` (^3.22.4)

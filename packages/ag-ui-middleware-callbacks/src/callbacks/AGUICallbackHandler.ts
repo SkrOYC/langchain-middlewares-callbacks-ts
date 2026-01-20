@@ -8,13 +8,53 @@ import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
 import { expandEvent } from "../utils/eventNormalizer";
-import type { AGUITransport } from "../transports/types";
-import { EventType, type TextMessageChunkEvent, type ToolCallChunkEvent } from "../events";
+import { EventType, type BaseEvent } from "../events";
+
+// ============================================================================
+// Type utilities
+// ============================================================================
+
+/**
+ * Helper type for AG-UI events with their specific properties
+ */
+type AGUIEventWithProperties = 
+  | { type: EventType.RUN_STARTED; threadId?: string; runId?: string; input?: unknown; timestamp?: number }
+  | { type: EventType.RUN_FINISHED; threadId?: string; runId?: string; result?: unknown; timestamp?: number }
+  | { type: EventType.RUN_ERROR; message: string; code?: string; timestamp?: number }
+  | { type: EventType.STEP_STARTED; stepName: string; timestamp?: number }
+  | { type: EventType.STEP_FINISHED; stepName: string; timestamp?: number }
+  | { type: EventType.STATE_SNAPSHOT; snapshot: unknown; timestamp?: number }
+  | { type: EventType.MESSAGES_SNAPSHOT; messages: unknown[]; timestamp?: number }
+  | { type: EventType.ACTIVITY_SNAPSHOT; messageId: string; activityType: string; content: Record<string, unknown>; replace?: boolean; timestamp?: number }
+  | { type: EventType.ACTIVITY_DELTA; messageId: string; activityType: string; patch: unknown[]; timestamp?: number }
+  | { type: EventType.TEXT_MESSAGE_START; messageId: string; role?: string; timestamp?: number }
+  | { type: EventType.TEXT_MESSAGE_CONTENT; messageId: string; delta: string; timestamp?: number }
+  | { type: EventType.TEXT_MESSAGE_END; messageId: string; timestamp?: number }
+  | { type: EventType.TEXT_MESSAGE_CHUNK; messageId?: string; role?: string; delta?: string; timestamp?: number }
+  | { type: EventType.TOOL_CALL_START; toolCallId: string; toolCallName: string; parentMessageId?: string; timestamp?: number }
+  | { type: EventType.TOOL_CALL_ARGS; toolCallId: string; delta: string; timestamp?: number }
+  | { type: EventType.TOOL_CALL_END; toolCallId: string; timestamp?: number }
+  | { type: EventType.TOOL_CALL_RESULT; messageId: string; toolCallId: string; content: string; role?: string; timestamp?: number }
+  | { type: EventType.TOOL_CALL_CHUNK; toolCallId?: string; toolCallName?: string; parentMessageId?: string; delta?: string; timestamp?: number }
+  | { type: EventType.THINKING_START; title?: string; messageId?: string; timestamp?: number }
+  | { type: EventType.THINKING_END; timestamp?: number }
+  | { type: EventType.THINKING_TEXT_MESSAGE_START; messageId: string; timestamp?: number }
+  | { type: EventType.THINKING_TEXT_MESSAGE_CONTENT; messageId: string; delta: string; timestamp?: number }
+  | { type: EventType.THINKING_TEXT_MESSAGE_END; messageId: string; timestamp?: number }
+  | { type: EventType.RAW; event: unknown; source?: string }
+  | { type: EventType.CUSTOM; name: string; value: unknown };
+
+/**
+ * Emit function type that accepts any AG-UI event
+ */
+type EmitFunction = (event: AGUIEventWithProperties) => void;
 
 /**
  * Configuration options for the callback handler.
  */
 export interface AGUICallbackHandlerOptions {
+  /** Callback function for emitting AG-UI events */
+  onEvent: (event: BaseEvent) => void;
   /** Master toggle - when false, no events are emitted (default: true) */
   enabled?: boolean;
   /** Emit TEXT_MESSAGE events: START, CONTENT, END (default: true) */
@@ -46,7 +86,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private agentTurnTracker = new Map<string, number>();
   private pendingToolCalls = new Map<string, string[]>();
   private accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
-  private transport: AGUITransport;
+  private emitCallback: EmitFunction;
 
   private _enabled: boolean;
   private _emitTextMessages: boolean;
@@ -56,9 +96,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private maxUIPayloadSize: number;
   private chunkLargeResults: boolean;
 
-  constructor(transport: AGUITransport, options?: AGUICallbackHandlerOptions) {
+  constructor(options: AGUICallbackHandlerOptions) {
     super({ raiseError: false });
-    this.transport = transport;
+    this.emitCallback = options.onEvent as EmitFunction;
     this._enabled = options?.enabled ?? true;
     this._emitTextMessages = options?.emitTextMessages ?? true;
     this._emitToolCalls = options?.emitToolCalls ?? true;
@@ -143,10 +183,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       messageId,
       role,
       delta,
-    } as TextMessageChunkEvent);
+    } as BaseEvent);
     
     for (const event of events) {
-      await this.transport.emit(event);
+      this.emitCallback(event as AGUIEventWithProperties);
     }
   }
 
@@ -176,10 +216,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       toolCallName,
       delta,
       parentMessageId,
-    } as ToolCallChunkEvent);
+    } as BaseEvent);
     
     for (const event of events) {
-      await this.transport.emit(event);
+      this.emitCallback(event as AGUIEventWithProperties);
     }
   }
 
@@ -219,7 +259,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.latestMessageIds.set(agentRunId, middlewareMessageId);
       
       // Emit TEXT_MESSAGE_START (coordination with middleware)
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TEXT_MESSAGE_START,
         messageId: middlewareMessageId,
         role: "assistant",
@@ -235,7 +275,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.latestMessageIds.set(agentRunId, messageId);
       
       // Emit TEXT_MESSAGE_START (no middleware coordination)
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TEXT_MESSAGE_START,
         messageId,
         role: "assistant",
@@ -270,11 +310,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
                             runId;
           thinkingId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for thinking
           this.thinkingIds.set(runId, thinkingId);
-          this.transport.emit({
+          this.emitCallback({
             type: EventType.THINKING_START,
             timestamp: Date.now(),
           });
-          this.transport.emit({
+          this.emitCallback({
             type: EventType.THINKING_TEXT_MESSAGE_START,
             messageId: thinkingId,
             timestamp: Date.now(),
@@ -285,7 +325,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           ? reasoningContent
           : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
 
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
           messageId: thinkingId,
           delta,
@@ -295,7 +335,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
       if (token && token.length > 0 && this.emitTextMessages && messageId) {
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
           delta: token,
@@ -394,7 +434,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     // Emit TEXT_MESSAGE_END
     if (messageId && this.emitTextMessages) {
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TEXT_MESSAGE_END,
         messageId,
         timestamp: Date.now(),
@@ -404,12 +444,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     // Emit THINKING_END events
     if (thinkingId) {
       if (this.emitThinking) {
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.THINKING_TEXT_MESSAGE_END,
           messageId: thinkingId,
           timestamp: Date.now(),
         });
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.THINKING_END,
           timestamp: Date.now(),
         });
@@ -572,7 +612,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     try {
       // Emit TOOL_CALL_START first
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_START,
         toolCallId,
         toolCallName,
@@ -584,7 +624,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       // This preserves real-time streaming while maintaining protocol sequence
       const accumulatedArgs = this.accumulatedToolArgs.get(toolCallId);
       if (accumulatedArgs) {
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.TOOL_CALL_ARGS,
           toolCallId,
           delta: accumulatedArgs,
@@ -628,7 +668,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         }
       }
 
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_END,
         toolCallId: finalToolCallId,
         timestamp: Date.now(),
@@ -659,7 +699,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const messageId = this.latestMessageIds.get(agentRunId);
 
     try {
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_END,
         toolCallId: toolInfo?.id ?? runId,
         timestamp: Date.now(),
@@ -715,7 +755,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const contentSize = new Blob([content]).size;
     
     if (contentSize <= this.maxUIPayloadSize) {
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_RESULT,
         messageId: resultMessageId,
         toolCallId,
@@ -731,7 +771,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       for (let i = 0; i < chunks.length; i++) {
         // Use CUSTOM event or a new event type for large result chunks
         // to avoid collision with ToolCallChunk which is for arguments
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.CUSTOM,
           name: "LARGE_RESULT_CHUNK",
           value: {
@@ -749,7 +789,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
     const truncatedContent = content.substring(0, Math.max(0, availableSpace)) + truncationMessage;
 
-    this.transport.emit({
+    this.emitCallback({
       type: EventType.TOOL_CALL_RESULT,
       messageId: resultMessageId,
       toolCallId,

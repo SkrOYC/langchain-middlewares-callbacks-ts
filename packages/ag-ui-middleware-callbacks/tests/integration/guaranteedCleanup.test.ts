@@ -5,7 +5,7 @@
 
 import { test, expect, describe } from "bun:test";
 import {
-  createMockTransport,
+  createMockCallback,
   createTestAgent,
   formatAgentInput,
   getEventsByType,
@@ -15,21 +15,21 @@ import {
 describe("Activity Events", () => {
   describe("ACTIVITY_SNAPSHOT and ACTIVITY_DELTA", () => {
     test("ACTIVITY_SNAPSHOT and ACTIVITY_DELTA are emitted for agent steps", async () => {
-      const transport = createMockTransport();
+      const callback = createMockCallback();
       const model = createTextModel(["Hello!"]);
 
-      const { agent } = createTestAgent(model, [], transport, {
+      const { agent } = createTestAgent(model, [], callback, {
         emitActivities: true,
       });
 
       await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
 
       // Should have ACTIVITY_SNAPSHOT for the model call
-      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
+      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
       expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
       // Should have ACTIVITY_DELTA for completion
-      const deltaEvents = getEventsByType(transport, "ACTIVITY_DELTA");
+      const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
       expect(deltaEvents.length).toBeGreaterThanOrEqual(1);
 
       // Verify activity structure
@@ -47,16 +47,16 @@ describe("Activity Events", () => {
     });
 
     test("ACTIVITY_SNAPSHOT contains model name and input preview", async () => {
-      const transport = createMockTransport();
+      const callback = createMockCallback();
       const model = createTextModel(["Response text"]);
 
-      const { agent } = createTestAgent(model, [], transport, {
+      const { agent } = createTestAgent(model, [], callback, {
         emitActivities: true,
       });
 
       await agent.invoke(formatAgentInput([{ role: "user", content: "What is the weather?" }]));
 
-      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
+      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
       expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
       const snapshot = snapshotEvents[0];
@@ -66,16 +66,16 @@ describe("Activity Events", () => {
     });
 
     test("ACTIVITY_DELTA contains completion status and output type", async () => {
-      const transport = createMockTransport();
+      const callback = createMockCallback();
       const model = createTextModel(["Simple response"]);
 
-      const { agent } = createTestAgent(model, [], transport, {
+      const { agent } = createTestAgent(model, [], callback, {
         emitActivities: true,
       });
 
       await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
 
-      const deltaEvents = getEventsByType(transport, "ACTIVITY_DELTA");
+      const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
       expect(deltaEvents.length).toBeGreaterThanOrEqual(1);
 
       // The last delta should have status "completed"
@@ -90,23 +90,23 @@ describe("Activity Events", () => {
     });
 
     test("No activity events when emitActivities is false (default)", async () => {
-      const transport = createMockTransport();
+      const callback = createMockCallback();
       const model = createTextModel(["Hello!"]);
 
-      const { agent } = createTestAgent(model, [], transport);
+      const { agent } = createTestAgent(model, [], callback);
 
       await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
 
       // Should NOT have any activity events
-      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
-      const deltaEvents = getEventsByType(transport, "ACTIVITY_DELTA");
+      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
+      const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
 
       expect(snapshotEvents.length).toBe(0);
       expect(deltaEvents.length).toBe(0);
     });
 
     test("activityMapper transforms activity content", async () => {
-      const transport = createMockTransport();
+      const callback = createMockCallback();
       const model = createTextModel(["Response text"]);
 
       // Custom mapper that transforms the activity content
@@ -116,7 +116,7 @@ describe("Activity Events", () => {
         // Note: activityMapper returns a new object, not modifying the original
       });
 
-      const { agent } = createTestAgent(model, [], transport, {
+      const { agent } = createTestAgent(model, [], callback, {
         emitActivities: true,
         activityMapper: customMapper,
       });
@@ -124,7 +124,7 @@ describe("Activity Events", () => {
       await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
 
       // Should have ACTIVITY_SNAPSHOT with transformed content
-      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
+      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
       expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
       const snapshot = snapshotEvents[0];
@@ -135,7 +135,7 @@ describe("Activity Events", () => {
     });
 
     test("activityMapper receives base content with all fields", async () => {
-      const transport = createMockTransport();
+      const callback = createMockCallback();
       const model = createTextModel(["Response text"]);
 
       // Mapper that logs received fields for verification
@@ -145,7 +145,7 @@ describe("Activity Events", () => {
         return node;
       };
 
-      const { agent } = createTestAgent(model, [], transport, {
+      const { agent } = createTestAgent(model, [], callback, {
         emitActivities: true,
         activityMapper: fieldMapper,
       });
@@ -153,7 +153,7 @@ describe("Activity Events", () => {
       await agent.invoke(formatAgentInput([{ role: "user", content: "Test" }]));
 
       // Verify base content has expected fields
-      const snapshotEvents = getEventsByType(transport, "ACTIVITY_SNAPSHOT");
+      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
       expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
       // Should have received standard fields

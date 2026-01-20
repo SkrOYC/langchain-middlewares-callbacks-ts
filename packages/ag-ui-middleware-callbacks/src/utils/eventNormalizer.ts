@@ -1,15 +1,4 @@
-import type {
-  AGUIEvent,
-  TextMessageStartEvent,
-  TextMessageContentEvent,
-  TextMessageEndEvent,
-  TextMessageChunkEvent,
-  ToolCallStartEvent,
-  ToolCallArgsEvent,
-  ToolCallEndEvent,
-  ToolCallChunkEvent,
-} from "../events";
-import { EventType } from "../events";
+import { EventType, type BaseEvent } from "../events";
 import { generateId } from "./idGenerator";
 
 /**
@@ -18,19 +7,19 @@ import { generateId } from "./idGenerator";
  * @param event - The event to expand
  * @returns An array of explicit AG-UI events
  */
-export function expandEvent(event: AGUIEvent): AGUIEvent[] {
+export function expandEvent(event: BaseEvent): BaseEvent[] {
   switch (event.type) {
     case EventType.TEXT_MESSAGE_CHUNK: {
-      const chunkEvent = event as TextMessageChunkEvent;
+      const chunkEvent = event as any;
       const messageId = chunkEvent.messageId || generateId();
-      const results: AGUIEvent[] = [];
+      const results: BaseEvent[] = [];
 
       if (chunkEvent.role) {
         results.push({
           type: EventType.TEXT_MESSAGE_START,
           messageId,
           role: chunkEvent.role,
-        } as TextMessageStartEvent);
+        } as unknown as BaseEvent);
       }
 
       if (chunkEvent.delta) {
@@ -38,7 +27,7 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
           type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
           delta: chunkEvent.delta,
-        } as TextMessageContentEvent);
+        } as unknown as BaseEvent);
       }
 
       // If it has a role and delta, we assume it's a complete short message
@@ -46,16 +35,16 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
         results.push({
           type: EventType.TEXT_MESSAGE_END,
           messageId,
-        } as TextMessageEndEvent);
+        } as unknown as BaseEvent);
       }
 
       return results.length > 0 ? results : [event];
     }
 
     case EventType.TOOL_CALL_CHUNK: {
-      const chunkEvent = event as ToolCallChunkEvent;
+      const chunkEvent = event as any;
       const toolCallId = chunkEvent.toolCallId || generateId();
-      const results: AGUIEvent[] = [];
+      const results: BaseEvent[] = [];
 
       if (chunkEvent.toolCallName) {
         results.push({
@@ -63,7 +52,7 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
           toolCallId,
           toolCallName: chunkEvent.toolCallName,
           parentMessageId: chunkEvent.parentMessageId,
-        } as ToolCallStartEvent);
+        } as unknown as BaseEvent);
       }
 
       if (chunkEvent.delta) {
@@ -71,7 +60,7 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
           type: EventType.TOOL_CALL_ARGS,
           toolCallId,
           delta: chunkEvent.delta,
-        } as ToolCallArgsEvent);
+        } as unknown as BaseEvent);
       }
 
       if (chunkEvent.toolCallName && chunkEvent.delta) {
@@ -79,7 +68,7 @@ export function expandEvent(event: AGUIEvent): AGUIEvent[] {
           type: EventType.TOOL_CALL_END,
           toolCallId,
           parentMessageId: chunkEvent.parentMessageId,
-        } as ToolCallEndEvent);
+        } as unknown as BaseEvent);
       }
 
       return results.length > 0 ? results : [event];

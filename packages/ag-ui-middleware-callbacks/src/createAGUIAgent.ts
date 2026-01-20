@@ -14,9 +14,8 @@
 import { createAgent } from "langchain";
 import { AGUICallbackHandler, type AGUICallbackHandlerOptions } from "./callbacks/AGUICallbackHandler";
 import { createAGUIMiddleware } from "./middleware/createAGUIMiddleware";
-import type { AGUITransport } from "./transports/types";
 import type { AGUIMiddlewareOptions } from "./middleware/types";
-import { EventType } from "./events";
+import { EventType, type BaseEvent } from "./events";
 
 /**
  * Configuration for creating an AG-UI enabled agent.
@@ -26,12 +25,12 @@ export interface AGUIAgentConfig {
   model: any;
   /** The tools available to the agent */
   tools: any[];
-  /** The transport for AG-UI events */
-  transport: AGUITransport;
+  /** Callback function for AG-UI events */
+  onEvent: (event: BaseEvent) => void;
   /** Optional middleware configuration */
   middlewareOptions?: Partial<AGUIMiddlewareOptions>;
   /** Optional callback handler configuration */
-  callbackOptions?: AGUICallbackHandlerOptions;
+  callbackOptions?: Omit<AGUICallbackHandlerOptions, 'onEvent'>;
 }
 
 /**
@@ -51,9 +50,9 @@ export interface AGUIAgentConfig {
  * @returns An agent with AG-UI protocol support
  */
 export function createAGUIAgent(config: AGUIAgentConfig) {
-  // Create middleware with transport
+  // Create middleware with callback
   const middleware = createAGUIMiddleware({
-    transport: config.transport,
+    onEvent: config.onEvent,
     emitToolResults: config.middlewareOptions?.emitToolResults ?? true,
     emitStateSnapshots: config.middlewareOptions?.emitStateSnapshots ?? "initial",
     emitActivities: config.middlewareOptions?.emitActivities ?? false,
@@ -84,13 +83,12 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
           // Extract threadId and runId from run config if available
           const threadId = run.config?.configurable?.threadId as string | undefined;
           const agentRunId = run.config?.configurable?.runId as string | undefined;
-         config.transport.emit({
+          config.onEvent({
            type: EventType.RUN_ERROR,
            message: typeof run.error === "string" ? run.error : (run.error as any)?.message || "Agent execution failed",
            code: "AGENT_EXECUTION_ERROR",
            timestamp: Date.now(),
-           // REMOVED: threadId, runId
-         });
+         } as BaseEvent);
         } catch {
           // Fail-safe
         }
