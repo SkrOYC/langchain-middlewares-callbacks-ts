@@ -21,5 +21,10 @@ export {
   ToolCallSchema,
 } from '@ag-ui/core';
 
-// Re-export BaseEvent type for convenience
-export type { BaseEvent } from '@ag-ui/core';
+// Re-export event and message types for convenience
+export type { 
+  BaseEvent,
+  Message,
+  ToolCall,
+  Role,
+} from '@ag-ui/core';

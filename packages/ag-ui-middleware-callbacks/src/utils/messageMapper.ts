@@ -7,31 +7,7 @@ import {
   ChatMessage
 } from "@langchain/core/messages";
 import { generateId } from "./idGenerator";
-
-// ============================================================================
-// Local type definitions (replaces removed exports from events)
-// ============================================================================
-
-export type MessageRole = "developer" | "system" | "assistant" | "user" | "tool" | "activity";
-
-export interface ToolCall {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
-
-export interface Message {
-  id: string;
-  role: MessageRole;
-  content?: string;
-  name?: string;
-  toolCalls?: ToolCall[];
-  toolCallId?: string;
-  error?: string;
-}
+import type { Message, ToolCall, Role } from "@ag-ui/core";
 
 /**
  * Maps a LangChain BaseMessage to an AG-UI Protocol Message.
@@ -41,7 +17,7 @@ export interface Message {
  */
 export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
   const id = (message as any).id || generateId();
-  let role: Message["role"] = "assistant";
+  let role: Role = "assistant";
   let toolCalls: ToolCall[] | undefined;
   let toolCallId: string | undefined;
   let content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);

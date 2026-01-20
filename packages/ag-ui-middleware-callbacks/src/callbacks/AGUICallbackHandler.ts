@@ -8,46 +8,7 @@ import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
 import { expandEvent } from "../utils/eventNormalizer";
-import { EventType, type BaseEvent } from "../events";
-
-// ============================================================================
-// Type utilities
-// ============================================================================
-
-/**
- * Helper type for AG-UI events with their specific properties
- */
-type AGUIEventWithProperties = 
-  | { type: EventType.RUN_STARTED; threadId?: string; runId?: string; input?: unknown; timestamp?: number }
-  | { type: EventType.RUN_FINISHED; threadId?: string; runId?: string; result?: unknown; timestamp?: number }
-  | { type: EventType.RUN_ERROR; message: string; code?: string; timestamp?: number }
-  | { type: EventType.STEP_STARTED; stepName: string; timestamp?: number }
-  | { type: EventType.STEP_FINISHED; stepName: string; timestamp?: number }
-  | { type: EventType.STATE_SNAPSHOT; snapshot: unknown; timestamp?: number }
-  | { type: EventType.MESSAGES_SNAPSHOT; messages: unknown[]; timestamp?: number }
-  | { type: EventType.ACTIVITY_SNAPSHOT; messageId: string; activityType: string; content: Record<string, unknown>; replace?: boolean; timestamp?: number }
-  | { type: EventType.ACTIVITY_DELTA; messageId: string; activityType: string; patch: unknown[]; timestamp?: number }
-  | { type: EventType.TEXT_MESSAGE_START; messageId: string; role?: string; timestamp?: number }
-  | { type: EventType.TEXT_MESSAGE_CONTENT; messageId: string; delta: string; timestamp?: number }
-  | { type: EventType.TEXT_MESSAGE_END; messageId: string; timestamp?: number }
-  | { type: EventType.TEXT_MESSAGE_CHUNK; messageId?: string; role?: string; delta?: string; timestamp?: number }
-  | { type: EventType.TOOL_CALL_START; toolCallId: string; toolCallName: string; parentMessageId?: string; timestamp?: number }
-  | { type: EventType.TOOL_CALL_ARGS; toolCallId: string; delta: string; timestamp?: number }
-  | { type: EventType.TOOL_CALL_END; toolCallId: string; timestamp?: number }
-  | { type: EventType.TOOL_CALL_RESULT; messageId: string; toolCallId: string; content: string; role?: string; timestamp?: number }
-  | { type: EventType.TOOL_CALL_CHUNK; toolCallId?: string; toolCallName?: string; parentMessageId?: string; delta?: string; timestamp?: number }
-  | { type: EventType.THINKING_START; title?: string; messageId?: string; timestamp?: number }
-  | { type: EventType.THINKING_END; timestamp?: number }
-  | { type: EventType.THINKING_TEXT_MESSAGE_START; messageId: string; timestamp?: number }
-  | { type: EventType.THINKING_TEXT_MESSAGE_CONTENT; messageId: string; delta: string; timestamp?: number }
-  | { type: EventType.THINKING_TEXT_MESSAGE_END; messageId: string; timestamp?: number }
-  | { type: EventType.RAW; event: unknown; source?: string }
-  | { type: EventType.CUSTOM; name: string; value: unknown };
-
-/**
- * Emit function type that accepts any AG-UI event
- */
-type EmitFunction = (event: AGUIEventWithProperties) => void;
+import { type BaseEvent, EventType } from "@ag-ui/core";
 
 /**
  * Configuration options for the callback handler.
@@ -86,7 +47,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private agentTurnTracker = new Map<string, number>();
   private pendingToolCalls = new Map<string, string[]>();
   private accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
-  private emitCallback: EmitFunction;
+  private emitCallback: (event: BaseEvent) => void;
 
   private _enabled: boolean;
   private _emitTextMessages: boolean;
@@ -98,7 +59,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   constructor(options: AGUICallbackHandlerOptions) {
     super({ raiseError: false });
-    this.emitCallback = options.onEvent as EmitFunction;
+    this.emitCallback = options.onEvent;
     this._enabled = options?.enabled ?? true;
     this._emitTextMessages = options?.emitTextMessages ?? true;
     this._emitToolCalls = options?.emitToolCalls ?? true;
@@ -186,7 +147,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     } as BaseEvent);
     
     for (const event of events) {
-      this.emitCallback(event as AGUIEventWithProperties);
+      this.emitCallback(event);
     }
   }
 
@@ -219,7 +180,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     } as BaseEvent);
     
     for (const event of events) {
-      this.emitCallback(event as AGUIEventWithProperties);
+      this.emitCallback(event);
     }
   }
 
@@ -264,7 +225,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         messageId: middlewareMessageId,
         role: "assistant",
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     } else {
       // Generate our own messageId if middleware didn't provide one
       const turnIndex = this.agentTurnTracker.get(agentRunId) || 0;
@@ -280,7 +241,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         messageId,
         role: "assistant",
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     }
   }
 
@@ -313,12 +274,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           this.emitCallback({
             type: EventType.THINKING_START,
             timestamp: Date.now(),
-          });
+          } as BaseEvent);
           this.emitCallback({
             type: EventType.THINKING_TEXT_MESSAGE_START,
             messageId: thinkingId,
             timestamp: Date.now(),
-          });
+          } as BaseEvent);
         }
 
         const delta = typeof reasoningContent === 'string'
@@ -330,7 +291,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           messageId: thinkingId,
           delta,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
       }
 
       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
@@ -340,7 +301,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           messageId,
           delta: token,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
       }
 
       // Emit TOOL_CALL_ARGS for streaming tool arguments (may contain partial JSON fragments)
@@ -438,7 +399,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         type: EventType.TEXT_MESSAGE_END,
         messageId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     }
 
     // Emit THINKING_END events
@@ -448,11 +409,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           type: EventType.THINKING_TEXT_MESSAGE_END,
           messageId: thinkingId,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
         this.emitCallback({
           type: EventType.THINKING_END,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
       }
       // Always clean up - even if emitThinking was toggled off
       this.thinkingIds.delete(runId);
@@ -618,7 +579,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         toolCallName,
         parentMessageId: messageId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
 
       // Emit accumulated TOOL_CALL_ARGS (from streaming in handleLLMNewToken)
       // This preserves real-time streaming while maintaining protocol sequence
@@ -629,7 +590,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           toolCallId,
           delta: accumulatedArgs,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
         // Clean up accumulated args
         this.accumulatedToolArgs.delete(toolCallId);
       }
@@ -672,7 +633,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         type: EventType.TOOL_CALL_END,
         toolCallId: finalToolCallId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
 
       this.emitToolResultWithPolicy(output, finalToolCallId, messageId, toolInfo?.name);
     } catch {
@@ -703,7 +664,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         type: EventType.TOOL_CALL_END,
         toolCallId: toolInfo?.id ?? runId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     } catch {
       // Fail-safe
     }
@@ -762,7 +723,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         content,
         role: "tool",
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
       return;
     }
     
@@ -780,7 +741,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
             index: i,
             total: chunks.length
           }
-        });
+        } as BaseEvent);
       }
       return;
     }
@@ -796,6 +757,6 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       content: truncatedContent,
       role: "tool",
       timestamp: Date.now(),
-    });
+    } as BaseEvent);
   }
 }
