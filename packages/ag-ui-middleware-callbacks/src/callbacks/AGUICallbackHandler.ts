@@ -8,13 +8,14 @@ import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
 import { expandEvent } from "../utils/eventNormalizer";
-import type { AGUITransport } from "../transports/types";
-import { EventType, type TextMessageChunkEvent, type ToolCallChunkEvent } from "../events";
+import { type BaseEvent, EventType } from "@ag-ui/core";
 
 /**
  * Configuration options for the callback handler.
  */
 export interface AGUICallbackHandlerOptions {
+  /** Callback function for emitting AG-UI events */
+  onEvent: (event: BaseEvent) => void;
   /** Master toggle - when false, no events are emitted (default: true) */
   enabled?: boolean;
   /** Emit TEXT_MESSAGE events: START, CONTENT, END (default: true) */
@@ -46,7 +47,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private agentTurnTracker = new Map<string, number>();
   private pendingToolCalls = new Map<string, string[]>();
   private accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
-  private transport: AGUITransport;
+  private emitCallback: (event: BaseEvent) => void;
 
   private _enabled: boolean;
   private _emitTextMessages: boolean;
@@ -56,9 +57,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private maxUIPayloadSize: number;
   private chunkLargeResults: boolean;
 
-  constructor(transport: AGUITransport, options?: AGUICallbackHandlerOptions) {
+  constructor(options: AGUICallbackHandlerOptions) {
     super({ raiseError: false });
-    this.transport = transport;
+    this.emitCallback = options.onEvent;
     this._enabled = options?.enabled ?? true;
     this._emitTextMessages = options?.emitTextMessages ?? true;
     this._emitToolCalls = options?.emitToolCalls ?? true;
@@ -143,10 +144,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       messageId,
       role,
       delta,
-    } as TextMessageChunkEvent);
+    } as BaseEvent);
     
     for (const event of events) {
-      await this.transport.emit(event);
+      this.emitCallback(event);
     }
   }
 
@@ -176,10 +177,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       toolCallName,
       delta,
       parentMessageId,
-    } as ToolCallChunkEvent);
+    } as BaseEvent);
     
     for (const event of events) {
-      await this.transport.emit(event);
+      this.emitCallback(event);
     }
   }
 
@@ -219,12 +220,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.latestMessageIds.set(agentRunId, middlewareMessageId);
       
       // Emit TEXT_MESSAGE_START (coordination with middleware)
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TEXT_MESSAGE_START,
         messageId: middlewareMessageId,
         role: "assistant",
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     } else {
       // Generate our own messageId if middleware didn't provide one
       const turnIndex = this.agentTurnTracker.get(agentRunId) || 0;
@@ -235,12 +236,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.latestMessageIds.set(agentRunId, messageId);
       
       // Emit TEXT_MESSAGE_START (no middleware coordination)
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TEXT_MESSAGE_START,
         messageId,
         role: "assistant",
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     }
   }
 
@@ -270,37 +271,37 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
                             runId;
           thinkingId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for thinking
           this.thinkingIds.set(runId, thinkingId);
-          this.transport.emit({
+          this.emitCallback({
             type: EventType.THINKING_START,
             timestamp: Date.now(),
-          });
-          this.transport.emit({
+          } as BaseEvent);
+          this.emitCallback({
             type: EventType.THINKING_TEXT_MESSAGE_START,
             messageId: thinkingId,
             timestamp: Date.now(),
-          });
+          } as BaseEvent);
         }
 
         const delta = typeof reasoningContent === 'string'
           ? reasoningContent
           : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
 
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
           messageId: thinkingId,
           delta,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
       }
 
       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
       if (token && token.length > 0 && this.emitTextMessages && messageId) {
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.TEXT_MESSAGE_CONTENT,
           messageId,
           delta: token,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
       }
 
       // Emit TOOL_CALL_ARGS for streaming tool arguments (may contain partial JSON fragments)
@@ -394,25 +395,25 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     // Emit TEXT_MESSAGE_END
     if (messageId && this.emitTextMessages) {
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TEXT_MESSAGE_END,
         messageId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     }
 
     // Emit THINKING_END events
     if (thinkingId) {
       if (this.emitThinking) {
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.THINKING_TEXT_MESSAGE_END,
           messageId: thinkingId,
           timestamp: Date.now(),
-        });
-        this.transport.emit({
+        } as BaseEvent);
+        this.emitCallback({
           type: EventType.THINKING_END,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
       }
       // Always clean up - even if emitThinking was toggled off
       this.thinkingIds.delete(runId);
@@ -572,24 +573,24 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
     try {
       // Emit TOOL_CALL_START first
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_START,
         toolCallId,
         toolCallName,
         parentMessageId: messageId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
 
       // Emit accumulated TOOL_CALL_ARGS (from streaming in handleLLMNewToken)
       // This preserves real-time streaming while maintaining protocol sequence
       const accumulatedArgs = this.accumulatedToolArgs.get(toolCallId);
       if (accumulatedArgs) {
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.TOOL_CALL_ARGS,
           toolCallId,
           delta: accumulatedArgs,
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
         // Clean up accumulated args
         this.accumulatedToolArgs.delete(toolCallId);
       }
@@ -628,11 +629,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         }
       }
 
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_END,
         toolCallId: finalToolCallId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
 
       this.emitToolResultWithPolicy(output, finalToolCallId, messageId, toolInfo?.name);
     } catch {
@@ -659,11 +660,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const messageId = this.latestMessageIds.get(agentRunId);
 
     try {
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_END,
         toolCallId: toolInfo?.id ?? runId,
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
     } catch {
       // Fail-safe
     }
@@ -715,14 +716,14 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const contentSize = new Blob([content]).size;
     
     if (contentSize <= this.maxUIPayloadSize) {
-      this.transport.emit({
+      this.emitCallback({
         type: EventType.TOOL_CALL_RESULT,
         messageId: resultMessageId,
         toolCallId,
         content,
         role: "tool",
         timestamp: Date.now(),
-      });
+      } as BaseEvent);
       return;
     }
     
@@ -731,7 +732,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       for (let i = 0; i < chunks.length; i++) {
         // Use CUSTOM event or a new event type for large result chunks
         // to avoid collision with ToolCallChunk which is for arguments
-        this.transport.emit({
+        this.emitCallback({
           type: EventType.CUSTOM,
           name: "LARGE_RESULT_CHUNK",
           value: {
@@ -740,7 +741,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
             index: i,
             total: chunks.length
           }
-        });
+        } as BaseEvent);
       }
       return;
     }
@@ -749,13 +750,13 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const availableSpace = this.maxUIPayloadSize - truncationMessage.length;
     const truncatedContent = content.substring(0, Math.max(0, availableSpace)) + truncationMessage;
 
-    this.transport.emit({
+    this.emitCallback({
       type: EventType.TOOL_CALL_RESULT,
       messageId: resultMessageId,
       toolCallId,
       content: truncatedContent,
       role: "tool",
       timestamp: Date.now(),
-    });
+    } as BaseEvent);
   }
 }

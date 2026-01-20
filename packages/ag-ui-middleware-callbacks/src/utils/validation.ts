@@ -24,12 +24,12 @@
  */
 
 import { EventSchemas } from '@ag-ui/core';
-import type { AGUIEvent } from '../events';
+import type { BaseEvent } from '../events';
 
 /**
  * Result of event validation.
  */
-export interface ValidationResult<T = AGUIEvent> {
+export interface ValidationResult<T = BaseEvent> {
   success: boolean;
   data?: T;
   error?: {
@@ -57,7 +57,7 @@ export function validateEvent(event: unknown): ValidationResult {
     if (result.success) {
       return {
         success: true,
-        data: event as AGUIEvent,
+        data: event as BaseEvent,
       };
     }
     
@@ -88,32 +88,32 @@ export function validateEvent(event: unknown): ValidationResult {
  * @param event - The event to check
  * @returns true if valid, false otherwise
  */
-export function isValidEvent(event: unknown): event is AGUIEvent {
+export function isValidEvent(event: unknown): event is BaseEvent {
   return validateEvent(event).success;
 }
 
 /**
- * Create a validating transport wrapper.
- * Wraps any AGUITransport to add validation before emission.
+ * Create a validating callback wrapper.
+ * Wraps any callback function to add validation before emission.
  * 
- * @param transport - The transport to wrap
+ * @param callback - The callback function to wrap
  * @param options - Validation options
- * @returns Wrapped transport with validation
+ * @returns Wrapped callback with validation
  */
-export function createValidatingTransport<T extends { emit: (event: AGUIEvent) => void }>(
-  transport: T,
+export function createValidatingCallback<T extends { emit: (event: BaseEvent) => void }>(
+  callback: T,
   options: {
     /** Throw on invalid events (default: false - just log warning) */
     throwOnInvalid?: boolean;
     /** Custom logger for validation errors */
-    onValidationError?: (event: AGUIEvent, error: ValidationResult['error']) => void;
+    onValidationError?: (event: BaseEvent, error: ValidationResult['error']) => void;
   } = {}
 ): T {
   const { throwOnInvalid = false, onValidationError } = options;
   
   return {
-    ...transport,
-    emit: (event: AGUIEvent) => {
+    ...callback,
+    emit: (event: BaseEvent) => {
       const result = validateEvent(event);
       
       if (!result.success) {
@@ -129,7 +129,7 @@ export function createValidatingTransport<T extends { emit: (event: AGUIEvent) =
       }
       
       // Always emit (validation is advisory)
-      transport.emit(event);
+      callback.emit(event);
     },
   };
 }

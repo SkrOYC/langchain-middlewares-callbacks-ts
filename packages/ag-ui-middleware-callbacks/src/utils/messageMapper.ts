@@ -7,7 +7,7 @@ import {
   ChatMessage
 } from "@langchain/core/messages";
 import { generateId } from "./idGenerator";
-import type { Message, ToolCall } from "../events";
+import type { Message, ToolCall, Role } from "@ag-ui/core";
 
 /**
  * Maps a LangChain BaseMessage to an AG-UI Protocol Message.
@@ -17,7 +17,7 @@ import type { Message, ToolCall } from "../events";
  */
 export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
   const id = (message as any).id || generateId();
-  let role: Message["role"] = "assistant";
+  let role: Role = "assistant";
   let toolCalls: ToolCall[] | undefined;
   let toolCallId: string | undefined;
   let content = typeof message.content === "string" ? message.content : JSON.stringify(message.content);

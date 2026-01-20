@@ -14,8 +14,8 @@ import {
   AGUIMiddlewareOptionsSchema,
   type AGUIMiddlewareOptions,
 } from "./types";
-import { createValidatingTransport } from "../utils/validation";
-import { EventType } from "../events";
+import { validateEvent, isValidEvent } from "../utils/validation";
+import { type BaseEvent, EventType } from "@ag-ui/core";
 
 /**
  * Check if validateEvents mode is truthy (true or "strict").
@@ -74,7 +74,7 @@ function hasToolCalls(state: unknown): boolean {
  * ACTIVITY_DELTA = incremental update
  */
 async function emitActivityUpdate(
-  transport: any,
+  emitCallback: (event: BaseEvent) => void,
   currentRunId: string | undefined,
   stepIndex: number,
   activityTracker: ActivityTracker,
@@ -100,25 +100,25 @@ async function emitActivityUpdate(
     activityTracker.currentActivityType = "AGENT_STEP";
     activityTracker.activityContent = finalContent;
 
-    transport.emit({
+    emitCallback({
       type: EventType.ACTIVITY_SNAPSHOT,
       messageId: activityId,
       activityType: "AGENT_STEP",
       content: finalContent,
       replace: true,
-    });
+    } as BaseEvent);
   } else {
     // Existing activity - emit DELTA
     const patch = computeStateDelta(activityTracker.activityContent, finalContent);
     if (patch.length > 0) {
       activityTracker.activityContent = finalContent;
 
-      transport.emit({
+      emitCallback({
         type: EventType.ACTIVITY_DELTA,
         messageId: activityId,
         activityType: "AGENT_STEP",
         patch,
-      });
+      } as BaseEvent);
     }
   }
 }
@@ -133,14 +133,22 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
   // Validate options at creation time
   const validated = AGUIMiddlewareOptionsSchema.parse(options);
   
-  // Wrap transport with validation if enabled
+  // Create emit function with optional validation
   // In "strict" mode, throw on invalid events; in true mode, log warnings
-  let transport = validated.transport;
-  if (isValidationEnabled(validated.validateEvents)) {
-    transport = createValidatingTransport(validated.transport, {
-      throwOnInvalid: validated.validateEvents === "strict",
-    });
-  }
+  const emitEvent = (event: BaseEvent) => {
+    if (isValidationEnabled(validated.validateEvents)) {
+      const isValid = isValidEvent(event);
+      if (!isValid) {
+        const error = validateEvent(event).error;
+        if (validated.validateEvents === "strict") {
+          throw new Error(`Invalid AG-UI event: ${error?.message}`);
+        } else {
+          console.warn('[AG-UI Validation] Invalid event:', (event as any).type, error);
+        }
+      }
+    }
+    validated.onEvent(event);
+  };
   
   let threadId: string | undefined;
   let runId: string | undefined;
@@ -190,13 +198,13 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         crypto.randomUUID(); // Generate fallback for streamEvents compatibility
 
       try {
-        transport.emit({
+        emitEvent({
           type: EventType.RUN_STARTED,
           threadId,
           runId,
           input: cleanLangChainData(runtimeAny.config?.input),
           timestamp: Date.now(),
-        });
+        } as BaseEvent);
 
         if (
           validated.emitStateSnapshots === "initial" ||
@@ -211,20 +219,20 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             delete (snapshot as any).messages;
           }
 
-          transport.emit({
+          emitEvent({
             type: EventType.STATE_SNAPSHOT,
             snapshot,
             timestamp: Date.now(),
-          });
+          } as BaseEvent);
         }
          
          const stateAny = state as any;
          if (stateAny.messages && Array.isArray(stateAny.messages)) {
-           transport.emit({
+           emitEvent({
              type: EventType.MESSAGES_SNAPSHOT,
              messages: stateAny.messages.map(mapLangChainMessageToAGUI),
              timestamp: Date.now(),
-           });
+           } as BaseEvent);
          }
       } catch {
         // Fail-safe
@@ -261,17 +269,17 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       }
 
       try {
-        transport.emit({
+        emitEvent({
           type: EventType.STEP_STARTED,
           stepName,
           timestamp: Date.now(),
           // REMOVED: runId, threadId
-        });
+        } as BaseEvent);
 
         // Emit ACTIVITY_SNAPSHOT for new activity if activities are enabled
         if (validated.emitActivities) {
           await emitActivityUpdate(
-            transport,
+            emitEvent,
             runId,
             turnIndex,
             activityTracker,
@@ -299,18 +307,18 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         // TEXT_MESSAGE_END is handled by AGUICallbackHandler
         // It uses the same messageId from metadata coordination
 
-        transport.emit({
+        emitEvent({
           type: EventType.STEP_FINISHED,
           stepName: currentStepName || "",
           timestamp: Date.now(),
           // REMOVED: runId, threadId
-        });
+        } as BaseEvent);
 
         // Emit ACTIVITY_DELTA for completed activity if activities are enabled
         if (validated.emitActivities && currentStepName) {
           const turnIndex = modelTurnIndex - 1;
           await emitActivityUpdate(
-            transport,
+            emitEvent,
             runId,
             turnIndex,
             activityTracker,
@@ -343,11 +351,11 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
           // Only emit if we have meaningful state to share
           const stateKeys = snapshot ? Object.keys(snapshot).filter(k => snapshot[k] !== undefined && snapshot[k] !== null) : [];
            if (stateKeys.length > 0) {
-             transport.emit({
+             emitEvent({
                type: EventType.STATE_SNAPSHOT,
                snapshot,
                timestamp: Date.now(),
-             });
+             } as BaseEvent);
            }
          }
       } catch {
@@ -373,18 +381,18 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             delete (snapshot as any).messages;
           }
 
-            transport.emit({
+            emitEvent({
               type: EventType.STATE_SNAPSHOT,
               snapshot,
               timestamp: Date.now(),
-            });
+            } as BaseEvent);
         }
 
         const stateAny = state as any;
         if (stateAny.error) {
           const error = stateAny.error;
           const errorMessage = error instanceof Error ? error.message : String(error);
-          transport.emit({
+          emitEvent({
             type: EventType.RUN_ERROR,
             message:
               validated.errorDetailLevel === "full" ||
@@ -394,15 +402,15 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             code: "AGENT_EXECUTION_ERROR",
             timestamp: Date.now(),
             // REMOVED: threadId, runId, parentRunId
-          });
+          } as BaseEvent);
         } else {
-          transport.emit({
+          emitEvent({
             type: EventType.RUN_FINISHED,
             threadId: threadId!,
             runId: runId!,
             result: validated.resultMapper ? validated.resultMapper(state) : undefined,
             timestamp: Date.now(),
-          });
+          } as BaseEvent);
         }
       } catch {
         // Fail-safe

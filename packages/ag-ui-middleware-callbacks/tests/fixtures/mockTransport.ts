@@ -1,14 +1,17 @@
 import { mock } from "bun:test";
+import type { BaseEvent } from "../../../src/events";
 
-export interface AGUITransport {
-  emit(event: any): void;
-  connect?(): Promise<void>;
-  disconnect?(): void;
-  isConnected?(): boolean;
+export interface MockCallback {
+  emit: ReturnType<typeof mock>;
+  events: BaseEvent[];
 }
 
-export function createMockTransport(): AGUITransport & { emit: ReturnType<typeof mock> } {
+export function createMockCallback(): MockCallback & { emit: ReturnType<typeof mock> } {
+  const events: BaseEvent[] = [];
   return {
-    emit: mock(() => {}),
+    events,
+    emit: mock((event: BaseEvent) => {
+      events.push(event);
+    }),
   };
 }

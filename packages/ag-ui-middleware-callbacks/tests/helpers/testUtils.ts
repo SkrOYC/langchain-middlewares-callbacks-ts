@@ -9,24 +9,23 @@ import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { tool } from "langchain";
 import { AIMessage, HumanMessage, AIMessageChunk } from "@langchain/core/messages";
 import { expect } from "bun:test";
-import type { AGUITransport } from "../../src/transports/types";
-import type { EventType } from "../../src/events";
+import type { BaseEvent } from "../../src/events";
 
 // ============================================================================
-// Mock Transport Factory
+// Mock Event Callback Factory
 // ============================================================================
 
-export interface MockTransport extends AGUITransport {
+export interface MockCallback {
   emit: ReturnType<typeof import("bun:test").mock>;
   events: any[];
 }
 
-export function createMockTransport(): MockTransport {
+export function createMockCallback(): MockCallback {
   const events: any[] = [];
   
   return {
     events,
-    emit: function(event: any) {
+    emit: function(event: BaseEvent) {
       events.push(event);
     },
   };
@@ -227,11 +226,11 @@ export function formatAgentInput(messages: Array<{ role: string; content: string
  * Scenario 1: Simple text response (no tools)
  */
 export function createSimpleTextScenario() {
-  const transport = createMockTransport();
+  const callback = createMockCallback();
   const model = createTextModel(["Hello! How can I help you today?"]);
   
   return {
-    transport,
+    callback,
     model,
     tools: [],
     expectedText: "Hello! How can I help you today?",
@@ -242,7 +241,7 @@ export function createSimpleTextScenario() {
  * Scenario 2: Single tool call followed by response
  */
 export function createSingleToolScenario() {
-  const transport = createMockTransport();
+  const callback = createMockCallback();
   
   // First response: tool call, second: final text
   const model = createToolCallingModel([
@@ -257,7 +256,7 @@ export function createSingleToolScenario() {
   );
   
   return {
-    transport,
+    callback,
     model,
     tools: [calculatorTool],
     expectedToolName: "calculator",
@@ -270,7 +269,7 @@ export function createSingleToolScenario() {
  * Scenario 3: Multiple sequential tool calls
  */
 export function createMultiToolScenario() {
-  const transport = createMockTransport();
+  const callback = createMockCallback();
   
   const model = createToolCallingModel([
     [{ name: "search", args: { query: "weather" }, id: "call_search_1" }],
@@ -291,7 +290,7 @@ export function createMultiToolScenario() {
   );
   
   return {
-    transport,
+    callback,
     model,
     tools: [searchTool, calculatorTool],
     expectedTools: [
@@ -305,7 +304,7 @@ export function createMultiToolScenario() {
  * Scenario 3: Error handling - Tool that throws an error
  */
 export function createErrorScenario(errorMessage: string) {
-  const transport = createMockTransport();
+  const callback = createMockCallback();
   
   // Create a model that will call the failing tool
   const model = createToolCallingModel([
@@ -320,7 +319,7 @@ export function createErrorScenario(errorMessage: string) {
   );
   
   return {
-    transport,
+    callback,
     model,
     tools: [failingTool],
     expectedError: errorMessage,
@@ -331,7 +330,7 @@ export function createErrorScenario(errorMessage: string) {
  * Scenario 5: Multi-turn conversation
  */
 export function createMultiTurnScenario() {
-  const transport = createMockTransport();
+  const callback = createMockCallback();
   
   const model = createToolCallingModel([
     [{ name: "search", args: { query: "first" }, id: "call_1" }],
@@ -346,7 +345,7 @@ export function createMultiTurnScenario() {
   );
   
   return {
-    transport,
+    callback,
     model,
     tools: [searchTool],
     turns: 3,
@@ -360,18 +359,18 @@ export function createMultiTurnScenario() {
 
 export interface TestAgent {
   agent: { invoke: Function; stream: Function; streamEvents: Function };
-  transport: MockTransport;
+  callback: MockCallback;
   model: MockChatModel;
   tools: ReturnType<typeof tool>[];
 }
 
 /**
- * Creates a test agent with pre-configured model and transport
+ * Creates a test agent with pre-configured model and callback
  */
 export function createTestAgent(
   model: MockChatModel,
   tools: ReturnType<typeof tool>[],
-  transport: MockTransport,
+  callback: MockCallback,
   middlewareOptions?: Record<string, any>
 ): TestAgent {
   let createAGUIAgentModule: typeof import("../../src/createAGUIAgent");
@@ -398,7 +397,7 @@ export function createTestAgent(
       const aguiAgent = createAGUIAgent({
         model,
         tools,
-        transport,
+        onEvent: callback.emit,
         middlewareOptions,
       });
       // Ensure a run_id is present for Middleware to satisfy ID coordination
@@ -420,7 +419,7 @@ export function createTestAgent(
       const aguiAgent = createAGUIAgent({
         model,
         tools,
-        transport,
+        onEvent: callback.emit,
         middlewareOptions,
       });
       // Ensure a run_id is present for Middleware to satisfy ID coordination
@@ -443,7 +442,7 @@ export function createTestAgent(
       const aguiAgent = createAGUIAgent({
         model,
         tools,
-        transport,
+        onEvent: callback.emit,
         middlewareOptions,
       });
       // Ensure a run_id is present for Middleware to satisfy ID coordination
@@ -459,7 +458,7 @@ export function createTestAgent(
         }
       };
       // Create callback handler for streaming events
-      const handler = new CallbackHandler(transport);
+      const handler = new CallbackHandler({ onEvent: callback.emit });
       // Add callbacks to options if not present
       const streamOptions = {
         ...config,
@@ -470,7 +469,7 @@ export function createTestAgent(
     },
   };
 
-  return { agent, transport, model, tools };
+  return { agent, callback, model, tools };
 }
 
 // ============================================================================
@@ -478,28 +477,28 @@ export function createTestAgent(
 // ============================================================================
 
 /**
- * Extract event types from transport emissions
+ * Extract event types from callback emissions
  */
-export function getEventTypes(transport: MockTransport): EventType[] {
-  return transport.events.map((event: any) => event.type);
+export function getEventTypes(callback: MockCallback): EventType[] {
+  return callback.events.map((event: any) => event.type);
 }
 
 /**
  * Get events of a specific type
  */
-export function getEventsByType(transport: MockTransport, type: EventType | string): any[] {
-  return transport.events.filter((event: any) => event.type === type);
+export function getEventsByType(callback: MockCallback, type: EventType | string): any[] {
+  return callback.events.filter((event: any) => event.type === type);
 }
 
 /**
  * Verify event count is exact
  */
 export function expectEventCount(
-  transport: MockTransport,
+  callback: MockCallback,
   type: EventType | string,
   expectedCount: number
 ): void {
-  const actualCount = getEventsByType(transport, type).length;
+  const actualCount = getEventsByType(callback, type).length;
   expect(actualCount).toBe(expectedCount);
 }
 
@@ -507,11 +506,11 @@ export function expectEventCount(
  * Verify event exists
  */
 export function expectEvent(
-  transport: MockTransport,
+  callback: MockCallback,
   type: EventType | string,
   validator?: (event: any) => void
 ): any {
-  const events = getEventsByType(transport, type);
+  const events = getEventsByType(callback, type);
   expect(events.length).toBeGreaterThan(0);
   if (validator) {
     events.forEach(validator);
@@ -523,10 +522,10 @@ export function expectEvent(
  * Verify events are in correct order
  */
 export function expectEventOrder(
-  transport: MockTransport,
+  callback: MockCallback,
   expectedOrder: (EventType | string)[]
 ): void {
-  const actualOrder = getEventTypes(transport);
+  const actualOrder = getEventTypes(callback);
   
   let currentIndex = 0;
   for (const expectedType of expectedOrder) {
@@ -539,8 +538,8 @@ export function expectEventOrder(
 /**
  * Get the index of a specific event type
  */
-export function getEventIndex(transport: MockTransport, type: EventType | string): number {
-  return getEventTypes(transport).indexOf(type);
+export function getEventIndex(callback: MockCallback, type: EventType | string): number {
+  return getEventTypes(callback).indexOf(type);
 }
 
 // ============================================================================

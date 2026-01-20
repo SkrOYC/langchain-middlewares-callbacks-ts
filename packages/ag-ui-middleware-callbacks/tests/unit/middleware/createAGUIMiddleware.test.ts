@@ -1,13 +1,13 @@
 import { test, expect, describe } from "bun:test";
-import { createMockTransport } from "../../fixtures/mockTransport";
+import { createMockCallback } from "../../fixtures/mockTransport";
 import { createAGUIMiddleware } from "../../../src/middleware/createAGUIMiddleware";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 
 describe("createAGUIMiddleware", () => {
-  const mockTransport = createMockTransport();
+  const mockCallback = createMockCallback();
 
   test("returns middleware object", () => {
-    const middleware = createAGUIMiddleware({ transport: mockTransport } as any);
+    const middleware = createAGUIMiddleware({ onEvent: mockCallback.emit });
 
     expect(middleware).toBeDefined();
     expect(typeof middleware).toBe("object");
@@ -15,7 +15,7 @@ describe("createAGUIMiddleware", () => {
 
   describe("beforeAgent", () => {
     test("emits RUN_STARTED and mapped MESSAGES_SNAPSHOT (Red Phase)", async () => {
-      const middleware = createAGUIMiddleware({ transport: mockTransport } as any);
+      const middleware = createAGUIMiddleware({ onEvent: mockCallback.emit });
 
       const state = {
         messages: [
@@ -25,13 +25,13 @@ describe("createAGUIMiddleware", () => {
       };
       const runtime = {
         config: { configurable: { thread_id: "thread-123", run_id: "run-123" } },
-        context: { transport: mockTransport }
+        context: { onEvent: mockCallback.emit }
       };
 
       const beforeAgent = middleware.beforeAgent as any;
       await beforeAgent(state, runtime);
 
-      expect(mockTransport.emit).toHaveBeenCalledWith(
+      expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "RUN_STARTED",
           threadId: "thread-123"
@@ -39,7 +39,7 @@ describe("createAGUIMiddleware", () => {
       );
 
       // Verify MESSAGES_SNAPSHOT uses mapped AG-UI messages
-      expect(mockTransport.emit).toHaveBeenCalledWith(
+      expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "MESSAGES_SNAPSHOT",
           messages: expect.arrayContaining([
@@ -53,21 +53,21 @@ describe("createAGUIMiddleware", () => {
     test("applies stateMapper if provided", async () => {
       const stateMapper = (state: any) => ({ curated: state.secret ? "hidden" : "visible" });
       const middleware = createAGUIMiddleware({ 
-        transport: mockTransport,
+        onEvent: mockCallback.emit,
         stateMapper,
         emitStateSnapshots: "initial"
-      } as any);
+      });
 
       const state = { secret: "top-secret", other: "public" };
       const runtime = {
         config: { configurable: { run_id: "run-123" } },
-        context: { transport: mockTransport }
+        context: { onEvent: mockCallback.emit }
       };
 
       const beforeAgent = middleware.beforeAgent as any;
       await beforeAgent(state, runtime);
 
-      expect(mockTransport.emit).toHaveBeenCalledWith(
+      expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "STATE_SNAPSHOT",
           snapshot: { curated: "hidden" }
@@ -76,20 +76,20 @@ describe("createAGUIMiddleware", () => {
     });
 
     test("filters 'messages' from STATE_SNAPSHOT by default (Red Phase)", async () => {
-      const middleware = createAGUIMiddleware({ transport: mockTransport } as any);
+      const middleware = createAGUIMiddleware({ onEvent: mockCallback.emit });
       const state = { 
         messages: [new HumanMessage("test")],
         app_data: "keep me"
       };
       const runtime = {
         config: { configurable: { run_id: "run-123" } },
-        context: { transport: mockTransport }
+        context: { onEvent: mockCallback.emit }
       };
 
       const beforeAgent = middleware.beforeAgent as any;
       await beforeAgent(state, runtime);
 
-      const snapshotCall = mockTransport.emit.mock.calls.find(call => call[0].type === "STATE_SNAPSHOT");
+      const snapshotCall = mockCallback.emit.mock.calls.find(call => call[0].type === "STATE_SNAPSHOT");
       expect(snapshotCall).toBeDefined();
       // This should FAIL currently because we haven't implemented filtering yet
       expect(snapshotCall![0].snapshot.messages).toBeUndefined();
@@ -99,14 +99,14 @@ describe("createAGUIMiddleware", () => {
   describe("Step/Activity Correlation (Red Phase)", () => {
     test("emits ACTIVITY_SNAPSHOT for configured steps", async () => {
       const middleware = createAGUIMiddleware({ 
-        transport: mockTransport,
+        onEvent: mockCallback.emit,
         emitActivities: true
-      } as any);
+      });
 
       const state = {};
       const runtime = {
         config: { configurable: { thread_id: "t1", run_id: "run-123" } },
-        context: { transport: mockTransport }
+        context: { onEvent: mockCallback.emit }
       };
 
       const beforeAgent = middleware.beforeAgent as any;
@@ -115,7 +115,7 @@ describe("createAGUIMiddleware", () => {
       const beforeModel = middleware.beforeModel as any;
       await beforeModel(state, runtime);
 
-      expect(mockTransport.emit).toHaveBeenCalledWith(
+      expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "ACTIVITY_SNAPSHOT",
           activityType: expect.any(String),
@@ -129,14 +129,14 @@ describe("createAGUIMiddleware", () => {
     test("applies resultMapper to RUN_FINISHED (Red Phase)", async () => {
       const resultMapper = (result: any) => ({ status: "done", count: result.messages.length });
       const middleware = createAGUIMiddleware({ 
-        transport: mockTransport,
+        onEvent: mockCallback.emit,
         resultMapper
-      } as any);
+      });
 
       const state = { messages: ["msg1", "msg2"] };
       const runtime = {
         config: { configurable: { thread_id: "t1", run_id: "run-123" } },
-        context: { transport: mockTransport }
+        context: { onEvent: mockCallback.emit }
       };
 
       const beforeAgent = middleware.beforeAgent as any;
@@ -145,7 +145,7 @@ describe("createAGUIMiddleware", () => {
       const afterAgent = middleware.afterAgent as any;
       await afterAgent(state, runtime);
 
-      expect(mockTransport.emit).toHaveBeenCalledWith(
+      expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "RUN_FINISHED",
           result: { status: "done", count: 2 }
