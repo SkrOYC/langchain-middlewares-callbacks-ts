@@ -63,40 +63,127 @@ const calculatorTool = tool(
 );
 
 // ============================================================================
+// Validation Observer: Separates validation concerns from event emission
+// ============================================================================
+
+interface ValidationResult {
+  passed: boolean;
+  toolCalls: Array<{
+    toolCallId: string;
+    hasStart: boolean;
+    hasEnd: boolean;
+    hasResult: boolean;
+    consistent: boolean;
+  }>;
+  inconsistencies: string[];
+}
+
+class ValidationObserver {
+  private toolCallEvents: Map<string, { start?: BaseEvent; end?: BaseEvent; result?: BaseEvent }> = new Map();
+  private allEvents: BaseEvent[] = [];
+
+  /**
+   * Track an event for validation
+   */
+  track(event: BaseEvent): void {
+    this.allEvents.push(event);
+
+    if ('toolCallId' in event && event.toolCallId) {
+      const existing = this.toolCallEvents.get(event.toolCallId) || {};
+      if (event.type === 'TOOL_CALL_START') {
+        existing.start = event;
+      } else if (event.type === 'TOOL_CALL_END') {
+        existing.end = event;
+      } else if (event.type === 'TOOL_CALL_RESULT') {
+        existing.result = event;
+      }
+      this.toolCallEvents.set(event.toolCallId, existing);
+    }
+  }
+
+  /**
+   * Validate toolCallId consistency across all tracked events
+   */
+  validate(): ValidationResult {
+    const results: ValidationResult = {
+      passed: true,
+      toolCalls: [],
+      inconsistencies: [],
+    };
+
+    for (const [toolCallId, events] of this.toolCallEvents) {
+      const { start, end, result } = events;
+
+      const toolCallResult = {
+        toolCallId,
+        hasStart: !!start,
+        hasEnd: !!end,
+        hasResult: !!result,
+        consistent: true,
+      };
+
+      // Check consistency: all events should use the same toolCallId as START
+      if (start && end && start.toolCallId !== end.toolCallId) {
+        toolCallResult.consistent = false;
+        results.inconsistencies.push(
+          `toolCallId mismatch for ${toolCallId}: START=${start.toolCallId}, END=${end.toolCallId}`
+        );
+      }
+
+      if (start && result && start.toolCallId !== result.toolCallId) {
+        toolCallResult.consistent = false;
+        results.inconsistencies.push(
+          `toolCallId mismatch for ${toolCallId}: START=${start.toolCallId}, RESULT=${result.toolCallId}`
+        );
+      }
+
+      results.toolCalls.push(toolCallResult);
+
+      if (!toolCallResult.consistent) {
+        results.passed = false;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get summary statistics for reporting
+   */
+  getSummary(): { totalEvents: number; toolCallGroups: number; eventTypes: Map<string, number> } {
+    const eventTypes = new Map<string, number>();
+    for (const event of this.allEvents) {
+      eventTypes.set(event.type, (eventTypes.get(event.type) || 0) + 1);
+    }
+
+    return {
+      totalEvents: this.allEvents.length,
+      toolCallGroups: this.toolCallEvents.size,
+      eventTypes,
+    };
+  }
+
+  /**
+   * Reset the observer for a new validation run
+   */
+  reset(): void {
+    this.toolCallEvents.clear();
+    this.allEvents = [];
+  }
+}
+
+// ============================================================================
 // Transport: Write events to stdout (SSE-like format)
 // ============================================================================
 
-interface ValidationState {
-  toolCallEvents: Map<string, { start?: BaseEvent; end?: BaseEvent; result?: BaseEvent }>;
-  inconsistencies: string[];
-  allEvents: BaseEvent[];
-}
-
-const validationState: ValidationState = {
-  toolCallEvents: new Map(),
-  inconsistencies: [],
-  allEvents: [],
-};
+const validationObserver = new ValidationObserver();
 
 const onEvent = (event: BaseEvent) => {
-  // Store all events for debugging
-  validationState.allEvents.push(event);
+  // Track for validation (separate concern)
+  validationObserver.track(event);
 
   // Write in SSE format: "data: {JSON}\n\n"
   process.stdout.write(`data: ${JSON.stringify(event)}\n\n`);
-
-  // Track tool call events for validation
-  if ('toolCallId' in event && event.toolCallId) {
-    const existing = validationState.toolCallEvents.get(event.toolCallId) || {};
-    if (event.type === 'TOOL_CALL_START') {
-      existing.start = event;
-    } else if (event.type === 'TOOL_CALL_END') {
-      existing.end = event;
-    } else if (event.type === 'TOOL_CALL_RESULT') {
-      existing.result = event;
-    }
-    validationState.toolCallEvents.set(event.toolCallId, existing);
-  }
 };
 
 // ============================================================================
@@ -153,9 +240,8 @@ async function runRawAgent(input: string) {
 async function runMiddlewareAgent(input: string) {
   console.error("=== RUNNING AG-UI MIDDLEWARE AGENT ===\n");
 
-  // Reset validation state
-  validationState.toolCallEvents.clear();
-  validationState.inconsistencies = [];
+  // Reset validation observer for new run
+  validationObserver.reset();
 
   const model = new ChatOpenAI({
     model: "big-pickle",
@@ -188,62 +274,40 @@ async function runMiddlewareAgent(input: string) {
     }
     console.error(`\n=== MIDDLEWARE AGENT: ${eventCount} stream iterations ===\n`);
 
-    // Validate toolCallId consistency
+    // Validate toolCallId consistency using ValidationObserver
     console.error("\n=== VALIDATION SUMMARY ===\n");
-    console.error(`Total events captured: ${validationState.allEvents.length}`);
-    
-    const eventTypes = new Map<string, number>();
-    for (const event of validationState.allEvents) {
-      eventTypes.set(event.type, (eventTypes.get(event.type) || 0) + 1);
-    }
+
+    const summary = validationObserver.getSummary();
+    console.error(`Total events captured: ${summary.totalEvents}`);
+
     console.error("Events by type:");
-    for (const [type, count] of eventTypes) {
+    for (const [type, count] of summary.eventTypes) {
       console.error(`  - ${type}: ${count}`);
     }
     console.error("");
-    
-    console.error(`Tool call groups: ${validationState.toolCallEvents.size}`);
+
+    console.error(`Tool call groups: ${summary.toolCallGroups}`);
     console.error("");
 
-    let allConsistent = true;
+    const result = validationObserver.validate();
 
-    for (const [toolCallId, events] of validationState.toolCallEvents) {
-      const { start, end, result } = events;
-
-      // Check if all events for this toolCallId exist
-      if (start && end && result) {
-        // Verify all use the same toolCallId (they should by our tracking)
-        const ids = [start.toolCallId, end.toolCallId, result.toolCallId];
-        const uniqueIds = new Set(ids);
-
-        if (uniqueIds.size > 1) {
-          allConsistent = false;
-          validationState.inconsistencies.push(
-            `toolCallId mismatch for ${toolCallId}: START=${start.toolCallId}, END=${end.toolCallId}, RESULT=${result.toolCallId}`
-          );
+    for (const tc of result.toolCalls) {
+      if (tc.consistent) {
+        if (tc.hasStart && tc.hasEnd && tc.hasResult) {
+          console.error(`✅ ${tc.toolCallId}: START → END → RESULT (consistent)`);
+        } else if (tc.hasStart && tc.hasEnd) {
+          console.error(`✅ ${tc.toolCallId}: START → END (consistent)`);
         } else {
-          console.error(`✅ ${toolCallId}: START → END → RESULT (consistent)`);
+          console.error(`⚠️  ${tc.toolCallId}: START only (no END/RESULT yet)`);
         }
-      } else if (start && end) {
-        // START and END present, check consistency
-        if (start.toolCallId !== end.toolCallId) {
-          allConsistent = false;
-          validationState.inconsistencies.push(
-            `toolCallId mismatch for ${toolCallId}: START=${start.toolCallId}, END=${end.toolCallId}`
-          );
-        } else {
-          console.error(`✅ ${toolCallId}: START → END (consistent)`);
-        }
-      } else if (start) {
-        console.error(`⚠️  ${toolCallId}: START only (no END/RESULT yet)`);
       }
     }
 
-    if (allConsistent && validationState.toolCallEvents.size > 0) {
+    if (result.passed && result.toolCalls.length > 0) {
       console.error("\n✅ VALIDATION PASSED: All tool calls have consistent toolCallId\n");
-    } else if (!allConsistent) {
+    } else if (!result.passed) {
       console.error("\n❌ VALIDATION FAILED: toolCallId inconsistencies detected\n");
-      for (const issue of validationState.inconsistencies) {
+      for (const issue of result.inconsistencies) {
         console.error(`  - ${issue}`);
       }
       console.error("");

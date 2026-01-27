@@ -1,6 +1,6 @@
 {
   "name": "@skroyc/ag-ui-middleware-callbacks",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "LangChain.js integration providing middleware and callbacks for AG-UI protocol compatibility",
   "keywords": [
     "langchain",
