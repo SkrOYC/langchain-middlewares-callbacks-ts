@@ -618,24 +618,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const messageId = this.latestMessageIds.get(agentRunId);
 
     try {
-      const endToolCallId = toolInfo?.id ?? runId;
-
-      // If output is a LangChain message, it might contain the real tool_call_id
-      let finalToolCallId = endToolCallId;
-      if (output && typeof output === "object") {
-        const kwargs = output.kwargs || output.lc_kwargs;
-        if (kwargs?.tool_call_id) {
-          finalToolCallId = kwargs.tool_call_id;
-        }
-      }
+      const toolCallId = toolInfo?.id ?? runId;
 
       this.emitCallback({
         type: EventType.TOOL_CALL_END,
-        toolCallId: finalToolCallId,
+        toolCallId,
         timestamp: Date.now(),
       } as BaseEvent);
 
-      this.emitToolResultWithPolicy(output, finalToolCallId, messageId, toolInfo?.name);
+      this.emitToolResultWithPolicy(output, toolCallId, messageId, toolInfo?.name);
     } catch {
       // Fail-safe
     }

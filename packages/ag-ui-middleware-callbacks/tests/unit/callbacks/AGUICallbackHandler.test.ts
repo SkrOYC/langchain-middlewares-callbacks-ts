@@ -247,6 +247,57 @@ describe("AGUICallbackHandler", () => {
       expect((handler as any).toolCallInfo.has(toolRunId)).toBe(false);
     });
 
+    test("handleToolEnd preserves toolCallId from handleToolStart (no override)", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const toolRunId = "run-tool";
+      const parentRunId = "run-parent";
+
+      await handler.handleLLMStart(null, [], toolRunId, parentRunId);
+
+      // Start tool call with specific toolCallId (UUID v7 format - time-ordered)
+      const startToolCallId = "019c0015-d451-7000-8000-0bfbb7aee3bd";
+      await handler.handleToolStart(
+        { name: "weather_tool" },
+        JSON.stringify({ id: startToolCallId, name: "weather_tool", args: {} }),
+        toolRunId,
+        parentRunId
+      );
+
+      // End tool call with output containing DIFFERENT tool_call_id (UUID v4 format - random)
+      // This simulates LangChain sometimes providing different IDs in the response
+      const outputWithDifferentId = {
+        kwargs: {
+          tool_call_id: "14644ccc-1274-4f58-b80f-589650f0edb5",
+        },
+      };
+      await handler.handleToolEnd(outputWithDifferentId, toolRunId, parentRunId);
+
+      // Extract all tool call events
+      const toolCallStartEvents = mockCallback.events.filter(
+        (e: any) => e.type === "TOOL_CALL_START"
+      );
+      const toolCallEndEvents = mockCallback.events.filter(
+        (e: any) => e.type === "TOOL_CALL_END"
+      );
+      const toolCallResultEvents = mockCallback.events.filter(
+        (e: any) => e.type === "TOOL_CALL_RESULT"
+      );
+
+      // Verify we have the expected events
+      expect(toolCallStartEvents.length).toBe(1);
+      expect(toolCallEndEvents.length).toBe(1);
+      expect(toolCallResultEvents.length).toBe(1);
+
+      // CRITICAL: All events MUST use the same toolCallId (from START, not from output)
+      expect(toolCallStartEvents[0].toolCallId).toBe(startToolCallId);
+      expect(toolCallEndEvents[0].toolCallId).toBe(startToolCallId); // MUST match START
+      expect(toolCallResultEvents[0].toolCallId).toBe(startToolCallId); // MUST match START
+
+      // Verify the output's tool_call_id was NOT used (it was different)
+      expect(toolCallEndEvents[0].toolCallId).not.toBe("14644ccc-1274-4f58-b80f-589650f0edb5");
+    });
+
     test("handleToolError emits TOOL_CALL_END", async () => {
       const mockCallback = createMockCallback();
       const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
