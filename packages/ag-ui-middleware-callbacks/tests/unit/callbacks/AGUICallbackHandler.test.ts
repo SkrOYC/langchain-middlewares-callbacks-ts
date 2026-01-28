@@ -51,131 +51,6 @@ describe("AGUICallbackHandler", () => {
         })
       );
     });
-
-    test("handleLLMNewToken detects and emits Thinking events", async () => {
-      const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
-      const runId = "run-123";
-      const messageId = "msg-abc";
-
-      (handler as any).messageIds.set(runId, messageId);
-      await handler.handleLLMStart(null, [], runId);
-
-      // Mock a chunk with reasoning content (DeepSeek style)
-      await handler.handleLLMNewToken(
-        "",
-        null,
-        runId,
-        undefined,
-        undefined,
-        {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "I should use a tool to check => weather."
-              }
-            }
-          }
-        }
-      );
-
-      expect((handler as any).thinkingIds.get(runId)).toBeDefined();
-
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "THINKING_START",
-          // messageId is not included in thinking events (they're separate from main message flow)
-        })
-      );
-
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "THINKING_TEXT_MESSAGE_START",
-          // messageId is not included in thinking events
-        })
-      );
-
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "THINKING_TEXT_MESSAGE_CONTENT",
-          delta: "I should use a tool to check => weather.",
-        })
-      );
-    });
-
-    test("handleLLMEnd emits THINKING_TEXT_MESSAGE_END, THINKING_END, and TEXT_MESSAGE_END", async () => {
-      const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
-      const runId = "run-123";
-      const messageId = "msg-abc";
-
-      (handler as any).messageIds.set(runId, messageId);
-
-      // Trigger some reasoning first
-      await handler.handleLLMNewToken(
-        "",
-        null,
-        runId,
-        undefined,
-        undefined,
-        {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        }
-      );
-
-      await handler.handleLLMEnd({}, runId);
-
-      // Should emit thinking end events
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "THINKING_TEXT_MESSAGE_END",
-          // messageId is not included in thinking events
-        })
-      );
-
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "THINKING_END",
-          // messageId is not included in thinking events
-        })
-      );
-
-      // Should emit TEXT_MESSAGE_END (Callback responsibility)
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "TEXT_MESSAGE_END",
-          messageId: messageId,
-        })
-      );
-    });
-
-    test("handleLLMError cleans up maps", async () => {
-      const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
-      const runId = "run-123";
-
-      await handler.handleLLMStart(null, [], runId);
-      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-        chunk: {
-          message: {
-            additional_kwargs: {
-              reasoning_content: "test reasoning"
-            }
-          }
-        }
-      });
-
-      await handler.handleLLMError(new Error("Test error"), runId);
-
-      expect((handler as any).messageIds.get(runId)).toBeUndefined();
-      expect((handler as any).thinkingIds.get(runId)).toBeUndefined();
-    });
   });
 
   describe("Tool Callbacks", () => {
@@ -358,24 +233,175 @@ describe("AGUICallbackHandler", () => {
         expect(mockCallback.emit).not.toHaveBeenCalled();
       });
 
-      test("when enabled=false, no thinking events are emitted", async () => {
+      test("detectAndEmitThinking emits thinking events from contentBlocks", async () => {
+        // Test that thinking events are emitted when AIMessage contains reasoning contentBlocks
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit, enabled: false });
+        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
         const runId = "run-123";
 
-        await handler.handleLLMStart(null, [], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId);
+        await handler.handleLLMStart(null, ["prompt"], runId);
 
-        expect(mockCallback.emit).not.toHaveBeenCalled();
+        // Mock an AIMessage with reasoning contentBlocks (Anthropic/Google style)
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "First, I need to analyze the problem." },
+                    { type: "reasoning", reasoning: "Then, I'll plan the solution steps." },
+                    { type: "text", text: "Here is the answer to your question." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
+
+        // Should emit complete thinking cycle
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_START" })
+        );
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_START" })
+        );
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "THINKING_TEXT_MESSAGE_CONTENT",
+            delta: "First, I need to analyze the problem.Then, I'll plan the solution steps.",
+          })
+        );
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_END" })
+        );
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "THINKING_END" })
+        );
+
+        // Should also emit text message events
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_START" })
+        );
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
+      });
+
+      test("detectAndEmitThinking emits multiple thinking cycles for different indices", async () => {
+        // Test interleaved thinking pattern: think -> respond -> tool -> think -> respond
+        const mockCallback = createMockCallback();
+        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+
+        // Mock an AIMessage with multiple reasoning phases (interleaved thinking)
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Initial analysis phase", index: 0 },
+                    { type: "text", text: "First response after initial thinking" },
+                    { type: "reasoning", reasoning: "Post-tool reflection", index: 1 },
+                    { type: "text", text: "Final response after second thinking phase" },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
+
+        // Should emit TWO complete thinking cycles (one per index)
+        const emitCalls = mockCallback.emit.mock.calls;
+
+        // Count thinking cycles
+        const thinkingStartCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "THINKING_START"
+        );
+        const thinkingEndCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "THINKING_END"
+        );
+        const thinkingContentCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "THINKING_TEXT_MESSAGE_CONTENT"
+        );
+
+        expect(thinkingStartCalls).toHaveLength(2);
+        expect(thinkingEndCalls).toHaveLength(2);
+        expect(thinkingContentCalls).toHaveLength(2);
+
+        // Verify first thinking phase content
+        expect(thinkingContentCalls[0][0].delta).toBe("Initial analysis phase");
+
+        // Verify second thinking phase content
+        expect(thinkingContentCalls[1][0].delta).toBe("Post-tool reflection");
+
+        // Should still emit text message events
+        const textMessageStartCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "TEXT_MESSAGE_START"
+        );
+        const textMessageEndCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "TEXT_MESSAGE_END"
+        );
+        expect(textMessageStartCalls.length).toBeGreaterThan(0);
+        expect(textMessageEndCalls.length).toBeGreaterThan(0);
+      });
+
+      test("blocks without explicit index are grouped under index 0", async () => {
+        const mockCallback = createMockCallback();
+        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const runId = "run-123";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+
+        // Mock an AIMessage with reasoning blocks, some without explicit index
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "First thought without index" },
+                    { type: "reasoning", reasoning: "Second thought without index" },
+                    { type: "reasoning", reasoning: "Third thought without index" },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
+
+        // Should emit ONE complete thinking cycle (all under index 0)
+        const emitCalls = mockCallback.emit.mock.calls;
+
+        const thinkingStartCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "THINKING_START"
+        );
+        const thinkingEndCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "THINKING_END"
+        );
+        const thinkingContentCalls = emitCalls.filter(
+          (call: any[]) => call[0]?.type === "THINKING_TEXT_MESSAGE_CONTENT"
+        );
+
+        expect(thinkingStartCalls).toHaveLength(1);
+        expect(thinkingEndCalls).toHaveLength(1);
+        expect(thinkingContentCalls).toHaveLength(1);
+
+        // Verify aggregated content (all three blocks joined)
+        expect(thinkingContentCalls[0][0].delta).toBe(
+          "First thought without indexSecond thought without indexThird thought without index"
+        );
       });
 
       test("enabled can be toggled at runtime", async () => {
@@ -469,39 +495,42 @@ describe("AGUICallbackHandler", () => {
         expect(textMessageEvents).toHaveLength(0);
       });
 
-      test("when emitTextMessages=false, thinking events still work", async () => {
+      test("when emitTextMessages=false, thinking events are also suppressed (coupled)", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit, emitTextMessages: false });
         const runId = "run-123";
 
-        await handler.handleLLMStart(null, [], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId);
+        await handler.handleLLMStart(null, ["prompt"], runId);
 
-        // Thinking events should still be emitted
-        expect(mockCallback.emit).toHaveBeenCalledWith(
-          expect.objectContaining({ type: "THINKING_START" })
+        // Mock an AIMessage with reasoning contentBlocks
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Thinking about the problem." },
+                    { type: "text", text: "Here is the answer." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
+
+        // Both TEXT_MESSAGE and THINKING events should be suppressed
+        const emitCalls = mockCallback.emit.mock.calls;
+        const textMessageEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE")
         );
-        expect(mockCallback.emit).toHaveBeenCalledWith(
-          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_START" })
+        const thinkingEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("THINKING")
         );
-        expect(mockCallback.emit).toHaveBeenCalledWith(
-          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_CONTENT" })
-        );
-        expect(mockCallback.emit).toHaveBeenCalledWith(
-          expect.objectContaining({ type: "THINKING_TEXT_MESSAGE_END" })
-        );
-        expect(mockCallback.emit).toHaveBeenCalledWith(
-          expect.objectContaining({ type: "THINKING_END" })
-        );
+        expect(textMessageEvents).toHaveLength(0);
+        expect(thinkingEvents).toHaveLength(0);
       });
 
       test("emitTextMessages can be toggled at runtime", async () => {
@@ -519,8 +548,25 @@ describe("AGUICallbackHandler", () => {
         handler.emitTextMessages = false;
         const runId2 = "run-456";
         await handler.handleLLMStart(null, ["prompt"], runId2);
-        await handler.handleLLMNewToken("Hello", null, runId2);
-        await handler.handleLLMEnd({}, runId2);
+
+        // Provide reasoning content - should be suppressed since emitTextMessages=false
+        const outputWithThinking = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Thinking content" },
+                    { type: "text", text: "Response text" },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(outputWithThinking, runId2);
 
         // No TEXT_MESSAGE events
         const emitCalls = mockCallback.emit.mock.calls;
@@ -528,6 +574,12 @@ describe("AGUICallbackHandler", () => {
           (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE")
         );
         expect(textMessageEvents).toHaveLength(0);
+
+        // No THINKING events (coupled with emitTextMessages)
+        const thinkingEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("THINKING")
+        );
+        expect(thinkingEvents).toHaveLength(0);
       });
     });
 
@@ -613,17 +665,26 @@ describe("AGUICallbackHandler", () => {
         const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit, emitThinking: false });
         const runId = "run-123";
 
-        await handler.handleLLMStart(null, [], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId);
+        await handler.handleLLMStart(null, ["prompt"], runId);
+
+        // Mock an AIMessage with reasoning contentBlocks
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Thinking about the problem." },
+                    { type: "text", text: "Here is the answer." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
 
         // No THINKING events should be emitted
         const emitCalls = mockCallback.emit.mock.calls;
@@ -631,6 +692,12 @@ describe("AGUICallbackHandler", () => {
           (call: any[]) => call[0]?.type?.startsWith("THINKING")
         );
         expect(thinkingEvents).toHaveLength(0);
+
+        // TEXT_MESSAGE events should still be emitted
+        const textMessageEvents = emitCalls.filter(
+          (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE")
+        );
+        expect(textMessageEvents.length).toBeGreaterThan(0);
       });
 
       test("when emitThinking=false, TEXT_MESSAGE events still work", async () => {
@@ -638,7 +705,7 @@ describe("AGUICallbackHandler", () => {
         const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit, emitThinking: false });
         const runId = "run-123";
 
-        await handler.handleLLMStart(null, [], runId);
+        await handler.handleLLMStart(null, ["prompt"], runId);
         await handler.handleLLMNewToken("Hello", null, runId);
         await handler.handleLLMEnd({}, runId);
 
@@ -660,17 +727,25 @@ describe("AGUICallbackHandler", () => {
         const runId = "run-123";
 
         // First call with emitThinking=true
-        await handler.handleLLMStart(null, [], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId);
+        await handler.handleLLMStart(null, ["prompt"], runId);
+
+        const outputWithThinking = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Thinking about the problem." },
+                    { type: "text", text: "Here is the answer." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(outputWithThinking, runId);
         expect(mockCallback.emit).toHaveBeenCalledWith(
           expect.objectContaining({ type: "THINKING_START" })
         );
@@ -680,17 +755,25 @@ describe("AGUICallbackHandler", () => {
         // Disable and call again
         handler.emitThinking = false;
         const runId2 = "run-456";
-        await handler.handleLLMStart(null, [], runId2);
-        await handler.handleLLMNewToken("", null, runId2, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "more thinking"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId2);
+        await handler.handleLLMStart(null, ["prompt"], runId2);
+
+        const outputWithoutThinking = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "More thinking." },
+                    { type: "text", text: "Another answer." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(outputWithoutThinking, runId2);
 
         // No THINKING events
         const emitCalls = mockCallback.emit.mock.calls;
@@ -698,36 +781,6 @@ describe("AGUICallbackHandler", () => {
           (call: any[]) => call[0]?.type?.startsWith("THINKING")
         );
         expect(thinkingEvents).toHaveLength(0);
-      });
-
-      test("thinkingIds is cleaned up even when emitThinking=false", async () => {
-        // Regression test: ensure thinkingIds map is cleaned up even when
-        // emitThinking is toggled off before handleLLMEnd
-        const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
-        const runId = "run-123";
-
-        // Start LLM with thinking
-        await handler.handleLLMStart(null, [], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-
-        // Verify thinkingId was created
-        expect((handler as any).thinkingIds.has(runId)).toBe(true);
-
-        // Toggle emitThinking off before handleLLMEnd
-        handler.emitThinking = false;
-        await handler.handleLLMEnd({}, runId);
-
-        // thinkingIds should still be cleaned up (no memory leak)
-        expect((handler as any).thinkingIds.has(runId)).toBe(false);
       });
     });
 
@@ -744,16 +797,25 @@ describe("AGUICallbackHandler", () => {
         const runId = "run-123";
 
         await handler.handleLLMStart(null, ["prompt"], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId);
+
+        // Mock an AIMessage with reasoning contentBlocks
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Thinking about the problem." },
+                    { type: "text", text: "Here is the answer." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
 
         expect(mockCallback.emit).not.toHaveBeenCalled();
       });
@@ -767,20 +829,28 @@ describe("AGUICallbackHandler", () => {
         });
         const runId = "run-123";
 
-        await handler.handleLLMStart(null, [], runId);
-        await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
-          chunk: {
-            message: {
-              additional_kwargs: {
-                reasoning_content: "thinking content"
-              }
-            }
-          }
-        });
-        await handler.handleLLMEnd({}, runId);
+        await handler.handleLLMStart(null, ["prompt"], runId);
 
-        // Only TEXT_MESSAGE events should be suppressed, but we also disabled thinking
-        // So nothing should be emitted
+        // Mock an AIMessage with reasoning contentBlocks
+        const output = {
+          generations: [
+            [
+              {
+                message: {
+                  _getType: () => "ai",
+                  contentBlocks: [
+                    { type: "reasoning", reasoning: "Thinking about the problem." },
+                    { type: "text", text: "Here is the answer." },
+                  ],
+                },
+              },
+            ],
+          ],
+        };
+
+        await handler.handleLLMEnd(output, runId);
+
+        // Both TEXT_MESSAGE and THINKING events should be suppressed
         const emitCalls = mockCallback.emit.mock.calls;
         const eventsWithContent = emitCalls.filter(
           (call: any[]) => call[0]?.type?.startsWith("TEXT_MESSAGE") ||
