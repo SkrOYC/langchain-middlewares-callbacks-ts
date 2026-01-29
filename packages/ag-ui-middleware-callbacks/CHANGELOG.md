@@ -16,6 +16,10 @@
 - Thinking events no longer include `messageId` (per AG-UI TypeScript SDK schema)
 - Streaming-based reasoning detection (`additional_kwargs.reasoning_content`) is deprecated
 
+### Behavior Note
+
+Thinking events are emitted **after the complete response** using LangChain V1's `contentBlocks` API. Concurrent streaming of thinking is not possible through callbacks alone due to the callback pattern receiving only raw string tokens. See [SPEC.md#47-thinking-events](./SPEC.md#47-thinking-events) for details and implementation guidance for developers requiring concurrent thinking.
+
 ### Changes
 
 - Replaced streaming fallback with canonical contentBlocks API extraction

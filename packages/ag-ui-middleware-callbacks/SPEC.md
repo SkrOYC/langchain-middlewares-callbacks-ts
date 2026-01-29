@@ -1106,6 +1106,77 @@ interface AgentStepActivity {
 
 ---
 
+### 4.7 Thinking Events
+
+Thinking events emit model reasoning/thinking content using the AG-UI `THINKING_*` event types. This enables frontends to display the model's internal reasoning process.
+
+| AG-UI Event | Mechanism | LangChain Feature | Trigger |
+|-------------|-----------|-------------------|---------|
+| THINKING_START | Callback | `AIMessage.contentBlocks` | Reasoning blocks detected |
+| THINKING_TEXT_MESSAGE_START | Callback | `AIMessage.contentBlocks` | Reasoning blocks detected |
+| THINKING_TEXT_MESSAGE_CONTENT | Callback | `AIMessage.contentBlocks` | Reasoning content |
+| THINKING_TEXT_MESSAGE_END | Callback | `AIMessage.contentBlocks` | Reasoning complete |
+| THINKING_END | Callback | `AIMessage.contentBlocks` | Reasoning phase complete |
+
+**Enable Thinking:** Set `emitThinking: true` in callback options (default: `true`).
+
+#### 4.7.1 Event Flow
+
+```
+TEXT_MESSAGE_START → TEXT_MESSAGE_CONTENT* → THINKING_* → TEXT_MESSAGE_END
+```
+
+Thinking events are emitted **after the complete response** using LangChain V1's `contentBlocks` API.
+
+#### 4.7.2 Why Not Concurrent Streaming?
+
+The callback pattern (`handleLLMNewToken`) only receives raw string tokens, not structured `AIMessageChunk` objects with `contentBlocks`. Concurrent thinking streaming requires direct access to the streaming iterator, which is outside the scope of this callbacks-only package.
+
+**For developers requiring concurrent thinking streaming:**
+
+Implement custom streaming at the transport layer using the streaming iterator pattern:
+
+```typescript
+// Custom concurrent thinking streaming
+const stream = await agent.stream(input, {
+  callbacks: [aguiCallback]
+});
+
+for await (const chunk of model.stream(messages)) {
+  if (AIMessageChunk.isInstance(chunk)) {
+    const blocks = chunk.contentBlocks;
+    for (const block of blocks) {
+      if (block.type === "reasoning") {
+        // Emit THINKING_* events directly
+        res.write(`data: ${JSON.stringify({
+          type: "THINKING_TEXT_MESSAGE_CONTENT",
+          delta: block.reasoning
+        })}\n\n`);
+      }
+    }
+  }
+}
+```
+
+This approach gives full access to `contentBlocks` during streaming but moves the implementation to the developer.
+
+#### 4.7.3 Multiple Reasoning Phases
+
+Models may produce multiple reasoning phases (interleaved thinking pattern: think → respond → tool → think → respond). Each phase is identified by its `index` property.
+
+The callback handler emits one complete thinking cycle per unique index:
+
+```
+Phase 0: THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT → THINKING_TEXT_MESSAGE_END → THINKING_END
+Phase 1: THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT → THINKING_TEXT_MESSAGE_END → THINKING_END
+```
+
+#### 4.7.4 Thinking and Text Messages Coupling
+
+Thinking events are semantically coupled with text messages. When `emitTextMessages: false`, thinking events are also suppressed.
+
+---
+
 ## 5. Configuration System
 
 ### 5.1 Configuration Schema Validation

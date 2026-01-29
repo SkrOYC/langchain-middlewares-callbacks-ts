@@ -103,10 +103,17 @@ const middleware = createAGUIMiddleware({
 | `TOOL_CALL_ARGS` | Callback | Tool call arguments chunk |
 | `TOOL_CALL_END` | Callback | Tool execution ended |
 | `TOOL_CALL_RESULT` | Callback | Tool execution result |
+| `THINKING_START` | Callback | Reasoning phase started |
+| `THINKING_TEXT_MESSAGE_START` | Callback | Thinking message started |
+| `THINKING_TEXT_MESSAGE_CONTENT` | Callback | Thinking content chunk |
+| `THINKING_TEXT_MESSAGE_END` | Callback | Thinking message ended |
+| `THINKING_END` | Callback | Reasoning phase completed |
 | `STATE_SNAPSHOT` | Middleware | State snapshot (after streaming) |
 | `MESSAGES_SNAPSHOT` | Middleware | Messages snapshot |
 | `ACTIVITY_SNAPSHOT` | Middleware | New activity detected |
 | `ACTIVITY_DELTA` | Middleware | Activity update |
+
+> **Note on Thinking Events:** Thinking events are emitted after the complete response using LangChain V1's `contentBlocks` API. Concurrent streaming of thinking is not possible through callbacks alone (see [SPEC.md](./SPEC.md#47-thinking-events) for details).
 
 ## Wire Formatting (Developer Responsibility)
 
