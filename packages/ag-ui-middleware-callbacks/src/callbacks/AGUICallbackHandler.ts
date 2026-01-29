@@ -365,7 +365,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       if (Array.isArray(generations) && generations.length > 0) {
         const firstGeneration = generations[0]?.[0];
         if (firstGeneration?.message) {
-          this.detectAndEmitThinking(firstGeneration.message, runId, _parentRunId);
+          this.detectAndEmitThinking(firstGeneration.message);
         }
       }
     } catch {
@@ -397,14 +397,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
    * (interleaved thinking pattern: think → respond → tool → think → respond).
    *
    * @param message - The final AIMessage containing reasoning blocks
-   * @param runId - The run identifier
-   * @param parentRunId - Optional parent run identifier
    */
-  private detectAndEmitThinking(
-    message: BaseMessage,
-    runId: string,
-    parentRunId?: string
-  ): void {
+  private detectAndEmitThinking(message: BaseMessage): void {
     // Thinking events are coupled with text messages
     if (!this.emitThinking || !this.emitTextMessages) {
       return;
@@ -438,7 +432,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       // Aggregate all reasoning content for this phase into a single CONTENT event
       const phaseContent = blocks
         .map((block) => block.reasoning)
-        .filter((text): text is string => typeof text === "string" && text.length > 0)
+        .filter((text): text is string => text.trim().length > 0)
         .join("");
 
       if (phaseContent) {
