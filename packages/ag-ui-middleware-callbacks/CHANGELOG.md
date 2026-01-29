@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.1.0] - 2026-01-28
+
+### Features
+
+- Added thinking/reasoning content blocks support via LangChain V1 contentBlocks API
+- New `reasoningBlocks.ts` utility with `extractReasoningBlocks()`, `extractReasoningText()`, `groupReasoningBlocksByIndex()`
+- Support for Anthropic `{ type: "thinking" }` blocks
+- Support for Google `{ type: "thinking" }` blocks
+- Support for OpenAI reasoning blocks
+- Multiple reasoning phases (interleaved thinking) support via index-based grouping
+
+### Breaking Changes
+
+- Thinking events no longer include `messageId` (per AG-UI TypeScript SDK schema)
+- Streaming-based reasoning detection (`additional_kwargs.reasoning_content`) is deprecated
+
+### Changes
+
+- Replaced streaming fallback with canonical contentBlocks API extraction
+- Added `detectAndEmitThinking()` method to AGUICallbackHandler
+- Removed `thinkingIds` map (no longer needed)
+- Thinking events are now coupled with `emitTextMessages` flag
+
 ## [1.0.0] - 2026-01-20
 
 ### Breaking Changes

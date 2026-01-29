@@ -5,10 +5,15 @@
  */
 
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
+import type { BaseMessage } from "@langchain/core/messages";
 import { generateId, generateDeterministicId } from "../utils/idGenerator";
 import { extractToolOutput } from "../utils/cleaner";
 import { expandEvent } from "../utils/eventNormalizer";
 import { type BaseEvent, EventType } from "@ag-ui/core";
+import {
+  extractReasoningBlocks,
+  groupReasoningBlocksByIndex,
+} from "../utils/reasoningBlocks";
 
 /**
  * Configuration options for the callback handler.
@@ -41,7 +46,6 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private latestMessageIds = new Map<string, string>();
   private agentRunIds = new Map<string, string>(); // Maps current runId to authoritative agentRunId
   private parentToAuthoritativeId = new Map<string, string>(); // Maps internal parentRunId to authoritative agentRunId
-  private thinkingIds = new Map<string, string>();
   private toolCallInfo = new Map<string, { id: string; name: string }>();
   private toolCallNames = new Map<string, string>(); // Maps toolCallId to tool name from LLM tool_calls
   private agentTurnTracker = new Map<string, number>();
@@ -111,7 +115,6 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     this.latestMessageIds.clear();
     this.agentRunIds.clear();
     this.parentToAuthoritativeId.clear();
-    this.thinkingIds.clear();
     this.toolCallInfo.clear();
     this.toolCallNames.clear();
     this.agentTurnTracker.clear();
@@ -256,44 +259,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     if (!this.enabled) return;
 
     const messageId = this.messageIds.get(runId);
-    if (!messageId && !this.emitThinking) return;
+    if (!messageId) return;
 
     try {
-      // Handle Reasoning Tokens (e.g., DeepSeek, OpenAI o1)
-      const reasoningContent = fields?.chunk?.message?.additional_kwargs?.reasoning_content ||
-                               fields?.chunk?.message?.additional_kwargs?.reasoning;
-      if (reasoningContent && this.emitThinking) {
-        let thinkingId = this.thinkingIds.get(runId);
-        if (!thinkingId) {
-          const agentRunId = this.agentRunIds.get(runId) ||
-                            (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) ||
-                            _parentRunId ||
-                            runId;
-          thinkingId = generateDeterministicId(agentRunId, (this.agentTurnTracker.get(agentRunId) || 1) + 100); // Offset for thinking
-          this.thinkingIds.set(runId, thinkingId);
-          this.emitCallback({
-            type: EventType.THINKING_START,
-            timestamp: Date.now(),
-          } as BaseEvent);
-          this.emitCallback({
-            type: EventType.THINKING_TEXT_MESSAGE_START,
-            messageId: thinkingId,
-            timestamp: Date.now(),
-          } as BaseEvent);
-        }
-
-        const delta = typeof reasoningContent === 'string'
-          ? reasoningContent
-          : ((reasoningContent as any).text || JSON.stringify(reasoningContent));
-
-        this.emitCallback({
-          type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
-          messageId: thinkingId,
-          delta,
-          timestamp: Date.now(),
-        } as BaseEvent);
-      }
-
       // Emit TEXT_MESSAGE_CONTENT for streaming tokens
       if (token && token.length > 0 && this.emitTextMessages && messageId) {
         this.emitCallback({
@@ -307,32 +275,32 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       // Emit TOOL_CALL_ARGS for streaming tool arguments (may contain partial JSON fragments)
       const toolCallChunks = fields?.chunk?.message?.tool_call_chunks;
       if (toolCallChunks && Array.isArray(toolCallChunks) && this.emitToolCalls) {
-        const agentRunId = this.agentRunIds.get(runId) || 
-                          (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) || 
-                          _parentRunId || 
+        const agentRunId = this.agentRunIds.get(runId) ||
+                          (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) ||
+                          _parentRunId ||
                           runId;
-        
+
         // Track tool call IDs for correlation with handleToolStart
         const pending = this.pendingToolCalls.get(agentRunId) || [];
-        
+
         for (const chunk of toolCallChunks) {
           if (chunk.id && chunk.args) {
             // Accumulate partial args by toolCallId
             const previousArgs = this.accumulatedToolArgs.get(chunk.id) || "";
             const newArgs = previousArgs + chunk.args;
-            
+
             // Only accumulate if args have changed (avoid duplicate accumulations)
             if (newArgs !== previousArgs) {
               this.accumulatedToolArgs.set(chunk.id, newArgs);
             }
-            
+
             // Track this tool call ID for later correlation
             if (!pending.includes(chunk.id)) {
               pending.push(chunk.id);
             }
           }
         }
-        
+
         if (pending.length > 0) {
           this.pendingToolCalls.set(agentRunId, pending);
         }
@@ -349,9 +317,6 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _tags?: string[],
     _extraParams?: Record<string, unknown>
   ): Promise<void> {
-    const messageId = this.messageIds.get(runId);
-    const thinkingId = this.thinkingIds.get(runId);
-
     // Collect tool calls from output for subsequent tool callbacks
     // We collect even when disabled, so that tool callbacks have the data they need
     // (tool callbacks will check their own emit flags before emitting)
@@ -367,12 +332,12 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
           for (const tc of toolCalls) {
             if (tc.id && !pending.includes(tc.id)) {
               pending.push(tc.id);
-              
+
               // Store tool name for later use in handleToolStart
               if (tc.function?.name) {
                 this.toolCallNames.set(tc.id, tc.function.name);
               }
-              
+
               // Accumulate tool call args for later emission in handleToolStart
               if (tc.function?.arguments) {
                 this.accumulatedToolArgs.set(tc.id, tc.function.arguments);
@@ -386,11 +351,25 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       // Fail-safe
     }
 
-    // Skip event emission if disabled
+    // Skip event emission if disabled - check after tool call collection
     if (!this.enabled) {
       this.messageIds.delete(runId);
-      this.thinkingIds.delete(runId);
       return;
+    }
+
+    const messageId = this.messageIds.get(runId);
+
+    // Extract the final AIMessage for thinking detection
+    try {
+      const generations = _output?.generations;
+      if (Array.isArray(generations) && generations.length > 0) {
+        const firstGeneration = generations[0]?.[0];
+        if (firstGeneration?.message) {
+          this.detectAndEmitThinking(firstGeneration.message);
+        }
+      }
+    } catch {
+      // Fail-safe
     }
 
     // Emit TEXT_MESSAGE_END
@@ -402,25 +381,80 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       } as BaseEvent);
     }
 
-    // Emit THINKING_END events
-    if (thinkingId) {
-      if (this.emitThinking) {
+    // Cleanup
+    this.messageIds.delete(runId);
+  }
+
+  /**
+   * Detect and emit thinking events from reasoning content blocks.
+   *
+   * Uses LangChain V1's contentBlocks API to extract reasoning content
+   * and emits the complete thinking event lifecycle:
+   * THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT
+   * → THINKING_TEXT_MESSAGE_END → THINKING_END
+   *
+   * Supports multiple reasoning phases via index-based grouping
+   * (interleaved thinking pattern: think → respond → tool → think → respond).
+   *
+   * @param message - The final AIMessage containing reasoning blocks
+   */
+  private detectAndEmitThinking(message: BaseMessage): void {
+    // Thinking events are coupled with text messages
+    if (!this.emitThinking || !this.emitTextMessages) {
+      return;
+    }
+
+    // Extract reasoning blocks from the message
+    const reasoningBlocks = extractReasoningBlocks(message);
+
+    // No reasoning content, skip
+    if (reasoningBlocks.length === 0) {
+      return;
+    }
+
+    // Group reasoning blocks by index to support multiple thinking phases
+    const groupedBlocks = groupReasoningBlocksByIndex(message);
+
+    // Emit one complete thinking cycle per unique index
+    for (const [index, blocks] of groupedBlocks) {
+      // Emit THINKING_START
+      this.emitCallback({
+        type: EventType.THINKING_START,
+        timestamp: Date.now(),
+      } as BaseEvent);
+
+      // Emit THINKING_TEXT_MESSAGE_START (no messageId per AG-UI TypeScript SDK)
+      this.emitCallback({
+        type: EventType.THINKING_TEXT_MESSAGE_START,
+        timestamp: Date.now(),
+      } as BaseEvent);
+
+      // Aggregate all reasoning content for this phase into a single CONTENT event
+      const phaseContent = blocks
+        .map((block) => block.reasoning)
+        .filter((text): text is string => text.trim().length > 0)
+        .join("");
+
+      if (phaseContent) {
         this.emitCallback({
-          type: EventType.THINKING_TEXT_MESSAGE_END,
-          messageId: thinkingId,
-          timestamp: Date.now(),
-        } as BaseEvent);
-        this.emitCallback({
-          type: EventType.THINKING_END,
+          type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
+          delta: phaseContent,
           timestamp: Date.now(),
         } as BaseEvent);
       }
-      // Always clean up - even if emitThinking was toggled off
-      this.thinkingIds.delete(runId);
-    }
 
-    // Cleanup
-    this.messageIds.delete(runId);
+      // Emit THINKING_TEXT_MESSAGE_END (no messageId)
+      this.emitCallback({
+        type: EventType.THINKING_TEXT_MESSAGE_END,
+        timestamp: Date.now(),
+      } as BaseEvent);
+
+      // Emit THINKING_END
+      this.emitCallback({
+        type: EventType.THINKING_END,
+        timestamp: Date.now(),
+      } as BaseEvent);
+    }
   }
 
   override async handleLLMError(
@@ -431,7 +465,6 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     if (!this.enabled) return;
 
     this.messageIds.delete(runId);
-    this.thinkingIds.delete(runId);
     const agentRunId = this.agentRunIds.get(runId) ||
                       (_parentRunId ? this.parentToAuthoritativeId.get(_parentRunId) : null) ||
                       _parentRunId ||
