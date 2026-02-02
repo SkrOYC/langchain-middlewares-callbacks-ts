@@ -1,0 +1,552 @@
+import { describe, expect, test } from "bun:test";
+import {
+  type CitationRecord,
+  CitationRecordSchema,
+  type Context,
+  ContextSchema,
+  createDefaultRerankerState,
+  type MemoryEntry,
+  MemoryEntrySchema,
+  MemoryExtractionOutputSchema,
+  MergeDecisionSchema,
+  type MiddlewareOptions,
+  MiddlewareOptionsSchema,
+  type RerankerState,
+  RerankerStateSchema,
+  type RetrievedMemory,
+  RetrievedMemorySchema,
+  type RMMState,
+  RMMStateSchema,
+  validateEmbeddingDimension,
+} from "../../src/schemas";
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
+
+const EMBEDDING_DIMENSION = 1536;
+
+const createValidEmbedding = (): number[] =>
+  Array.from({ length: EMBEDDING_DIMENSION }, () => Math.random());
+
+const createValidMatrix = (): number[][] =>
+  Array.from({ length: EMBEDDING_DIMENSION }, () =>
+    Array.from(
+      { length: EMBEDDING_DIMENSION },
+      () => Math.random() * 0.02 - 0.01
+    )
+  );
+
+const createValidMemoryEntry = (): MemoryEntry => ({
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  topicSummary: "User enjoys hiking",
+  rawDialogue: "I love hiking on weekends",
+  timestamp: Date.now(),
+  sessionId: "session-123",
+  embedding: createValidEmbedding(),
+  turnReferences: [0, 2],
+});
+
+const createValidRerankerState = (): RerankerState => ({
+  weights: {
+    queryTransform: createValidMatrix(),
+    memoryTransform: createValidMatrix(),
+  },
+  config: {
+    topK: 20,
+    topM: 5,
+    temperature: 0.5,
+    learningRate: 0.001,
+    baseline: 0.5,
+  },
+});
+
+const createValidCitationRecord = (): CitationRecord => ({
+  memoryId: "550e8400-e29b-41d4-a716-446655440000",
+  cited: true,
+  reward: 1,
+  turnIndex: 5,
+});
+
+const createValidRetrievedMemory = (): RetrievedMemory => ({
+  ...createValidMemoryEntry(),
+  relevanceScore: 0.85,
+  rerankScore: 0.92,
+});
+
+const createValidRMMState = (): RMMState => ({
+  _sessionStartIndex: 0,
+  _turnCountInSession: 10,
+  _citations: [createValidCitationRecord()],
+  _retrievedMemories: [createValidRetrievedMemory()],
+  _rerankerWeights: createValidRerankerState(),
+  messages: [{ type: "human", content: "Hello" }],
+});
+
+// ============================================================================
+// MemoryEntry Schema Tests
+// ============================================================================
+
+describe("MemoryEntrySchema", () => {
+  test("validates correct memory entry", () => {
+    const validEntry = createValidMemoryEntry();
+    const result = MemoryEntrySchema.safeParse(validEntry);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects invalid UUID", () => {
+    const invalidEntry = { ...createValidMemoryEntry(), id: "not-a-uuid" };
+    const result = MemoryEntrySchema.safeParse(invalidEntry);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects empty topicSummary", () => {
+    const invalidEntry = { ...createValidMemoryEntry(), topicSummary: "" };
+    const result = MemoryEntrySchema.safeParse(invalidEntry);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects wrong embedding dimension", () => {
+    const invalidEntry = {
+      ...createValidMemoryEntry(),
+      embedding: Array.from({ length: 768 }, () => 0),
+    };
+    const result = MemoryEntrySchema.safeParse(invalidEntry);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative timestamp", () => {
+    const invalidEntry = { ...createValidMemoryEntry(), timestamp: -1 };
+    const result = MemoryEntrySchema.safeParse(invalidEntry);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative turn references", () => {
+    const invalidEntry = {
+      ...createValidMemoryEntry(),
+      turnReferences: [-1, 2],
+    };
+    const result = MemoryEntrySchema.safeParse(invalidEntry);
+    expect(result.success).toBe(false);
+  });
+
+  test("validates with empty turnReferences array", () => {
+    const validEntry = { ...createValidMemoryEntry(), turnReferences: [] };
+    const result = MemoryEntrySchema.safeParse(validEntry);
+    expect(result.success).toBe(true);
+  });
+});
+
+// ============================================================================
+// RetrievedMemory Schema Tests
+// ============================================================================
+
+describe("RetrievedMemorySchema", () => {
+  test("validates correct retrieved memory", () => {
+    const validMemory = createValidRetrievedMemory();
+    const result = RetrievedMemorySchema.safeParse(validMemory);
+    expect(result.success).toBe(true);
+  });
+
+  test("validates without optional rerankScore", () => {
+    const validMemory = { ...createValidRetrievedMemory() };
+    validMemory.rerankScore = undefined;
+    const result = RetrievedMemorySchema.safeParse(validMemory);
+    expect(result.success).toBe(true);
+  });
+
+  test("inherits MemoryEntry validations", () => {
+    const invalidMemory = {
+      ...createValidRetrievedMemory(),
+      id: "not-a-uuid",
+    };
+    const result = RetrievedMemorySchema.safeParse(invalidMemory);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// RerankerState Schema Tests
+// ============================================================================
+
+describe("RerankerStateSchema", () => {
+  test("validates correct reranker state", () => {
+    const validState = createValidRerankerState();
+    const result = RerankerStateSchema.safeParse(validState);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects invalid queryTransform matrix dimensions", () => {
+    const invalidState = {
+      ...createValidRerankerState(),
+      weights: {
+        queryTransform: Array.from({ length: 768 }, () =>
+          Array.from({ length: 768 }, () => 0)
+        ),
+        memoryTransform: createValidMatrix(),
+      },
+    };
+    const result = RerankerStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects invalid memoryTransform matrix dimensions", () => {
+    const invalidState = {
+      ...createValidRerankerState(),
+      weights: {
+        queryTransform: createValidMatrix(),
+        memoryTransform: Array.from({ length: 1536 }, () =>
+          Array.from({ length: 768 }, () => 0)
+        ),
+      },
+    };
+    const result = RerankerStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects non-integer topK", () => {
+    const invalidState = {
+      ...createValidRerankerState(),
+      config: { ...createValidRerankerState().config, topK: 20.5 },
+    };
+    const result = RerankerStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects zero temperature", () => {
+    const invalidState = {
+      ...createValidRerankerState(),
+      config: { ...createValidRerankerState().config, temperature: 0 },
+    };
+    const result = RerankerStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+
+  test("applies default values for config", () => {
+    const partialState = {
+      weights: {
+        queryTransform: createValidMatrix(),
+        memoryTransform: createValidMatrix(),
+      },
+      config: {},
+    };
+    const result = RerankerStateSchema.safeParse(partialState);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.config.topK).toBe(20);
+      expect(result.data.config.topM).toBe(5);
+      expect(result.data.config.temperature).toBe(0.5);
+      expect(result.data.config.learningRate).toBe(0.001);
+      expect(result.data.config.baseline).toBe(0.5);
+    }
+  });
+});
+
+// ============================================================================
+// CitationRecord Schema Tests
+// ============================================================================
+
+describe("CitationRecordSchema", () => {
+  test("validates correct citation record with positive reward", () => {
+    const validRecord = createValidCitationRecord();
+    const result = CitationRecordSchema.safeParse(validRecord);
+    expect(result.success).toBe(true);
+  });
+
+  test("validates correct citation record with negative reward", () => {
+    const validRecord = { ...createValidCitationRecord(), reward: -1 as const };
+    const result = CitationRecordSchema.safeParse(validRecord);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects invalid reward value", () => {
+    const invalidRecord = { ...createValidCitationRecord(), reward: 0 };
+    const result = CitationRecordSchema.safeParse(invalidRecord);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative turn index", () => {
+    const invalidRecord = { ...createValidCitationRecord(), turnIndex: -1 };
+    const result = CitationRecordSchema.safeParse(invalidRecord);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects invalid memoryId UUID", () => {
+    const invalidRecord = {
+      ...createValidCitationRecord(),
+      memoryId: "not-uuid",
+    };
+    const result = CitationRecordSchema.safeParse(invalidRecord);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// RMMState Schema Tests
+// ============================================================================
+
+describe("RMMStateSchema", () => {
+  test("validates correct RMM state", () => {
+    const validState = createValidRMMState();
+    const result = RMMStateSchema.safeParse(validState);
+    expect(result.success).toBe(true);
+  });
+
+  test("validates private fields with underscore prefix", () => {
+    const validState = createValidRMMState();
+    expect(validState._sessionStartIndex).toBe(0);
+    expect(validState._turnCountInSession).toBe(10);
+    expect(validState._citations.length).toBe(1);
+    expect(validState._retrievedMemories.length).toBe(1);
+    expect(validState._rerankerWeights).toBeDefined();
+  });
+
+  test("rejects negative _sessionStartIndex", () => {
+    const invalidState = { ...createValidRMMState(), _sessionStartIndex: -1 };
+    const result = RMMStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative _turnCountInSession", () => {
+    const invalidState = { ...createValidRMMState(), _turnCountInSession: -1 };
+    const result = RMMStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+
+  test("validates empty private arrays", () => {
+    const validState = {
+      ...createValidRMMState(),
+      _citations: [],
+      _retrievedMemories: [],
+    };
+    const result = RMMStateSchema.safeParse(validState);
+    expect(result.success).toBe(true);
+  });
+
+  test("validates messages array", () => {
+    const validState = {
+      ...createValidRMMState(),
+      messages: [
+        { type: "human", content: "Hello" },
+        { type: "ai", content: "Hi there!" },
+        { type: "tool", content: [{ type: "text", text: "Result" }] },
+      ],
+    };
+    const result = RMMStateSchema.safeParse(validState);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects invalid message structure", () => {
+    const invalidState = {
+      ...createValidRMMState(),
+      messages: [{ invalid: "structure" }],
+    };
+    const result = RMMStateSchema.safeParse(invalidState);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// Context Schema Tests
+// ============================================================================
+
+describe("ContextSchema", () => {
+  test("validates correct context", () => {
+    const validContext: Context = {
+      userId: "user-123",
+      isSessionEnd: false,
+      store: { mockStore: true },
+    };
+    const result = ContextSchema.safeParse(validContext);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects empty userId", () => {
+    const invalidContext = {
+      userId: "",
+      isSessionEnd: false,
+      store: {},
+    };
+    const result = ContextSchema.safeParse(invalidContext);
+    expect(result.success).toBe(false);
+  });
+
+  test("validates with isSessionEnd true", () => {
+    const validContext: Context = {
+      userId: "user-123",
+      isSessionEnd: true,
+      store: { mockStore: true },
+    };
+    const result = ContextSchema.safeParse(validContext);
+    expect(result.success).toBe(true);
+  });
+});
+
+// ============================================================================
+// MiddlewareOptions Schema Tests
+// ============================================================================
+
+describe("MiddlewareOptionsSchema", () => {
+  test("validates correct middleware options", () => {
+    const validOptions: MiddlewareOptions = {
+      userId: "user-123",
+      vectorStore: { mockVectorStore: true },
+      embeddings: { mockEmbeddings: true },
+      store: { mockStore: true },
+      summarizationModel: { mockModel: true },
+    };
+    const result = MiddlewareOptionsSchema.safeParse(validOptions);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects empty userId", () => {
+    const invalidOptions = {
+      userId: "",
+      vectorStore: {},
+      embeddings: {},
+      store: {},
+      summarizationModel: {},
+    };
+    const result = MiddlewareOptionsSchema.safeParse(invalidOptions);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// MemoryExtractionOutput Schema Tests
+// ============================================================================
+
+describe("MemoryExtractionOutputSchema", () => {
+  test("validates correct extraction output", () => {
+    const validOutput = {
+      topicSummary: "User enjoys hiking",
+      rawDialogue: "I love hiking on weekends",
+      turnReferences: [0, 2],
+    };
+    const result = MemoryExtractionOutputSchema.safeParse(validOutput);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects empty topicSummary", () => {
+    const invalidOutput = {
+      topicSummary: "",
+      rawDialogue: "I love hiking on weekends",
+      turnReferences: [0, 2],
+    };
+    const result = MemoryExtractionOutputSchema.safeParse(invalidOutput);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative turnReferences", () => {
+    const invalidOutput = {
+      topicSummary: "User enjoys hiking",
+      rawDialogue: "I love hiking on weekends",
+      turnReferences: [-1, 2],
+    };
+    const result = MemoryExtractionOutputSchema.safeParse(invalidOutput);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// MergeDecision Schema Tests
+// ============================================================================
+
+describe("MergeDecisionSchema", () => {
+  test("validates MERGE decision with targetMemoryId", () => {
+    const validDecision = {
+      decision: "MERGE" as const,
+      targetMemoryId: "550e8400-e29b-41d4-a716-446655440000",
+      reason: "Similar topic to existing memory",
+    };
+    const result = MergeDecisionSchema.safeParse(validDecision);
+    expect(result.success).toBe(true);
+  });
+
+  test("validates ADD decision without targetMemoryId", () => {
+    const validDecision = {
+      decision: "ADD" as const,
+      reason: "New unique topic",
+    };
+    const result = MergeDecisionSchema.safeParse(validDecision);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects invalid decision value", () => {
+    const invalidDecision = {
+      decision: "UPDATE",
+      reason: "Invalid decision",
+    };
+    const result = MergeDecisionSchema.safeParse(invalidDecision);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects MERGE without valid targetMemoryId", () => {
+    const invalidDecision = {
+      decision: "MERGE" as const,
+      targetMemoryId: "not-a-uuid",
+      reason: "Invalid UUID",
+    };
+    const result = MergeDecisionSchema.safeParse(invalidDecision);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// Utility Functions Tests
+// ============================================================================
+
+describe("Utility Functions", () => {
+  describe("validateEmbeddingDimension", () => {
+    test("returns true for valid 1536-dim embedding", () => {
+      const embedding = createValidEmbedding();
+      expect(validateEmbeddingDimension(embedding)).toBe(true);
+    });
+
+    test("returns false for wrong dimension (768)", () => {
+      const embedding = Array.from({ length: 768 }, () => 0);
+      expect(validateEmbeddingDimension(embedding)).toBe(false);
+    });
+
+    test("returns false for empty array", () => {
+      expect(validateEmbeddingDimension([])).toBe(false);
+    });
+  });
+
+  describe("createDefaultRerankerState", () => {
+    test("creates state with correct matrix dimensions", () => {
+      const state = createDefaultRerankerState();
+      expect(state.weights.queryTransform.length).toBe(EMBEDDING_DIMENSION);
+      const queryFirstRow = state.weights.queryTransform[0];
+      expect(queryFirstRow).toBeDefined();
+      expect(queryFirstRow?.length).toBe(EMBEDDING_DIMENSION);
+      expect(state.weights.memoryTransform.length).toBe(EMBEDDING_DIMENSION);
+      const memoryFirstRow = state.weights.memoryTransform[0];
+      expect(memoryFirstRow).toBeDefined();
+      expect(memoryFirstRow?.length).toBe(EMBEDDING_DIMENSION);
+    });
+
+    test("creates state with zero-initialized matrices", () => {
+      const state = createDefaultRerankerState();
+      const allZeros = state.weights.queryTransform.every((row) =>
+        row.every((val) => val === 0)
+      );
+      expect(allZeros).toBe(true);
+    });
+
+    test("creates state with default config values", () => {
+      const state = createDefaultRerankerState();
+      expect(state.config.topK).toBe(20);
+      expect(state.config.topM).toBe(5);
+      expect(state.config.temperature).toBe(0.5);
+      expect(state.config.learningRate).toBe(0.001);
+      expect(state.config.baseline).toBe(0.5);
+    });
+
+    test("created state passes schema validation", () => {
+      const state = createDefaultRerankerState();
+      const result = RerankerStateSchema.safeParse(state);
+      expect(result.success).toBe(true);
+    });
+  });
+});
