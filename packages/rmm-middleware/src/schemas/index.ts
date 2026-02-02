@@ -16,7 +16,7 @@ export const EMBEDDING_DIMENSION = 1536;
 export const MemoryEntrySchema = z.object({
   id: z.string().uuid(),
   topicSummary: z.string().min(1),
-  rawDialogue: z.string(),
+  rawDialogue: z.string().min(1),
   timestamp: z.number().int().positive(),
   sessionId: z.string().min(1),
   embedding: z.array(z.number()).length(EMBEDDING_DIMENSION),
@@ -192,7 +192,7 @@ export type MiddlewareOptions = z.infer<typeof MiddlewareOptionsSchema>;
  */
 export const MemoryExtractionOutputSchema = z.object({
   topicSummary: z.string().min(1),
-  rawDialogue: z.string(),
+  rawDialogue: z.string().min(1),
   turnReferences: z.array(z.number().int().nonnegative()),
 });
 
@@ -217,11 +217,28 @@ export type MergeDecisionType = z.infer<typeof MergeDecisionTypeSchema>;
 /**
  * Schema for merge/add decision output from LLM
  */
-export const MergeDecisionSchema = z.object({
-  decision: MergeDecisionTypeSchema,
-  targetMemoryId: z.string().uuid().optional(),
-  reason: z.string(),
-});
+export const MergeDecisionSchema = z
+  .object({
+    decision: MergeDecisionTypeSchema,
+    targetMemoryId: z.string().uuid().optional(),
+    reason: z.string().min(1, { message: "Reason cannot be empty." }),
+  })
+  .superRefine((data, ctx) => {
+    if (data.decision === "MERGE" && !data.targetMemoryId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "targetMemoryId is required when decision is MERGE.",
+        path: ["targetMemoryId"],
+      });
+    }
+    if (data.decision === "ADD" && data.targetMemoryId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "targetMemoryId must not be provided when decision is ADD.",
+        path: ["targetMemoryId"],
+      });
+    }
+  });
 
 export type MergeDecision = z.infer<typeof MergeDecisionSchema>;
 

@@ -130,6 +130,15 @@ describe("MemoryEntrySchema", () => {
     expect(result.success).toBe(false);
   });
 
+  test("rejects empty rawDialogue", () => {
+    const invalidEntry = {
+      ...createValidMemoryEntry(),
+      rawDialogue: "",
+    };
+    const result = MemoryEntrySchema.safeParse(invalidEntry);
+    expect(result.success).toBe(false);
+  });
+
   test("validates with empty turnReferences array", () => {
     const validEntry = { ...createValidMemoryEntry(), turnReferences: [] };
     const result = MemoryEntrySchema.safeParse(validEntry);
@@ -446,6 +455,16 @@ describe("MemoryExtractionOutputSchema", () => {
     const result = MemoryExtractionOutputSchema.safeParse(invalidOutput);
     expect(result.success).toBe(false);
   });
+
+  test("rejects empty rawDialogue", () => {
+    const invalidOutput = {
+      topicSummary: "User enjoys hiking",
+      rawDialogue: "",
+      turnReferences: [0, 2],
+    };
+    const result = MemoryExtractionOutputSchema.safeParse(invalidOutput);
+    expect(result.success).toBe(false);
+  });
 });
 
 // ============================================================================
@@ -486,6 +505,34 @@ describe("MergeDecisionSchema", () => {
       decision: "MERGE" as const,
       targetMemoryId: "not-a-uuid",
       reason: "Invalid UUID",
+    };
+    const result = MergeDecisionSchema.safeParse(invalidDecision);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects empty reason", () => {
+    const invalidDecision = {
+      decision: "ADD" as const,
+      reason: "",
+    };
+    const result = MergeDecisionSchema.safeParse(invalidDecision);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects MERGE without targetMemoryId", () => {
+    const invalidDecision = {
+      decision: "MERGE" as const,
+      reason: "Similar topic",
+    };
+    const result = MergeDecisionSchema.safeParse(invalidDecision);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects ADD with targetMemoryId", () => {
+    const invalidDecision = {
+      decision: "ADD" as const,
+      targetMemoryId: "550e8400-e29b-41d4-a716-446655440000",
+      reason: "New topic",
     };
     const result = MergeDecisionSchema.safeParse(invalidDecision);
     expect(result.success).toBe(false);
