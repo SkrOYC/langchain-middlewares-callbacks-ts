@@ -22,21 +22,13 @@ export interface CitationResult {
 /**
  * Regex pattern for citation extraction.
  *
- * Matches:
- * - [i,j,k] - comma-separated integers
- * - [NO_CITE] - special no-citation marker
- * - Handles whitespace: [ 0 , 1 , 2 ]
+ * Matches any content within square brackets.
+ * The parser validates the content (digits/commas or NO_CITE).
  *
- * Pattern breakdown:
- * - \[ - opening bracket
- * - ( - start capture group
- * - [\d,\s]+ - one or more digits, commas, or whitespace
- * - | - OR
- * - NO_CITE - literal NO_CITE string
- * - ) - end capture group
- * - \] - closing bracket
+ * Security note: Using [^\]]* instead of [\d,\s]+ prevents ReDoS
+ * attacks via catastrophic backtracking on malicious input.
  */
-const CITATION_REGEX = /\[([\d,\s]+|NO_CITE)\]/;
+const CITATION_REGEX = /\[([^\]]*)\]/;
 
 /**
  * Extracts citations from LLM response text.

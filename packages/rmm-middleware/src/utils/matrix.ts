@@ -182,7 +182,7 @@ export function matmul(a: number[][], b: number[][]): number[][] {
           const resultRowOffset = i * bCols;
 
           for (let k = kk; k < kEnd; k++) {
-            const aVal = aMat.data[aRowOffset + k] ?? 0;
+            const aVal = aMat.data[aRowOffset + k];
 
             // Inner loop with 4x unrolling for better instruction-level parallelism
             let j = jj;
@@ -194,15 +194,15 @@ export function matmul(a: number[][], b: number[][]): number[][] {
               const bIdx2 = (j + 2) * bRows + k;
               const bIdx3 = (j + 3) * bRows + k;
 
-              result[resultRowOffset + j] += aVal * (bTransposed.data[bIdx0] ?? 0);
-              result[resultRowOffset + j + 1] += aVal * (bTransposed.data[bIdx1] ?? 0);
-              result[resultRowOffset + j + 2] += aVal * (bTransposed.data[bIdx2] ?? 0);
-              result[resultRowOffset + j + 3] += aVal * (bTransposed.data[bIdx3] ?? 0);
+              result[resultRowOffset + j] += aVal * bTransposed.data[bIdx0];
+              result[resultRowOffset + j + 1] += aVal * bTransposed.data[bIdx1];
+              result[resultRowOffset + j + 2] += aVal * bTransposed.data[bIdx2];
+              result[resultRowOffset + j + 3] += aVal * bTransposed.data[bIdx3];
             }
 
             // Handle remaining elements
             for (; j < jEnd; j++) {
-              result[resultRowOffset + j] += aVal * (bTransposed.data[j * bRows + k] ?? 0);
+              result[resultRowOffset + j] += aVal * bTransposed.data[j * bRows + k];
             }
           }
         }
@@ -216,7 +216,7 @@ export function matmul(a: number[][], b: number[][]): number[][] {
     const row: number[] = [];
     const rowOffset = i * bCols;
     for (let j = 0; j < bCols; j++) {
-      row.push(result[rowOffset + j] ?? 0);
+      row.push(result[rowOffset + j]);
     }
     resultMatrix.push(row);
   }
