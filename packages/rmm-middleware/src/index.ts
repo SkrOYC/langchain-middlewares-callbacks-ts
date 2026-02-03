@@ -1,4 +1,9 @@
 // biome-ignore lint/performance/noBarrelFile: This is the main entry point barrel file
+
+// ============================================================================
+// Schemas and Types
+// ============================================================================
+
 export {
   // Types
   type BaseMessage,
@@ -30,3 +35,22 @@ export {
   RMMStateSchema,
   validateEmbeddingDimension,
 } from "./schemas/index.ts";
+
+// ============================================================================
+// Core Utilities (RMM-2)
+// ============================================================================
+
+export {
+  type CitationResult,
+  // Similarity metrics
+  cosineSimilarity,
+  dotProduct,
+  // Citation extraction
+  extractCitations,
+  // Matrix operations
+  initializeMatrix,
+  matmul,
+  matmulVector,
+  residualAdd,
+  validateCitations,
+} from "./utils/index.ts";
