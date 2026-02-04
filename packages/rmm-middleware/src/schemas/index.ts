@@ -48,7 +48,7 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
  * We use a separate base to avoid field duplication while making embedding optional.
  */
 const RetrievedMemoryBaseSchema = z.object({
-  id: z.string(), // Can be UUID or generated ID like "memory-{index}"
+  id: z.string().min(1), // Can be UUID or generated ID like "memory-{index}"
   topicSummary: z.string().min(1),
   rawDialogue: z.string().min(1),
   timestamp: z.number().int().positive(),
@@ -71,7 +71,7 @@ export type RetrievedMemory = z.infer<typeof RetrievedMemorySchema>;
 /**
  * Configuration defaults per paper Appendix A.1
  */
-const RERANKER_CONFIG_DEFAULTS = {
+export const RERANKER_CONFIG_DEFAULTS = {
   topK: 20,
   topM: 5,
   temperature: 0.5,

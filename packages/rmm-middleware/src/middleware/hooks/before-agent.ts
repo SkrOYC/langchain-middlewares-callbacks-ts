@@ -22,6 +22,14 @@ import { initializeMatrix } from "@/utils/matrix";
 // Configuration
 // ============================================================================
 
+const DEFAULT_CONFIG = {
+  topK: 20,
+  topM: 5,
+  temperature: 0.5,
+  learningRate: 0.001,
+  baseline: 0.5,
+} as const;
+
 /**
  * Configuration options for the beforeAgent hook
  */
@@ -59,16 +67,6 @@ interface BeforeAgentState {
 // ============================================================================
 // Default Configuration
 // ============================================================================
-
-// Note: RERANKER_CONFIG_DEFAULTS is defined in schemas/index.ts
-// We duplicate here to avoid import cycles and keep hooks self-contained
-const DEFAULT_CONFIG = {
-  topK: 20,
-  topM: 5,
-  temperature: 0.5,
-  learningRate: 0.001,
-  baseline: 0.5,
-} as const;
 
 // ============================================================================
 // Hook Factory
@@ -209,7 +207,7 @@ function initializeRerankerState(): RerankerState {
 /**
  * State update returned by the beforeAgent hook
  */
-interface BeforeAgentStateUpdate {
+export interface BeforeAgentStateUpdate {
   /**
    * Learned reranker weights (W_q, W_m matrices)
    */

@@ -211,7 +211,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
 /**
  * State update returned by the beforeModel hook
  */
-interface BeforeModelStateUpdate {
+export interface BeforeModelStateUpdate {
   /**
    * Retrieved memories from VectorStore
    */

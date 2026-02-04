@@ -178,10 +178,12 @@ function sampleWithoutReplacementFromProbabilities(
     for (let j = 0; j < availableProbabilities.length; j++) {
       cumulative += availableProbabilities[j];
 
-      // Use epsilon comparison to handle floating-point precision
-      // The slight overage (random <= cumulative + epsilon) ensures we
-      // select the correct bin even with accumulated precision errors
-      if (random <= cumulative + Number.EPSILON * total) {
+      // Use fixed epsilon comparison to handle floating-point precision
+      // Using fixed 1e-12 avoids issues with Number.EPSILON which:
+      // - Is too small when total is large (~2.22e-16 × total)
+      // - Can exceed bin spacing when total is small
+      // This ensures robust sampling across different probability distributions
+      if (random <= cumulative + 1e-12) {
         selectedIndex = j;
         break;
       }
