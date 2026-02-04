@@ -1,12 +1,14 @@
-import type { BaseMessage } from "@langchain/core/messages";
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-
-import { extractMemories } from "@/algorithms/memory-extraction";
-import { findSimilarMemories } from "@/algorithms/similarity-search";
-import { decideUpdateAction, type UpdateAction } from "@/algorithms/memory-update";
+import type { BaseMessage } from "@langchain/core/messages";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import { addMemory, mergeMemory } from "@/algorithms/memory-actions";
+import { extractMemories } from "@/algorithms/memory-extraction";
+import {
+  decideUpdateAction,
+  type UpdateAction,
+} from "@/algorithms/memory-update";
+import { findSimilarMemories } from "@/algorithms/similarity-search";
 
 // ============================================================================
 // Constants
@@ -79,7 +81,7 @@ export async function afterAgent(
     const updateMemoryPrompt = deps?.updateMemory;
 
     // Validate required dependencies
-    if (!vectorStore || !extractSpeaker1) {
+    if (!(vectorStore && extractSpeaker1)) {
       console.warn(
         "[after-agent] Missing required dependencies, skipping memory extraction"
       );
@@ -127,7 +129,9 @@ export async function afterAgent(
       } else if (similarMemories.length > 0) {
         // Use default updateMemory prompt from update-memory.ts
         try {
-          const prompts = await import("../../middleware/prompts/update-memory");
+          const prompts = await import(
+            "../../middleware/prompts/update-memory"
+          );
           const updateMemory = prompts.updateMemory;
 
           actions = await decideUpdateAction(
@@ -140,7 +144,9 @@ export async function afterAgent(
           // If import fails, default to Add action
           console.warn(
             "[after-agent] Failed to load update-memory prompt, defaulting to Add:",
-            importError instanceof Error ? importError.message : String(importError)
+            importError instanceof Error
+              ? importError.message
+              : String(importError)
           );
           actions = [{ action: "Add" }];
         }

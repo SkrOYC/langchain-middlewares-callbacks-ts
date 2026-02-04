@@ -1,8 +1,8 @@
-import { randomUUID } from "crypto";
+import type { Embeddings } from "@langchain/core/embeddings";
 
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
-import type { Embeddings } from "@langchain/core/embeddings";
+import { randomUUID } from "crypto";
 
 import type { MemoryEntry } from "@/schemas/index";
 
@@ -111,8 +111,10 @@ export async function extractMemories(
 
     // Step 6: Validate extraction output structure
     if (
-      !extractionOutput.extracted_memories ||
-      !Array.isArray(extractionOutput.extracted_memories)
+      !(
+        extractionOutput.extracted_memories &&
+        Array.isArray(extractionOutput.extracted_memories)
+      )
     ) {
       console.warn(
         "[memory-extraction] Invalid extraction output structure:",

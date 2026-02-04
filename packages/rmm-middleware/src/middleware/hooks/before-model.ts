@@ -11,13 +11,9 @@
  */
 
 import type { Embeddings } from "@langchain/core/embeddings";
+import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type {
-  BaseMessage,
-  CitationRecord,
-  RerankerState,
-  RetrievedMemory,
-} from "@/schemas";
+import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
 import { extractLastHumanMessage } from "@/utils/memory-helpers";
 
 // ============================================================================

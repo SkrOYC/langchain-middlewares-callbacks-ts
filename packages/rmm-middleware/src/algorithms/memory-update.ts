@@ -1,7 +1,6 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-
-import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 import { parseUpdateActions } from "@/middleware/prompts/update-memory";
+import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 
 /**
  * Update action types for memory updates
@@ -52,7 +51,10 @@ export async function decideUpdateAction(
     const responseContent = response.text;
 
     // Step 4: Parse the update actions from the response
-    const actions = parseUpdateActions(responseContent, historySummaries.length);
+    const actions = parseUpdateActions(
+      responseContent,
+      historySummaries.length
+    );
 
     return actions;
   } catch (error) {

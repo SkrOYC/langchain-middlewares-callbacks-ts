@@ -1,5 +1,5 @@
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Document } from "@langchain/core/documents";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 
@@ -40,7 +40,7 @@ interface MemoryDocumentMetadata {
 export async function findSimilarMemories(
   newMemory: MemoryEntry,
   vectorStore: VectorStoreInterface,
-  topK: number = 5
+  topK = 5
 ): Promise<RetrievedMemory[]> {
   try {
     // Use the topicSummary as the query for similarity search
@@ -65,8 +65,7 @@ export async function findSimilarMemories(
           turnReferences: metadata.turnReferences || [],
           // relevanceScore: Not available from standard VectorStoreInterface
           // Some implementations return this in metadata or via extended interfaces
-          relevanceScore:
-            (result.metadata as { score?: number }).score ?? -1,
+          relevanceScore: (result.metadata as { score?: number }).score ?? -1,
         };
       }
     );

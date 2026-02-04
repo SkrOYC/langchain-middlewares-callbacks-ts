@@ -167,7 +167,7 @@ describe("RetrievedMemorySchema", () => {
   test("inherits MemoryEntry validations", () => {
     const invalidMemory = {
       ...createValidRetrievedMemory(),
-      topicSummary: "",  // Empty topicSummary should fail validation
+      topicSummary: "", // Empty topicSummary should fail validation
     };
     const result = RetrievedMemorySchema.safeParse(invalidMemory);
     expect(result.success).toBe(false);
@@ -283,7 +283,7 @@ describe("CitationRecordSchema", () => {
   test("rejects invalid reward value", () => {
     const invalidRecord = {
       ...createValidCitationRecord(),
-      reward: 0,  // Reward must be +1 or -1
+      reward: 0, // Reward must be +1 or -1
     };
     const result = CitationRecordSchema.safeParse(invalidRecord);
     expect(result.success).toBe(false);

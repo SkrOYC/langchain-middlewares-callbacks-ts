@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  EMBEDDING_DIMENSION,
-  type RerankerState,
-} from "@/schemas";
+import { EMBEDDING_DIMENSION, type RerankerState } from "@/schemas";
 import { createWeightStorage } from "@/storage/weight-storage";
 import {
   createFailingMockBaseStore,

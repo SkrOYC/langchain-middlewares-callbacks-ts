@@ -1,5 +1,5 @@
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Document } from "@langchain/core/documents";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 
@@ -107,7 +107,7 @@ export async function mergeMemory(
       }
     } else {
       console.warn(
-        `[memory-actions] VectorStore does not support delete method, merge may create duplicate`
+        "[memory-actions] VectorStore does not support delete method, merge may create duplicate"
       );
     }
 

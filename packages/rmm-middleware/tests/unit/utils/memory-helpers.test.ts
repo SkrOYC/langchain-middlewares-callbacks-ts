@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { BaseMessage } from "@langchain/core/messages";
 import type { RetrievedMemory } from "@/schemas/index";
+import { createTestMessages } from "@/tests/helpers/messages";
 
 /**
  * Tests for memory helper utilities
@@ -12,30 +12,12 @@ import type { RetrievedMemory } from "@/schemas/index";
  */
 
 describe("Memory Helpers", () => {
-  // Sample messages for testing
-  const sampleMessages: BaseMessage[] = [
-    {
-      lc_serialized: { type: "human" },
-      lc_kwargs: { content: "First message" },
-      lc_id: ["human"],
-      content: "First message",
-      additional_kwargs: {},
-    },
-    {
-      lc_serialized: { type: "ai" },
-      lc_kwargs: { content: "AI response" },
-      lc_id: ["ai"],
-      content: "AI response",
-      additional_kwargs: {},
-    },
-    {
-      lc_serialized: { type: "human" },
-      lc_kwargs: { content: "What do you know about hiking?" },
-      lc_id: ["human"],
-      content: "What do you know about hiking?",
-      additional_kwargs: {},
-    },
-  ];
+  // Sample messages for testing using proper LangChain messages
+  const sampleMessages = createTestMessages([
+    { type: "human", content: "First message" },
+    { type: "ai", content: "AI response" },
+    { type: "human", content: "What do you know about hiking?" },
+  ]);
 
   const sampleMemories: RetrievedMemory[] = [
     {
@@ -89,15 +71,9 @@ describe("Memory Helpers", () => {
         "@/utils/memory-helpers"
       );
 
-      const aiOnlyMessages: BaseMessage[] = [
-        {
-          lc_serialized: { type: "ai" },
-          lc_kwargs: { content: "AI response" },
-          lc_id: ["ai"],
-          content: "AI response",
-          additional_kwargs: {},
-        },
-      ];
+      const aiOnlyMessages = createTestMessages([
+        { type: "ai", content: "AI response" },
+      ]);
 
       const result = extractLastHumanMessage(aiOnlyMessages);
       expect(result).toBeNull();
@@ -118,43 +94,13 @@ describe("Memory Helpers", () => {
       );
 
       // Messages are: Human, AI, Human, AI, Human
-      const mixedMessages: BaseMessage[] = [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "First" },
-          lc_id: ["human"],
-          content: "First",
-          additional_kwargs: {},
-        },
-        {
-          lc_serialized: { type: "ai" },
-          lc_kwargs: { content: "Response 1" },
-          lc_id: ["ai"],
-          content: "Response 1",
-          additional_kwargs: {},
-        },
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Second" },
-          lc_id: ["human"],
-          content: "Second",
-          additional_kwargs: {},
-        },
-        {
-          lc_serialized: { type: "ai" },
-          lc_kwargs: { content: "Response 2" },
-          lc_id: ["ai"],
-          content: "Response 2",
-          additional_kwargs: {},
-        },
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Third - the last one" },
-          lc_id: ["human"],
-          content: "Third - the last one",
-          additional_kwargs: {},
-        },
-      ];
+      const mixedMessages = createTestMessages([
+        { type: "human", content: "First" },
+        { type: "ai", content: "Response 1" },
+        { type: "human", content: "Second" },
+        { type: "ai", content: "Response 2" },
+        { type: "human", content: "Third - the last one" },
+      ]);
 
       const result = extractLastHumanMessage(mixedMessages);
       expect(result).toBe("Third - the last one");
