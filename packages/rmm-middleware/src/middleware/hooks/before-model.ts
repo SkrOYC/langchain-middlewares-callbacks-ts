@@ -147,6 +147,10 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         const retrievedDocs = await vs.similaritySearch(query, topK);
 
         // Step 3: Transform to RetrievedMemory format
+        // Note: embedding is not populated because VectorStore.similaritySearch
+        // doesn't return embeddings by default. wrap-model-call handles this
+        // by using relevanceScore as a fallback. For embedding adaptation to
+        // work, embeddings must be stored in VectorStore metadata.
         const retrievedMemories: RetrievedMemory[] = retrievedDocs.map(
           (doc, index) => {
             const metadata = doc.metadata as
@@ -164,6 +168,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
                 (metadata?.score as number) ??
                 (doc as { score?: number }).score ??
                 -1,
+              // embedding: not populated (see comment above)
             };
           }
         );

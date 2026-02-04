@@ -167,7 +167,7 @@ describe("RetrievedMemorySchema", () => {
   test("inherits MemoryEntry validations", () => {
     const invalidMemory = {
       ...createValidRetrievedMemory(),
-      id: "not-a-uuid",
+      topicSummary: "",  // Empty topicSummary should fail validation
     };
     const result = RetrievedMemorySchema.safeParse(invalidMemory);
     expect(result.success).toBe(false);

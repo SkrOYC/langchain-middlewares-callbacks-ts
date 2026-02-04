@@ -35,7 +35,7 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
  * We use a separate base to avoid field duplication while making embedding optional.
  */
 const RetrievedMemoryBaseSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string(), // Can be UUID or generated ID like "memory-{index}"
   topicSummary: z.string().min(1),
   rawDialogue: z.string().min(1),
   timestamp: z.number().int().positive(),
