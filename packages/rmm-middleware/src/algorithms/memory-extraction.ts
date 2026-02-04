@@ -1,8 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Embeddings } from "@langchain/core/embeddings";
-
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
-import { randomUUID } from "crypto";
 
 import type { MemoryEntry } from "@/schemas/index";
 
@@ -143,7 +142,7 @@ export async function extractMemories(
         .map((turnIndex) => {
           const messageIndex = turnIndex * 2;
           if (messageIndex < sessionHistory.length) {
-            return sessionHistory[messageIndex]!.content;
+            return sessionHistory[messageIndex]?.content;
           }
           return "";
         })

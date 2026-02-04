@@ -320,7 +320,9 @@ describe("Reranking Algorithms", () => {
 
       // Verify selectedMemories correspond to selectedIndices
       expect(result.selectedMemories.length).toBeLessThanOrEqual(topM);
-      expect(result.selectedIndices.length).toBe(result.selectedMemories.length);
+      expect(result.selectedIndices.length).toBe(
+        result.selectedMemories.length
+      );
 
       // Verify each selected memory's ID matches the original memory at that index
       for (let i = 0; i < result.selectedMemories.length; i++) {

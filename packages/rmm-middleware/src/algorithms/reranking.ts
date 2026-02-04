@@ -171,7 +171,7 @@ export function gumbelSoftmaxSample(
 
     return {
       selectedMemories: fallbackMemories,
-      allProbabilities: Array(memories.length).fill(fallbackProb),
+      allProbabilities: new Array(memories.length).fill(fallbackProb),
       selectedIndices: fallbackIndices,
     };
   }

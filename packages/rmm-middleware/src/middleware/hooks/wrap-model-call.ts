@@ -26,8 +26,8 @@ import {
   gumbelSoftmaxSample,
   type ScoredMemory,
 } from "@/algorithms/reranking";
-import { EMBEDDING_DIMENSION } from "@/schemas";
 import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
+import { EMBEDDING_DIMENSION } from "@/schemas";
 import {
   type CitationResult,
   extractCitations,
@@ -305,6 +305,78 @@ export function createRetrospectiveWrapModelCall(
 // Helper Functions
 // ============================================================================
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Parses citation result and returns set of valid cited indices
+ */
+function parseCitedIndices(
+  citationResult: CitationResult,
+  selectedMemories: RetrievedMemory[]
+): Set<number> {
+  if (
+    citationResult.type === "no_cite" ||
+    citationResult.type === "malformed"
+  ) {
+    return new Set<number>();
+  }
+
+  const citedIndices = new Set<number>();
+  const maxIndex = selectedMemories.length - 1;
+  const allIndices = citationResult.indices ?? [];
+
+  for (const idx of allIndices) {
+    if (typeof idx === "number" && idx >= 0 && idx <= maxIndex) {
+      citedIndices.add(idx);
+    } else {
+      console.warn(
+        `[wrap-model-call] LLM returned out-of-bounds citation index: ${idx} (valid: 0-${maxIndex})`
+      );
+    }
+  }
+
+  return citedIndices;
+}
+
+/**
+ * Builds mapping from global K index to selected position
+ */
+function buildGlobalToSelectedMapping(
+  selectedIndices: number[]
+): Map<number, number> {
+  const mapping = new Map<number, number>();
+  for (
+    let selectedPos = 0;
+    selectedPos < selectedIndices.length;
+    selectedPos++
+  ) {
+    const globalIdx = selectedIndices[selectedPos];
+    if (globalIdx !== undefined) {
+      mapping.set(globalIdx, selectedPos);
+    }
+  }
+  return mapping;
+}
+
+/**
+ * Creates a citation record for a single memory
+ */
+function createCitationRecord(
+  memoryId: string,
+  turnIndex: number,
+  _isSelected: boolean,
+  wasCited: boolean
+): CitationRecord {
+  return {
+    memoryId,
+    cited: wasCited,
+    reward: wasCited ? 1 : -1,
+    turnIndex,
+  };
+}
+
 /**
  * Extracts citation records from LLM response
  *
@@ -330,86 +402,39 @@ function extractCitationsFromResponse(
   allMemories: RetrievedMemory[],
   selectedIndices: number[]
 ): CitationRecord[] {
-  // Extract citations using existing utility
   const citationResult: CitationResult = extractCitations(responseContent);
 
-  // Handle malformed citations
   if (citationResult.type === "malformed") {
-    // Log for observability - malformed citations indicate LLM confusion
     console.warn(
       "[wrap-model-call] Malformed citation format in response, RL update aborted"
     );
     return [];
   }
 
-  // Build set of cited indices among selected memories
-  const citedIndicesInSelection = new Set<number>();
+  const citedIndicesInSelection = parseCitedIndices(
+    citationResult,
+    selectedMemories
+  );
+  const globalToSelectedPosition =
+    buildGlobalToSelectedMapping(selectedIndices);
 
-  if (citationResult.type === "no_cite") {
-    // No citations - all selected memories get -1
-    // All non-selected memories already get -1 (implicit)
-  } else {
-    // Valid citations - mark which selected memories were cited
-    const allIndices = citationResult.indices ?? [];
-    const maxIndex = selectedMemories.length - 1;
-
-    for (const idx of allIndices) {
-      if (typeof idx === "number" && idx >= 0 && idx <= maxIndex) {
-        citedIndicesInSelection.add(idx);
-      } else {
-        console.warn(
-          `[wrap-model-call] LLM returned out-of-bounds citation index: ${idx} (valid: 0-${maxIndex})`
-        );
-      }
-    }
-  }
-
-  // Build citation records for ALL K retrieved memories
   const k = allMemories.length;
   const citations: CitationRecord[] = [];
-
-  // Build mapping from global K index to position in selectedMemories (M array)
-  // This allows us to translate LLM citations (which reference selectedMemories positions)
-  // back to the original K indices for gradient computation
-  const globalToSelectedPosition: Map<number, number> = new Map();
-  for (
-    let selectedPos = 0;
-    selectedPos < selectedIndices.length;
-    selectedPos++
-  ) {
-    const globalIdx = selectedIndices[selectedPos];
-    if (globalIdx !== undefined) {
-      globalToSelectedPosition.set(globalIdx, selectedPos);
-    }
-  }
 
   for (let i = 0; i < k; i++) {
     const memoryId = allMemories[i]?.id ?? `memory-${i}`;
     const isSelected = selectedIndices.includes(i);
 
-    if (isSelected) {
-      // Memory was selected for LLM context
-      // Get this memory's position in the selectedMemories array (what LLM cites)
-      const selectedPosition = globalToSelectedPosition.get(i);
-      const wasCited =
-        selectedPosition !== undefined &&
-        citedIndicesInSelection.has(selectedPosition);
-      citations.push({
-        memoryId,
-        cited: wasCited,
-        reward: wasCited ? 1 : -1,
-        turnIndex: i,
-      });
-    } else {
-      // Memory was retrieved but not selected - implicit -1 reward
-      // (it wasn't useful enough to be in Top-M)
-      citations.push({
-        memoryId,
-        cited: false,
-        reward: -1,
-        turnIndex: i,
-      });
+    if (!isSelected) {
+      citations.push(createCitationRecord(memoryId, i, false, false));
+      continue;
     }
+
+    const selectedPosition = globalToSelectedPosition.get(i);
+    const wasCited =
+      selectedPosition !== undefined &&
+      citedIndicesInSelection.has(selectedPosition);
+    citations.push(createCitationRecord(memoryId, i, true, wasCited));
   }
 
   return citations;

@@ -5,16 +5,16 @@
  * Δφ = η·(R-b)·∇_φ log P(M_M|q, M_K; φ)
  */
 
-import { describe, expect, test, beforeEach, afterEach, vi } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import { createRetrospectiveAfterModel } from "@/middleware/hooks/after-model";
 import type {
   BaseMessage,
   CitationRecord,
   RerankerState,
   RetrievedMemory,
 } from "@/schemas";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { createRetrospectiveAfterModel } from "@/middleware/hooks/after-model";
 
 // ============================================================================
 // Test Utilities
@@ -88,7 +88,9 @@ function createMockStore(
 function createTestMessages(): BaseMessage[] {
   return [
     new HumanMessage({ content: "What do you know about hiking?" }),
-    new AIMessage({ content: "I remember you mentioning you enjoy hiking in the mountains!" }),
+    new AIMessage({
+      content: "I remember you mentioning you enjoy hiking in the mountains!",
+    }),
     new HumanMessage({ content: "What's my favorite trail?" }),
   ];
 }
@@ -96,12 +98,12 @@ function createTestMessages(): BaseMessage[] {
 /**
  * Creates test retrieved memories
  */
-function createTestMemories(count: number = 4): RetrievedMemory[] {
+function createTestMemories(count = 4): RetrievedMemory[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `memory-${i}`,
     topicSummary: `Memory ${i} about hiking`,
     rawDialogue: `User mentioned hiking topic ${i}`,
-    timestamp: Date.now() - 10000 * i,
+    timestamp: Date.now() - 10_000 * i,
     sessionId: "session-1",
     turnReferences: [i],
     relevanceScore: 0.9 - i * 0.1,
@@ -135,11 +137,15 @@ describe("afterModel Hook Integration", () => {
     const runtime = {
       context: {
         _citations: state._citations,
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
         store,
@@ -172,11 +178,15 @@ describe("afterModel Hook Integration", () => {
     const runtime = {
       context: {
         _citations: [],
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
         store,
@@ -210,11 +220,15 @@ describe("afterModel Hook Integration", () => {
     const runtime = {
       context: {
         _citations: state._citations,
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
         store,
@@ -248,11 +262,15 @@ describe("afterModel Hook Integration", () => {
     const runtime = {
       context: {
         _citations: state._citations,
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
         store,
@@ -286,11 +304,15 @@ describe("afterModel Hook Integration", () => {
     const runtime = {
       context: {
         _citations: state._citations,
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: undefined, // Missing userId
         store,
@@ -330,11 +352,15 @@ describe("afterModel Hook Integration", () => {
     const runtime = {
       context: {
         _citations: state._citations,
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
         store,
@@ -360,14 +386,18 @@ describe("afterModel Hook Integration", () => {
       { memoryId: "memory-0", cited: true, reward: 1, turnIndex: 0 },
     ];
 
-    const createRuntime = (turn: number) => ({
+    const createRuntime = (_turn: number) => ({
       context: {
         _citations: baseCitations,
-        _originalQuery: Array(1536).fill(0.1),
-        _adaptedQuery: Array(1536).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() => Array(1536).fill(0.1)),
-        _adaptedMemoryEmbeddings: memories.map(() => Array(1536).fill(0.11)),
-        _samplingProbabilities: memories.map((_, i) => 1 / memories.length),
+        _originalQuery: new Array(1536).fill(0.1),
+        _adaptedQuery: new Array(1536).fill(0.11),
+        _originalMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.1)
+        ),
+        _adaptedMemoryEmbeddings: memories.map(() =>
+          new Array(1536).fill(0.11)
+        ),
+        _samplingProbabilities: memories.map((_, _i) => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
         store,

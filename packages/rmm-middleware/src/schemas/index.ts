@@ -227,8 +227,14 @@ export type GradientAccumulatorState = z.infer<
 export function createEmptyGradientAccumulatorState(): GradientAccumulatorState {
   return {
     samples: [],
-    accumulatedGradWq: createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION),
-    accumulatedGradWm: createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION),
+    accumulatedGradWq: createZeroMatrix(
+      EMBEDDING_DIMENSION,
+      EMBEDDING_DIMENSION
+    ),
+    accumulatedGradWm: createZeroMatrix(
+      EMBEDDING_DIMENSION,
+      EMBEDDING_DIMENSION
+    ),
     lastBatchIndex: 0,
     lastUpdated: Date.now(),
   };

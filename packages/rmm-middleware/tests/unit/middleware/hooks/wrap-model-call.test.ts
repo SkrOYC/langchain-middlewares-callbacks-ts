@@ -195,7 +195,7 @@ describe("wrapModelCall Hook", () => {
       },
     };
 
-    const capturedCitations: CitationRecord[] = [];
+    const _capturedCitations: CitationRecord[] = [];
     const mockHandler = async (_request: ModelRequest) => {
       return {
         content: "Based on your memories [0, 2, 4]",

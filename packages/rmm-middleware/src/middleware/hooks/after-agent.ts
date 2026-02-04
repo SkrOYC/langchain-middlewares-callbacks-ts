@@ -47,6 +47,118 @@ interface AfterAgentState {
   messages: BaseMessage[];
 }
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Validates that required dependencies are present
+ */
+function validateDependencies(deps: AfterAgentDependencies | undefined): {
+  vectorStore: VectorStoreInterface;
+  extractSpeaker1: (dialogueSession: string) => string;
+} | null {
+  const vectorStore = deps?.vectorStore;
+  const extractSpeaker1 = deps?.extractSpeaker1;
+
+  if (!(vectorStore && extractSpeaker1)) {
+    console.warn(
+      "[after-agent] Missing required dependencies, skipping memory extraction"
+    );
+    return null;
+  }
+
+  return { vectorStore, extractSpeaker1 };
+}
+
+/**
+ * Processes a single memory: finds similar memories and decides actions
+ */
+async function processMemory(
+  memory: ExtractedMemory,
+  vectorStore: VectorStoreInterface,
+  summarizationModel: BaseChatModel,
+  updateMemoryPrompt: AfterAgentDependencies["updateMemory"]
+): Promise<UpdateAction[]> {
+  const similarMemories = await findSimilarMemories(
+    memory,
+    vectorStore,
+    DEFAULT_TOP_K
+  );
+
+  if (similarMemories.length === 0) {
+    return [{ action: "Add" }];
+  }
+
+  if (updateMemoryPrompt) {
+    return decideUpdateAction(
+      memory,
+      similarMemories,
+      summarizationModel,
+      updateMemoryPrompt
+    );
+  }
+
+  try {
+    const prompts = await import("../../middleware/prompts/update-memory");
+    return decideUpdateAction(
+      memory,
+      similarMemories,
+      summarizationModel,
+      prompts.updateMemory
+    );
+  } catch (importError) {
+    console.warn(
+      "[after-agent] Failed to load update-memory prompt, defaulting to Add:",
+      importError instanceof Error ? importError.message : String(importError)
+    );
+    return [{ action: "Add" }];
+  }
+}
+
+/**
+ * Executes a single update action
+ */
+async function executeAction(
+  action: UpdateAction,
+  memory: ExtractedMemory,
+  similarMemories: RetrievedMemory[],
+  vectorStore: VectorStoreInterface
+): Promise<void> {
+  if (action.action === "Add") {
+    await addMemory(memory, vectorStore);
+    return;
+  }
+
+  if (action.action !== "Merge") {
+    return;
+  }
+
+  if (action.index === undefined || action.merged_summary === undefined) {
+    console.warn(
+      "[after-agent] Merge action missing index or merged_summary, skipping"
+    );
+    return;
+  }
+
+  const existingMemory = similarMemories[action.index];
+  if (!existingMemory) {
+    console.warn(
+      `[after-agent] Merge action has invalid index ${action.index}, skipping`
+    );
+    return;
+  }
+
+  await mergeMemory(existingMemory, action.merged_summary, vectorStore);
+}
+
+/**
+ * Type for extracted memory from memory-extraction
+ */
+type ExtractedMemory = NonNullable<
+  Awaited<ReturnType<typeof extractMemories>>
+>[number];
+
 /**
  * Prospective Reflection: afterAgent hook implementation.
  *
@@ -75,25 +187,17 @@ export async function afterAgent(
   deps?: AfterAgentDependencies
 ): Promise<Record<string, unknown>> {
   try {
-    // Extract dependencies with defaults
-    const vectorStore = deps?.vectorStore;
-    const extractSpeaker1 = deps?.extractSpeaker1;
-    const updateMemoryPrompt = deps?.updateMemory;
-
-    // Validate required dependencies
-    if (!(vectorStore && extractSpeaker1)) {
-      console.warn(
-        "[after-agent] Missing required dependencies, skipping memory extraction"
-      );
+    const depsResult = validateDependencies(deps);
+    if (!depsResult) {
       return {};
     }
 
-    // Handle empty messages - nothing to extract
+    const { vectorStore, extractSpeaker1 } = depsResult;
+
     if (!state.messages || state.messages.length === 0) {
       return {};
     }
 
-    // Step 1: Extract memories from the session
     const memories = await extractMemories(
       state.messages,
       runtime.context.summarizationModel,
@@ -101,92 +205,31 @@ export async function afterAgent(
       extractSpeaker1
     );
 
-    // If no memories extracted, nothing to update
     if (!memories || memories.length === 0) {
       return {};
     }
 
-    // Step 2-4: Process each memory
     for (const memory of memories) {
-      // Step 2: Find similar existing memories
+      const actions = await processMemory(
+        memory,
+        vectorStore,
+        runtime.context.summarizationModel,
+        deps?.updateMemory
+      );
+
       const similarMemories = await findSimilarMemories(
         memory,
         vectorStore,
         DEFAULT_TOP_K
       );
 
-      // Step 3: Decide Add vs Merge
-      let actions: UpdateAction[];
-
-      if (similarMemories.length > 0 && updateMemoryPrompt) {
-        // Use custom updateMemory prompt if provided
-        actions = await decideUpdateAction(
-          memory,
-          similarMemories,
-          runtime.context.summarizationModel,
-          updateMemoryPrompt
-        );
-      } else if (similarMemories.length > 0) {
-        // Use default updateMemory prompt from update-memory.ts
-        try {
-          const prompts = await import(
-            "../../middleware/prompts/update-memory"
-          );
-          const updateMemory = prompts.updateMemory;
-
-          actions = await decideUpdateAction(
-            memory,
-            similarMemories,
-            runtime.context.summarizationModel,
-            updateMemory
-          );
-        } catch (importError) {
-          // If import fails, default to Add action
-          console.warn(
-            "[after-agent] Failed to load update-memory prompt, defaulting to Add:",
-            importError instanceof Error
-              ? importError.message
-              : String(importError)
-          );
-          actions = [{ action: "Add" }];
-        }
-      } else {
-        // No similar memories, always Add
-        actions = [{ action: "Add" }];
-      }
-
-      // Step 4: Execute actions
       for (const action of actions) {
-        if (action.action === "Add") {
-          await addMemory(memory, vectorStore);
-        } else if (
-          action.action === "Merge" &&
-          action.index !== undefined &&
-          action.merged_summary !== undefined
-        ) {
-          // Merge with the memory at the specified index
-          const existingMemory = similarMemories[action.index];
-          if (existingMemory) {
-            // Pass the full existingMemory object to mergeMemory
-            // This avoids unreliable similaritySearch fallback
-            await mergeMemory(
-              existingMemory,
-              action.merged_summary,
-              vectorStore
-            );
-          } else {
-            console.warn(
-              `[after-agent] Merge action has invalid index ${action.index}, skipping`
-            );
-          }
-        }
+        await executeAction(action, memory, similarMemories, vectorStore);
       }
     }
 
-    // Return empty object - Prospective Reflection doesn't modify agent state
     return {};
   } catch (error) {
-    // Graceful degradation - don't let memory extraction crash the agent
     console.warn(
       "[after-agent] Error during Prospective Reflection, continuing:",
       error instanceof Error ? error.message : String(error)

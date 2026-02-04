@@ -290,6 +290,150 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
 // Helper Functions
 // ============================================================================
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Validates and returns the original query embedding
+ */
+function validateOriginalQuery(
+  originalQuery: number[] | undefined,
+  _contextData: {
+    originalQuery?: number[];
+    adaptedQuery?: number[];
+    originalMemoryEmbeddings?: number[][];
+    adaptedMemoryEmbeddings?: number[][];
+    samplingProbabilities?: number[];
+    selectedIndices?: number[];
+  }
+): number[] {
+  if (!originalQuery || originalQuery.length === 0) {
+    throw new Error("Missing original query embedding");
+  }
+  if (originalQuery.length !== EMBEDDING_DIMENSION) {
+    throw new Error(
+      `Invalid query embedding dimension: expected ${EMBEDDING_DIMENSION}, got ${originalQuery.length}`
+    );
+  }
+  return originalQuery;
+}
+
+/**
+ * Validates and returns the adapted query embedding
+ */
+function validateAdaptedQuery(
+  adaptedQuery: number[] | undefined,
+  _contextData: {
+    originalQuery?: number[];
+    adaptedQuery?: number[];
+    originalMemoryEmbeddings?: number[][];
+    adaptedMemoryEmbeddings?: number[][];
+    samplingProbabilities?: number[];
+    selectedIndices?: number[];
+  }
+): number[] {
+  if (!adaptedQuery || adaptedQuery.length === 0) {
+    throw new Error("Missing adapted query embedding");
+  }
+  if (adaptedQuery.length !== EMBEDDING_DIMENSION) {
+    throw new Error(
+      `Invalid adapted query dimension: expected ${EMBEDDING_DIMENSION}, got ${adaptedQuery.length}`
+    );
+  }
+  return adaptedQuery;
+}
+
+/**
+ * Validates and returns memory embeddings with correct dimension
+ */
+function validateMemoryEmbeddings(
+  embeddings: number[][] | undefined,
+  embeddingName: string
+): number[][] {
+  if (!embeddings || embeddings.length === 0) {
+    throw new Error(`Missing ${embeddingName}`);
+  }
+
+  for (let i = 0; i < embeddings.length; i++) {
+    const emb = embeddings[i];
+    if (!emb || emb.length !== EMBEDDING_DIMENSION) {
+      throw new Error(
+        `Invalid memory embedding at index ${i}: expected ${EMBEDDING_DIMENSION} dimensions`
+      );
+    }
+  }
+
+  return embeddings;
+}
+
+/**
+ * Validates sampling probabilities array
+ */
+function validateSamplingProbabilities(
+  samplingProbabilities: number[] | undefined,
+  memoryCount: number
+): number[] {
+  if (!samplingProbabilities || samplingProbabilities.length === 0) {
+    throw new Error("Missing sampling probabilities");
+  }
+  if (samplingProbabilities.length !== memoryCount) {
+    throw new Error(
+      `Sampling probabilities length mismatch: expected ${memoryCount}, got ${samplingProbabilities.length}`
+    );
+  }
+  return samplingProbabilities;
+}
+
+/**
+ * Validates selected indices and returns them
+ */
+function validateSelectedIndices(
+  selectedIndices: number[] | undefined,
+  k: number
+): number[] {
+  if (!selectedIndices || selectedIndices.length === 0) {
+    throw new Error("Missing selected indices");
+  }
+
+  for (const idx of selectedIndices) {
+    if (idx < 0 || idx >= k) {
+      throw new Error(`Selected index ${idx} out of bounds for ${k} memories`);
+    }
+  }
+
+  return selectedIndices;
+}
+
+/**
+ * Builds citation rewards array for K memories
+ */
+function buildCitationRewards(
+  citations: CitationRecord[],
+  k: number
+): Array<1 | -1> {
+  const citationRewards: Array<1 | -1> = new Array(k).fill(-1) as Array<1 | -1>;
+
+  for (const citation of citations) {
+    if (citation.turnIndex >= 0 && citation.turnIndex < k) {
+      citationRewards[citation.turnIndex] = citation.reward;
+    }
+  }
+
+  return citationRewards;
+}
+
+/**
+ * Validates citations array length
+ */
+function validateCitations(citations: CitationRecord[], k: number): void {
+  if (citations.length > k) {
+    throw new Error(
+      `Citations length mismatch: expected at most ${k} citations for ${k} memories, got ${citations.length}`
+    );
+  }
+}
+
 /**
  * Builds a GradientSample from runtime context and citations
  */
@@ -305,106 +449,36 @@ function buildGradientSample(
     selectedIndices?: number[];
   }
 ): GradientSample {
-  // Validate and extract data
-  const originalQuery = contextData.originalQuery;
-  const adaptedQuery = contextData.adaptedQuery;
-  const originalMemEmbeddings = contextData.originalMemoryEmbeddings;
-  const adaptedMemEmbeddings = contextData.adaptedMemoryEmbeddings;
-  const samplingProbabilities = contextData.samplingProbabilities;
-  const selectedIndices = contextData.selectedIndices;
+  const originalQuery = validateOriginalQuery(
+    contextData.originalQuery,
+    contextData
+  );
+  const adaptedQuery = validateAdaptedQuery(
+    contextData.adaptedQuery,
+    contextData
+  );
+  const originalMemEmbeddings = validateMemoryEmbeddings(
+    contextData.originalMemoryEmbeddings,
+    "original memory embeddings"
+  );
+  const adaptedMemEmbeddings = validateMemoryEmbeddings(
+    contextData.adaptedMemoryEmbeddings,
+    "adapted memory embeddings"
+  );
 
-  // Validate required data
-  if (!originalQuery || originalQuery.length === 0) {
-    throw new Error("Missing original query embedding");
-  }
-
-  if (originalQuery.length !== EMBEDDING_DIMENSION) {
-    throw new Error(
-      `Invalid query embedding dimension: expected ${EMBEDDING_DIMENSION}, got ${originalQuery.length}`
-    );
-  }
-
-  if (!adaptedQuery || adaptedQuery.length === 0) {
-    throw new Error("Missing adapted query embedding");
-  }
-
-  if (adaptedQuery.length !== EMBEDDING_DIMENSION) {
-    throw new Error(
-      `Invalid adapted query dimension: expected ${EMBEDDING_DIMENSION}, got ${adaptedQuery.length}`
-    );
-  }
-
-  if (!originalMemEmbeddings || originalMemEmbeddings.length === 0) {
-    throw new Error("Missing original memory embeddings");
-  }
-
-  // Validate each memory embedding has correct dimension
-  for (let i = 0; i < originalMemEmbeddings.length; i++) {
-    const emb = originalMemEmbeddings[i];
-    if (!emb || emb.length !== EMBEDDING_DIMENSION) {
-      throw new Error(
-        `Invalid memory embedding at index ${i}: expected ${EMBEDDING_DIMENSION} dimensions`
-      );
-    }
-  }
-
-  if (!adaptedMemEmbeddings || adaptedMemEmbeddings.length === 0) {
-    throw new Error("Missing adapted memory embeddings");
-  }
-
-  // Validate each adapted memory embedding has correct dimension
-  for (let i = 0; i < adaptedMemEmbeddings.length; i++) {
-    const emb = adaptedMemEmbeddings[i];
-    if (!emb || emb.length !== EMBEDDING_DIMENSION) {
-      throw new Error(
-        `Invalid adapted memory embedding at index ${i}: expected ${EMBEDDING_DIMENSION} dimensions`
-      );
-    }
-  }
-
-  if (!samplingProbabilities || samplingProbabilities.length === 0) {
-    throw new Error("Missing sampling probabilities");
-  }
-
-  // Validate sampling probabilities array matches memory count
-  if (samplingProbabilities.length !== originalMemEmbeddings.length) {
-    throw new Error(
-      `Sampling probabilities length mismatch: expected ${originalMemEmbeddings.length}, got ${samplingProbabilities.length}`
-    );
-  }
-
-  if (!selectedIndices || selectedIndices.length === 0) {
-    throw new Error("Missing selected indices");
-  }
-
-  // Get K (number of retrieved memories) and validate selected indices
   const k = originalMemEmbeddings.length;
+  const samplingProbabilities = validateSamplingProbabilities(
+    contextData.samplingProbabilities,
+    k
+  );
+  const selectedIndices = validateSelectedIndices(
+    contextData.selectedIndices,
+    k
+  );
 
-  // Validate selected indices are within bounds
-  for (const idx of selectedIndices) {
-    if (idx < 0 || idx >= k) {
-      throw new Error(`Selected index ${idx} out of bounds for ${k} memories`);
-    }
-  }
+  validateCitations(citations, k);
 
-  // Validate citations array - sparse citations are OK (some memories may not be cited)
-  // All K memories will get rewards: +1 if cited, -1 if not
-  if (citations.length > k) {
-    throw new Error(
-      `Citations length mismatch: expected at most ${k} citations for ${k} memories, got ${citations.length}`
-    );
-  }
-
-  // Build citation rewards array matching K memories
-  // Default to -1 (not cited) for all memories
-  const citationRewards: Array<1 | -1> = new Array(k).fill(-1) as Array<1 | -1>;
-
-  // Override with +1 for explicitly cited memories
-  for (const citation of citations) {
-    if (citation.turnIndex >= 0 && citation.turnIndex < k) {
-      citationRewards[citation.turnIndex] = citation.reward;
-    }
-  }
+  const citationRewards = buildCitationRewards(citations, k);
 
   return {
     queryEmbedding: originalQuery,
@@ -428,52 +502,18 @@ function buildGradientSample(
  * - ∇_W_q: (R_i - b)·m'_i·q^T for each selected memory i
  * - ∇_W_m: (R_i - b)·q'·m_i^T for each selected memory i
  */
-interface SampleGradients {
-  gradWq: number[][];
-  gradWm: number[][];
-}
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
-function computeExactGradients(
+/**
+ * Computes expected (weighted average) of memories under sampling distribution
+ */
+function computeExpectedMemories(
   sample: GradientSample,
-  reranker: RerankerState
-): SampleGradients {
-  const η = reranker.config.learningRate;
-  const b = reranker.config.baseline;
-  const gradWq = createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION);
-  const gradWm = createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION);
-
-  const k = sample.samplingProbabilities.length;
-  const P = sample.samplingProbabilities;
-  const selectedIndices = new Set(sample.selectedIndices);
-
-  // For exact REINFORCE, we need the gradient of log P(M_M|q, M_K; φ)
-  //
-  // For Gumbel-Softmax with probabilities P_i:
-  // ∂log P_i / ∂s̃_j = δ_ij - P_j
-  //
-  // The score s̃_i depends on weights through:
-  // s̃_i = q'^T · m'_i = q'^T · (W_m · m_i)
-  //
-  // Using chain rule:
-  // ∂s̃_i / ∂W_q = m'_i · q'^T (for W_q)
-  // ∂s̃_i / ∂W_m = q' · m_i^T (for W_m)
-  //
-  // Therefore:
-  // ∂log P_i / ∂W_q = Σ_j (δ_ij - P_j) · ∂s̃_j / ∂W_q
-  //                  = (1 - P_i) · m'_i · q'^T - Σ_{j≠i} P_j · m'_j · q'^T
-  //
-  // Simplified using E[∇s̃] = Σ_j P_j · ∂s̃_j / ∂W:
-  // ∂log P_i / ∂W = (1 - P_i) · ∂s̃_i / ∂W - E[∇s̃]
-  //
-  // This gives us the exact REINFORCE gradient:
-  // ΔW_q = η·(R-b)·[(1-P_i)·m'_i - Σ_{j≠i} P_j·m'_j]·q'^T
-  //      = η·(R-b)·[(1-P_i)·m'_i - (E[m'_] - P_i·m'_i)]·q'^T
-  //      = η·(R-b)·[m'_i - E[m'_]]·q'^T
-  //
-  // Similarly for W_m:
-  // ΔW_m = η·(R-b)·q'·[m_i - E[m]]^T
-
-  // Compute expected (weighted average) of memories under sampling distribution
+  k: number,
+  P: number[]
+): { expectedMemOriginal: number[]; expectedMemAdapted: number[] } {
   const expectedMemOriginal: number[] = new Array(EMBEDDING_DIMENSION).fill(0);
   const expectedMemAdapted: number[] = new Array(EMBEDDING_DIMENSION).fill(0);
 
@@ -489,7 +529,6 @@ function computeExactGradients(
         const m_j_d = m_j[d];
         const m_j_prime_d = m_j_prime[d];
 
-        // Explicit null/undefined checks
         if (
           origVal !== undefined &&
           adaptedVal !== undefined &&
@@ -503,119 +542,170 @@ function computeExactGradients(
     }
   }
 
+  return { expectedMemOriginal, expectedMemAdapted };
+}
+
+/**
+ * Computes gradient contributions for a single row of memory embedding
+ */
+function computeGradientRow(
+  row: number,
+  advantage: number,
+  coef: number,
+  η: number,
+  expectedMemAdapted: number[],
+  expectedMemOriginal: number[],
+  gradWq: number[][],
+  gradWm: number[][],
+  q_prime: number[],
+  m_i_prime: number[],
+  m_i: number[]
+): void {
+  const gradWqRow = gradWq[row];
+  const gradWmRow = gradWm[row];
+  const m_i_prime_row = m_i_prime[row];
+  const q_prime_row = q_prime[row];
+  const m_i_row = m_i[row];
+
+  if (
+    !(gradWqRow && gradWmRow) ||
+    m_i_prime_row === undefined ||
+    q_prime_row === undefined ||
+    m_i_row === undefined
+  ) {
+    return;
+  }
+
+  const expectedAdaptedVal = expectedMemAdapted[row];
+  const expectedOriginalVal = expectedMemOriginal[row];
+
+  if (expectedAdaptedVal === undefined || expectedOriginalVal === undefined) {
+    return;
+  }
+
+  const diffAdapted = m_i_prime_row - expectedAdaptedVal;
+  const diffOriginal = m_i_row - expectedOriginalVal;
+
+  for (let col = 0; col < EMBEDDING_DIMENSION; col++) {
+    const q_prime_col = q_prime[col];
+    const m_i_col = m_i[col];
+
+    if (q_prime_col === undefined || m_i_col === undefined) {
+      continue;
+    }
+
+    gradWqRow[col] =
+      (gradWqRow[col] ?? 0) + η * advantage * coef * diffAdapted * q_prime_col;
+
+    const gradWmCol = gradWm[col];
+    if (gradWmCol !== undefined) {
+      gradWmCol[row] =
+        (gradWmCol[row] ?? 0) +
+        η * advantage * coef * q_prime_col * diffOriginal;
+    }
+  }
+}
+
+/**
+ * Computes gradient contributions for a single memory
+ */
+function computeMemoryGradient(
+  i: number,
+  sample: GradientSample,
+  learningRate: number,
+  baseline: number,
+  expectedMemOriginal: number[],
+  expectedMemAdapted: number[],
+  gradWq: number[][],
+  gradWm: number[][],
+  selectedIndices: Set<number>
+): void {
+  const R = sample.citationRewards[i];
+  if (R === undefined) {
+    return;
+  }
+
+  const advantage = R - baseline;
+  if (Math.abs(advantage) < EPSILON) {
+    return;
+  }
+
+  const q_prime = sample.adaptedQuery;
+  const m_i_prime = sample.adaptedMemories[i];
+  const m_i = sample.memoryEmbeddings[i];
+  const P_i = sample.samplingProbabilities[i];
+
+  if (!(q_prime && m_i_prime && m_i && P_i !== undefined)) {
+    return;
+  }
+
+  if (
+    q_prime.length !== EMBEDDING_DIMENSION ||
+    m_i_prime.length !== EMBEDDING_DIMENSION ||
+    m_i.length !== EMBEDDING_DIMENSION
+  ) {
+    return;
+  }
+
+  const isSelected = selectedIndices.has(i);
+  const indicator = isSelected ? 1 : 0;
+  const coef = indicator - P_i;
+
+  for (let row = 0; row < EMBEDDING_DIMENSION; row++) {
+    computeGradientRow(
+      row,
+      advantage,
+      coef,
+      learningRate,
+      expectedMemAdapted,
+      expectedMemOriginal,
+      gradWq,
+      gradWm,
+      q_prime,
+      m_i_prime,
+      m_i
+    );
+  }
+}
+
+interface SampleGradients {
+  gradWq: number[][];
+  gradWm: number[][];
+}
+
+function computeExactGradients(
+  sample: GradientSample,
+  reranker: RerankerState
+): SampleGradients {
+  const learningRate = reranker.config.learningRate;
+  const baseline = reranker.config.baseline;
+  const gradWq = createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION);
+  const gradWm = createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION);
+
+  const k = sample.samplingProbabilities.length;
+  const P = sample.samplingProbabilities;
+  const selectedIndices = new Set(sample.selectedIndices);
+
+  // Compute expected (weighted average) of memories under sampling distribution
+  const { expectedMemOriginal, expectedMemAdapted } = computeExpectedMemories(
+    sample,
+    k,
+    P
+  );
+
   // For each memory i in Top-K
   for (let i = 0; i < k; i++) {
-    // Validate index exists in citationRewards array
-    const R = sample.citationRewards[i];
-    if (R === undefined) {
-      continue;
-    }
-    const advantage = R - b;
-
-    // Skip if advantage is effectively zero (no gradient contribution)
-    if (Math.abs(advantage) < EPSILON) {
-      continue;
-    }
-
-    const q_prime = sample.adaptedQuery;
-    const m_i_prime = sample.adaptedMemories[i];
-    const m_i = sample.memoryEmbeddings[i];
-    const P_i = P[i];
-
-    // Skip if any required data is missing
-    if (!(q_prime && m_i_prime && m_i && P_i !== undefined)) {
-      continue;
-    }
-
-    // Validate array dimensions before accessing elements
-    if (
-      q_prime.length !== EMBEDDING_DIMENSION ||
-      m_i_prime.length !== EMBEDDING_DIMENSION ||
-      m_i.length !== EMBEDDING_DIMENSION
-    ) {
-      continue;
-    }
-
-    // Compute the coefficient for memory i:
-    // (1 - P_i) for selected - P_i for memory i itself in the sum
-    // This simplifies to: coefficient_i = 1 - 2*P_i
-    // But more accurately, we use:
-    // gradient_term = (1 - P_i) - P_i = 1 - 2*P_i for the self term
-    // For cross terms: -P_j for j ≠ i
-    // Total: (1 - P_i) for self - Σ_{j≠i} P_j = 1 - P_i - (1 - P_i) = 0 ???
-
-    // Actually, let's use the correct REINFORCE formulation:
-    // Δφ = η·(R-b)·∇_φ log P(selected | φ)
-    //
-    // For Gumbel-Softmax, the gradient is:
-    // ∇log P_i = ∇s̃_i - Σ_j P_j·∇s̃_j
-    //          = ∇s̃_i - E[∇s̃]
-    //
-    // Where ∇s̃_i = q' (for W_m) or m'_i (for W_q)
-
-    // For each memory, compute gradient contribution
-    // The exact REINFORCE gradient uses: (I_i - P_i) where I_i is indicator of selection
-    const isSelected = selectedIndices.has(i);
-    const indicator = isSelected ? 1 : 0;
-
-    // Apply gradient using exact REINFORCE formula:
-    // ΔW_q = η·(R-b)·[(I_i - P_i) · (m'_i - E[m'_]) ⊗ q'^T]
-    // ΔW_m = η·(R-b)·[(I_i - P_i) · q' ⊗ (m_i - E[m])^T]
-    for (let row = 0; row < EMBEDDING_DIMENSION; row++) {
-      const gradWqRow = gradWq[row];
-      const gradWmRow = gradWm[row];
-      const m_i_prime_row = m_i_prime[row];
-      const q_prime_row = q_prime[row];
-      const m_i_row = m_i[row];
-
-      // Skip if row-level arrays are undefined
-      if (
-        !(gradWqRow && gradWmRow) ||
-        m_i_prime_row === undefined ||
-        q_prime_row === undefined ||
-        m_i_row === undefined
-      ) {
-        continue;
-      }
-
-      for (let col = 0; col < EMBEDDING_DIMENSION; col++) {
-        const q_prime_col = q_prime[col];
-        const m_i_col = m_i[col];
-
-        // Validate column-level array access
-        if (q_prime_col === undefined || m_i_col === undefined) {
-          continue;
-        }
-
-        // Explicit null guards for row arrays
-        if (gradWqRow !== undefined && gradWmRow !== undefined) {
-          // Exact REINFORCE gradient:
-          // ΔW_q = η·(R-b)·[(I_i - P_i) · (m'_i - E[m'_]) ⊗ q'^T]
-          // ΔW_m = η·(R-b)·[(I_i - P_i) · q' ⊗ (m_i - E[m])^T]
-          const expectedAdaptedVal = expectedMemAdapted[row];
-          const expectedOriginalVal = expectedMemOriginal[row];
-          const coef = indicator - P_i;
-
-          if (
-            expectedAdaptedVal !== undefined &&
-            expectedOriginalVal !== undefined
-          ) {
-            const diffAdapted = m_i_prime_row - expectedAdaptedVal;
-            const diffOriginal = m_i_row - expectedOriginalVal;
-
-            gradWqRow[col] =
-              (gradWqRow[col] ?? 0) + η * advantage * coef * diffAdapted * q_prime_col;
-
-            const gradWmCol = gradWm[col];
-            if (gradWmCol !== undefined) {
-              gradWmCol[row] =
-                (gradWmCol[row] ?? 0) +
-                η * advantage * coef * q_prime_col * diffOriginal;
-            }
-          }
-        }
-      }
-    }
+    computeMemoryGradient(
+      i,
+      sample,
+      learningRate,
+      baseline,
+      expectedMemOriginal,
+      expectedMemAdapted,
+      gradWq,
+      gradWm,
+      selectedIndices
+    );
   }
 
   return { gradWq, gradWm };
