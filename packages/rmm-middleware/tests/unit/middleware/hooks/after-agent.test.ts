@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 /**
  * Tests for afterAgent hook
@@ -15,18 +12,6 @@ import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 interface AfterAgentState {
   messages: BaseMessage[];
-}
-
-interface AfterAgentRuntime {
-  context: {
-    summarizationModel: BaseChatModel;
-    embeddings: Embeddings;
-  };
-  dependencies?: {
-    vectorStore: VectorStoreInterface;
-    extractSpeaker1: (dialogue: string) => string;
-    updateMemory?: (history: string[], newSummary: string) => string;
-  };
 }
 
 describe("afterAgent Hook", () => {
@@ -74,7 +59,7 @@ describe("afterAgent Hook", () => {
 
     // Mock dependencies
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [
             { summary: "User enjoys hiking", reference: [0] },
@@ -92,8 +77,8 @@ describe("afterAgent Hook", () => {
     let addDocumentsCalled = false;
 
     const mockVectorStore = {
-      similaritySearch: async () => [],
-      addDocuments: async () => {
+      similaritySearch: () => [],
+      addDocuments: () => {
         addDocumentsCalled = true;
       },
     };
@@ -121,7 +106,7 @@ describe("afterAgent Hook", () => {
 
     // Mock dependencies that return NO_TRAIT
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = "NO_TRAIT";
         return { content, text: content };
       },
@@ -135,11 +120,11 @@ describe("afterAgent Hook", () => {
     let vectorStoreCalled = false;
 
     const mockVectorStore = {
-      similaritySearch: async () => {
+      similaritySearch: () => {
         vectorStoreCalled = true;
         return [];
       },
-      addDocuments: async () => {
+      addDocuments: () => {
         vectorStoreCalled = true;
       },
     };
@@ -172,7 +157,7 @@ describe("afterAgent Hook", () => {
     let modelCalled = false;
 
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         modelCalled = true;
         const content = "NO_TRAIT";
         return { content, text: content };
@@ -185,8 +170,10 @@ describe("afterAgent Hook", () => {
     };
 
     const mockVectorStore = {
-      similaritySearch: async () => [],
-      addDocuments: async () => {},
+      similaritySearch: () => [],
+      addDocuments: () => {
+        // intentionally empty mock
+      },
     };
 
     const mockRuntime3 = {
@@ -212,7 +199,7 @@ describe("afterAgent Hook", () => {
 
     // Mock LLM that returns invalid content (triggers error handling)
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = "not valid json that will fail";
         return { content, text: content };
       },
@@ -224,8 +211,10 @@ describe("afterAgent Hook", () => {
     };
 
     const mockVectorStore = {
-      similaritySearch: async () => [],
-      addDocuments: async () => {},
+      similaritySearch: () => [],
+      addDocuments: () => {
+        // intentionally empty mock
+      },
     };
 
     const mockRuntime4 = {
@@ -252,7 +241,7 @@ describe("afterAgent Hook", () => {
 
     // Mock dependencies that return multiple memories
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [
             { summary: "User enjoys hiking", reference: [0] },
@@ -272,8 +261,8 @@ describe("afterAgent Hook", () => {
     let memoriesProcessed = 0;
 
     const mockVectorStore = {
-      similaritySearch: async () => [],
-      addDocuments: async () => {
+      similaritySearch: () => [],
+      addDocuments: () => {
         memoriesProcessed += 1;
       },
     };
@@ -306,7 +295,7 @@ describe("afterAgent Hook", () => {
 
     // Mock dependencies for extraction that returns a memory
     const mockSummarizationModel = {
-      invoke: async (_input: string) => {
+      invoke: (_input: string) => {
         callCount++;
         if (callCount === 1) {
           // First call: extraction response
@@ -331,7 +320,7 @@ describe("afterAgent Hook", () => {
     let addCalled = false;
 
     const mockVectorStore = {
-      similaritySearch: async () => [
+      similaritySearch: () => [
         {
           pageContent: "User likes hiking",
           metadata: {
@@ -342,8 +331,10 @@ describe("afterAgent Hook", () => {
           },
         },
       ],
-      delete: async () => {},
-      addDocuments: async () => {
+      delete: () => {
+        // intentionally empty mock
+      },
+      addDocuments: () => {
         addCalled = true;
       },
     };
@@ -375,7 +366,7 @@ describe("afterAgent Hook", () => {
 
     // Mock dependencies
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = "NO_TRAIT";
         return { content, text: content };
       },
@@ -387,8 +378,10 @@ describe("afterAgent Hook", () => {
     };
 
     const mockVectorStore = {
-      similaritySearch: async () => [],
-      addDocuments: async () => {},
+      similaritySearch: () => [],
+      addDocuments: () => {
+        // intentionally empty mock
+      },
     };
 
     const mockRuntime7 = {

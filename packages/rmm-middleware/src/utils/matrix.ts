@@ -264,7 +264,7 @@ function multiplyTile(
       }
 
       multiplyAccumulate(
-        aVal!,
+        aVal,
         k,
         jj,
         jEnd,
@@ -306,16 +306,16 @@ function multiplyAccumulate(
     const b3 = bTransposed[idx3];
 
     if (b0 !== undefined) {
-      result[resultRowOffset + j]! += aVal * b0;
+      result[resultRowOffset + j] += aVal * b0;
     }
     if (b1 !== undefined) {
-      result[resultRowOffset + j + 1]! += aVal * b1;
+      result[resultRowOffset + j + 1] += aVal * b1;
     }
     if (b2 !== undefined) {
-      result[resultRowOffset + j + 2]! += aVal * b2;
+      result[resultRowOffset + j + 2] += aVal * b2;
     }
     if (b3 !== undefined) {
-      result[resultRowOffset + j + 3]! += aVal * b3;
+      result[resultRowOffset + j + 3] += aVal * b3;
     }
   }
 
@@ -323,7 +323,7 @@ function multiplyAccumulate(
   for (; j < colEnd; j++) {
     const bVal = bTransposed[j * bCols + k];
     if (bVal !== undefined) {
-      result[resultRowOffset + j]! += aVal * bVal;
+      result[resultRowOffset + j] += aVal * bVal;
     }
   }
 }
@@ -341,7 +341,7 @@ function convertToNumberArray(
     const row: number[] = [];
     const rowOffset = i * bCols;
     for (let j = 0; j < bCols; j++) {
-      row.push(result[rowOffset + j]!);
+      row.push(result[rowOffset + j]);
     }
     resultMatrix.push(row);
   }

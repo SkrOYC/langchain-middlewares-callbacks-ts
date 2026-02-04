@@ -14,7 +14,9 @@ describe("decideUpdateAction Algorithm", () => {
   // Helper to suppress console.warn during error-handling tests
   const suppressWarnings = async (fn: () => Promise<void>) => {
     const originalWarn = console.warn;
-    console.warn = () => {};
+    console.warn = () => {
+      // intentionally empty - suppresses console.warn during error-handling tests
+    };
     try {
       await fn();
     } finally {
@@ -67,7 +69,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that returns Add() decision
     const mockSummarizationModelAdd = {
-      invoke: async () => {
+      invoke: () => {
         const content = "Add()";
         return { content, text: content };
       },
@@ -101,7 +103,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that returns Merge() decision
     const mockSummarizationModelMerge = {
-      invoke: async () => {
+      invoke: () => {
         const content =
           "Merge(0, User enjoys outdoor activities like hiking and running marathons)";
         return { content, text: content };
@@ -141,7 +143,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that returns multiple decisions
     const mockSummarizationModelMultiple = {
-      invoke: async () => {
+      invoke: () => {
         const content =
           "Merge(0, Updated summary 1)\nMerge(1, Updated summary 2)\nAdd()";
         return { content, text: content };
@@ -186,7 +188,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that returns invalid decision
     const mockSummarizationModelInvalid = {
-      invoke: async () => {
+      invoke: () => {
         const content = "InvalidAction()";
         return { content, text: content };
       },
@@ -220,7 +222,7 @@ describe("decideUpdateAction Algorithm", () => {
 
       // Mock LLM that returns invalid action (triggers error handling)
       const mockSummarizationModelError = {
-        invoke: async () => {
+        invoke: () => {
           const content = "InvalidActionFormat";
           return { content, text: content };
         },
@@ -256,7 +258,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that captures inputs
     const mockSummarizationModelCapture = {
-      invoke: async (_input: string) => {
+      invoke: (_input: string) => {
         const content = "Add()";
         return { content, text: content };
       },
@@ -295,7 +297,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that captures inputs
     const mockSummarizationModelCapture = {
-      invoke: async (_input: string) => {
+      invoke: (_input: string) => {
         const content = "Add()";
         return { content, text: content };
       },
@@ -335,7 +337,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that returns out-of-bounds Merge index
     const mockSummarizationModelOutOfBounds = {
-      invoke: async () => {
+      invoke: () => {
         return {
           content: "Merge(10, Some merged summary)",
         };
@@ -372,7 +374,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM
     const mockSummarizationModel = {
-      invoke: async () => {
+      invoke: () => {
         return { content: "Add()" };
       },
     };

@@ -58,22 +58,22 @@ function createMockStore(
   existingData: Map<string, unknown> = new Map()
 ): BaseStore {
   return {
-    async get(namespace: string[], key: string) {
+    get(namespace: string[], key: string) {
       const namespaceKey = namespace.join("/");
       const fullKey = `${namespaceKey}/${key}`;
       const value = existingData.get(fullKey);
       return value ? { value } : null;
     },
-    async put(namespace: string[], key: string, value: unknown) {
+    put(namespace: string[], key: string, value: unknown) {
       const namespaceKey = namespace.join("/");
       const fullKey = `${namespaceKey}/${key}`;
       existingData.set(fullKey, value);
       return true;
     },
-    async delete(_namespace: string[], _key: string) {
+    delete(_namespace: string[], _key: string) {
       return true;
     },
-    async batch(
+    batch(
       _namespace: string[],
       _values: Array<{ key: string; value: unknown }>
     ) {

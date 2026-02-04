@@ -72,11 +72,14 @@ export function parseUpdateActions(
       // Parse Merge(index, merged_summary)
       const match = trimmedLine.match(MERGE_ACTION_REGEX);
       if (match) {
-        const index = Number.parseInt(match[1]!, 10);
-        // Validate index is within bounds
-        if (index >= 0 && index < historyLength) {
-          const merged_summary = match[2]!;
-          actions.push({ action: "Merge", index, merged_summary });
+        const indexStr = match[1];
+        const merged_summary = match[2];
+        if (indexStr !== undefined) {
+          const index = Number.parseInt(indexStr, 10);
+          // Validate index is within bounds
+          if (index >= 0 && index < historyLength) {
+            actions.push({ action: "Merge", index, merged_summary });
+          }
         }
       }
     }
@@ -94,6 +97,61 @@ export function parseUpdateActions(
 export interface ValidationResult {
   isValid: boolean;
   errors: string[];
+}
+
+/**
+ * Validate a single line of update action output
+ */
+function validateLine(
+  line: string,
+  lineNum: number,
+  historyLength: number
+): { isValidAction: boolean; error?: string } {
+  const trimmedLine = line.trim();
+
+  if (trimmedLine === "Add()") {
+    return { isValidAction: true };
+  }
+
+  if (trimmedLine.startsWith("Merge(")) {
+    const match = trimmedLine.match(MERGE_ACTION_REGEX);
+    if (!match) {
+      return {
+        isValidAction: false,
+        error: `Line ${lineNum}: Invalid Merge format. Expected: Merge(index, summary)`,
+      };
+    }
+
+    const indexStr = match[1];
+    if (indexStr !== undefined) {
+      const index = Number.parseInt(indexStr, 10);
+      if (index < 0 || index >= historyLength) {
+        return {
+          isValidAction: false,
+          error: `Line ${lineNum}: Merge index ${index} is out of bounds (history length: ${historyLength})`,
+        };
+      }
+    }
+
+    const merged_summary = match[2];
+    if (!merged_summary || merged_summary.trim() === "") {
+      return {
+        isValidAction: false,
+        error: `Line ${lineNum}: Merge summary cannot be empty`,
+      };
+    }
+
+    return { isValidAction: true };
+  }
+
+  if (trimmedLine !== "") {
+    return {
+      isValidAction: false,
+      error: `Line ${lineNum}: Unknown action format "${trimmedLine}"`,
+    };
+  }
+
+  return { isValidAction: false };
 }
 
 /**
@@ -118,39 +176,14 @@ export function validateUpdateActions(
 
   for (const [lineNumStr, line] of lines.entries()) {
     const lineNum = lineNumStr + 1;
-    const trimmedLine = line.trim();
+    const result = validateLine(line, lineNum, historyLength);
 
-    if (trimmedLine === "Add()") {
-      hasValidAction = true;
-      continue;
+    if (result.error) {
+      errors.push(result.error);
     }
 
-    if (trimmedLine.startsWith("Merge(")) {
-      const match = trimmedLine.match(MERGE_ACTION_REGEX);
-      if (!match) {
-        errors.push(
-          `Line ${lineNum}: Invalid Merge format. Expected: Merge(index, summary)`
-        );
-        continue;
-      }
-
-      const index = Number.parseInt(match[1]!, 10);
-      if (index < 0 || index >= historyLength) {
-        errors.push(
-          `Line ${lineNum}: Merge index ${index} is out of bounds (history length: ${historyLength})`
-        );
-      }
-
-      if (!match[2] || match[2].trim() === "") {
-        errors.push(`Line ${lineNum}: Merge summary cannot be empty`);
-      }
-
+    if (result.isValidAction) {
       hasValidAction = true;
-      continue;
-    }
-
-    if (trimmedLine !== "") {
-      errors.push(`Line ${lineNum}: Unknown action format "${trimmedLine}"`);
     }
   }
 

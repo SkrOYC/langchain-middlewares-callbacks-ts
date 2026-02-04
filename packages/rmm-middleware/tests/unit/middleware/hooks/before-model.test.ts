@@ -71,14 +71,18 @@ describe("beforeModel Hook", () => {
     );
 
     const mockVectorStore: VectorStoreInterface = {
-      async similaritySearch(query, k) {
+      similaritySearch(query, k) {
         // Should be called with the last human message content
         expect(query).toBe("What do you know about hiking trails?");
         expect(k).toBe(20);
         return [];
       },
-      async addDocuments() {},
-      async delete() {},
+      addDocuments() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
     };
 
     const middleware = createRetrospectiveBeforeModel({
@@ -105,7 +109,7 @@ describe("beforeModel Hook", () => {
     );
 
     const mockVectorStore: VectorStoreInterface = {
-      async similaritySearch(_query, k) {
+      similaritySearch(_query, k) {
         expect(k).toBe(10); // Custom topK
         return [
           {
@@ -130,8 +134,12 @@ describe("beforeModel Hook", () => {
           },
         ];
       },
-      async addDocuments() {},
-      async delete() {},
+      addDocuments() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
     };
 
     const middleware = createRetrospectiveBeforeModel({
@@ -164,7 +172,7 @@ describe("beforeModel Hook", () => {
     );
 
     const mockVectorStore: VectorStoreInterface = {
-      async similaritySearch(_query, _k) {
+      similaritySearch(_query, _k) {
         return [
           {
             pageContent: "Memory about hiking",
@@ -179,8 +187,12 @@ describe("beforeModel Hook", () => {
           },
         ];
       },
-      async addDocuments() {},
-      async delete() {},
+      addDocuments() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
     };
 
     const middleware = createRetrospectiveBeforeModel({
@@ -211,11 +223,15 @@ describe("beforeModel Hook", () => {
     );
 
     const mockVectorStore: VectorStoreInterface = {
-      async similaritySearch() {
+      similaritySearch() {
         return [];
       },
-      async addDocuments() {},
-      async delete() {},
+      addDocuments() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
     };
 
     const middleware = createRetrospectiveBeforeModel({
@@ -244,12 +260,16 @@ describe("beforeModel Hook", () => {
 
     let vectorStoreCalled = false;
     const mockVectorStore: VectorStoreInterface = {
-      async similaritySearch() {
+      similaritySearch() {
         vectorStoreCalled = true;
         return [];
       },
-      async addDocuments() {},
-      async delete() {},
+      addDocuments() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
     };
 
     const middleware = createRetrospectiveBeforeModel({
@@ -293,11 +313,15 @@ describe("beforeModel Hook", () => {
     );
 
     const mockVectorStore: VectorStoreInterface = {
-      async similaritySearch() {
+      similaritySearch() {
         throw new Error("VectorStore connection failed");
       },
-      async addDocuments() {},
-      async delete() {},
+      addDocuments() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
     };
 
     const middleware = createRetrospectiveBeforeModel({
