@@ -12,7 +12,12 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { BaseMessage, RerankerState, RetrievedMemory } from "@/schemas";
+import type {
+  BaseMessage,
+  CitationRecord,
+  RerankerState,
+  RetrievedMemory,
+} from "@/schemas";
 import { extractLastHumanMessage } from "@/utils/memory-helpers";
 
 // ============================================================================
@@ -59,7 +64,7 @@ interface BeforeModelState {
   messages: BaseMessage[];
   _rerankerWeights: RerankerState;
   _retrievedMemories: RetrievedMemory[];
-  _citations: unknown[];
+  _citations: CitationRecord[];
   _turnCountInSession: number;
 }
 
@@ -104,6 +109,17 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
       state: BeforeModelState,
       _runtime: BeforeModelRuntime
     ): Promise<BeforeModelStateUpdate> => {
+      // Validate reranker weights exist before accessing
+      if (!state._rerankerWeights?.config) {
+        console.warn(
+          "[before-model] Invalid reranker weights, skipping retrieval"
+        );
+        return {};
+      }
+
+      // Preserve existing retrieved memories in case of error
+      const existingMemories = state._retrievedMemories ?? [];
+
       try {
         // Step 1: Extract query from last human message
         const query = extractLastHumanMessage(state.messages);
@@ -151,8 +167,9 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
           error instanceof Error ? error.message : String(error)
         );
 
-        // Still increment turn counter even on error
+        // Preserve existing memories and increment turn counter
         return {
+          _retrievedMemories: existingMemories,
           _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
         };
       }

@@ -81,6 +81,18 @@ function extractContent(
 }
 
 /**
+ * Escapes XML special characters to prevent injection attacks
+ */
+function escapeXml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Formats memories into an XML-like block structure for injection
  *
  * Format matches the paper's Appendix D.2 citation format:
@@ -101,12 +113,12 @@ export function formatMemoriesBlock(memories: RetrievedMemory[]): string {
 
   const formattedMemories = memories
     .map((memory, index) => {
-      // Format dialogue turns
+      // Format dialogue turns with XML escaping
       const dialogueBlock = memory.rawDialogue
-        ? `\n    ${memory.rawDialogue}`
+        ? `\n    ${escapeXml(memory.rawDialogue)}`
         : "";
 
-      return `– Memory [${index}]: ${memory.topicSummary}${dialogueBlock}`;
+      return `– Memory [${index}]: ${escapeXml(memory.topicSummary)}${dialogueBlock}`;
     })
     .join("\n");
 

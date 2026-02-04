@@ -9,7 +9,12 @@
  */
 
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { BaseMessage, RerankerState } from "@/schemas";
+import type {
+  BaseMessage,
+  CitationRecord,
+  RerankerState,
+  RetrievedMemory,
+} from "@/schemas";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { initializeMatrix } from "@/utils/matrix";
 
@@ -211,12 +216,12 @@ interface BeforeAgentStateUpdate {
   /**
    * Retrieved memories from current query (populated by beforeModel)
    */
-  _retrievedMemories: unknown[];
+  _retrievedMemories: RetrievedMemory[];
 
   /**
    * Citation records from current response (populated by wrapModelCall)
    */
-  _citations: unknown[];
+  _citations: CitationRecord[];
 
   /**
    * Number of turns processed in current session

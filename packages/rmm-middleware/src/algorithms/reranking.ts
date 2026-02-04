@@ -84,6 +84,11 @@ export function gumbelSoftmaxSample(
     return [];
   }
 
+  // Validate temperature parameter
+  if (temperature <= 0) {
+    throw new Error("Temperature must be a positive number");
+  }
+
   // If topM >= number of memories, return all memories
   if (topM >= memories.length) {
     return [...memories];
@@ -93,7 +98,11 @@ export function gumbelSoftmaxSample(
   const scores = memories.map((m) => m.rerankScore ?? 0);
 
   // Compute Gumbel noise: g_i = -log(-log(u_i))
-  const gumbelNoise = scores.map(() => -Math.log(-Math.log(Math.random())));
+  // Use bounds to prevent Math.random() from returning exactly 0 or 1
+  const gumbelNoise = scores.map(() => {
+    const u = Math.random() * 0.999_999 + 0.000_000_5; // Avoid exact 0 or 1
+    return -Math.log(-Math.log(u));
+  });
 
   // Add Gumbel noise to scores: s̃_i = s_i + g_i
   const perturbedScores = scores.map((s, i) => s + gumbelNoise[i]);
@@ -105,6 +114,12 @@ export function gumbelSoftmaxSample(
     Math.exp((s - maxPerturbed) / temperature)
   );
   const sumExp = expScores.reduce((acc, e) => acc + e, 0);
+
+  // Handle numerical edge case where all expScores underflow to 0
+  if (sumExp === 0 || !Number.isFinite(sumExp)) {
+    return memories.slice(0, topM);
+  }
+
   const probabilities = expScores.map((e) => e / sumExp);
 
   // Sample without replacement based on probabilities
