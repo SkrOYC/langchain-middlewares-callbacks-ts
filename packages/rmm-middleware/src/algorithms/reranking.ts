@@ -17,6 +17,28 @@ export interface ScoredMemory extends RetrievedMemory {
 }
 
 /**
+ * Result of Gumbel-Softmax sampling with probabilities for exact REINFORCE
+ */
+export interface SamplingResult {
+  /**
+   * Selected memories for LLM context (Top-M)
+   */
+  selectedMemories: RetrievedMemory[];
+
+  /**
+   * Sampling probabilities for ALL K memories.
+   * Used in exact REINFORCE gradient computation.
+   * P_i = exp(s̃_i/τ) / Σ_j exp(s̃_j/τ)
+   */
+  allProbabilities: number[];
+
+  /**
+   * Indices of selected memories in the original array
+   */
+  selectedIndices: number[];
+}
+
+/**
  * Applies embedding adaptation using Equation 1 from the paper
  *
  * Equation: q' = q + W_q · q
@@ -84,15 +106,19 @@ export function applyEmbeddingAdaptation(
  * @param temperature - Temperature parameter τ (default: 0.5)
  *                     Lower τ = more deterministic (peaky distribution)
  *                     Higher τ = more stochastic (uniform distribution)
- * @returns Array of selected memories (length = topM or fewer if not enough memories)
+ * @returns SamplingResult with selected memories and probabilities for exact REINFORCE
  */
 export function gumbelSoftmaxSample(
   memories: ScoredMemory[],
   topM: number,
   temperature = 0.5
-): RetrievedMemory[] {
+): SamplingResult {
   if (!memories || memories.length === 0 || topM <= 0) {
-    return [];
+    return {
+      selectedMemories: [],
+      allProbabilities: [],
+      selectedIndices: [],
+    };
   }
 
   // Validate temperature parameter
@@ -102,7 +128,12 @@ export function gumbelSoftmaxSample(
 
   // If topM >= number of memories, return all memories
   if (topM >= memories.length) {
-    return [...memories];
+    const allProbabilities = memories.map(() => 1 / memories.length);
+    return {
+      selectedMemories: [...memories],
+      allProbabilities,
+      selectedIndices: memories.map((_, i) => i),
+    };
   }
 
   // Extract rerank scores
@@ -116,7 +147,10 @@ export function gumbelSoftmaxSample(
   });
 
   // Add Gumbel noise to scores: s̃_i = s_i + g_i
-  const perturbedScores = scores.map((s, i) => s + gumbelNoise[i]);
+  const perturbedScores = scores.map((s, i) => {
+    const noise = gumbelNoise[i] ?? 0;
+    return s + noise;
+  });
 
   // Apply temperature and compute softmax probabilities
   // p_i = exp(s̃_i/τ) / Σ_j exp(s̃_j/τ)
@@ -128,7 +162,23 @@ export function gumbelSoftmaxSample(
 
   // Handle numerical edge case where all expScores underflow to 0
   if (sumExp === 0 || !Number.isFinite(sumExp)) {
-    return memories.slice(0, topM);
+    const fallbackProb = 1 / memories.length;
+    const fallbackCount = Math.min(topM, memories.length);
+    const fallbackIndices = Array.from({ length: fallbackCount }, (_, i) => i);
+    const fallbackMemories: RetrievedMemory[] = [];
+
+    for (const idx of fallbackIndices) {
+      const mem = memories[idx];
+      if (mem) {
+        fallbackMemories.push({ ...mem });
+      }
+    }
+
+    return {
+      selectedMemories: fallbackMemories,
+      allProbabilities: fallbackIndices.map(() => fallbackProb),
+      selectedIndices: fallbackIndices,
+    };
   }
 
   const probabilities = expScores.map((e) => e / sumExp);
@@ -140,7 +190,19 @@ export function gumbelSoftmaxSample(
   );
 
   // Return selected memories with shallow copies to prevent mutation
-  return selectedIndices.map((i) => ({ ...memories[i] }));
+  const validSelectedMemories: RetrievedMemory[] = [];
+  for (const idx of selectedIndices) {
+    const mem = memories[idx];
+    if (mem?.id) {
+      validSelectedMemories.push({ ...mem });
+    }
+  }
+
+  return {
+    selectedMemories: validSelectedMemories,
+    allProbabilities: probabilities,
+    selectedIndices,
+  };
 }
 
 /**
@@ -176,7 +238,8 @@ function sampleWithoutReplacementFromProbabilities(
     let selectedIndex = -1;
 
     for (let j = 0; j < availableProbabilities.length; j++) {
-      cumulative += availableProbabilities[j];
+      const prob = availableProbabilities[j] ?? 0;
+      cumulative += prob;
 
       // Use fixed epsilon comparison to handle floating-point precision
       // Using fixed 1e-12 avoids issues with Number.EPSILON which:
@@ -190,12 +253,15 @@ function sampleWithoutReplacementFromProbabilities(
     }
 
     // Fallback: if no index selected due to precision issues, select last
-    if (selectedIndex === -1) {
-      selectedIndex = availableProbabilities.length - 1;
+    if (selectedIndex === -1 || selectedIndex >= availableIndices.length) {
+      selectedIndex = availableIndices.length - 1;
     }
 
     // Store the original index
-    selectedIndices.push(availableIndices[selectedIndex]);
+    const originalIdx = availableIndices[selectedIndex];
+    if (originalIdx !== undefined) {
+      selectedIndices.push(originalIdx);
+    }
 
     // Remove the selected item from both arrays
     availableProbabilities.splice(selectedIndex, 1);

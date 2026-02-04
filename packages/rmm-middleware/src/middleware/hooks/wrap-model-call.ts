@@ -18,6 +18,7 @@
  */
 
 import type { Embeddings } from "@langchain/core/embeddings";
+import type { BaseMessage } from "@langchain/core/messages";
 import { HumanMessage } from "@langchain/core/messages";
 import {
   applyEmbeddingAdaptation,
@@ -25,12 +26,8 @@ import {
   gumbelSoftmaxSample,
   type ScoredMemory,
 } from "@/algorithms/reranking";
-import type {
-  BaseMessage,
-  CitationRecord,
-  RerankerState,
-  RetrievedMemory,
-} from "@/schemas";
+import { EMBEDDING_DIMENSION } from "@/schemas";
+import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
 import {
   type CitationResult,
   extractCitations,
@@ -59,11 +56,19 @@ export interface WrapModelCallOptions {
  *
  * Note: embeddings is passed via options, not runtime.context.
  * The _citations field is populated by this hook for downstream use.
+ * For exact REINFORCE, we also store embeddings and probabilities.
  */
 interface WrapModelCallRuntime {
   context: {
     embeddings?: Embeddings; // May be set by other hooks
     _citations?: CitationRecord[];
+    // Exact REINFORCE gradient computation data
+    _originalQuery?: number[]; // Original query embedding q
+    _adaptedQuery?: number[]; // Adapted query embedding q'
+    _originalMemoryEmbeddings?: number[][]; // Original memory embeddings m_i for all K
+    _adaptedMemoryEmbeddings?: number[][]; // Adapted memory embeddings m'_i for all K
+    _samplingProbabilities?: number[]; // P_i for all K memories
+    _selectedIndices?: number[]; // Indices of Top-M selected memories
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -195,11 +200,61 @@ export function createRetrospectiveWrapModelCall(
 
         // Step 4: Gumbel-Softmax sampling (Equation 2)
         // Select Top-M memories using stochastic sampling
-        const selectedMemories = gumbelSoftmaxSample(
+        const samplingResult = gumbelSoftmaxSample(
           scoredMemories,
           reranker.config.topM,
           reranker.config.temperature
         );
+
+        const selectedMemories = samplingResult.selectedMemories;
+        const allProbabilities = samplingResult.allProbabilities;
+        const selectedIndices = samplingResult.selectedIndices;
+
+        // Store embeddings and probabilities for exact REINFORCE in afterModel
+        // Store original query embedding
+        runtime.context._originalQuery = queryEmbedding;
+
+        // Store adapted query embedding (q')
+        runtime.context._adaptedQuery = adaptedQuery;
+
+        // Store all original memory embeddings for K retrieved memories
+        // This requires re-applying adaptation to memories that may not have embeddings
+        const originalMemEmbeddings: number[][] = [];
+        const adaptedMemEmbeddings: number[][] = [];
+
+        for (const memory of memories) {
+          if (memory.embedding && memory.embedding.length > 0) {
+            // Memory has embedding, store original
+            originalMemEmbeddings.push(memory.embedding);
+
+            // Compute adapted embedding
+            const adapted = applyEmbeddingAdaptation(
+              memory.embedding,
+              reranker.weights.memoryTransform
+            );
+            adaptedMemEmbeddings.push(adapted);
+          } else {
+            // Memory doesn't have embedding - this shouldn't happen for exact REINFORCE
+            // Create zero embedding as placeholder
+            const zeroEmbedding = new Array(EMBEDDING_DIMENSION).fill(0);
+            originalMemEmbeddings.push(zeroEmbedding);
+
+            const adapted = applyEmbeddingAdaptation(
+              zeroEmbedding,
+              reranker.weights.memoryTransform
+            );
+            adaptedMemEmbeddings.push(adapted);
+          }
+        }
+
+        runtime.context._originalMemoryEmbeddings = originalMemEmbeddings;
+        runtime.context._adaptedMemoryEmbeddings = adaptedMemEmbeddings;
+
+        // Store sampling probabilities for all K memories
+        runtime.context._samplingProbabilities = allProbabilities;
+
+        // Store selected indices
+        runtime.context._selectedIndices = selectedIndices;
 
         // Step 5: Create ephemeral HumanMessage with formatted memories
         // Per Appendix F.8: Use HumanMessage, NOT system message
@@ -217,9 +272,12 @@ export function createRetrospectiveWrapModelCall(
 
         // Step 7: Extract citations from response
         // Per Appendix D.2: [0, 2] or [NO_CITE] format
+        // Extended to all K memories for exact REINFORCE
         const citations = extractCitationsFromResponse(
           response.content,
-          selectedMemories
+          selectedMemories,
+          memories,
+          selectedIndices
         );
 
         // Step 8: Store citations in runtime context for afterModel
@@ -252,13 +310,22 @@ export function createRetrospectiveWrapModelCall(
  * - [NO_CITE]: All memories get -1 reward
  * - malformed: Empty array (RL update aborted)
  *
+ * For exact REINFORCE, extends rewards to all K retrieved memories:
+ * - Selected + cited: +1
+ * - Selected + not cited: -1
+ * - Not selected: -1 (implicitly not useful)
+ *
  * @param responseContent - LLM response text
- * @param selectedMemories - Memories sent to LLM
- * @returns Array of citation records for RL update
+ * @param selectedMemories - Memories sent to LLM (Top-M)
+ * @param allMemories - All retrieved memories (Top-K)
+ * @param selectedIndices - Indices of selected memories in allMemories
+ * @returns Array of citation records for all K memories
  */
 function extractCitationsFromResponse(
   responseContent: string,
-  selectedMemories: RetrievedMemory[]
+  selectedMemories: RetrievedMemory[],
+  allMemories: RetrievedMemory[],
+  selectedIndices: number[]
 ): CitationRecord[] {
   // Extract citations using existing utility
   const citationResult: CitationResult = extractCitations(responseContent);
@@ -272,42 +339,71 @@ function extractCitationsFromResponse(
     return [];
   }
 
-  // Handle NO_CITE case
+  // Build set of cited indices among selected memories
+  const citedIndicesInSelection = new Set<number>();
+
   if (citationResult.type === "no_cite") {
-    // All selected memories get -1 reward (not useful)
-    return selectedMemories.map((memory, index) => ({
-      memoryId: memory.id,
-      cited: false,
-      reward: -1,
-      turnIndex: index,
-    }));
+    // No citations - all selected memories get -1
+    // All non-selected memories already get -1 (implicit)
+  } else {
+    // Valid citations - mark which selected memories were cited
+    const allIndices = citationResult.indices ?? [];
+    const maxIndex = selectedMemories.length - 1;
+
+    for (const idx of allIndices) {
+      if (typeof idx === "number" && idx >= 0 && idx <= maxIndex) {
+        citedIndicesInSelection.add(idx);
+      }
+    }
   }
 
-  // Handle valid citations
-  // citedSet contains indices of memories the LLM found useful
-  // Validate indices are within valid range for selectedMemories
-  const maxIndex = selectedMemories.length - 1;
-  const allIndices = citationResult.indices ?? [];
-  const outOfBoundsCount = allIndices.filter(
-    (i) => typeof i === "number" && (i < 0 || i > maxIndex)
-  ).length;
+  // Build citation records for ALL K retrieved memories
+  const k = allMemories.length;
+  const citations: CitationRecord[] = [];
 
-  // Warn about out-of-bounds citations
-  if (outOfBoundsCount > 0) {
-    console.warn(
-      `[wrap-model-call] LLM returned ${outOfBoundsCount} out-of-bounds citation indices (valid: 0-${maxIndex}), filtering...`
-    );
+  // Build mapping from global K index to position in selectedMemories (M array)
+  // This allows us to translate LLM citations (which reference selectedMemories positions)
+  // back to the original K indices for gradient computation
+  const globalToSelectedPosition: Map<number, number> = new Map();
+  for (
+    let selectedPos = 0;
+    selectedPos < selectedIndices.length;
+    selectedPos++
+  ) {
+    const globalIdx = selectedIndices[selectedPos];
+    if (globalIdx !== undefined) {
+      globalToSelectedPosition.set(globalIdx, selectedPos);
+    }
   }
 
-  const validIndices = allIndices.filter(
-    (i): i is number => typeof i === "number" && i >= 0 && i <= maxIndex
-  );
-  const citedSet = new Set(validIndices);
+  for (let i = 0; i < k; i++) {
+    const memoryId = allMemories[i]?.id ?? `memory-${i}`;
+    const isSelected = selectedIndices.includes(i);
 
-  return selectedMemories.map((memory, index) => ({
-    memoryId: memory.id,
-    cited: citedSet.has(index),
-    reward: citedSet.has(index) ? 1 : -1,
-    turnIndex: index,
-  }));
+    if (isSelected) {
+      // Memory was selected for LLM context
+      // Get this memory's position in the selectedMemories array (what LLM cites)
+      const selectedPosition = globalToSelectedPosition.get(i);
+      const wasCited =
+        selectedPosition !== undefined &&
+        citedIndicesInSelection.has(selectedPosition);
+      citations.push({
+        memoryId,
+        cited: wasCited,
+        reward: wasCited ? 1 : -1,
+        turnIndex: i,
+      });
+    } else {
+      // Memory was retrieved but not selected - implicit -1 reward
+      // (it wasn't useful enough to be in Top-M)
+      citations.push({
+        memoryId,
+        cited: false,
+        reward: -1,
+        turnIndex: i,
+      });
+    }
+  }
+
+  return citations;
 }

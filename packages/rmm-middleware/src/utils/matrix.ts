@@ -425,3 +425,117 @@ export function initializeMatrix(
     })
   );
 }
+
+// ============================================================================
+// Gradient Computation Utilities
+// ============================================================================
+
+/**
+ * Performs element-wise addition of two matrices.
+ * Used for accumulating gradients across batch samples.
+ *
+ * @param a - First matrix
+ * @param b - Second matrix
+ * @returns Matrix with element-wise sum
+ * @throws Error if matrices have different dimensions
+ */
+export function addMatrix(a: number[][], b: number[][]): number[][] {
+  if (a.length !== b.length || a[0]?.length !== b[0]?.length) {
+    throw new Error(
+      `Matrix dimension mismatch: (${a.length}×${a[0]?.length}) vs (${b.length}×${b[0]?.length})`
+    );
+  }
+
+  return a.map((row, i) => row.map((val, j) => val + (b[i]?.[j] ?? 0)));
+}
+
+/**
+ * Performs element-wise subtraction of two matrices.
+ * Used for gradient accumulation (accumulated - new) or computing differences.
+ *
+ * @param a - First matrix (minuend)
+ * @param b - Second matrix (subtrahend)
+ * @returns Matrix with element-wise difference (a - b)
+ * @throws Error if matrices have different dimensions
+ */
+export function subtractMatrix(a: number[][], b: number[][]): number[][] {
+  if (a.length !== b.length || a[0]?.length !== b[0]?.length) {
+    throw new Error(
+      `Matrix dimension mismatch: (${a.length}×${a[0]?.length}) vs (${b.length}×${b[0]?.length})`
+    );
+  }
+
+  return a.map((row, i) => row.map((val, j) => val - (b[i]?.[j] ?? 0)));
+}
+
+/**
+ * Multiplies a matrix by a scalar.
+ * Used for scaling gradients by learning rate or advantage.
+ *
+ * @param matrix - Matrix to scale
+ * @param scalar - Scalar multiplier
+ * @returns Scaled matrix
+ */
+export function scaleMatrix(matrix: number[][], scalar: number): number[][] {
+  if (scalar === 0) {
+    // Return zero matrix of same dimensions
+    return matrix.map((row) => row.map(() => 0));
+  }
+
+  if (scalar === 1) {
+    // Return copy of original matrix
+    return matrix.map((row) => [...row]);
+  }
+
+  return matrix.map((row) => row.map((val) => val * scalar));
+}
+
+/**
+ * Computes the outer product of two vectors.
+ * Result: (n×1) × (1×m) → (n×m)
+ *
+ * Used in simplified gradient approximations where:
+ * ∇W ≈ η·(R-b)·q·q^T or η·(R-b)·m·m^T
+ *
+ * For exact REINFORCE, this may be used for initialization or simplifications.
+ *
+ * @param a - First vector (column vector, size n)
+ * @param b - Second vector (row vector, size m)
+ * @returns Outer product matrix (n×m)
+ */
+export function outerProduct(a: number[], b: number[]): number[][] {
+  return a.map((aVal) => b.map((bVal) => aVal * bVal));
+}
+
+/**
+ * Creates a zero matrix of specified dimensions.
+ * Used for initializing gradient accumulators.
+ *
+ * @param rows - Number of rows
+ * @param cols - Number of columns
+ * @returns Zero matrix
+ */
+export function createZeroMatrix(rows: number, cols: number): number[][] {
+  return Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => 0)
+  );
+}
+
+/**
+ * Clips matrix values to specified bounds.
+ * Used to prevent gradient explosion in training.
+ *
+ * @param matrix - Matrix to clip
+ * @param minVal - Minimum allowed value (default: -100)
+ * @param maxVal - Maximum allowed value (default: 100)
+ * @returns Clipped matrix
+ */
+export function clipMatrix(
+  matrix: number[][],
+  minVal = -100,
+  maxVal = 100
+): number[][] {
+  return matrix.map((row) =>
+    row.map((val) => Math.max(minVal, Math.min(maxVal, val)))
+  );
+}
