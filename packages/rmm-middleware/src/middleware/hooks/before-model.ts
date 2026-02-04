@@ -119,8 +119,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
           weights?.weights?.queryTransform &&
           weights.weights.memoryTransform &&
           weights.config
-        ) ||
-        typeof weights.config.topK !== "number"
+        )
       ) {
         console.warn(
           "[before-model] Invalid reranker weights, skipping retrieval"
@@ -133,13 +132,19 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
       const existingMemories =
         state._retrievedMemories?.map((m) => ({ ...m })) ?? [];
 
+      // Calculate turn counter increment (used in all paths)
+      const newTurnCount = (state._turnCountInSession ?? 0) + 1;
+
       try {
         // Step 1: Extract query from last human message
         const query = extractLastHumanMessage(state.messages);
 
         // If no human message found, skip retrieval
+        // Still increment turn counter since an agent turn occurred
         if (!query) {
-          return {};
+          return {
+            _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
+          };
         }
 
         // Step 2: Retrieve Top-K memories from VectorStore
@@ -173,9 +178,6 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
           }
         );
 
-        // Step 4: Increment turn counter
-        const newTurnCount = (state._turnCountInSession ?? 0) + 1;
-
         return {
           _retrievedMemories: retrievedMemories,
           _turnCountInSession: newTurnCount,
@@ -190,7 +192,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         // Preserve existing memories and increment turn counter
         return {
           _retrievedMemories: existingMemories,
-          _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
+          _turnCountInSession: newTurnCount,
         };
       }
     },

@@ -267,7 +267,19 @@ function extractCitationsFromResponse(
   // citedSet contains indices of memories the LLM found useful
   // Validate indices are within valid range for selectedMemories
   const maxIndex = selectedMemories.length - 1;
-  const validIndices = (citationResult.indices ?? []).filter(
+  const allIndices = citationResult.indices ?? [];
+  const outOfBoundsCount = allIndices.filter(
+    (i) => typeof i === "number" && (i < 0 || i > maxIndex)
+  ).length;
+
+  // Warn about out-of-bounds citations
+  if (outOfBoundsCount > 0) {
+    console.warn(
+      `[wrap-model-call] LLM returned ${outOfBoundsCount} out-of-bounds citation indices (valid: 0-${maxIndex}), filtering...`
+    );
+  }
+
+  const validIndices = allIndices.filter(
     (i): i is number => typeof i === "number" && i >= 0 && i <= maxIndex
   );
   const citedSet = new Set(validIndices);

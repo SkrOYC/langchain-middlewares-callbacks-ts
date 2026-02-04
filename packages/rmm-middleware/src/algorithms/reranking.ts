@@ -42,10 +42,20 @@ export function applyEmbeddingAdaptation(
   }
 
   // Validate matrix dimensions
+  // Matrix must be square with dimensions matching embedding length
   if (transformMatrix.length !== embedding.length) {
     throw new Error(
       `Matrix rows (${transformMatrix.length}) must match embedding dimension (${embedding.length})`
     );
+  }
+
+  // Validate each row has the correct number of columns
+  for (let i = 0; i < transformMatrix.length; i++) {
+    if (transformMatrix[i].length !== embedding.length) {
+      throw new Error(
+        `Matrix row ${i} has ${transformMatrix[i].length} columns, expected ${embedding.length}`
+      );
+    }
   }
 
   // Compute W · embedding
