@@ -33,12 +33,12 @@ describe("findSimilarMemories Algorithm", () => {
   };
 
   // Sample retrieved memories for mock VectorStore response
-  const sampleRetrievedMemories = [
+  const _sampleRetrievedMemories = [
     {
       id: "existing-memory-1",
       topicSummary: "User likes outdoor activities",
       rawDialogue: "I enjoy being outside",
-      timestamp: Date.now() - 100000,
+      timestamp: Date.now() - 100_000,
       sessionId: "session-123",
       embedding: Array.from({ length: 1536 }, () => Math.random()),
       turnReferences: [0],
@@ -48,7 +48,7 @@ describe("findSimilarMemories Algorithm", () => {
       id: "existing-memory-2",
       topicSummary: "User is a software engineer",
       rawDialogue: "I work with computers",
-      timestamp: Date.now() - 200000,
+      timestamp: Date.now() - 200_000,
       sessionId: "session-123",
       embedding: Array.from({ length: 1536 }, () => Math.random()),
       turnReferences: [1],
@@ -58,7 +58,7 @@ describe("findSimilarMemories Algorithm", () => {
       id: "existing-memory-3",
       topicSummary: "User lives in Seattle",
       rawDialogue: "I live in Seattle",
-      timestamp: Date.now() - 300000,
+      timestamp: Date.now() - 300_000,
       sessionId: "session-123",
       embedding: Array.from({ length: 1536 }, () => Math.random()),
       turnReferences: [2],
@@ -88,7 +88,7 @@ describe("findSimilarMemories Algorithm", () => {
               id: "existing-memory-1",
               sessionId: "session-123",
               turnReferences: [0],
-              timestamp: Date.now() - 100000,
+              timestamp: Date.now() - 100_000,
             },
           },
         ];
@@ -103,8 +103,8 @@ describe("findSimilarMemories Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(1);
-    expect(result![0].id).toBe("existing-memory-1");
+    expect(result?.length).toBe(1);
+    expect(result?.[0].id).toBe("existing-memory-1");
   });
 
   test("returns empty array when no matches", async () => {
@@ -127,7 +127,7 @@ describe("findSimilarMemories Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(0);
+    expect(result?.length).toBe(0);
   });
 
   test("respects topK parameter", async () => {
@@ -193,7 +193,7 @@ describe("findSimilarMemories Algorithm", () => {
               id: "existing-memory-1",
               sessionId: "session-123",
               turnReferences: [0],
-              timestamp: Date.now() - 100000,
+              timestamp: Date.now() - 100_000,
             },
           },
           {
@@ -202,7 +202,7 @@ describe("findSimilarMemories Algorithm", () => {
               id: "existing-memory-2",
               sessionId: "session-123",
               turnReferences: [1],
-              timestamp: Date.now() - 200000,
+              timestamp: Date.now() - 200_000,
             },
           },
         ];
@@ -216,11 +216,11 @@ describe("findSimilarMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(2);
+    expect(result?.length).toBe(2);
 
     // Verify retrieved memories have expected structure
-    expect(result![0].topicSummary).toBe("User likes outdoor activities");
-    expect(result![1].topicSummary).toBe("User is a software engineer");
+    expect(result?.[0].topicSummary).toBe("User likes outdoor activities");
+    expect(result?.[1].topicSummary).toBe("User is a software engineer");
   });
 
   test("handles VectorStore errors gracefully", async () => {
@@ -245,7 +245,7 @@ describe("findSimilarMemories Algorithm", () => {
       // Should return empty array on error for graceful degradation
       expect(result).not.toBeNull();
       expect(Array.isArray(result)).toBe(true);
-      expect(result!.length).toBe(0);
+      expect(result?.length).toBe(0);
     });
   });
 
@@ -256,7 +256,7 @@ describe("findSimilarMemories Algorithm", () => {
 
     const expectedId = "test-conversion-id";
     const expectedSessionId = "test-session";
-    const expectedTimestamp = 1234567890;
+    const expectedTimestamp = 1_234_567_890;
     const expectedTurnRefs = [0, 1, 2];
 
     const mockVectorStoreMetadata = {
@@ -283,9 +283,9 @@ describe("findSimilarMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(1);
+    expect(result?.length).toBe(1);
 
-    const retrieved = result![0];
+    const retrieved = result?.[0];
     expect(retrieved.id).toBe(expectedId);
     expect(retrieved.sessionId).toBe(expectedSessionId);
     expect(retrieved.timestamp).toBe(expectedTimestamp);
@@ -339,10 +339,10 @@ describe("findSimilarMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(3);
-    expect(result![0].id).toBe("memory-1");
-    expect(result![1].id).toBe("memory-2");
-    expect(result![2].id).toBe("memory-3");
+    expect(result?.length).toBe(3);
+    expect(result?.[0].id).toBe("memory-1");
+    expect(result?.[1].id).toBe("memory-2");
+    expect(result?.[2].id).toBe("memory-3");
   });
 
   test("uses topicSummary for similarity search query", async () => {
