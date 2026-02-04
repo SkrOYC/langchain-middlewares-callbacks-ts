@@ -48,11 +48,14 @@ export interface BeforeModelOptions {
 
 /**
  * Runtime interface for beforeModel hook
+ *
+ * Note: vectorStore and embeddings are passed via options, not runtime.context.
+ * This interface exists for type compatibility with the middleware pattern.
  */
 interface BeforeModelRuntime {
   context: {
-    vectorStore: VectorStoreInterface;
-    embeddings: Embeddings;
+    // Placeholder for future runtime-injected context
+    [key: string]: unknown;
   };
   [key: string]: unknown;
 }
@@ -126,7 +129,9 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
       }
 
       // Preserve existing retrieved memories in case of error
-      const existingMemories = state._retrievedMemories ?? [];
+      // Use shallow clone to prevent mutation of source arrays
+      const existingMemories =
+        state._retrievedMemories?.map((m) => ({ ...m })) ?? [];
 
       try {
         // Step 1: Extract query from last human message
@@ -138,8 +143,8 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         }
 
         // Step 2: Retrieve Top-K memories from VectorStore
-        const vectorStore = options.vectorStore;
-        const retrievedDocs = await vectorStore.similaritySearch(query, topK);
+        const vs = options.vectorStore;
+        const retrievedDocs = await vs.similaritySearch(query, topK);
 
         // Step 3: Transform to RetrievedMemory format
         const retrievedMemories: RetrievedMemory[] = retrievedDocs.map(

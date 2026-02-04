@@ -53,11 +53,15 @@ export interface WrapModelCallOptions {
 
 /**
  * Runtime interface for wrapModelCall hook
+ *
+ * Note: embeddings is passed via options, not runtime.context.
+ * The _citations field is populated by this hook for downstream use.
  */
 interface WrapModelCallRuntime {
   context: {
-    embeddings: Embeddings;
+    embeddings?: Embeddings; // May be set by other hooks
     _citations?: CitationRecord[];
+    [key: string]: unknown;
   };
   [key: string]: unknown;
 }

@@ -128,8 +128,8 @@ export function gumbelSoftmaxSample(
     topM
   );
 
-  // Return selected memories
-  return selectedIndices.map((i) => memories[i]);
+  // Return selected memories with shallow copies to prevent mutation
+  return selectedIndices.map((i) => ({ ...memories[i] }));
 }
 
 /**

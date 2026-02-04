@@ -82,14 +82,33 @@ function extractContent(
 
 /**
  * Escapes XML special characters to prevent injection attacks
+ *
+ * Handles basic entities plus common XML constructs that could break parsing.
  */
 function escapeXml(unsafe: string): string {
-  return unsafe
+  // First, handle multi-character sequences that could break XML structure
+  let escaped = unsafe;
+
+  // Escape CDATA section boundaries
+  escaped = escaped.replace(/]]>/g, "]]]]><![CDATA[>");
+
+  // Escape comments
+  escaped = escaped.replace(/<!--/g, "<!----><!--");
+  escaped = escaped.replace(/-->/g, "<!--->");
+
+  // Escape processing instructions
+  escaped = escaped.replace(/<\?/g, "<!?");
+  escaped = escaped.replace(/\?>/g, "<?>");
+
+  // Escape basic XML entities
+  escaped = escaped
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+  return escaped;
 }
 
 /**
