@@ -12,14 +12,14 @@ import { describe, expect, test } from "bun:test";
 describe("updateMemory Prompt Template", () => {
   test("should export a prompt template function", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     expect(typeof updateMemory).toBe("function");
   });
 
   test("should accept history summaries and new summary parameters", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const historySummaries = ["User enjoys hiking", "User is vegetarian"];
     const newSummary = "User started running marathons";
@@ -30,7 +30,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should contain task description for memory update", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("personal history summaries");
@@ -39,7 +39,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should specify Add action format", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("Add()");
@@ -48,7 +48,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should specify Merge action format", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory(["Existing summary"], "New summary");
     expect(prompt).toContain("Merge(index, merged_summary)");
@@ -57,7 +57,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should contain input format instructions", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("history_summaries");
@@ -66,7 +66,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should contain example with Merge action", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory(
       ["SPEAKER_1 works out although he doesn't particularly enjoy it."],
@@ -79,7 +79,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should handle multiple actions on separate lines", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory(["Summary 1", "Summary 2"], "New summary");
     expect(prompt).toContain("newline");
@@ -87,7 +87,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should be a non-configurable built-in prompt", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory([], "test");
     expect(prompt).not.toContain("{userConfig");
@@ -96,7 +96,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should handle empty history summaries", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory([], "New summary");
     expect(typeof prompt).toBe("string");
@@ -106,7 +106,7 @@ describe("updateMemory Prompt Template", () => {
 
   test("should handle single history summary", async () => {
     const { updateMemory } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const prompt = updateMemory(
       ["User enjoys hiking"],
@@ -120,7 +120,7 @@ describe("updateMemory Prompt Template", () => {
 describe("updateMemory Output Schema", () => {
   test("should define update action schema", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     expect(typeof UpdateActionSchema).toBe("object");
     expect(typeof UpdateActionSchema.safeParse).toBe("function");
@@ -128,7 +128,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should validate Add() action", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const addOutput = "Add()";
     const result = UpdateActionSchema.safeParse(addOutput);
@@ -137,7 +137,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should validate Merge action with index and summary", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const mergeOutput =
       "Merge(0, SPEAKER_1 exercises every Monday and Thursday, although he doesn't particularly enjoy it.)";
@@ -147,7 +147,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should validate multiple actions on separate lines", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     // Each action should individually validate
     const firstAction = "Merge(0, Updated summary)";
@@ -161,7 +161,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should reject empty string", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const emptyOutput = "";
     const result = UpdateActionSchema.safeParse(emptyOutput);
@@ -170,7 +170,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should reject invalid action format", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const invalidOutput = "InvalidAction()";
     const result = UpdateActionSchema.safeParse(invalidOutput);
@@ -179,7 +179,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should reject Merge without index", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const invalidOutput = "Merge(summary without index)";
     const result = UpdateActionSchema.safeParse(invalidOutput);
@@ -188,7 +188,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should reject Merge without summary", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const invalidOutput = "Merge(0,)";
     const result = UpdateActionSchema.safeParse(invalidOutput);
@@ -197,7 +197,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should parse newline-separated actions", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const multiOutput = "Merge(0, first)\nMerge(1, second)\nAdd()";
     const result = parseUpdateActions(multiOutput, 2);
@@ -217,7 +217,7 @@ describe("updateMemory Output Schema", () => {
 
   test("should validate newline-separated multi-line actions with schema", async () => {
     const { UpdateActionSchema } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const multiLineOutput =
       "Merge(0, first summary)\nMerge(1, second summary)\nAdd()";
@@ -229,7 +229,7 @@ describe("updateMemory Output Schema", () => {
 describe("updateMemory Action Parsing", () => {
   test("should parse Add() action correctly", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const actions = parseUpdateActions("Add()", 0);
     expect(actions).toEqual([{ action: "Add" }]);
@@ -237,7 +237,7 @@ describe("updateMemory Action Parsing", () => {
 
   test("should parse Merge action with index correctly", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const actions = parseUpdateActions("Merge(0, Updated summary)", 1);
     expect(actions).toEqual([
@@ -247,7 +247,7 @@ describe("updateMemory Action Parsing", () => {
 
   test("should parse multiple actions correctly", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const actions = parseUpdateActions(
       "Merge(0, First update)\nMerge(1, Second update)\nAdd()",
@@ -262,7 +262,7 @@ describe("updateMemory Action Parsing", () => {
 
   test("should handle empty input gracefully", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const actions = parseUpdateActions("");
     expect(actions).toEqual([]);
@@ -270,7 +270,7 @@ describe("updateMemory Action Parsing", () => {
 
   test("should reject Merge with out-of-bounds index", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const actions = parseUpdateActions("Merge(5, summary)", 2);
     expect(actions).toEqual([]);
@@ -278,7 +278,7 @@ describe("updateMemory Action Parsing", () => {
 
   test("should reject negative Merge index", async () => {
     const { parseUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const actions = parseUpdateActions("Merge(-1, summary)", 2);
     expect(actions).toEqual([]);
@@ -288,14 +288,14 @@ describe("updateMemory Action Parsing", () => {
 describe("validateUpdateActions", () => {
   test("should export validateUpdateActions function", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     expect(typeof validateUpdateActions).toBe("function");
   });
 
   test("should validate valid Add() action", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions("Add()", 1);
     expect(result.isValid).toBe(true);
@@ -304,7 +304,7 @@ describe("validateUpdateActions", () => {
 
   test("should validate valid Merge action", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions("Merge(0, updated summary)", 2);
     expect(result.isValid).toBe(true);
@@ -313,7 +313,7 @@ describe("validateUpdateActions", () => {
 
   test("should validate multiple valid actions", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions(
       "Merge(0, first)\nMerge(1, second)\nAdd()",
@@ -325,7 +325,7 @@ describe("validateUpdateActions", () => {
 
   test("should detect out-of-bounds index", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions("Merge(5, summary)", 2);
     expect(result.isValid).toBe(false);
@@ -335,7 +335,7 @@ describe("validateUpdateActions", () => {
 
   test("should detect invalid action format", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions("InvalidAction()", 1);
     expect(result.isValid).toBe(false);
@@ -345,7 +345,7 @@ describe("validateUpdateActions", () => {
 
   test("should detect empty Merge summary", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions("Merge(0, )", 1);
     expect(result.isValid).toBe(false);
@@ -355,7 +355,7 @@ describe("validateUpdateActions", () => {
 
   test("should handle empty input", async () => {
     const { validateUpdateActions } = await import(
-      "../../../src/middleware/prompts/update-memory.ts"
+      "@/middleware/prompts/update-memory"
     );
     const result = validateUpdateActions("", 0);
     expect(result.isValid).toBe(true);

@@ -1,7 +1,7 @@
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Document } from "@langchain/core/documents";
 
-import type { MemoryEntry, RetrievedMemory } from "../../schemas/index.js";
+import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 
 /**
  * Interface for document metadata stored in VectorStore
@@ -47,9 +47,7 @@ export async function findSimilarMemories(
     const query = newMemory.topicSummary;
 
     // Perform similarity search with the specified topK
-    const results = await vectorStore.similaritySearch(query, {
-      k: topK,
-    });
+    const results = await vectorStore.similaritySearch(query, topK);
 
     // Convert VectorStore results to RetrievedMemory format
     // Note: embeddings are not returned by VectorStore.similaritySearch

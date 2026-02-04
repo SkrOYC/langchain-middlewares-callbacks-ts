@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   EMBEDDING_DIMENSION,
   type RerankerState,
-} from "../../src/schemas/index.ts";
-import { createWeightStorage } from "../../src/storage/weight-storage";
+} from "@/schemas";
+import { createWeightStorage } from "@/storage/weight-storage";
 import {
   createFailingMockBaseStore,
   createMockBaseStore,

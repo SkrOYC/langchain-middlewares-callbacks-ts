@@ -4,7 +4,7 @@ import {
   matmul,
   matmulVector,
   residualAdd,
-} from "../../src/utils/matrix";
+} from "@/utils/matrix";
 
 // ============================================================================
 // Matrix Multiplication Tests

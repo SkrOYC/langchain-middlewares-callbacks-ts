@@ -4,7 +4,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { BaseMessage } from "@langchain/core/messages";
 import type { Embeddings } from "@langchain/core/embeddings";
 
-import type { MemoryEntry } from "../../schemas/index.js";
+import type { MemoryEntry } from "@/schemas/index";
 
 /**
  * Formats a session history into a dialogue string with turn markers.
@@ -20,7 +20,7 @@ function formatSessionHistory(history: BaseMessage[]): string {
   const dialogueParts: string[] = [];
 
   for (let i = 0; i < history.length; i++) {
-    const message = history[i];
+    const message = history[i]!;
     const turnNumber = Math.floor(i / 2);
     const speaker = message.type;
 
@@ -40,13 +40,6 @@ interface ExtractionOutput {
     summary: string;
     reference: number[];
   }>;
-}
-
-/**
- * Interface for minimal summarization model needed by this algorithm
- */
-interface SummarizationModelInterface {
-  invoke(input: string): Promise<{ content: string }>;
 }
 
 /**
@@ -76,7 +69,7 @@ interface SummarizationModelInterface {
  */
 export async function extractMemories(
   sessionHistory: BaseMessage[],
-  summarizationModel: SummarizationModelInterface,
+  summarizationModel: BaseChatModel,
   embeddings: Embeddings,
   speakerPrompt: (dialogueSession: string) => string,
   sessionId?: string
@@ -95,7 +88,7 @@ export async function extractMemories(
 
     // Step 3: Call LLM with extraction prompt
     const response = await summarizationModel.invoke(prompt);
-    const responseContent = response.content;
+    const responseContent = response.text;
 
     // Step 4: Handle NO_TRAIT special case
     if (responseContent === "NO_TRAIT") {
@@ -141,14 +134,14 @@ export async function extractMemories(
     const effectiveSessionId = sessionId || randomUUID();
 
     for (let i = 0; i < extractionOutput.extracted_memories.length; i++) {
-      const extracted = extractionOutput.extracted_memories[i];
+      const extracted = extractionOutput.extracted_memories[i]!;
 
       // Build raw dialogue from turn references
       const rawDialogueTurns = extracted.reference
         .map((turnIndex) => {
           const messageIndex = turnIndex * 2;
           if (messageIndex < sessionHistory.length) {
-            return sessionHistory[messageIndex].content;
+            return sessionHistory[messageIndex]!.content;
           }
           return "";
         })
@@ -161,7 +154,7 @@ export async function extractMemories(
         rawDialogue: rawDialogueTurns || extracted.summary,
         timestamp,
         sessionId: effectiveSessionId,
-        embedding: embeddingVectors[i],
+        embedding: embeddingVectors[i]!,
         turnReferences: extracted.reference,
       };
 

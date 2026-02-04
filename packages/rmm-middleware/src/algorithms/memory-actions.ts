@@ -1,7 +1,7 @@
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Document } from "@langchain/core/documents";
 
-import type { MemoryEntry, RetrievedMemory } from "../../schemas/index.js";
+import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 
 /**
  * Adds a new memory to the VectorStore.

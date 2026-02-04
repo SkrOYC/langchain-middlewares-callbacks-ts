@@ -15,14 +15,14 @@ interface TestMemory {
 describe("formatMemories Utility", () => {
   test("should export a formatMemories function", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     expect(typeof formatMemories).toBe("function");
   });
 
   test("should return empty string for empty array", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const result = formatMemories([]);
     expect(result).toBe("");
@@ -30,7 +30,7 @@ describe("formatMemories Utility", () => {
 
   test("should wrap memories in <memories> tags", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -47,7 +47,7 @@ describe("formatMemories Utility", () => {
 
   test("should format memory with index", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -63,7 +63,7 @@ describe("formatMemories Utility", () => {
 
   test("should format memory with topicSummary", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -79,7 +79,7 @@ describe("formatMemories Utility", () => {
 
   test("should format dialogue turns with speaker labels", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -96,7 +96,7 @@ describe("formatMemories Utility", () => {
 
   test("should handle multiple dialogue turns", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -116,7 +116,7 @@ describe("formatMemories Utility", () => {
 
   test("should handle multiple memories with sequential indices", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -140,7 +140,7 @@ describe("formatMemories Utility", () => {
 
   test("should handle special characters in dialogue", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -157,7 +157,7 @@ describe("formatMemories Utility", () => {
 
   test("should handle empty topic summary", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {
@@ -172,7 +172,7 @@ describe("formatMemories Utility", () => {
 
   test("should handle multiline dialogue text", async () => {
     const { formatMemories } = await import(
-      "../../../src/middleware/prompts/format-memories.ts"
+      "@/middleware/prompts/format-memories"
     );
     const memories: TestMemory[] = [
       {

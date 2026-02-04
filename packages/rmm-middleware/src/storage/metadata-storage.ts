@@ -2,8 +2,8 @@ import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import {
   type SessionMetadata,
   SessionMetadataSchema,
-} from "../schemas/index.ts";
-import { createWeightStorage, type WeightStorage } from "./weight-storage.ts";
+} from "@/schemas/index";
+import { createWeightStorage, type WeightStorage } from "@/storage/weight-storage";
 
 /**
  * Creates both storage adapters for the given BaseStore instance
@@ -20,7 +20,6 @@ export function createStorageAdapters(store: BaseStore): {
   };
 }
 
-export type { MetadataStorage } from "./metadataStorage";
 export interface MetadataStorage {
   /**
    * Load session metadata for a user from BaseStore

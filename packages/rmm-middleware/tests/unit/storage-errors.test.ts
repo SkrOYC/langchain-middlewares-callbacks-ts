@@ -4,12 +4,12 @@ import {
   EMBEDDING_DIMENSION,
   type RerankerState,
   type SessionMetadata,
-} from "../../src/schemas/index.ts";
+} from "@/schemas";
 import {
   createMetadataStorage,
   createStorageAdapters,
-} from "../../src/storage/metadata-storage";
-import { createWeightStorage } from "../../src/storage/weight-storage";
+} from "@/storage/metadata-storage";
+import { createWeightStorage } from "@/storage/weight-storage";
 
 // ============================================================================
 // Test Helpers

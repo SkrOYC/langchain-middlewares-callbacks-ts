@@ -43,26 +43,25 @@ describe("afterAgent Hook", () => {
 
   test("should export afterAgent function", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
     expect(typeof afterAgent).toBe("function");
   });
 
   test("full pipeline executes successfully", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock dependencies
     const mockSummarizationModel = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [
-              { summary: "User enjoys hiking", reference: [0] },
-            ],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [
+            { summary: "User enjoys hiking", reference: [0] },
+          ],
+        });
+        return { content, text: content };
       },
     };
 
@@ -100,13 +99,14 @@ describe("afterAgent Hook", () => {
 
   test("no memories extracted → no VectorStore calls", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock dependencies that return NO_TRAIT
     const mockSummarizationModel = {
       invoke: async () => {
-        return { content: "NO_TRAIT" };
+        const content = "NO_TRAIT";
+        return { content, text: content };
       },
     };
 
@@ -147,7 +147,7 @@ describe("afterAgent Hook", () => {
 
   test("empty messages returns without processing", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     const emptyState = {
@@ -159,7 +159,8 @@ describe("afterAgent Hook", () => {
     const mockSummarizationModel = {
       invoke: async () => {
         modelCalled = true;
-        return { content: "NO_TRAIT" };
+        const content = "NO_TRAIT";
+        return { content, text: content };
       },
     };
 
@@ -193,13 +194,14 @@ describe("afterAgent Hook", () => {
 
   test("error handling works (aborts gracefully)", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock LLM that returns invalid content (triggers error handling)
     const mockSummarizationModel = {
       invoke: async () => {
-        return { content: "not valid json that will fail" };
+        const content = "not valid json that will fail";
+        return { content, text: content };
       },
     };
 
@@ -234,21 +236,20 @@ describe("afterAgent Hook", () => {
 
   test("handles multiple memories correctly", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock dependencies that return multiple memories
     const mockSummarizationModel = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [
-              { summary: "User enjoys hiking", reference: [0] },
-              { summary: "User likes running", reference: [2] },
-              { summary: "User is a developer", reference: [1] },
-            ],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [
+            { summary: "User enjoys hiking", reference: [0] },
+            { summary: "User likes running", reference: [2] },
+            { summary: "User is a developer", reference: [1] },
+          ],
+        });
+        return { content, text: content };
       },
     };
 
@@ -298,16 +299,16 @@ describe("afterAgent Hook", () => {
         callCount++;
         if (callCount === 1) {
           // First call: extraction response
-          return {
-            content: JSON.stringify({
-              extracted_memories: [
-                { summary: "User enjoys outdoor activities", reference: [0] },
-              ],
-            }),
-          };
+          const content = JSON.stringify({
+            extracted_memories: [
+              { summary: "User enjoys outdoor activities", reference: [0] },
+            ],
+          });
+          return { content, text: content };
         } else {
           // Second call: decision response
-          return { content: "Merge(0, User enjoys outdoor activities and hiking)" };
+          const content = "Merge(0, User enjoys outdoor activities and hiking)";
+          return { content, text: content };
         }
       },
     };
@@ -365,7 +366,8 @@ describe("afterAgent Hook", () => {
     // Mock dependencies
     const mockSummarizationModel = {
       invoke: async () => {
-        return { content: "NO_TRAIT" };
+        const content = "NO_TRAIT";
+        return { content, text: content };
       },
     };
 

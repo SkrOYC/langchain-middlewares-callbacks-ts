@@ -33,7 +33,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./algorithms/*": "./dist/*.js",
+    "./middleware/*": "./dist/*.js",
+    "./schemas/*": "./dist/*.js",
+    "./storage/*": "./dist/*.js",
+    "./utils/*": "./dist/*.js"
   },
   "type": "module",
   "peerDependencies": {
