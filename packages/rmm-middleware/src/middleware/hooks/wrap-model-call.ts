@@ -140,6 +140,20 @@ export function createRetrospectiveWrapModelCall(
       try {
         const reranker = state._rerankerWeights;
 
+        // Validate reranker weights exist
+        if (
+          !(
+            reranker?.weights?.queryTransform &&
+            reranker.weights?.memoryTransform &&
+            reranker.config
+          )
+        ) {
+          console.warn(
+            "[wrap-model-call] Invalid reranker weights, skipping reranking"
+          );
+          return handler(request);
+        }
+
         // Step 1: Extract query and embed it
         const query = extractLastHumanMessage(state.messages);
         if (!query) {
@@ -251,7 +265,10 @@ function extractCitationsFromResponse(
 
   // Handle malformed citations
   if (citationResult.type === "malformed") {
-    // Will abort RL update in afterModel (empty citations)
+    // Log for observability - malformed citations indicate LLM confusion
+    console.warn(
+      "[wrap-model-call] Malformed citation format in response, RL update aborted"
+    );
     return [];
   }
 

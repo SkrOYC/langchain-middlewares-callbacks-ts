@@ -4,6 +4,19 @@ import { z } from "zod";
 // Constants
 // ============================================================================
 
+/**
+ * Default embedding dimension for OpenAI ada-002 embeddings (1536 dimensions).
+ *
+ * Note: This is hardcoded based on the paper and common embedding models.
+ * For different embedding models, this should be updated to match the model's
+ * output dimension. Making this fully configurable would require:
+ * - Adding embeddingDimension option to hook configurations
+ * - Validating embeddings at runtime against the configured dimension
+ * - Updating matrix initialization to use the configured dimension
+ *
+ * For production use with custom embedding models, consider making this
+ * configurable through BeforeAgentOptions.embeddingDimension.
+ */
 export const EMBEDDING_DIMENSION = 1536;
 
 // ============================================================================
@@ -122,7 +135,7 @@ export type RerankerState = z.infer<typeof RerankerStateSchema>;
  * Reward: +1 (useful) or -1 (not useful)
  */
 export const CitationRecordSchema = z.object({
-  memoryId: z.string(),  // Can be UUID or memory ID like "memory-{index}"
+  memoryId: z.string(), // Can be UUID or memory ID like "memory-{index}"
   cited: z.boolean(),
   reward: z.union([z.literal(1), z.literal(-1)]),
   turnIndex: z.number().int().nonnegative(),

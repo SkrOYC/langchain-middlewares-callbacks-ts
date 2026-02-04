@@ -178,13 +178,16 @@ function sampleWithoutReplacementFromProbabilities(
     for (let j = 0; j < availableProbabilities.length; j++) {
       cumulative += availableProbabilities[j];
 
-      if (random <= cumulative) {
+      // Use epsilon comparison to handle floating-point precision
+      // The slight overage (random <= cumulative + epsilon) ensures we
+      // select the correct bin even with accumulated precision errors
+      if (random <= cumulative + Number.EPSILON * total) {
         selectedIndex = j;
         break;
       }
     }
 
-    // Guard against floating-point precision issues
+    // Fallback: if no index selected due to precision issues, select last
     if (selectedIndex === -1) {
       selectedIndex = availableProbabilities.length - 1;
     }
