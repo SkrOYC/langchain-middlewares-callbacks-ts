@@ -155,13 +155,22 @@ export async function extractMemories(
         .filter((content) => content !== "")
         .join(" | ");
 
+      const embedding = embeddingVectors[i];
+      if (!embedding) {
+        throw new Error(
+          `[memory-extraction] Embedding generation mismatch at index ${i}: ` +
+            `${extractionOutput.extracted_memories.length} memories, ` +
+            `${embeddingVectors.length} embeddings`
+        );
+      }
+
       const memory: MemoryEntry = {
         id: randomUUID(),
         topicSummary: extracted.summary,
         rawDialogue: rawDialogueTurns || extracted.summary,
         timestamp,
         sessionId: effectiveSessionId,
-        embedding: embeddingVectors[i],
+        embedding,
         turnReferences: extracted.reference,
       };
 
