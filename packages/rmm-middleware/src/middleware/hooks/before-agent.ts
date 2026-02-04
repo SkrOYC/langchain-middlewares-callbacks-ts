@@ -60,6 +60,8 @@ interface BeforeAgentState {
 // Default Configuration
 // ============================================================================
 
+// Note: RERANKER_CONFIG_DEFAULTS is defined in schemas/index.ts
+// We duplicate here to avoid import cycles and keep hooks self-contained
 const DEFAULT_CONFIG = {
   topK: 20,
   topM: 5,

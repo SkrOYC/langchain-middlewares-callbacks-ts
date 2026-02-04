@@ -109,8 +109,16 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
       state: BeforeModelState,
       _runtime: BeforeModelRuntime
     ): Promise<BeforeModelStateUpdate> => {
-      // Validate reranker weights exist before accessing
-      if (!state._rerankerWeights?.config) {
+      // Validate reranker weights have required properties
+      const weights = state._rerankerWeights;
+      if (
+        !(
+          weights?.weights?.queryTransform &&
+          weights.weights.memoryTransform &&
+          weights.config
+        ) ||
+        typeof weights.config.topK !== "number"
+      ) {
         console.warn(
           "[before-model] Invalid reranker weights, skipping retrieval"
         );
@@ -136,17 +144,19 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         // Step 3: Transform to RetrievedMemory format
         const retrievedMemories: RetrievedMemory[] = retrievedDocs.map(
           (doc, index) => {
-            const metadata = doc.metadata as Record<string, unknown>;
+            const metadata = doc.metadata as
+              | Record<string, unknown>
+              | undefined;
 
             return {
-              id: (metadata.id as string) ?? `memory-${index}`,
+              id: (metadata?.id as string) ?? `memory-${index}`,
               topicSummary: doc.pageContent,
-              rawDialogue: (metadata.rawDialogue as string) ?? "",
-              timestamp: (metadata.timestamp as number) ?? Date.now(),
-              sessionId: (metadata.sessionId as string) ?? "unknown",
-              turnReferences: (metadata.turnReferences as number[]) ?? [],
+              rawDialogue: (metadata?.rawDialogue as string) ?? "",
+              timestamp: (metadata?.timestamp as number) ?? Date.now(),
+              sessionId: (metadata?.sessionId as string) ?? "unknown",
+              turnReferences: (metadata?.turnReferences as number[]) ?? [],
               relevanceScore:
-                (metadata.score as number) ??
+                (metadata?.score as number) ??
                 (doc as { score?: number }).score ??
                 -1,
             };

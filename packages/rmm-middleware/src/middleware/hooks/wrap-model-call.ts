@@ -261,7 +261,12 @@ function extractCitationsFromResponse(
 
   // Handle valid citations
   // citedSet contains indices of memories the LLM found useful
-  const citedSet = new Set(citationResult.indices ?? []);
+  // Validate indices are within valid range for selectedMemories
+  const maxIndex = selectedMemories.length - 1;
+  const validIndices = (citationResult.indices ?? []).filter(
+    (i): i is number => typeof i === "number" && i >= 0 && i <= maxIndex
+  );
+  const citedSet = new Set(validIndices);
 
   return selectedMemories.map((memory, index) => ({
     memoryId: memory.id,

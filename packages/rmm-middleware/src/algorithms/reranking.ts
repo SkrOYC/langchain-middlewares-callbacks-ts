@@ -173,6 +173,11 @@ function sampleWithoutReplacementFromProbabilities(
       }
     }
 
+    // Guard against floating-point precision issues
+    if (selectedIndex === -1) {
+      selectedIndex = availableProbabilities.length - 1;
+    }
+
     // Store the original index
     selectedIndices.push(availableIndices[selectedIndex]);
 
@@ -207,7 +212,17 @@ export function computeRelevanceScore(
   // Compute dot product: Σ(q'_i * m'_i)
   let score = 0;
   for (let i = 0; i < queryEmbedding.length; i++) {
-    score += (queryEmbedding[i] ?? 0) * (memoryEmbedding[i] ?? 0);
+    const product = (queryEmbedding[i] ?? 0) * (memoryEmbedding[i] ?? 0);
+    // Check for overflow before adding (though unlikely for typical embedding values)
+    if (!(Number.isFinite(score) && Number.isFinite(product))) {
+      break;
+    }
+    score += product;
+  }
+
+  // Clamp score to safe bounds if overflow occurred
+  if (!Number.isFinite(score)) {
+    score = Number.MAX_SAFE_INTEGER;
   }
 
   return score;
