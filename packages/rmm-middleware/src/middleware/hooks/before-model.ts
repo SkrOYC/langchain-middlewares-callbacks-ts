@@ -124,7 +124,11 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         console.warn(
           "[before-model] Invalid reranker weights, skipping retrieval"
         );
-        return {};
+        // Preserve existing state
+        return {
+          _retrievedMemories: state._retrievedMemories ?? [],
+          _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
+        };
       }
 
       // Preserve existing retrieved memories in case of error
@@ -140,10 +144,11 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         const query = extractLastHumanMessage(state.messages);
 
         // If no human message found, skip retrieval
-        // Still increment turn counter since an agent turn occurred
+        // Still increment turn counter and preserve existing memories
         if (!query) {
           return {
-            _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
+            _retrievedMemories: existingMemories,
+            _turnCountInSession: newTurnCount,
           };
         }
 

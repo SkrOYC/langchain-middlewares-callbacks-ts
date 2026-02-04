@@ -9,7 +9,10 @@
  * 5. Creates ephemeral HumanMessage with selected memories
  * 6. Calls handler with augmented messages
  * 7. Extracts citations from LLM response
- * 8. Assigns rewards (+1 cited, -1 not cited) for RL update
+ * 8. Stores citations with rewards (+1 cited, -1 not cited) in runtime context
+ *
+ * RL Weight Updates: Deferred to afterModel hook (not implemented in this PR).
+ * Citations stored in runtime.context._citations for downstream processing.
  *
  * Per Appendix F.8: Uses ephemeral HumanMessage (NOT system message)
  */

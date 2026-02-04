@@ -280,10 +280,10 @@ describe("CitationRecordSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  test("rejects invalid memoryId UUID", () => {
+  test("rejects invalid reward value", () => {
     const invalidRecord = {
       ...createValidCitationRecord(),
-      memoryId: "not-uuid",
+      reward: 0,  // Reward must be +1 or -1
     };
     const result = CitationRecordSchema.safeParse(invalidRecord);
     expect(result.success).toBe(false);

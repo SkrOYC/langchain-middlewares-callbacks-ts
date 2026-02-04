@@ -122,7 +122,7 @@ export type RerankerState = z.infer<typeof RerankerStateSchema>;
  * Reward: +1 (useful) or -1 (not useful)
  */
 export const CitationRecordSchema = z.object({
-  memoryId: z.string().uuid(),
+  memoryId: z.string(),  // Can be UUID or memory ID like "memory-{index}"
   cited: z.boolean(),
   reward: z.union([z.literal(1), z.literal(-1)]),
   turnIndex: z.number().int().nonnegative(),

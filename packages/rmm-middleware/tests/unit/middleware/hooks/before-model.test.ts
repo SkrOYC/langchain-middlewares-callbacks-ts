@@ -297,7 +297,10 @@ describe("beforeModel Hook", () => {
     const result = await middleware.beforeModel(emptyQueryState, mockRuntime);
 
     expect(vectorStoreCalled).toBe(false);
-    expect(result._retrievedMemories).toBeUndefined();
+    // When no query is found, existing memories should be preserved (empty array if none)
+    expect(result._retrievedMemories).toEqual([]);
+    // Turn counter should still increment
+    expect(result._turnCountInSession).toBe(1);
   });
 
   test("handles VectorStore failure gracefully", async () => {

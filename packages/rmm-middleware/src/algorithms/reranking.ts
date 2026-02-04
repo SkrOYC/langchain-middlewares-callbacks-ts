@@ -51,9 +51,10 @@ export function applyEmbeddingAdaptation(
 
   // Validate each row has the correct number of columns
   for (let i = 0; i < transformMatrix.length; i++) {
-    if (transformMatrix[i].length !== embedding.length) {
+    const row = transformMatrix[i];
+    if (!row || row.length !== embedding.length) {
       throw new Error(
-        `Matrix row ${i} has ${transformMatrix[i].length} columns, expected ${embedding.length}`
+        `Matrix row ${i} is invalid or has ${row?.length ?? "undefined"} columns, expected ${embedding.length}`
       );
     }
   }

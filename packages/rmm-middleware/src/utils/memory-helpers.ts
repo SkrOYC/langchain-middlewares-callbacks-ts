@@ -34,7 +34,7 @@ export function extractLastHumanMessage(
 }
 
 /**
- * Gets content from a single message if it's a human message
+ * Gets content from a single message if its a human message
  */
 function getMessageContent(message: BaseMessage): string | null {
   const messageAny = message as {
@@ -83,42 +83,26 @@ function extractContent(
 /**
  * Escapes XML special characters to prevent injection attacks
  *
- * Handles basic entities plus common XML constructs that could break parsing.
+ * Note: For memories created through the extraction pipeline, content
+ * should already be sanitized. This provides defense-in-depth.
  */
 function escapeXml(unsafe: string): string {
-  // First, handle multi-character sequences that could break XML structure
-  let escaped = unsafe;
-
-  // Escape CDATA section boundaries
-  escaped = escaped.replace(/]]>/g, "]]]]><![CDATA[>");
-
-  // Escape comments
-  escaped = escaped.replace(/<!--/g, "<!----><!--");
-  escaped = escaped.replace(/-->/g, "<!--->");
-
-  // Escape processing instructions
-  escaped = escaped.replace(/<\?/g, "<!?");
-  escaped = escaped.replace(/\?>/g, "<?>");
-
-  // Escape basic XML entities
-  escaped = escaped
+  return unsafe
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-
-  return escaped;
 }
 
 /**
  * Formats memories into an XML-like block structure for injection
  *
- * Format matches the paper's Appendix D.2 citation format:
+ * Format matches the papers Appendix D.2 citation format:
  * <memories>
- * – Memory [0]: topicSummary
+ *  Memory [0]: topicSummary
  *   Original dialogue content
- * – Memory [1]: topicSummary
+ *  Memory [1]: topicSummary
  *   Original dialogue content
  * </memories>
  *
@@ -137,7 +121,7 @@ export function formatMemoriesBlock(memories: RetrievedMemory[]): string {
         ? `\n    ${escapeXml(memory.rawDialogue)}`
         : "";
 
-      return `– Memory [${index}]: ${escapeXml(memory.topicSummary)}${dialogueBlock}`;
+      return `Memory [${index}]: ${escapeXml(memory.topicSummary)}${dialogueBlock}`;
     })
     .join("\n");
 
