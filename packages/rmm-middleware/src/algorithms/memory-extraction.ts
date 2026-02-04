@@ -22,7 +22,7 @@ function formatSessionHistory(history: BaseMessage[]): string {
   for (let i = 0; i < history.length; i++) {
     const message = history[i];
     const turnNumber = Math.floor(i / 2);
-    const speaker = i % 2 === 0 ? "SPEAKER_1" : "SPEAKER_2";
+    const speaker = message.type;
 
     dialogueParts.push(
       `* Turn ${turnNumber}:\n  – ${speaker}: ${message.content}`
@@ -171,7 +171,7 @@ export async function extractMemories(
     return memories;
   } catch (error) {
     // LLM failure - return null for graceful degradation
-    console.error("[memory-extraction] Error during memory extraction:", error);
+    console.warn("[memory-extraction] Error during memory extraction:", error);
     return null;
   }
 }

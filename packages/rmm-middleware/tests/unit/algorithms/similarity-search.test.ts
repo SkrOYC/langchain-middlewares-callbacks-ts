@@ -269,6 +269,7 @@ describe("findSimilarMemories Algorithm", () => {
               sessionId: expectedSessionId,
               turnReferences: expectedTurnRefs,
               timestamp: expectedTimestamp,
+              rawDialogue: "Test memory content",
             },
           },
         ];

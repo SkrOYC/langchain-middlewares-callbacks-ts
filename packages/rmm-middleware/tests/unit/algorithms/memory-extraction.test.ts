@@ -259,8 +259,8 @@ describe("extractMemories Algorithm", () => {
     // Verify that the input contains turn markers (Turn 0 and Turn 1 for 4 messages)
     expect(input).toContain("Turn 0");
     expect(input).toContain("Turn 1");
-    expect(input).toContain("SPEAKER_1");
-    expect(input).toContain("SPEAKER_2");
+    expect(input).toContain("human");
+    expect(input).toContain("ai");
   });
 
   test("generates embeddings for extracted summaries", async () => {

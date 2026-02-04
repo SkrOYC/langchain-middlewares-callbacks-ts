@@ -8,6 +8,19 @@ import { findSimilarMemories } from "../../algorithms/similarity-search";
 import { decideUpdateAction, type UpdateAction } from "../../algorithms/memory-update";
 import { addMemory, mergeMemory } from "../../algorithms/memory-actions";
 
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Default number of similar memories to retrieve for merge decisions
+ */
+const DEFAULT_TOP_K = 5;
+
+// ============================================================================
+// Interfaces
+// ============================================================================
+
 /**
  * Interface for the afterAgent runtime context
  */
@@ -97,7 +110,7 @@ export async function afterAgent(
       const similarMemories = await findSimilarMemories(
         memory,
         vectorStore,
-        5 // topK
+        DEFAULT_TOP_K
       );
 
       // Step 3: Decide Add vs Merge
@@ -148,8 +161,10 @@ export async function afterAgent(
           // Merge with the memory at the specified index
           const existingMemory = similarMemories[action.index];
           if (existingMemory) {
+            // Pass the full existingMemory object to mergeMemory
+            // This avoids unreliable similaritySearch fallback
             await mergeMemory(
-              existingMemory.id,
+              existingMemory,
               action.merged_summary,
               vectorStore
             );

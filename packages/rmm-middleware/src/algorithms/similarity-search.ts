@@ -5,12 +5,14 @@ import type { MemoryEntry, RetrievedMemory } from "../../schemas/index.js";
 
 /**
  * Interface for document metadata stored in VectorStore
+ * Includes rawDialogue to preserve original conversation context
  */
 interface MemoryDocumentMetadata {
   id: string;
   sessionId: string;
   turnReferences: number[];
   timestamp: number;
+  rawDialogue: string;
   [key: string]: unknown;
 }
 
@@ -58,7 +60,7 @@ export async function findSimilarMemories(
         return {
           id: metadata.id,
           topicSummary: result.pageContent,
-          rawDialogue: result.pageContent,
+          rawDialogue: metadata.rawDialogue,
           timestamp: metadata.timestamp,
           sessionId: metadata.sessionId,
           // embedding omitted - not returned by VectorStore.similaritySearch

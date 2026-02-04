@@ -168,19 +168,15 @@ describe("Memory Actions", () => {
       const existingId = "existing-memory-456";
       const mergedSummary = "User enjoys outdoor activities including hiking";
 
-      // Mock similarity search to return the existing document
-      const mockSimilaritySearch = async () => {
-        return [
-          {
-            pageContent: "Old content",
-            metadata: {
-              id: existingId,
-              sessionId: "session-123",
-              timestamp: Date.now() - 100000,
-              turnReferences: [0],
-            },
-          },
-        ];
+      // Create existing memory object
+      const existingMemory = {
+        id: existingId,
+        topicSummary: "Old content",
+        rawDialogue: "Test raw dialogue",
+        timestamp: Date.now() - 100000,
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0],
       };
 
       const addedDocuments: Array<{
@@ -200,13 +196,12 @@ describe("Memory Actions", () => {
       };
 
       const mockVectorStore = {
-        similaritySearch: mockSimilaritySearch,
         delete: mockDelete,
         addDocuments: mockAddDocuments,
       };
 
       await mergeMemory(
-        existingId,
+        existingMemory,
         mergedSummary,
         mockVectorStore as any
       );
@@ -226,10 +221,22 @@ describe("Memory Actions", () => {
         sessionId: "session-123",
         timestamp: Date.now() - 100000,
         turnReferences: [0],
+        rawDialogue: "Test raw dialogue",
       };
       const mergedSummary = "Updated summary";
 
-      // Mock similarity search to return the existing document
+      // Create a memory object with the existing data
+      const existingMemory = {
+        id: existingId,
+        topicSummary: "Old content",
+        rawDialogue: "Test raw dialogue",
+        timestamp: existingMetadata.timestamp,
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0],
+      };
+
+      // similaritySearch is no longer used - keeping for reference only
       const mockSimilaritySearch = async () => {
         return [
           {
@@ -259,7 +266,7 @@ describe("Memory Actions", () => {
       };
 
       await mergeMemory(
-        existingId,
+        existingMemory,
         mergedSummary,
         mockVectorStore as any
       );
@@ -278,18 +285,30 @@ describe("Memory Actions", () => {
           "../../../src/algorithms/memory-actions.ts"
         );
 
-        // Mock VectorStore that throws error
+        // Create a memory object
+        const existingMemory = {
+          id: "existing-id",
+          topicSummary: "Old content",
+          rawDialogue: "Test raw dialogue",
+          timestamp: Date.now(),
+          sessionId: "session-123",
+          embedding: [],
+          turnReferences: [0],
+        };
+
+        // Mock VectorStore that throws error on addDocuments
         const mockVectorStoreError = {
-          similaritySearch: async () => {
+          addDocuments: async () => {
             throw new Error("VectorStore connection failed");
           },
+          delete: async () => {},
         };
 
         // Should not throw, errors are caught internally
         let errorThrown = false;
         try {
           await mergeMemory(
-            "existing-id",
+            existingMemory,
             "merged summary",
             mockVectorStoreError as any
           );
@@ -308,7 +327,28 @@ describe("Memory Actions", () => {
       const existingId = "specific-existing-id-789";
       const mergedSummary = "Merged content";
 
-      // Mock similarity search to return the existing document
+      // Create existing memory object
+      const existingMemory = {
+        id: existingId,
+        topicSummary: "Old content",
+        rawDialogue: "Test raw dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0],
+      };
+
+      const deletedIds: string[][] = [];
+
+      // Mock delete to capture deleted IDs
+      const mockDelete = async (options: { ids: string[] }) => {
+        deletedIds.push(options.ids);
+      };
+
+      // Mock addDocuments
+      const mockAddDocuments = async () => {};
+
+      // similaritySearch is no longer used - pass the full memory object
       const mockSimilaritySearch = async () => {
         return [
           {
@@ -323,16 +363,6 @@ describe("Memory Actions", () => {
         ];
       };
 
-      const deletedIds: string[][] = [];
-
-      // Mock delete to capture deleted IDs
-      const mockDelete = async (options: { ids: string[] }) => {
-        deletedIds.push(options.ids);
-      };
-
-      // Mock addDocuments
-      const mockAddDocuments = async () => {};
-
       const mockVectorStore = {
         similaritySearch: mockSimilaritySearch,
         delete: mockDelete,
@@ -340,7 +370,7 @@ describe("Memory Actions", () => {
       };
 
       await mergeMemory(
-        existingId,
+        existingMemory,
         mergedSummary,
         mockVectorStore as any
       );
@@ -357,19 +387,15 @@ describe("Memory Actions", () => {
       const existingId = "existing-id";
       const mergedSummary = "This is the merged summary content";
 
-      // Mock similarity search to return the existing document
-      const mockSimilaritySearch = async () => {
-        return [
-          {
-            pageContent: "Old content",
-            metadata: {
-              id: existingId,
-              sessionId: "session-123",
-              timestamp: Date.now(),
-              turnReferences: [0],
-            },
-          },
-        ];
+      // Create existing memory object
+      const existingMemory = {
+        id: existingId,
+        topicSummary: "Old content",
+        rawDialogue: "Test raw dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0],
       };
 
       const addedContent: string[] = [];
@@ -386,13 +412,12 @@ describe("Memory Actions", () => {
       };
 
       const mockVectorStore = {
-        similaritySearch: mockSimilaritySearch,
         delete: mockDelete,
         addDocuments: mockAddDocuments,
       };
 
       await mergeMemory(
-        existingId,
+        existingMemory,
         mergedSummary,
         mockVectorStore as any
       );
@@ -401,41 +426,52 @@ describe("Memory Actions", () => {
       expect(addedContent[0]).toBe(mergedSummary);
     });
 
-    test("does not update when document not found", async () => {
-      await suppressWarnings(async () => {
-        const { mergeMemory } = await import(
-          "../../../src/algorithms/memory-actions.ts"
-        );
+    test("always merges when memory object is provided", async () => {
+      const { mergeMemory } = await import(
+        "../../../src/algorithms/memory-actions.ts"
+      );
 
-        const existingId = "non-existent-id";
-        const mergedSummary = "This should not be added";
+      // Create a memory object to merge
+      const existingMemory = {
+        id: "memory-to-merge",
+        topicSummary: "Original summary",
+        rawDialogue: "Original raw dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0],
+      };
 
-        // Mock similarity search to return empty array
-        const mockSimilaritySearch = async () => {
-          return [];
-        };
+      const mergedSummary = "Updated summary content";
 
-        let addDocumentsCalled = false;
+      let addDocumentsCalled = false;
+      const addedContent: string[] = [];
 
-        // Mock addDocuments to verify it's not called
-        const mockAddDocuments = async () => {
-          addDocumentsCalled = true;
-        };
+      // Mock addDocuments to verify it's called with merged content
+      const mockAddDocuments = async (docs: Array<{
+        pageContent: string;
+        metadata: Record<string, unknown>;
+      }>) => {
+        addDocumentsCalled = true;
+        addedContent.push(docs[0].pageContent);
+      };
 
-        const mockVectorStore = {
-          similaritySearch: mockSimilaritySearch,
-          delete: async (_options: { ids: string[] }) => {},
-          addDocuments: mockAddDocuments,
-        };
+      const mockDelete = async (_options: { ids: string[] }) => {};
 
-        await mergeMemory(
-          existingId,
-          mergedSummary,
-          mockVectorStore as any
-        );
+      const mockVectorStore = {
+        delete: mockDelete,
+        addDocuments: mockAddDocuments,
+      };
 
-        expect(addDocumentsCalled).toBe(false);
-      });
+      await mergeMemory(
+        existingMemory,
+        mergedSummary,
+        mockVectorStore as any
+      );
+
+      // With the new signature, we always merge when given a memory object
+      expect(addDocumentsCalled).toBe(true);
+      expect(addedContent[0]).toBe(mergedSummary);
     });
   });
 });
