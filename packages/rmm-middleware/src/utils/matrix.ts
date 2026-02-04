@@ -183,6 +183,7 @@ export function matmul(a: number[][], b: number[][]): number[][] {
 
           for (let k = kk; k < kEnd; k++) {
             const aVal = aMat.data[aRowOffset + k];
+            if (aVal === undefined) continue;
 
             // Inner loop with 4x unrolling for better instruction-level parallelism
             let j = jj;
@@ -194,15 +195,36 @@ export function matmul(a: number[][], b: number[][]): number[][] {
               const bIdx2 = (j + 2) * bRows + k;
               const bIdx3 = (j + 3) * bRows + k;
 
-              result[resultRowOffset + j] += aVal * bTransposed.data[bIdx0];
-              result[resultRowOffset + j + 1] += aVal * bTransposed.data[bIdx1];
-              result[resultRowOffset + j + 2] += aVal * bTransposed.data[bIdx2];
-              result[resultRowOffset + j + 3] += aVal * bTransposed.data[bIdx3];
+              const bVal0 = bTransposed.data[bIdx0];
+              const bVal1 = bTransposed.data[bIdx1];
+              const bVal2 = bTransposed.data[bIdx2];
+              const bVal3 = bTransposed.data[bIdx3];
+
+              if (bVal0 !== undefined) {
+                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
+                result[resultRowOffset + j]! += aVal * bVal0;
+              }
+              if (bVal1 !== undefined) {
+                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
+                result[resultRowOffset + j + 1]! += aVal * bVal1;
+              }
+              if (bVal2 !== undefined) {
+                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
+                result[resultRowOffset + j + 2]! += aVal * bVal2;
+              }
+              if (bVal3 !== undefined) {
+                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
+                result[resultRowOffset + j + 3]! += aVal * bVal3;
+              }
             }
 
             // Handle remaining elements
             for (; j < jEnd; j++) {
-              result[resultRowOffset + j] += aVal * bTransposed.data[j * bRows + k];
+              const bVal = bTransposed.data[j * bRows + k];
+              if (bVal !== undefined) {
+                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
+                result[resultRowOffset + j]! += aVal * bVal;
+              }
             }
           }
         }
@@ -216,7 +238,8 @@ export function matmul(a: number[][], b: number[][]): number[][] {
     const row: number[] = [];
     const rowOffset = i * bCols;
     for (let j = 0; j < bCols; j++) {
-      row.push(result[rowOffset + j]);
+      // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
+      row.push(result[rowOffset + j]!);
     }
     resultMatrix.push(row);
   }

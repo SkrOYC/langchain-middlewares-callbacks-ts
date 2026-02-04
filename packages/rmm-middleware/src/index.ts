@@ -1,5 +1,3 @@
-// biome-ignore lint/performance/noBarrelFile: This is the main entry point barrel file
-
 // ============================================================================
 // Schemas and Types
 // ============================================================================
@@ -33,6 +31,8 @@ export {
   RetrievedMemorySchema,
   type RMMState,
   RMMStateSchema,
+  type SessionMetadata,
+  SessionMetadataSchema,
   validateEmbeddingDimension,
 } from "./schemas/index.ts";
 
@@ -54,3 +54,13 @@ export {
   residualAdd,
   validateCitations,
 } from "./utils/index.ts";
+
+// ============================================================================
+// Storage Adapters (RMM-3)
+// ============================================================================
+
+export {
+  createStorageAdapters,
+  type MetadataStorage,
+  type WeightStorage,
+} from "./storage/index.ts";

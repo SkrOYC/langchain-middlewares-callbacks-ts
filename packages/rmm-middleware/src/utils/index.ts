@@ -1,5 +1,3 @@
-// biome-ignore lint/performance/noBarrelFile: Centralized utility exports
-
 /**
  * Core mathematical utilities for RMM algorithms.
  *
