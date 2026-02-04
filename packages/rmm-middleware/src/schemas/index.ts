@@ -30,9 +30,21 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 // ============================================================================
 
 /**
- * Retrieved memory with relevance scores
+ * Retrieved memory with relevance scores.
+ * Note: embedding is optional since VectorStore.similaritySearch doesn't return embeddings.
+ * We use a separate base to avoid field duplication while making embedding optional.
  */
-export const RetrievedMemorySchema = MemoryEntrySchema.extend({
+const RetrievedMemoryBaseSchema = z.object({
+  id: z.string().uuid(),
+  topicSummary: z.string().min(1),
+  rawDialogue: z.string().min(1),
+  timestamp: z.number().int().positive(),
+  sessionId: z.string().min(1),
+  turnReferences: z.array(z.number().int().nonnegative()),
+});
+
+export const RetrievedMemorySchema = RetrievedMemoryBaseSchema.extend({
+  embedding: z.array(z.number()).length(EMBEDDING_DIMENSION).optional(),
   relevanceScore: z.number(),
   rerankScore: z.number().optional(),
 });
