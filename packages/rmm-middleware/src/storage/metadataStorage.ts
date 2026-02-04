@@ -48,18 +48,8 @@ export function createMetadataStorage(store: BaseStore): MetadataStorage {
           return null;
         }
 
-        // BaseStore returns an Item object with a value property
-        const rawValue =
-          typeof item === "object" && "value" in item
-            ? (item.value as unknown)
-            : item;
-
-        if (rawValue === null || rawValue === undefined) {
-          return null;
-        }
-
         // Validate the data against schema
-        const parseResult = SessionMetadataSchema.safeParse(rawValue);
+        const parseResult = SessionMetadataSchema.safeParse(item.value);
 
         if (!parseResult.success) {
           return null;
