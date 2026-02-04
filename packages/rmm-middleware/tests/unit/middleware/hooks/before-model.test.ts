@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { RerankerState, RetrievedMemory } from "@/schemas/index";
+import { createTestMessages } from "@/tests/helpers/messages";
 
 /**
  * Tests for beforeModel hook
@@ -31,31 +31,15 @@ interface BeforeModelState {
 }
 
 describe("beforeModel Hook", () => {
-  // Sample state with messages for testing
+  // Sample state with messages for testing using proper LangChain messages
+  const sampleMessages = createTestMessages([
+    { type: "human", content: "Hello, I went hiking this weekend" },
+    { type: "ai", content: "That sounds great!" },
+    { type: "human", content: "What do you know about hiking trails?" },
+  ]);
+
   const sampleState: BeforeModelState = {
-    messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "Hello, I went hiking this weekend" },
-        lc_id: ["human"],
-        content: "Hello, I went hiking this weekend",
-        additional_kwargs: {},
-      },
-      {
-        lc_serialized: { type: "ai" },
-        lc_kwargs: { content: "That sounds great!" },
-        lc_id: ["ai"],
-        content: "That sounds great!",
-        additional_kwargs: {},
-      },
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "What do you know about hiking trails?" },
-        lc_id: ["human"],
-        content: "What do you know about hiking trails?",
-        additional_kwargs: {},
-      },
-    ],
+    messages: sampleMessages,
     _rerankerWeights: {
       weights: {
         queryTransform: [],

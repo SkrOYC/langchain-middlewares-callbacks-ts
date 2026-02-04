@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseMessage } from "@langchain/core/messages";
 import type {
   CitationRecord,
   RerankerState,
   RetrievedMemory,
 } from "@/schemas/index";
+import { createHumanMessage } from "@/tests/helpers/messages";
 
 /**
  * Tests for wrapModelCall hook
@@ -96,15 +96,7 @@ describe("wrapModelCall Hook", () => {
   };
 
   const sampleState: WrapModelCallState = {
-    messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "What outdoor activities do you enjoy?" },
-        lc_id: ["human"],
-        content: "What outdoor activities do you enjoy?",
-        additional_kwargs: {},
-      },
-    ],
+    messages: [createHumanMessage("What outdoor activities do you enjoy?")],
     _rerankerWeights: sampleRerankerWeights,
     _retrievedMemories: sampleMemories,
     _citations: [],
@@ -203,7 +195,7 @@ describe("wrapModelCall Hook", () => {
       },
     };
 
-    let capturedCitations: CitationRecord[] = [];
+    const _capturedCitations: CitationRecord[] = [];
     const mockHandler = async (_request: ModelRequest) => {
       return {
         content: "Based on your memories [0, 2, 4]",
@@ -236,7 +228,7 @@ describe("wrapModelCall Hook", () => {
     // Verify citations were captured and stored
     expect(mockRuntime.context._citations).toBeDefined();
     expect(mockRuntime.context._citations?.length).toBeGreaterThan(0);
-    
+
     // Verify topM configuration
     expect(sampleRerankerWeights.config.topM).toBe(5);
   });
@@ -342,7 +334,7 @@ describe("wrapModelCall Hook", () => {
     // Citations should be stored in runtime.context._citations
     expect(mockRuntime.context._citations).toBeDefined();
     expect(mockRuntime.context._citations?.length).toBe(sampleMemories.length);
-    
+
     // Verify citation structure: all should have memoryId, cited, reward, turnIndex
     for (const citation of mockRuntime.context._citations ?? []) {
       expect(citation.memoryId).toBeDefined();

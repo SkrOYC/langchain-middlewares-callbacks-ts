@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createZeroMatrix } from "@/utils/matrix";
 
 // ============================================================================
 // Constants
@@ -144,6 +145,102 @@ export const CitationRecordSchema = z.object({
 export type CitationRecord = z.infer<typeof CitationRecordSchema>;
 
 // ============================================================================
+// GradientSample Schema (Exact REINFORCE)
+// ============================================================================
+
+/**
+ * Stores computation state for exact REINFORCE gradient computation.
+ * Contains all embeddings and probabilities needed to compute gradients
+ * for one turn's reranking decision.
+ *
+ * For Equation 3: Δφ = η·(R-b)·∇_φ log P(M_M|q, M_K; φ)
+ * We need: q, q', m_i, m'_i, P_i, selected indices, R_i
+ */
+export const GradientSampleSchema = z.object({
+  // Query embeddings (1536-dim)
+  queryEmbedding: z.array(z.number()).length(EMBEDDING_DIMENSION),
+  adaptedQuery: z.array(z.number()).length(EMBEDDING_DIMENSION),
+
+  // Memory embeddings for all K retrieved memories (K × 1536 where K = topK)
+  memoryEmbeddings: z.array(z.array(z.number()).length(EMBEDDING_DIMENSION)), // Array of K embeddings, each 1536-dim
+
+  // Adapted memories (K × 1536)
+  adaptedMemories: z.array(z.array(z.number()).length(EMBEDDING_DIMENSION)), // Array of K embeddings, each 1536-dim
+
+  // Gumbel-Softmax sampling probabilities for all K memories (K probabilities)
+  samplingProbabilities: z.array(z.number().min(0).max(1)), // Array of K probabilities
+
+  // Indices of Top-M memories selected for LLM context
+  selectedIndices: z.array(z.number().int().nonnegative()),
+
+  // Citation rewards (+1 or -1) for all K memories
+  // Matches indices in memoryEmbeddings
+  citationRewards: z.array(z.union([z.literal(1), z.literal(-1)])), // Array of K rewards
+
+  // Timestamp for this gradient sample
+  timestamp: z.number().int().positive(),
+});
+
+export type GradientSample = z.infer<typeof GradientSampleSchema>;
+
+// ============================================================================
+// GradientAccumulatorState Schema
+// ============================================================================
+
+/**
+ * State for accumulating gradients across multiple turns (batch size = 4).
+ * Persisted to BaseStore for recovery across sessions.
+ */
+export const GradientAccumulatorStateSchema = z.object({
+  // Accumulated gradient samples (max 4 per batch)
+  samples: z.array(GradientSampleSchema).max(4),
+
+  // Accumulated gradients for W_q (1536×1536)
+  accumulatedGradWq: z
+    .array(z.array(z.number()).length(EMBEDDING_DIMENSION))
+    .length(EMBEDDING_DIMENSION),
+
+  // Accumulated gradients for W_m (1536×1536)
+  accumulatedGradWm: z
+    .array(z.array(z.number()).length(EMBEDDING_DIMENSION))
+    .length(EMBEDDING_DIMENSION),
+
+  // Whether a batch update was applied (for tracking)
+  lastBatchIndex: z.number().int().nonnegative(),
+
+  // Timestamp of last update
+  lastUpdated: z.number().int().positive(),
+});
+
+export type GradientAccumulatorState = z.infer<
+  typeof GradientAccumulatorStateSchema
+>;
+
+// ============================================================================
+// Gradient Utilities
+// ============================================================================
+
+/**
+ * Creates an empty gradient accumulator state for a new batch.
+ * Initializes with zero matrices and empty samples array.
+ */
+export function createEmptyGradientAccumulatorState(): GradientAccumulatorState {
+  return {
+    samples: [],
+    accumulatedGradWq: createZeroMatrix(
+      EMBEDDING_DIMENSION,
+      EMBEDDING_DIMENSION
+    ),
+    accumulatedGradWm: createZeroMatrix(
+      EMBEDDING_DIMENSION,
+      EMBEDDING_DIMENSION
+    ),
+    lastBatchIndex: 0,
+    lastUpdated: Date.now(),
+  };
+}
+
+// ============================================================================
 // RMMState Schema (with private fields)
 // ============================================================================
 
@@ -168,6 +265,7 @@ export const RMMStateSchema = z.object({
   _citations: z.array(CitationRecordSchema),
   _retrievedMemories: z.array(RetrievedMemorySchema),
   _rerankerWeights: RerankerStateSchema,
+  _gradientAccumulator: z.array(GradientSampleSchema).optional(),
 
   // Standard LangChain state
   messages: z.array(BaseMessageSchema),

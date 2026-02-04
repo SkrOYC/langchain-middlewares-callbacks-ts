@@ -11,16 +11,12 @@ import { describe, expect, test } from "bun:test";
 
 describe("updateMemory Prompt Template", () => {
   test("should export a prompt template function", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     expect(typeof updateMemory).toBe("function");
   });
 
   test("should accept history summaries and new summary parameters", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const historySummaries = ["User enjoys hiking", "User is vegetarian"];
     const newSummary = "User started running marathons";
     const prompt = updateMemory(historySummaries, newSummary);
@@ -29,45 +25,35 @@ describe("updateMemory Prompt Template", () => {
   });
 
   test("should contain task description for memory update", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("personal history summaries");
     expect(prompt).toContain("update");
   });
 
   test("should specify Add action format", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("Add()");
     expect(prompt).toContain("not relevant to any history");
   });
 
   test("should specify Merge action format", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory(["Existing summary"], "New summary");
     expect(prompt).toContain("Merge(index, merged_summary)");
     expect(prompt).toContain("relevant to a history personal summary");
   });
 
   test("should contain input format instructions", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("history_summaries");
     expect(prompt).toContain("new_summary");
   });
 
   test("should contain example with Merge action", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory(
       ["SPEAKER_1 works out although he doesn't particularly enjoy it."],
       "SPEAKER_1 exercises every Monday and Thursday."
@@ -78,26 +64,20 @@ describe("updateMemory Prompt Template", () => {
   });
 
   test("should handle multiple actions on separate lines", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory(["Summary 1", "Summary 2"], "New summary");
     expect(prompt).toContain("newline");
   });
 
   test("should be a non-configurable built-in prompt", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory([], "test");
     expect(prompt).not.toContain("{userConfig");
     expect(prompt).not.toContain("{customPrompt");
   });
 
   test("should handle empty history summaries", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory([], "New summary");
     expect(typeof prompt).toBe("string");
     expect(prompt.length).toBeGreaterThan(0);
@@ -105,9 +85,7 @@ describe("updateMemory Prompt Template", () => {
   });
 
   test("should handle single history summary", async () => {
-    const { updateMemory } = await import(
-      "@/middleware/prompts/update-memory"
-    );
+    const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory(
       ["User enjoys hiking"],
       "User enjoys hiking and running"

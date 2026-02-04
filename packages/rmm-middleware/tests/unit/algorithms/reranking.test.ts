@@ -172,7 +172,7 @@ describe("Reranking Algorithms", () => {
       const topM = 2;
       const result = gumbelSoftmaxSample(sampleMemories, topM, 0.5);
 
-      expect(result.length).toBe(topM);
+      expect(result.selectedMemories.length).toBe(topM);
     });
 
     test("returns unique indices (no duplicates)", async () => {
@@ -182,8 +182,8 @@ describe("Reranking Algorithms", () => {
       const result = gumbelSoftmaxSample(sampleMemories, topM, 0.5);
 
       // All selected memories should be unique
-      const uniqueIds = new Set(result.map((m) => m.id));
-      expect(uniqueIds.size).toBe(result.length);
+      const uniqueIds = new Set(result.selectedMemories.map((m) => m.id));
+      expect(uniqueIds.size).toBe(result.selectedMemories.length);
     });
 
     test("temperature effect: high τ produces more uniform distribution", async () => {
@@ -198,7 +198,7 @@ describe("Reranking Algorithms", () => {
 
       for (let i = 0; i < iterations; i++) {
         const result = gumbelSoftmaxSample(sampleMemories, topM, highTemp);
-        for (const memory of result) {
+        for (const memory of result.selectedMemories) {
           selections.set(memory.id, (selections.get(memory.id) ?? 0) + 1);
         }
       }
@@ -220,11 +220,11 @@ describe("Reranking Algorithms", () => {
 
       // Run multiple times
       const selections: Map<string, number> = new Map();
-      const iterations = 100;
+      const iterations = 200; // Increased iterations for more stable results
 
       for (let i = 0; i < iterations; i++) {
         const result = gumbelSoftmaxSample(sampleMemories, topM, lowTemp);
-        for (const memory of result) {
+        for (const memory of result.selectedMemories) {
           selections.set(memory.id, (selections.get(memory.id) ?? 0) + 1);
         }
       }
@@ -235,9 +235,9 @@ describe("Reranking Algorithms", () => {
       const _memory1Selections = selections.get("memory-1") ?? 0;
       const memory2Selections = selections.get("memory-2") ?? 0;
 
-      // Memory 0 should be selected more often than lower-scoring memories
-      // At minimum, it should be selected more than a random distribution would suggest
-      expect(memory0Selections).toBeGreaterThanOrEqual(memory2Selections);
+      // Memory 0 should be selected more often than memory 2 with low temperature
+      // Due to stochastic sampling, we allow for some variance but memory0 should generally win
+      expect(memory0Selections).toBeGreaterThan(memory2Selections);
     });
 
     test("handles fewer memories than topM", async () => {
@@ -249,7 +249,7 @@ describe("Reranking Algorithms", () => {
       const result = gumbelSoftmaxSample(fewMemories, topM, 0.5);
 
       // Should return all available memories
-      expect(result.length).toBe(2);
+      expect(result.selectedMemories.length).toBe(2);
     });
 
     test("handles topM of 0", async () => {
@@ -257,7 +257,7 @@ describe("Reranking Algorithms", () => {
 
       const result = gumbelSoftmaxSample(sampleMemories, 0, 0.5);
 
-      expect(result.length).toBe(0);
+      expect(result.selectedMemories.length).toBe(0);
     });
 
     test("with very low temperature, selects top-scoring memories deterministically", async () => {
@@ -272,9 +272,9 @@ describe("Reranking Algorithms", () => {
 
       for (let i = 0; i < iterations; i++) {
         const result = gumbelSoftmaxSample(sampleMemories, topM, veryLowTemp);
-        
+
         // Collect memory IDs
-        for (const memory of result) {
+        for (const memory of result.selectedMemories) {
           results.add(memory.id);
         }
       }
@@ -282,6 +282,56 @@ describe("Reranking Algorithms", () => {
       // With very low temperature, should consistently select the same top memories
       // Memory-0 has the highest score (0.9), so it should always be selected
       expect(results.has("memory-0")).toBe(true);
+    });
+
+    test("SamplingResult probabilities sum to approximately 1", async () => {
+      const { gumbelSoftmaxSample } = await import("@/algorithms/reranking");
+
+      const topM = 4;
+      const temperature = 0.5;
+
+      const result = gumbelSoftmaxSample(sampleMemories, topM, temperature);
+
+      // Verify allProbabilities array exists and has correct length
+      expect(result.allProbabilities).toBeDefined();
+      expect(result.allProbabilities.length).toBe(sampleMemories.length);
+
+      // Verify probabilities sum to approximately 1 (within floating point tolerance)
+      const sum = result.allProbabilities.reduce((acc, p) => acc + p, 0);
+      expect(Math.abs(sum - 1.0)).toBeLessThan(1e-6);
+
+      // Verify all probabilities are in valid range [0, 1]
+      for (const p of result.allProbabilities) {
+        expect(p).toBeGreaterThanOrEqual(0);
+        expect(p).toBeLessThanOrEqual(1);
+      }
+    });
+
+    test("SamplingResult selectedIndices match selectedMemories", async () => {
+      const { gumbelSoftmaxSample } = await import("@/algorithms/reranking");
+
+      const topM = 4;
+      const temperature = 0.5;
+
+      const result = gumbelSoftmaxSample(sampleMemories, topM, temperature);
+
+      // Verify selectedIndices array exists
+      expect(result.selectedIndices).toBeDefined();
+
+      // Verify selectedMemories correspond to selectedIndices
+      expect(result.selectedMemories.length).toBeLessThanOrEqual(topM);
+      expect(result.selectedIndices.length).toBe(
+        result.selectedMemories.length
+      );
+
+      // Verify each selected memory's ID matches the original memory at that index
+      for (let i = 0; i < result.selectedMemories.length; i++) {
+        const selectedMemory = result.selectedMemories[i];
+        const originalIndex = result.selectedIndices[i];
+        const originalMemory = sampleMemories[originalIndex];
+
+        expect(selectedMemory.id).toBe(originalMemory.id);
+      }
     });
   });
 });
