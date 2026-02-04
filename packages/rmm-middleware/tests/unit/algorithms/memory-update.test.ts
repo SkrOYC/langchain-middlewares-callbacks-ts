@@ -72,9 +72,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that returns Add() decision
     const mockSummarizationModelAdd = {
       invoke: async () => {
-        return {
-          content: "Add()",
-        };
+        const content = "Add()";
+        return { content, text: content };
       },
     };
 
@@ -107,10 +106,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that returns Merge() decision
     const mockSummarizationModelMerge = {
       invoke: async () => {
-        return {
-          content:
-            "Merge(0, User enjoys outdoor activities like hiking and running marathons)",
-        };
+        const content = "Merge(0, User enjoys outdoor activities like hiking and running marathons)";
+        return { content, text: content };
       },
     };
 
@@ -148,10 +145,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that returns multiple decisions
     const mockSummarizationModelMultiple = {
       invoke: async () => {
-        return {
-          content:
-            "Merge(0, Updated summary 1)\nMerge(1, Updated summary 2)\nAdd()",
-        };
+        const content = "Merge(0, Updated summary 1)\nMerge(1, Updated summary 2)\nAdd()";
+        return { content, text: content };
       },
     };
 
@@ -194,9 +189,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that returns invalid decision
     const mockSummarizationModelInvalid = {
       invoke: async () => {
-        return {
-          content: "InvalidAction()",
-        };
+        const content = "InvalidAction()";
+        return { content, text: content };
       },
     };
 
@@ -229,7 +223,8 @@ describe("decideUpdateAction Algorithm", () => {
       // Mock LLM that returns invalid action (triggers error handling)
       const mockSummarizationModelError = {
         invoke: async () => {
-          return { content: "InvalidActionFormat" };
+          const content = "InvalidActionFormat";
+          return { content, text: content };
         },
       };
 
@@ -264,9 +259,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that captures inputs
     const mockSummarizationModelCapture = {
       invoke: async (input: string) => {
-        return {
-          content: "Add()",
-        };
+        const content = "Add()";
+        return { content, text: content };
       },
     };
 
@@ -304,9 +298,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that captures inputs
     const mockSummarizationModelCapture = {
       invoke: async (input: string) => {
-        return {
-          content: "Add()",
-        };
+        const content = "Add()";
+        return { content, text: content };
       },
     };
 

@@ -51,20 +51,19 @@ describe("extractMemories Algorithm", () => {
     // Mock summarization model that returns valid extraction output
     const mockSummarizationModelValid = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [
-              {
-                summary: "User enjoys hiking on weekends",
-                reference: [0, 2],
-              },
-              {
-                summary: "User is a software engineer",
-                reference: [1, 3],
-              },
-            ],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [
+            {
+              summary: "User enjoys hiking on weekends",
+              reference: [0, 2],
+            },
+            {
+              summary: "User is a software engineer",
+              reference: [1, 3],
+            },
+          ],
+        });
+        return { content, text: content };
       },
     };
 
@@ -108,7 +107,8 @@ describe("extractMemories Algorithm", () => {
     // Mock summarization model that returns NO_TRAIT
     const mockSummarizationModelNoTrait = {
       invoke: async () => {
-        return { content: "NO_TRAIT" };
+        const content = "NO_TRAIT";
+        return { content, text: content };
       },
     };
 
@@ -141,7 +141,8 @@ describe("extractMemories Algorithm", () => {
       // Mock summarization model that returns invalid JSON
       const mockSummarizationModelInvalidJson = {
         invoke: async () => {
-          return { content: "this is not valid json" };
+          const content = "this is not valid json";
+          return { content, text: content };
         },
       };
 
@@ -173,7 +174,8 @@ describe("extractMemories Algorithm", () => {
       // Mock LLM that returns content causing parse failure (triggers catch block)
       const mockSummarizationModelError = {
         invoke: async () => {
-          return { content: "{ invalid json that will fail parsing" };
+          const content = "{ invalid json that will fail parsing";
+          return { content, text: content };
         },
       };
 
@@ -273,13 +275,12 @@ describe("extractMemories Algorithm", () => {
 
     const mockSummarizationModelValid = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [
-              { summary: "User enjoys hiking", reference: [0] },
-            ],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [
+            { summary: "User enjoys hiking", reference: [0] },
+          ],
+        });
+        return { content, text: content };
       },
     };
 
@@ -314,14 +315,13 @@ describe("extractMemories Algorithm", () => {
 
     const mockSummarizationModelValid = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [
-              { summary: "User enjoys hiking on weekends", reference: [0, 2] },
-              { summary: "User is a software engineer", reference: [1, 3] },
-            ],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [
+            { summary: "User enjoys hiking on weekends", reference: [0, 2] },
+            { summary: "User is a software engineer", reference: [1, 3] },
+          ],
+        });
+        return { content, text: content };
       },
     };
 
@@ -353,11 +353,10 @@ describe("extractMemories Algorithm", () => {
 
     const mockSummarizationModelValid = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [{ summary: "Test", reference: [0] }],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [{ summary: "Test", reference: [0] }],
+        });
+        return { content, text: content };
       },
     };
 
@@ -387,14 +386,13 @@ describe("extractMemories Algorithm", () => {
 
     const mockSummarizationModelValid = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [
-              { summary: "First memory", reference: [0] },
-              { summary: "Second memory", reference: [1] },
-            ],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [
+            { summary: "First memory", reference: [0] },
+            { summary: "Second memory", reference: [1] },
+          ],
+        });
+        return { content, text: content };
       },
     };
 
@@ -429,11 +427,10 @@ describe("extractMemories Algorithm", () => {
 
     const mockSummarizationModelValid = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [{ summary: "Test", reference: [0] }],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [{ summary: "Test", reference: [0] }],
+        });
+        return { content, text: content };
       },
     };
 
@@ -465,11 +462,10 @@ describe("extractMemories Algorithm", () => {
 
     const customMockModel = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [{ summary: "Test memory", reference: [] }],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [{ summary: "Test memory", reference: [] }],
+        });
+        return { content, text: content };
       },
     };
 
@@ -498,11 +494,10 @@ describe("extractMemories Algorithm", () => {
 
     const customMockModel = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: [{ summary: "Single memory", reference: [0] }],
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: [{ summary: "Single memory", reference: [0] }],
+        });
+        return { content, text: content };
       },
     };
 
@@ -531,14 +526,13 @@ describe("extractMemories Algorithm", () => {
 
     const customMockModel = {
       invoke: async () => {
-        return {
-          content: JSON.stringify({
-            extracted_memories: Array.from({ length: 10 }, (_, i) => ({
-              summary: `Memory ${i}`,
-              reference: [i],
-            })),
-          }),
-        };
+        const content = JSON.stringify({
+          extracted_memories: Array.from({ length: 10 }, (_, i) => ({
+            summary: `Memory ${i}`,
+            reference: [i],
+          })),
+        });
+        return { content, text: content };
       },
     };
 

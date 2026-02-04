@@ -4,13 +4,6 @@ import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 import { parseUpdateActions } from "@/middleware/prompts/update-memory";
 
 /**
- * Interface for minimal summarization model needed by this algorithm
- */
-interface SummarizationModelInterface {
-  invoke(input: string): Promise<{ content: any }>;
-}
-
-/**
  * Update action types for memory updates
  */
 export type UpdateAction =
@@ -44,7 +37,7 @@ export type UpdateAction =
 export async function decideUpdateAction(
   newMemory: MemoryEntry,
   similarMemories: RetrievedMemory[],
-  summarizationModel: SummarizationModelInterface,
+  summarizationModel: BaseChatModel,
   updatePrompt: (historySummaries: string[], newSummary: string) => string
 ): Promise<UpdateAction[]> {
   try {
@@ -56,7 +49,7 @@ export async function decideUpdateAction(
 
     // Step 3: Call LLM with update decision prompt
     const response = await summarizationModel.invoke(prompt);
-    const responseContent = response.content;
+    const responseContent = response.text;
 
     // Step 4: Parse the update actions from the response
     const actions = parseUpdateActions(responseContent, historySummaries.length);

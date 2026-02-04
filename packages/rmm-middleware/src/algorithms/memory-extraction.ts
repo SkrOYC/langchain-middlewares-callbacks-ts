@@ -43,13 +43,6 @@ interface ExtractionOutput {
 }
 
 /**
- * Interface for minimal summarization model needed by this algorithm
- */
-interface SummarizationModelInterface {
-  invoke(input: string): Promise<{ content: any }>;
-}
-
-/**
  * Extracts memories from a session dialogue using LLM-based summarization.
  *
  * This function implements the Prospective Reflection memory extraction algorithm.
@@ -76,7 +69,7 @@ interface SummarizationModelInterface {
  */
 export async function extractMemories(
   sessionHistory: BaseMessage[],
-  summarizationModel: SummarizationModelInterface,
+  summarizationModel: BaseChatModel,
   embeddings: Embeddings,
   speakerPrompt: (dialogueSession: string) => string,
   sessionId?: string
@@ -95,7 +88,7 @@ export async function extractMemories(
 
     // Step 3: Call LLM with extraction prompt
     const response = await summarizationModel.invoke(prompt);
-    const responseContent = response.content;
+    const responseContent = response.text;
 
     // Step 4: Handle NO_TRAIT special case
     if (responseContent === "NO_TRAIT") {
@@ -106,7 +99,7 @@ export async function extractMemories(
     let extractionOutput: ExtractionOutput;
 
     try {
-      extractionOutput = JSON.parse(responseContent as string) as ExtractionOutput;
+      extractionOutput = JSON.parse(responseContent) as ExtractionOutput;
     } catch {
       // Invalid JSON - return null for graceful degradation
       console.warn(
