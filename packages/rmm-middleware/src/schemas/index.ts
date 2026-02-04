@@ -243,6 +243,23 @@ export const MergeDecisionSchema = z
 export type MergeDecision = z.infer<typeof MergeDecisionSchema>;
 
 // ============================================================================
+// SessionMetadata Schema
+// ============================================================================
+
+/**
+ * Schema for session metadata persisted to BaseStore
+ * Tracks version, config hash, and session statistics
+ */
+export const SessionMetadataSchema = z.object({
+  version: z.string().min(1), // RMM schema version
+  configHash: z.string().min(1), // Hash of reranker config
+  sessionCount: z.number().int().nonnegative(), // Total sessions processed
+  lastUpdated: z.number().int().positive(), // Unix timestamp
+});
+
+export type SessionMetadata = z.infer<typeof SessionMetadataSchema>;
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

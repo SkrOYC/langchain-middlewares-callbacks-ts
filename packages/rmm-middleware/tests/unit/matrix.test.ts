@@ -142,7 +142,7 @@ describe("matmul", () => {
     let sum = 0;
     for (let i = 0; i < dim; i += 100) {
       const row = result[i];
-      if (!row || !Number.isFinite(row[0]) || !Number.isFinite(row[dim - 1])) {
+      if (!(row && Number.isFinite(row[0]) && Number.isFinite(row[dim - 1]))) {
         allFinite = false;
         break;
       }
