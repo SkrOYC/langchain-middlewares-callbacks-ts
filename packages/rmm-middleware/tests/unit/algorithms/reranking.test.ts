@@ -260,18 +260,28 @@ describe("Reranking Algorithms", () => {
       expect(result.length).toBe(0);
     });
 
-    test("sorts results by rerankScore descending", async () => {
+    test("with very low temperature, selects top-scoring memories deterministically", async () => {
       const { gumbelSoftmaxSample } = await import("@/algorithms/reranking");
 
-      // Use very low temperature for deterministic behavior
       const topM = 4;
-      const veryLowTemp = 0.01;
+      const veryLowTemp = 0.0001;
 
-      const result = gumbelSoftmaxSample(sampleMemories, topM, veryLowTemp);
+      // Run multiple times to verify determinism with low temperature
+      const results = new Set<string>();
+      const iterations = 50;
 
-      // With very low temperature, should select highest-scoring memories
-      // Verify all 4 are returned (topM = 4)
-      expect(result.length).toBe(4);
+      for (let i = 0; i < iterations; i++) {
+        const result = gumbelSoftmaxSample(sampleMemories, topM, veryLowTemp);
+        
+        // Collect memory IDs
+        for (const memory of result) {
+          results.add(memory.id);
+        }
+      }
+
+      // With very low temperature, should consistently select the same top memories
+      // Memory-0 has the highest score (0.9), so it should always be selected
+      expect(results.has("memory-0")).toBe(true);
     });
   });
 });

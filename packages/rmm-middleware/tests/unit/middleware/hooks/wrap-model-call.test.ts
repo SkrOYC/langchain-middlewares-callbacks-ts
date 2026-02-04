@@ -120,7 +120,7 @@ describe("wrapModelCall Hook", () => {
 
   test("applies embedding adaptation (Equation 1: q' = q + W_q · q)", async () => {
     const { createRetrospectiveWrapModelCall } = await import(
-      "@/middleware/hooks/before-model"
+      "@/middleware/hooks/wrap-model-call"
     );
 
     const _mockEmbeddings: Embeddings = {
@@ -203,10 +203,11 @@ describe("wrapModelCall Hook", () => {
       },
     };
 
+    let capturedCitations: CitationRecord[] = [];
     const mockHandler = async (_request: ModelRequest) => {
       return {
-        content: "Based on your memories [0, 1]",
-        text: "Based on your memories [0, 1]",
+        content: "Based on your memories [0, 2, 4]",
+        text: "Based on your memories [0, 2, 4]",
       };
     };
 
@@ -217,6 +218,7 @@ describe("wrapModelCall Hook", () => {
     const mockRuntime: WrapModelCallRuntime = {
       context: {
         embeddings: mockEmbeddings,
+        _citations: [],
       },
     };
 
@@ -227,14 +229,15 @@ describe("wrapModelCall Hook", () => {
     };
 
     // Run multiple times to test stochasticity
-    const _results: string[][] = [];
     for (let i = 0; i < 10; i++) {
-      const _result = await middleware.wrapModelCall(request, mockHandler);
-      // The handler should be called with augmented messages
-      // We verify the topM=5 selection works by checking citations
+      await middleware.wrapModelCall(request, mockHandler);
     }
 
-    // Verify topM is respected
+    // Verify citations were captured and stored
+    expect(mockRuntime.context._citations).toBeDefined();
+    expect(mockRuntime.context._citations?.length).toBeGreaterThan(0);
+    
+    // Verify topM configuration
     expect(sampleRerankerWeights.config.topM).toBe(5);
   });
 
@@ -338,7 +341,15 @@ describe("wrapModelCall Hook", () => {
 
     // Citations should be stored in runtime.context._citations
     expect(mockRuntime.context._citations).toBeDefined();
-    expect(mockRuntime.context._citations?.length).toBeGreaterThan(0);
+    expect(mockRuntime.context._citations?.length).toBe(sampleMemories.length);
+    
+    // Verify citation structure: all should have memoryId, cited, reward, turnIndex
+    for (const citation of mockRuntime.context._citations ?? []) {
+      expect(citation.memoryId).toBeDefined();
+      expect(typeof citation.cited).toBe("boolean");
+      expect(typeof citation.reward).toBe("number");
+      expect(typeof citation.turnIndex).toBe("number");
+    }
   });
 
   test("extracts citations: [NO_CITE] format", async () => {

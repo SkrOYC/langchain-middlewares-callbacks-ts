@@ -18,6 +18,7 @@ import type { Embeddings } from "@langchain/core/embeddings";
 import { HumanMessage } from "@langchain/core/messages";
 import {
   applyEmbeddingAdaptation,
+  computeRelevanceScore,
   gumbelSoftmaxSample,
   type ScoredMemory,
 } from "@/algorithms/reranking";
@@ -159,7 +160,7 @@ export function createRetrospectiveWrapModelCall(
               memory.embedding,
               reranker.weights.memoryTransform
             );
-            rerankScore = computeDotProduct(adaptedQuery, adaptedMemory);
+            rerankScore = computeRelevanceScore(adaptedQuery, adaptedMemory);
           } else {
             // Fallback to relevance score from retrieval
             rerankScore = memory.relevanceScore ?? 0;
@@ -221,26 +222,6 @@ export function createRetrospectiveWrapModelCall(
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Computes dot product between two vectors
- *
- * @param a - First vector
- * @param b - Second vector
- * @returns Scalar dot product
- */
-function computeDotProduct(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    return 0;
-  }
-
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    sum += (a[i] ?? 0) * (b[i] ?? 0);
-  }
-
-  return sum;
-}
 
 /**
  * Extracts citation records from LLM response

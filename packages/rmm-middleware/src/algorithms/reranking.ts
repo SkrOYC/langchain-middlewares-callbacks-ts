@@ -158,16 +158,6 @@ function sampleWithoutReplacementFromProbabilities(
       }
     }
 
-    // Fallback: if no item was selected, pick the one with highest probability
-    if (selectedIndex === -1) {
-      selectedIndex = 0;
-      for (let j = 1; j < availableProbabilities.length; j++) {
-        if (availableProbabilities[j] > availableProbabilities[selectedIndex]) {
-          selectedIndex = j;
-        }
-      }
-    }
-
     // Store the original index
     selectedIndices.push(availableIndices[selectedIndex]);
 

@@ -4,7 +4,6 @@
  * Provides helper functions for:
  * - Extracting the last human message from conversation state
  * - Formatting memories for injection into model context
- * - Sampling without replacement for Gumbel-Softmax
  */
 
 import type { BaseMessage } from "@langchain/core/messages";
@@ -112,99 +111,4 @@ export function formatMemoriesBlock(memories: RetrievedMemory[]): string {
     .join("\n");
 
   return `<memories>\n${formattedMemories}\n</memories>`;
-}
-
-/**
- * Performs weighted sampling without replacement
- *
- * Uses the Gumbel-Softmax trick for differentiable sampling.
- * Each item is sampled based on its probability, then removed
- * from the pool for subsequent selections.
- *
- * @param probabilities - Array of sampling probabilities (will be normalized)
- * @param topM - Number of items to sample
- * @returns Array of selected indices
- */
-export function sampleWithoutReplacement(
-  probabilities: number[],
-  topM: number
-): number[] {
-  if (!probabilities || probabilities.length === 0 || topM <= 0) {
-    return [];
-  }
-
-  // If topM >= number of items, return all indices
-  if (topM >= probabilities.length) {
-    return Array.from({ length: probabilities.length }, (_, i) => i);
-  }
-
-  // Normalize probabilities to sum to 1
-  const sum = probabilities.reduce((acc, p) => acc + Math.max(0, p), 0);
-  if (sum === 0) {
-    // If all probabilities are 0, return random selection
-    const indices = Array.from({ length: probabilities.length }, (_, i) => i);
-    // Shuffle and return topM
-    for (let i = indices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [indices[i], indices[j]] = [indices[j], indices[i]];
-    }
-    return indices.slice(0, topM);
-  }
-
-  const normalizedProbs = probabilities.map((p) => Math.max(0, p) / sum);
-
-  // Gumbel-Softmax sampling
-  // g_i = -log(-log(u_i)) where u_i ~ Uniform(0, 1)
-  const gumbelNoise = normalizedProbs.map(
-    () => -Math.log(-Math.log(Math.random()))
-  );
-
-  // s̃_i = s_i + g_i
-  const perturbedScores = normalizedProbs.map((p, i) => p + gumbelNoise[i]);
-
-  // Compute softmax probabilities
-  const maxScore = Math.max(...perturbedScores);
-  const expScores = perturbedScores.map((s) => Math.exp((s - maxScore) / 0.5)); // Use 0.5 as default temperature
-  const expSum = expScores.reduce((acc, e) => acc + e, 0);
-  const softmaxProbs = expScores.map((e) => e / expSum);
-
-  // Sample without replacement using softmax probabilities
-  return performWeightedSampling(softmaxProbs, topM);
-}
-
-/**
- * Performs weighted sampling without replacement
- */
-function performWeightedSampling(
-  probabilities: number[],
-  count: number
-): number[] {
-  const selectedIndices: number[] = [];
-  const remainingProbabilities = [...probabilities];
-
-  for (let i = 0; i < count && remainingProbabilities.length > 0; i++) {
-    // Renormalize probabilities
-    const total = remainingProbabilities.reduce((a, b) => a + b, 0);
-    if (total === 0) {
-      break;
-    }
-
-    const normalizedProbs = remainingProbabilities.map((p) => p / total);
-
-    // Sample based on normalized probabilities
-    const random = Math.random();
-    let cumulative = 0;
-
-    for (let j = 0; j < normalizedProbs.length; j++) {
-      cumulative += normalizedProbs[j];
-
-      if (random <= cumulative) {
-        selectedIndices.push(j);
-        remainingProbabilities.splice(j, 1);
-        break;
-      }
-    }
-  }
-
-  return selectedIndices;
 }
