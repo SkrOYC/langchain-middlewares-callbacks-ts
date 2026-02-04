@@ -14,7 +14,7 @@ export function createMockBaseStore(): BaseStore {
     async get(namespace: string[], key: string): Promise<Item | null> {
       const path = buildPath(namespace, key);
       const item = storage.get(path);
-      return item ?? null;
+      return await Promise.resolve(item ?? null);
     },
 
     async put(
@@ -38,26 +38,25 @@ export function createMockBaseStore(): BaseStore {
       };
 
       storage.set(path, item);
+      return await Promise.resolve();
     },
 
     async delete(namespace: string[], key: string): Promise<void> {
       const path = buildPath(namespace, key);
       storage.delete(path);
+      return await Promise.resolve();
     },
 
-    // Required by BaseStore interface but not used in our tests
     async batch(): Promise<never> {
-      throw new Error("batch not implemented in mock");
+      return await Promise.reject(new Error("batch not implemented in mock"));
     },
 
-    // Required by BaseStore interface but not used in our tests
     async search(): Promise<never> {
-      throw new Error("search not implemented in mock");
+      return await Promise.reject(new Error("search not implemented in mock"));
     },
 
-    // Required by BaseStore interface but not used in our tests
     async listNamespaces(): Promise<never> {
-      throw new Error("listNamespaces not implemented in mock");
+      return await Promise.reject(new Error("listNamespaces not implemented in mock"));
     },
   };
 }
@@ -73,35 +72,35 @@ export function createFailingMockBaseStore(
   return {
     async get(): Promise<never> {
       if (failOperation === "get" || failOperation === "all") {
-        throw error;
+        return await Promise.reject(error);
       }
-      throw new Error("Unexpected success in failing mock");
+      return await Promise.reject(new Error("Unexpected success in failing mock"));
     },
 
     async put(): Promise<never> {
       if (failOperation === "put" || failOperation === "all") {
-        throw error;
+        return await Promise.reject(error);
       }
-      throw new Error("Unexpected success in failing mock");
+      return await Promise.reject(new Error("Unexpected success in failing mock"));
     },
 
     async delete(): Promise<never> {
       if (failOperation === "delete" || failOperation === "all") {
-        throw error;
+        return await Promise.reject(error);
       }
-      throw new Error("Unexpected success in failing mock");
+      return await Promise.reject(new Error("Unexpected success in failing mock"));
     },
 
     async batch(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
 
     async search(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
 
     async listNamespaces(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
   };
 }

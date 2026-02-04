@@ -483,7 +483,9 @@ describe("initializeMatrix", () => {
           break;
         }
       }
-      if (!identical) break;
+      if (!identical) {
+        break;
+      }
     }
 
     expect(identical).toBe(false);

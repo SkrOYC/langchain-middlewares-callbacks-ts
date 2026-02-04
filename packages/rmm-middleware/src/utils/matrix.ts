@@ -50,6 +50,8 @@ function toMatrix(arr: number[][]): Matrix {
  * @param m - Matrix in optimized format
  * @returns 2D array
  */
+// Unused - kept for reference
+/*
 function fromMatrix(m: Matrix): number[][] {
   const result: number[][] = [];
   for (let i = 0; i < m.rows; i++) {
@@ -61,12 +63,10 @@ function fromMatrix(m: Matrix): number[][] {
   }
   return result;
 }
+*/
 
 /**
  * Transposes a matrix in-place using Float32Array.
- *
- * @param m - Matrix to transpose
- * @returns Transposed matrix
  */
 function transpose(m: Matrix): Matrix {
   const result = new Float32Array(m.cols * m.rows);
@@ -113,7 +113,9 @@ export function matmulVector(matrix: number[][], vector: number[]): number[] {
   for (let i = 0; i < mRows; i++) {
     let sum = 0;
     const row = matrix[i];
-    if (!row) continue;
+    if (!row) {
+      continue;
+    }
 
     for (let j = 0; j < mCols; j++) {
       sum += (row[j] ?? 0) * (vector[j] ?? 0);
@@ -122,6 +124,48 @@ export function matmulVector(matrix: number[][], vector: number[]): number[] {
   }
 
   return result;
+}
+
+/**
+ * Validates input matrices for multiplication
+ */
+function validateMatmulInputs(
+  a: number[][],
+  b: number[][],
+  aRows: number,
+  aCols: number,
+  bRows: number,
+  bCols: number
+): void {
+  if (a.length === 0 || b.length === 0) {
+    throw new Error("Matrices cannot be empty");
+  }
+  if (aCols !== bRows) {
+    throw new Error(
+      `Incompatible matrix dimensions: (${aRows}×${aCols}) × (${bRows}×${bCols}) - ` +
+        `first matrix columns (${aCols}) must equal second matrix rows (${bRows})`
+    );
+  }
+}
+
+/**
+ * Converts number matrices to Float32Array format
+ */
+interface Float32Matrices {
+  aMat: Float32Array;
+  bTransposed: Float32Array;
+}
+
+function convertToFloat32Matrices(
+  a: number[][],
+  b: number[][],
+  _aCols: number,
+  _bCols: number
+): Float32Matrices {
+  const aMat = toMatrix(a);
+  const bMat = toMatrix(b);
+  const bTransposed = transpose(bMat);
+  return { aMat: aMat.data, bTransposed: bTransposed.data };
 }
 
 /**
@@ -136,114 +180,151 @@ export function matmulVector(matrix: number[][], vector: number[]): number[] {
  * @throws Error if dimensions are incompatible or matrices are empty
  */
 export function matmul(a: number[][], b: number[][]): number[][] {
-  // Validate input matrices
-  if (a.length === 0 || b.length === 0) {
-    throw new Error("Matrices cannot be empty");
-  }
-
   const aRows = a.length;
   const aCols = a[0]?.length ?? 0;
   const bRows = b.length;
   const bCols = b[0]?.length ?? 0;
 
-  // Validate dimension compatibility: (m×n) × (n×p)
-  if (aCols !== bRows) {
-    throw new Error(
-      `Incompatible matrix dimensions: (${aRows}×${aCols}) × (${bRows}×${bCols}) - ` +
-        `first matrix columns (${aCols}) must equal second matrix rows (${bRows})`
-    );
-  }
+  validateMatmulInputs(a, b, aRows, aCols, bRows, bCols);
 
-  // Convert to optimized format
-  const aMat = toMatrix(a);
-  const bMat = toMatrix(b);
-  const bTransposed = transpose(bMat);
+  const { aMat, bTransposed } = convertToFloat32Matrices(a, b, aCols, bCols);
 
-  // Result matrix
+  const result = multiplyBlocked(aMat, bTransposed, aRows, aCols, bCols);
+
+  return convertToNumberArray(result, aRows, bCols);
+}
+
+/**
+ * Cache block size - tuned for typical CPU cache sizes
+ */
+const BLOCK_SIZE = 32;
+
+/**
+ * Performs blocked matrix multiplication
+ */
+function multiplyBlocked(
+  aMat: Float32Array,
+  bTransposed: Float32Array,
+  aRows: number,
+  aCols: number,
+  bCols: number
+): Float32Array {
   const result = new Float32Array(aRows * bCols);
+  const bRows = aCols; // bRows equals aCols due to dimension compatibility
 
-  // Cache block size - tuned for typical CPU cache sizes
-  // L1 cache is typically 32KB, so we want blocks that fit in cache
-  // 32x32 block of floats = 4KB, which fits comfortably
-  const BLOCK_SIZE = 32;
-
-  // Blocked/tiled matrix multiplication for better cache locality
   for (let ii = 0; ii < aRows; ii += BLOCK_SIZE) {
     for (let jj = 0; jj < bCols; jj += BLOCK_SIZE) {
       for (let kk = 0; kk < aCols; kk += BLOCK_SIZE) {
-        // Block boundaries
-        const iEnd = Math.min(ii + BLOCK_SIZE, aRows);
-        const jEnd = Math.min(jj + BLOCK_SIZE, bCols);
-        const kEnd = Math.min(kk + BLOCK_SIZE, aCols);
-
-        // Multiply current blocks
-        for (let i = ii; i < iEnd; i++) {
-          const aRowOffset = i * aCols;
-          const resultRowOffset = i * bCols;
-
-          for (let k = kk; k < kEnd; k++) {
-            const aVal = aMat.data[aRowOffset + k];
-            if (aVal === undefined) continue;
-
-            // Inner loop with 4x unrolling for better instruction-level parallelism
-            let j = jj;
-            const jUnrollEnd = jEnd - 3;
-
-            for (; j < jUnrollEnd; j += 4) {
-              const bIdx0 = j * bRows + k;
-              const bIdx1 = (j + 1) * bRows + k;
-              const bIdx2 = (j + 2) * bRows + k;
-              const bIdx3 = (j + 3) * bRows + k;
-
-              const bVal0 = bTransposed.data[bIdx0];
-              const bVal1 = bTransposed.data[bIdx1];
-              const bVal2 = bTransposed.data[bIdx2];
-              const bVal3 = bTransposed.data[bIdx3];
-
-              if (bVal0 !== undefined) {
-                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
-                result[resultRowOffset + j]! += aVal * bVal0;
-              }
-              if (bVal1 !== undefined) {
-                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
-                result[resultRowOffset + j + 1]! += aVal * bVal1;
-              }
-              if (bVal2 !== undefined) {
-                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
-                result[resultRowOffset + j + 2]! += aVal * bVal2;
-              }
-              if (bVal3 !== undefined) {
-                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
-                result[resultRowOffset + j + 3]! += aVal * bVal3;
-              }
-            }
-
-            // Handle remaining elements
-            for (; j < jEnd; j++) {
-              const bVal = bTransposed.data[j * bRows + k];
-              if (bVal !== undefined) {
-                // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
-                result[resultRowOffset + j]! += aVal * bVal;
-              }
-            }
-          }
-        }
+        multiplyTile(ii, jj, kk, aMat, bTransposed, result, aRows, aCols, bCols, bRows);
       }
     }
   }
 
-  // Convert back to number[][]
+  return result;
+}
+
+/**
+ * Multiplies a single tile/block of the matrices
+ */
+function multiplyTile(
+  ii: number,
+  jj: number,
+  kk: number,
+  aMat: Float32Array,
+  bTransposed: Float32Array,
+  result: Float32Array,
+  aRows: number,
+  aCols: number,
+  bCols: number,
+  bRows: number
+): void {
+  const iEnd = Math.min(ii + BLOCK_SIZE, aRows);
+  const jEnd = Math.min(jj + BLOCK_SIZE, bCols);
+  const kEnd = Math.min(kk + BLOCK_SIZE, aCols);
+
+  for (let i = ii; i < iEnd; i++) {
+    const aRowOffset = i * aCols;
+    const resultRowOffset = i * bCols;
+
+    for (let k = kk; k < kEnd; k++) {
+      const aVal = aMat[aRowOffset + k];
+      if (aVal === 0) {
+        continue;
+      }
+
+      multiplyAccumulate(aVal, k, jj, jEnd, bTransposed, resultRowOffset, result, bRows);
+    }
+  }
+}
+
+/**
+ * Multiplies and accumulates a single value across a row
+ */
+function multiplyAccumulate(
+  aVal: number,
+  k: number,
+  colStart: number,
+  colEnd: number,
+  bTransposed: Float32Array,
+  resultRowOffset: number,
+  result: Float32Array,
+  bCols: number
+): void {
+  let j = colStart;
+  const jLimit = colEnd - 3;
+
+  // 4x unrolled loop
+  for (; j < jLimit; j += 4) {
+    const idx0 = j * bCols + k;
+    const idx1 = (j + 1) * bCols + k;
+    const idx2 = (j + 2) * bCols + k;
+    const idx3 = (j + 3) * bCols + k;
+
+    const b0 = bTransposed[idx0];
+    const b1 = bTransposed[idx1];
+    const b2 = bTransposed[idx2];
+    const b3 = bTransposed[idx3];
+
+    if (b0 !== undefined) {
+      result[resultRowOffset + j] += aVal * b0;
+    }
+    if (b1 !== undefined) {
+      result[resultRowOffset + j + 1] += aVal * b1;
+    }
+    if (b2 !== undefined) {
+      result[resultRowOffset + j + 2] += aVal * b2;
+    }
+    if (b3 !== undefined) {
+      result[resultRowOffset + j + 3] += aVal * b3;
+    }
+  }
+
+  // Remaining elements
+  for (; j < colEnd; j++) {
+    const bVal = bTransposed[j * bCols + k];
+    if (bVal !== undefined) {
+      result[resultRowOffset + j] += aVal * bVal;
+    }
+  }
+}
+
+/**
+ * Converts Float32Array result to number[][]
+ */
+function convertToNumberArray(
+  result: Float32Array,
+  aRows: number,
+  bCols: number
+): number[][] {
   const resultMatrix: number[][] = [];
   for (let i = 0; i < aRows; i++) {
     const row: number[] = [];
     const rowOffset = i * bCols;
     for (let j = 0; j < bCols; j++) {
-      // biome-ignore lint/style/noNonNullAssertion: Array index is guaranteed valid by loop bounds
-      row.push(result[rowOffset + j]!);
+      row.push(result[rowOffset + j]);
     }
     resultMatrix.push(row);
   }
-
   return resultMatrix;
 }
 

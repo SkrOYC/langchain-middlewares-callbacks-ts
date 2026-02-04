@@ -18,7 +18,7 @@ import {
   type RMMState,
   RMMStateSchema,
   validateEmbeddingDimension,
-} from "../../src/schemas";
+} from "../../src/schemas/index.ts";
 
 // ============================================================================
 // Test Helpers

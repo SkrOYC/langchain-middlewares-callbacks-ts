@@ -4,10 +4,9 @@ import {
   EMBEDDING_DIMENSION,
   type RerankerState,
   type SessionMetadata,
-} from "../../src/schemas";
-import { createStorageAdapters } from "../../src/storage/index";
-import { createMetadataStorage } from "../../src/storage/metadataStorage";
-import { createWeightStorage } from "../../src/storage/weightStorage";
+} from "../../src/schemas/index.ts";
+import { createStorageAdapters, createMetadataStorage } from "../../src/storage/metadata-storage";
+import { createWeightStorage } from "../../src/storage/weight-storage";
 
 // ============================================================================
 // Test Helpers
@@ -45,22 +44,27 @@ const createValidRerankerState = (): RerankerState => ({
 function createErrorThrowingMockBaseStore(error: Error): BaseStore {
   return {
     async get(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
+
     async put(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
+
     async delete(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
+
     async batch(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
+
     async search(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
+
     async listNamespaces(): Promise<never> {
-      throw error;
+      return await Promise.reject(error);
     },
   };
 }
@@ -77,25 +81,25 @@ function createTimeoutMockBaseStore(delayMs: number): BaseStore {
       await new Promise((_, reject) => {
         setTimeout(() => reject(timeoutError), delayMs);
       });
-      throw timeoutError;
+      return await Promise.reject(timeoutError);
     },
     async put(): Promise<never> {
       await new Promise((_, reject) => {
         setTimeout(() => reject(timeoutError), delayMs);
       });
-      throw timeoutError;
+      return await Promise.reject(timeoutError);
     },
     async delete(): Promise<never> {
-      throw timeoutError;
+      return await Promise.reject(timeoutError);
     },
     async batch(): Promise<never> {
-      throw timeoutError;
+      return await Promise.reject(timeoutError);
     },
     async search(): Promise<never> {
-      throw timeoutError;
+      return await Promise.reject(timeoutError);
     },
     async listNamespaces(): Promise<never> {
-      throw timeoutError;
+      return await Promise.reject(timeoutError);
     },
   };
 }
@@ -114,10 +118,10 @@ function createPartialFailureMockBaseStore(failAfterOperations = 1): BaseStore {
     async get(namespace: string[], key: string): Promise<Item | null> {
       operationCount++;
       if (operationCount > failAfterOperations) {
-        throw new Error("Simulated partial failure");
+        return await Promise.reject(new Error("Simulated partial failure"));
       }
       const path = buildPath(namespace, key);
-      return storage.get(path) ?? null;
+      return await Promise.resolve(storage.get(path) ?? null);
     },
     async put(
       namespace: string[],
@@ -126,7 +130,7 @@ function createPartialFailureMockBaseStore(failAfterOperations = 1): BaseStore {
     ): Promise<void> {
       operationCount++;
       if (operationCount > failAfterOperations) {
-        throw new Error("Simulated partial failure");
+        return await Promise.reject(new Error("Simulated partial failure"));
       }
       const path = buildPath(namespace, key);
       const now = new Date();
@@ -138,21 +142,23 @@ function createPartialFailureMockBaseStore(failAfterOperations = 1): BaseStore {
         updatedAt: now,
       };
       storage.set(path, item);
+      return await Promise.resolve();
     },
     async delete(): Promise<void> {
       operationCount++;
       if (operationCount > failAfterOperations) {
-        throw new Error("Simulated partial failure");
+        return await Promise.reject(new Error("Simulated partial failure"));
       }
+      return await Promise.resolve();
     },
     async batch(): Promise<never> {
-      throw new Error("Not implemented");
+      return await Promise.reject(new Error("Not implemented"));
     },
     async search(): Promise<never> {
-      throw new Error("Not implemented");
+      return await Promise.reject(new Error("Not implemented"));
     },
     async listNamespaces(): Promise<never> {
-      throw new Error("Not implemented");
+      return await Promise.reject(new Error("Not implemented"));
     },
   };
 }
@@ -419,7 +425,7 @@ describe("Storage Error Handling", () => {
         new Error("Any error"),
         new TypeError("Type error"),
         new RangeError("Range error"),
-        new Error(""), // Empty message
+        new Error("Empty error message"), // Empty message
       ];
 
       for (const error of errors) {

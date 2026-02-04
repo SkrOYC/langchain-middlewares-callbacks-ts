@@ -1,6 +1,8 @@
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import { type RerankerState, RerankerStateSchema } from "../schemas/index.ts";
 
+export type { WeightStorage } from "./weightStorage";
+
 /**
  * WeightStorage interface for persisting reranker weights to BaseStore
  */

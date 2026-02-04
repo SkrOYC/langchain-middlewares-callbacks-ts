@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionMetadata } from "../../src/schemas";
-import { createMetadataStorage } from "../../src/storage/metadataStorage";
+import type { SessionMetadata } from "../../src/schemas/index.ts";
+import { createMetadataStorage } from "../../src/storage/metadata-storage";
 import {
   createFailingMockBaseStore,
   createMockBaseStore,
-} from "../fixtures/mockBaseStore";
+} from "../fixtures/mock-base-store";
 
 // ============================================================================
 // Test Helpers
