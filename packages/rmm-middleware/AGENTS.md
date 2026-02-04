@@ -1,14 +1,27 @@
-# Ultracite Code Standards
+# Biome Code Standards
 
-This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting.
+This project uses **Biome** for automated formatting and linting.
 
 ## Quick Reference
 
-- **Format code**: `bun x ultracite fix`
-- **Check for issues**: `bun x ultracite check`
-- **Diagnose setup**: `bun x ultracite doctor`
+- **Format code**: `bunx biome check --write`
+- **Check for issues**: `bunx biome check`
+- **Diagnose issues**: `bunx biome lint`
 
-Biome (the underlying engine) provides robust linting and formatting. Most issues are automatically fixable.
+Biome provides robust linting and formatting. Most issues are automatically fixable.
+
+## Important Rules
+
+### No biome-ignore Comments
+
+**Do not use `// biome-ignore` comments to suppress errors.** Instead:
+
+- Fix the root cause of the lint error
+- For async mock functions that must be `async` per interface but don't use `await`, use `return await Promise.resolve()` or `return await Promise.reject()`
+
+### Barrel Files
+
+Avoid barrel files (index files that re-export everything). Each module should export directly.
 
 ---
 
@@ -120,4 +133,4 @@ Biome's linter will catch most issues automatically. Focus your attention on:
 
 ---
 
-Most formatting and common issues are automatically fixed by Biome. Run `bun x ultracite fix` before committing to ensure compliance.
+Most formatting and common issues are automatically fixed by Biome. Run `bunx biome check --write` before committing to ensure compliance.
