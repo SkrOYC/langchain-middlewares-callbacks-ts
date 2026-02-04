@@ -19,7 +19,10 @@ function formatSessionHistory(history: BaseMessage[]): string {
   const dialogueParts: string[] = [];
 
   for (let i = 0; i < history.length; i++) {
-    const message = history[i]!;
+    const message = history[i];
+    if (!message) {
+      continue;
+    }
     const turnNumber = Math.floor(i / 2);
     const speaker = message.type;
 
@@ -135,7 +138,10 @@ export async function extractMemories(
     const effectiveSessionId = sessionId || randomUUID();
 
     for (let i = 0; i < extractionOutput.extracted_memories.length; i++) {
-      const extracted = extractionOutput.extracted_memories[i]!;
+      const extracted = extractionOutput.extracted_memories[i];
+      if (!extracted) {
+        continue;
+      }
 
       // Build raw dialogue from turn references
       const rawDialogueTurns = extracted.reference
@@ -149,13 +155,22 @@ export async function extractMemories(
         .filter((content) => content !== "")
         .join(" | ");
 
+      const embedding = embeddingVectors[i];
+      if (!embedding) {
+        throw new Error(
+          `[memory-extraction] Embedding generation mismatch at index ${i}: ` +
+            `${extractionOutput.extracted_memories.length} memories, ` +
+            `${embeddingVectors.length} embeddings`
+        );
+      }
+
       const memory: MemoryEntry = {
         id: randomUUID(),
         topicSummary: extracted.summary,
         rawDialogue: rawDialogueTurns || extracted.summary,
         timestamp,
         sessionId: effectiveSessionId,
-        embedding: embeddingVectors[i]!,
+        embedding,
         turnReferences: extracted.reference,
       };
 

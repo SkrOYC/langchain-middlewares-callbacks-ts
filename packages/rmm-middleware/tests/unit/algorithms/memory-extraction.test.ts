@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+// UUID regex for validating memory entry IDs
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Tests for memory extraction algorithm
  *
@@ -15,7 +19,9 @@ describe("extractMemories Algorithm", () => {
   // Helper to suppress console.warn during error-handling tests
   const suppressWarnings = async (fn: () => Promise<void>) => {
     const originalWarn = console.warn;
-    console.warn = () => {};
+    console.warn = () => {
+      // intentionally empty - suppresses console.warn during error-handling tests
+    };
     try {
       await fn();
     } finally {
@@ -46,7 +52,7 @@ describe("extractMemories Algorithm", () => {
 
     // Mock summarization model that returns valid extraction output
     const mockSummarizationModelValid = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [
             {
@@ -99,7 +105,7 @@ describe("extractMemories Algorithm", () => {
 
     // Mock summarization model that returns NO_TRAIT
     const mockSummarizationModelNoTrait = {
-      invoke: async () => {
+      invoke: () => {
         const content = "NO_TRAIT";
         return { content, text: content };
       },
@@ -132,7 +138,7 @@ describe("extractMemories Algorithm", () => {
 
       // Mock summarization model that returns invalid JSON
       const mockSummarizationModelInvalidJson = {
-        invoke: async () => {
+        invoke: () => {
           const content = "this is not valid json";
           return { content, text: content };
         },
@@ -165,7 +171,7 @@ describe("extractMemories Algorithm", () => {
 
       // Mock LLM that returns content causing parse failure (triggers catch block)
       const mockSummarizationModelError = {
-        invoke: async () => {
+        invoke: () => {
           const content = "{ invalid json that will fail parsing";
           return { content, text: content };
         },
@@ -222,7 +228,7 @@ describe("extractMemories Algorithm", () => {
     const capturedInput: string[] = [];
 
     const customMockModel = {
-      invoke: async (input: string) => {
+      invoke: (input: string) => {
         capturedInput.push(input);
         return {
           content: JSON.stringify({
@@ -264,7 +270,7 @@ describe("extractMemories Algorithm", () => {
     let _embedQueryCalled = false;
 
     const mockSummarizationModelValid = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [
             { summary: "User enjoys hiking", reference: [0] },
@@ -275,11 +281,11 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => {
+      embedQuery: () => {
         _embedQueryCalled = true;
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      embedDocuments: async (texts: string[]) => {
+      embedDocuments: (texts: string[]) => {
         embedDocumentsCalled = true;
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
@@ -304,7 +310,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     const mockSummarizationModelValid = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [
             { summary: "User enjoys hiking on weekends", reference: [0, 2] },
@@ -341,7 +347,7 @@ describe("extractMemories Algorithm", () => {
     const sessionId = "custom-session-id-456";
 
     const mockSummarizationModelValid = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [{ summary: "Test", reference: [0] }],
         });
@@ -350,8 +356,8 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
+      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
+      embedDocuments: (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
 
@@ -373,7 +379,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     const mockSummarizationModelValid = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [
             { summary: "First memory", reference: [0] },
@@ -385,8 +391,8 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
+      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
+      embedDocuments: (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
 
@@ -401,10 +407,8 @@ describe("extractMemories Algorithm", () => {
     expect(result?.[0].id).not.toBe(result?.[1].id);
 
     // Validate UUID format
-    const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    expect(result?.[0].id).toMatch(uuidRegex);
-    expect(result?.[1].id).toMatch(uuidRegex);
+    expect(result?.[0].id).toMatch(UUID_REGEX);
+    expect(result?.[1].id).toMatch(UUID_REGEX);
   });
 
   test("includes timestamp in MemoryEntry", async () => {
@@ -413,7 +417,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     const mockSummarizationModelValid = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [{ summary: "Test", reference: [0] }],
         });
@@ -422,8 +426,8 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
+      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
+      embedDocuments: (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
 
@@ -447,7 +451,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     const customMockModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [{ summary: "Test memory", reference: [] }],
         });
@@ -456,8 +460,8 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
+      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
+      embedDocuments: (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
 
@@ -478,7 +482,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     const customMockModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: [{ summary: "Single memory", reference: [0] }],
         });
@@ -487,8 +491,8 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
+      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
+      embedDocuments: (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
 
@@ -509,7 +513,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     const customMockModel = {
-      invoke: async () => {
+      invoke: () => {
         const content = JSON.stringify({
           extracted_memories: Array.from({ length: 10 }, (_, i) => ({
             summary: `Memory ${i}`,
@@ -521,8 +525,8 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
+      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
+      embedDocuments: (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
 

@@ -13,7 +13,9 @@ describe("findSimilarMemories Algorithm", () => {
   // Helper to suppress console.warn during error-handling tests
   const suppressWarnings = async (fn: () => Promise<void>) => {
     const originalWarn = console.warn;
-    console.warn = () => {};
+    console.warn = () => {
+      // intentionally empty - suppresses console.warn during error-handling tests
+    };
     try {
       await fn();
     } finally {
@@ -80,7 +82,7 @@ describe("findSimilarMemories Algorithm", () => {
 
     // Mock VectorStore that returns similar memories
     const mockVectorStore = {
-      similaritySearch: async () => {
+      similaritySearch: () => {
         return [
           {
             pageContent: "User likes outdoor activities",
@@ -114,7 +116,7 @@ describe("findSimilarMemories Algorithm", () => {
 
     // Mock VectorStore that returns empty array
     const mockVectorStoreEmpty = {
-      similaritySearch: async () => {
+      similaritySearch: () => {
         return [];
       },
     };
@@ -139,7 +141,7 @@ describe("findSimilarMemories Algorithm", () => {
 
     // Mock VectorStore that captures the k parameter
     const mockVectorStoreCapturing = {
-      similaritySearch: async (_query: string, k: number) => {
+      similaritySearch: (_query: string, k: number) => {
         capturedKValue.push(k);
         return [];
       },
@@ -163,7 +165,7 @@ describe("findSimilarMemories Algorithm", () => {
     const capturedKValue: number[] = [];
 
     const mockVectorStoreDefault = {
-      similaritySearch: async (_query: string, k: number) => {
+      similaritySearch: (_query: string, k: number) => {
         capturedKValue.push(k);
         return [];
       },
@@ -185,7 +187,7 @@ describe("findSimilarMemories Algorithm", () => {
     );
 
     const mockVectorStoreWithScores = {
-      similaritySearch: async () => {
+      similaritySearch: () => {
         return [
           {
             pageContent: "User likes outdoor activities",
@@ -231,7 +233,7 @@ describe("findSimilarMemories Algorithm", () => {
 
       // Mock VectorStore that throws error
       const mockVectorStoreError = {
-        similaritySearch: async () => {
+        similaritySearch: () => {
           throw new Error("VectorStore connection failed");
         },
       };
@@ -260,7 +262,7 @@ describe("findSimilarMemories Algorithm", () => {
     const expectedTurnRefs = [0, 1, 2];
 
     const mockVectorStoreMetadata = {
-      similaritySearch: async () => {
+      similaritySearch: () => {
         return [
           {
             pageContent: "Test memory content",
@@ -299,7 +301,7 @@ describe("findSimilarMemories Algorithm", () => {
     );
 
     const mockVectorStoreMultiple = {
-      similaritySearch: async () => {
+      similaritySearch: () => {
         return [
           {
             pageContent: "Memory about hiking",
@@ -353,7 +355,7 @@ describe("findSimilarMemories Algorithm", () => {
     const capturedQuery: string[] = [];
 
     const mockVectorStoreQueryCapture = {
-      similaritySearch: async (query: string, _k: number) => {
+      similaritySearch: (query: string, _k: number) => {
         capturedQuery.push(query);
         return [];
       },
@@ -378,7 +380,7 @@ describe("findSimilarMemories Algorithm", () => {
     const capturedKValue: number[] = [];
 
     const mockVectorStoreSingle = {
-      similaritySearch: async (_query: string, k: number) => {
+      similaritySearch: (_query: string, k: number) => {
         capturedKValue.push(k);
         return [];
       },
@@ -401,7 +403,7 @@ describe("findSimilarMemories Algorithm", () => {
     const capturedKValue: number[] = [];
 
     const mockVectorStoreLarge = {
-      similaritySearch: async (_query: string, k: number) => {
+      similaritySearch: (_query: string, k: number) => {
         capturedKValue.push(k);
         return [];
       },

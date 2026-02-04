@@ -69,21 +69,25 @@ describe("beforeAgent Hook", () => {
     };
 
     const mockStore: BaseStore = {
-      async get(_namespace, key) {
+      get(_namespace, key) {
         if (key === "reranker") {
           return { value: existingWeights };
         }
         return null;
       },
-      async put() {},
-      async delete() {},
-      async batch() {
+      put() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
+      batch() {
         return [];
       },
-      async search() {
+      search() {
         return [];
       },
-      async listNamespaces() {
+      listNamespaces() {
         return [];
       },
     };
@@ -115,18 +119,22 @@ describe("beforeAgent Hook", () => {
     );
 
     const mockStore: BaseStore = {
-      async get() {
+      get() {
         return null; // No existing weights
       },
-      async put() {},
-      async delete() {},
-      async batch() {
+      put() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
+      batch() {
         return [];
       },
-      async search() {
+      search() {
         return [];
       },
-      async listNamespaces() {
+      listNamespaces() {
         return [];
       },
     };
@@ -166,18 +174,22 @@ describe("beforeAgent Hook", () => {
     );
 
     const mockStore: BaseStore = {
-      async get() {
+      get() {
         return null;
       },
-      async put() {},
-      async delete() {},
-      async batch() {
+      put() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
+      batch() {
         return [];
       },
-      async search() {
+      search() {
         return [];
       },
-      async listNamespaces() {
+      listNamespaces() {
         return [];
       },
     };
@@ -208,18 +220,22 @@ describe("beforeAgent Hook", () => {
     );
 
     const mockStore: BaseStore = {
-      async get() {
+      get() {
         throw new Error("Simulated BaseStore failure");
       },
-      async put() {},
-      async delete() {},
-      async batch() {
+      put() {
+        // intentionally empty mock
+      },
+      delete() {
+        // intentionally empty mock
+      },
+      batch() {
         return [];
       },
-      async search() {
+      search() {
         return [];
       },
-      async listNamespaces() {
+      listNamespaces() {
         return [];
       },
     };

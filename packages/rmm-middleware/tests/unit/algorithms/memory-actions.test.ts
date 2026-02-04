@@ -12,7 +12,9 @@ describe("Memory Actions", () => {
   // Helper to suppress console.warn during error-handling tests
   const suppressWarnings = async (fn: () => Promise<void>) => {
     const originalWarn = console.warn;
-    console.warn = () => {};
+    console.warn = () => {
+      // intentionally empty - suppresses console.warn during error-handling tests
+    };
     try {
       await fn();
     } finally {
@@ -47,7 +49,7 @@ describe("Memory Actions", () => {
 
       // Mock VectorStore that captures added documents
       const mockVectorStore = {
-        addDocuments: async (
+        addDocuments: (
           docs: Array<{
             pageContent: string;
             metadata: Record<string, unknown>;
@@ -72,7 +74,7 @@ describe("Memory Actions", () => {
       }> = [];
 
       const mockVectorStore = {
-        addDocuments: async (
+        addDocuments: (
           docs: Array<{
             pageContent: string;
             metadata: Record<string, unknown>;
@@ -98,7 +100,7 @@ describe("Memory Actions", () => {
 
         // Mock VectorStore that throws error
         const mockVectorStoreError = {
-          addDocuments: async () => {
+          addDocuments: () => {
             throw new Error("VectorStore connection failed");
           },
         };
@@ -123,7 +125,7 @@ describe("Memory Actions", () => {
       }> = [];
 
       const mockVectorStore = {
-        addDocuments: async (
+        addDocuments: (
           docs: Array<{
             pageContent: string;
             metadata: Record<string, unknown>;
@@ -168,10 +170,12 @@ describe("Memory Actions", () => {
       }> = [];
 
       // Mock delete
-      const mockDelete = async (_options: { ids: string[] }) => {};
+      const mockDelete = (_options: { ids: string[] }) => {
+        // intentionally empty mock
+      };
 
       // Mock addDocuments to capture added documents
-      const mockAddDocuments = async (
+      const mockAddDocuments = (
         docs: Array<{
           pageContent: string;
           metadata: Record<string, unknown>;
@@ -216,7 +220,7 @@ describe("Memory Actions", () => {
       };
 
       // similaritySearch is no longer used - keeping for reference only
-      const mockSimilaritySearch = async () => {
+      const mockSimilaritySearch = () => {
         return [
           {
             pageContent: "Old content",
@@ -228,10 +232,12 @@ describe("Memory Actions", () => {
       const addedMetadata: Record<string, unknown>[] = [];
 
       // Mock delete
-      const mockDelete = async (_options: { ids: string[] }) => {};
+      const mockDelete = (_options: { ids: string[] }) => {
+        // intentionally empty mock
+      };
 
       // Mock addDocuments to capture metadata
-      const mockAddDocuments = async (
+      const mockAddDocuments = (
         docs: Array<{
           pageContent: string;
           metadata: Record<string, unknown>;
@@ -273,10 +279,12 @@ describe("Memory Actions", () => {
 
         // Mock VectorStore that throws error on addDocuments
         const mockVectorStoreError = {
-          addDocuments: async () => {
+          addDocuments: () => {
             throw new Error("VectorStore connection failed");
           },
-          delete: async () => {},
+          delete: () => {
+            // intentionally empty mock
+          },
         };
 
         // Should not throw, errors are caught internally
@@ -314,15 +322,17 @@ describe("Memory Actions", () => {
       const deletedIds: string[][] = [];
 
       // Mock delete to capture deleted IDs
-      const mockDelete = async (options: { ids: string[] }) => {
+      const mockDelete = (options: { ids: string[] }) => {
         deletedIds.push(options.ids);
       };
 
       // Mock addDocuments
-      const mockAddDocuments = async () => {};
+      const mockAddDocuments = () => {
+        // intentionally empty mock
+      };
 
       // similaritySearch is no longer used - pass the full memory object
-      const mockSimilaritySearch = async () => {
+      const mockSimilaritySearch = () => {
         return [
           {
             pageContent: "Old content",
@@ -370,10 +380,12 @@ describe("Memory Actions", () => {
       const addedContent: string[] = [];
 
       // Mock delete
-      const mockDelete = async (_options: { ids: string[] }) => {};
+      const mockDelete = (_options: { ids: string[] }) => {
+        // intentionally empty mock
+      };
 
       // Mock addDocuments to capture pageContent
-      const mockAddDocuments = async (
+      const mockAddDocuments = (
         docs: Array<{
           pageContent: string;
           metadata: Record<string, unknown>;
@@ -415,7 +427,7 @@ describe("Memory Actions", () => {
       const addedContent: string[] = [];
 
       // Mock addDocuments to verify it's called with merged content
-      const mockAddDocuments = async (
+      const mockAddDocuments = (
         docs: Array<{
           pageContent: string;
           metadata: Record<string, unknown>;
@@ -425,7 +437,9 @@ describe("Memory Actions", () => {
         addedContent.push(docs[0].pageContent);
       };
 
-      const mockDelete = async (_options: { ids: string[] }) => {};
+      const mockDelete = (_options: { ids: string[] }) => {
+        // intentionally empty mock
+      };
 
       const mockVectorStore = {
         delete: mockDelete,

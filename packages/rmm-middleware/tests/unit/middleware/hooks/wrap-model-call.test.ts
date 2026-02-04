@@ -115,11 +115,14 @@ describe("wrapModelCall Hook", () => {
       "@/middleware/hooks/wrap-model-call"
     );
 
+    // Verify the middleware factory returns a function
+    expect(typeof createRetrospectiveWrapModelCall).toBe("function");
+
     const _mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random() * 0.1);
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random() * 0.1)
         );
@@ -139,16 +142,16 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => 0.5);
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() => Array.from({ length: 1536 }, () => 0.5));
       },
     };
 
     let handlerCalled = false;
-    const mockHandler = async (_request: ModelRequest) => {
+    const mockHandler = (_request: ModelRequest) => {
       handlerCalled = true;
       return {
         content:
@@ -185,10 +188,10 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
         );
@@ -196,7 +199,7 @@ describe("wrapModelCall Hook", () => {
     };
 
     const _capturedCitations: CitationRecord[] = [];
-    const mockHandler = async (_request: ModelRequest) => {
+    const mockHandler = (_request: ModelRequest) => {
       return {
         content: "Based on your memories [0, 2, 4]",
         text: "Based on your memories [0, 2, 4]",
@@ -239,10 +242,10 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
         );
@@ -250,7 +253,7 @@ describe("wrapModelCall Hook", () => {
     };
 
     let augmentedMessages: BaseMessage[] = [];
-    const mockHandler = async (request: ModelRequest) => {
+    const mockHandler = (request: ModelRequest) => {
       augmentedMessages = request.messages;
       return {
         content: "Based on your memories [0]",
@@ -294,10 +297,10 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
         );
@@ -305,7 +308,7 @@ describe("wrapModelCall Hook", () => {
     };
 
     const _capturedCitations: CitationRecord[] = [];
-    const mockHandler = async (_request: ModelRequest) => {
+    const mockHandler = (_request: ModelRequest) => {
       return {
         content: "Based on your hiking experience [0, 2] and running [1]",
         text: "Based on your hiking experience [0, 2] and running [1]",
@@ -350,17 +353,17 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
         );
       },
     };
 
-    const mockHandler = async (_request: ModelRequest) => {
+    const mockHandler = (_request: ModelRequest) => {
       return {
         content: "I don't have specific memories about that topic [NO_CITE]",
         text: "I don't have specific memories about that topic [NO_CITE]",
@@ -400,17 +403,17 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
         );
       },
     };
 
-    const mockHandler = async (_request: ModelRequest) => {
+    const mockHandler = (_request: ModelRequest) => {
       // Only cite memories 0 and 2
       return {
         content: "Based on memories [0, 2]",
@@ -468,17 +471,17 @@ describe("wrapModelCall Hook", () => {
     );
 
     const mockEmbeddings: Embeddings = {
-      async embedQuery(_text) {
+      embedQuery(_text) {
         return Array.from({ length: 1536 }, () => Math.random());
       },
-      async embedDocuments(texts) {
+      embedDocuments(texts) {
         return texts.map(() =>
           Array.from({ length: 1536 }, () => Math.random())
         );
       },
     };
 
-    const mockHandler = async (_request: ModelRequest) => {
+    const mockHandler = (_request: ModelRequest) => {
       return {
         content: "Based on memories [invalid, format]",
         text: "Based on memories [invalid, format]",
