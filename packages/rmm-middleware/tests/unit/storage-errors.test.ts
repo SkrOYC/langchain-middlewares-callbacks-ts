@@ -5,7 +5,10 @@ import {
   type RerankerState,
   type SessionMetadata,
 } from "../../src/schemas/index.ts";
-import { createStorageAdapters, createMetadataStorage } from "../../src/storage/metadata-storage";
+import {
+  createMetadataStorage,
+  createStorageAdapters,
+} from "../../src/storage/metadata-storage";
 import { createWeightStorage } from "../../src/storage/weight-storage";
 
 // ============================================================================

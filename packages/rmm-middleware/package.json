@@ -72,7 +72,7 @@
   "scripts": {
     "build": "tsup",
     "test": "bun test",
-    "check": "ultracite check",
-    "fix": "ultracite fix"
+    "check": "bunx biome check",
+    "fix": "bunx biome check --write"
   }
 }

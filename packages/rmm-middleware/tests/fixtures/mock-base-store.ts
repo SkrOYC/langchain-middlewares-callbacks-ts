@@ -56,7 +56,9 @@ export function createMockBaseStore(): BaseStore {
     },
 
     async listNamespaces(): Promise<never> {
-      return await Promise.reject(new Error("listNamespaces not implemented in mock"));
+      return await Promise.reject(
+        new Error("listNamespaces not implemented in mock")
+      );
     },
   };
 }
@@ -74,21 +76,27 @@ export function createFailingMockBaseStore(
       if (failOperation === "get" || failOperation === "all") {
         return await Promise.reject(error);
       }
-      return await Promise.reject(new Error("Unexpected success in failing mock"));
+      return await Promise.reject(
+        new Error("Unexpected success in failing mock")
+      );
     },
 
     async put(): Promise<never> {
       if (failOperation === "put" || failOperation === "all") {
         return await Promise.reject(error);
       }
-      return await Promise.reject(new Error("Unexpected success in failing mock"));
+      return await Promise.reject(
+        new Error("Unexpected success in failing mock")
+      );
     },
 
     async delete(): Promise<never> {
       if (failOperation === "delete" || failOperation === "all") {
         return await Promise.reject(error);
       }
-      return await Promise.reject(new Error("Unexpected success in failing mock"));
+      return await Promise.reject(
+        new Error("Unexpected success in failing mock")
+      );
     },
 
     async batch(): Promise<never> {

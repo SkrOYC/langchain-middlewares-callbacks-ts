@@ -215,7 +215,18 @@ function multiplyBlocked(
   for (let ii = 0; ii < aRows; ii += BLOCK_SIZE) {
     for (let jj = 0; jj < bCols; jj += BLOCK_SIZE) {
       for (let kk = 0; kk < aCols; kk += BLOCK_SIZE) {
-        multiplyTile(ii, jj, kk, aMat, bTransposed, result, aRows, aCols, bCols, bRows);
+        multiplyTile(
+          ii,
+          jj,
+          kk,
+          aMat,
+          bTransposed,
+          result,
+          aRows,
+          aCols,
+          bCols,
+          bRows
+        );
       }
     }
   }
@@ -252,7 +263,16 @@ function multiplyTile(
         continue;
       }
 
-      multiplyAccumulate(aVal, k, jj, jEnd, bTransposed, resultRowOffset, result, bRows);
+      multiplyAccumulate(
+        aVal,
+        k,
+        jj,
+        jEnd,
+        bTransposed,
+        resultRowOffset,
+        result,
+        bRows
+      );
     }
   }
 }
