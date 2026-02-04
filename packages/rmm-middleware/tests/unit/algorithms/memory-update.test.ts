@@ -39,7 +39,7 @@ describe("decideUpdateAction Algorithm", () => {
       id: "existing-memory-1",
       topicSummary: "User enjoys outdoor activities like hiking",
       rawDialogue: "I went hiking this weekend",
-      timestamp: Date.now() - 100000,
+      timestamp: Date.now() - 100_000,
       sessionId: "session-123",
       embedding: Array.from({ length: 1536 }, () => Math.random()),
       turnReferences: [0],
@@ -49,7 +49,7 @@ describe("decideUpdateAction Algorithm", () => {
       id: "existing-memory-2",
       topicSummary: "User is a software engineer",
       rawDialogue: "I work with TypeScript",
-      timestamp: Date.now() - 200000,
+      timestamp: Date.now() - 200_000,
       sessionId: "session-123",
       embedding: Array.from({ length: 1536 }, () => Math.random()),
       turnReferences: [1],
@@ -58,16 +58,12 @@ describe("decideUpdateAction Algorithm", () => {
   ];
 
   test("should export decideUpdateAction function", async () => {
-    const { decideUpdateAction } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
     expect(typeof decideUpdateAction).toBe("function");
   });
 
   test("Add decision parsed correctly", async () => {
-    const { decideUpdateAction } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     // Mock LLM that returns Add() decision
     const mockSummarizationModelAdd = {
@@ -94,8 +90,8 @@ describe("decideUpdateAction Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(1);
-    expect(result![0]).toEqual({ action: "Add" });
+    expect(result?.length).toBe(1);
+    expect(result?.[0]).toEqual({ action: "Add" });
   });
 
   test("Merge decision parsed correctly", async () => {
@@ -106,7 +102,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that returns Merge() decision
     const mockSummarizationModelMerge = {
       invoke: async () => {
-        const content = "Merge(0, User enjoys outdoor activities like hiking and running marathons)";
+        const content =
+          "Merge(0, User enjoys outdoor activities like hiking and running marathons)";
         return { content, text: content };
       },
     };
@@ -128,8 +125,8 @@ describe("decideUpdateAction Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(1);
-    expect(result![0]).toEqual({
+    expect(result?.length).toBe(1);
+    expect(result?.[0]).toEqual({
       action: "Merge",
       index: 0,
       merged_summary:
@@ -145,7 +142,8 @@ describe("decideUpdateAction Algorithm", () => {
     // Mock LLM that returns multiple decisions
     const mockSummarizationModelMultiple = {
       invoke: async () => {
-        const content = "Merge(0, Updated summary 1)\nMerge(1, Updated summary 2)\nAdd()";
+        const content =
+          "Merge(0, Updated summary 1)\nMerge(1, Updated summary 2)\nAdd()";
         return { content, text: content };
       },
     };
@@ -167,18 +165,18 @@ describe("decideUpdateAction Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(3);
-    expect(result![0]).toEqual({
+    expect(result?.length).toBe(3);
+    expect(result?.[0]).toEqual({
       action: "Merge",
       index: 0,
       merged_summary: "Updated summary 1",
     });
-    expect(result![1]).toEqual({
+    expect(result?.[1]).toEqual({
       action: "Merge",
       index: 1,
       merged_summary: "Updated summary 2",
     });
-    expect(result![2]).toEqual({ action: "Add" });
+    expect(result?.[2]).toEqual({ action: "Add" });
   });
 
   test("Invalid decision returns empty array", async () => {
@@ -211,7 +209,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(0);
+    expect(result?.length).toBe(0);
   });
 
   test("LLM failure returns empty array", async () => {
@@ -245,7 +243,7 @@ describe("decideUpdateAction Algorithm", () => {
 
       expect(result).not.toBeNull();
       expect(Array.isArray(result)).toBe(true);
-      expect(result!.length).toBe(0);
+      expect(result?.length).toBe(0);
     });
   });
 
@@ -258,7 +256,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that captures inputs
     const mockSummarizationModelCapture = {
-      invoke: async (input: string) => {
+      invoke: async (_input: string) => {
         const content = "Add()";
         return { content, text: content };
       },
@@ -297,7 +295,7 @@ describe("decideUpdateAction Algorithm", () => {
 
     // Mock LLM that captures inputs
     const mockSummarizationModelCapture = {
-      invoke: async (input: string) => {
+      invoke: async (_input: string) => {
         const content = "Add()";
         return { content, text: content };
       },
@@ -362,7 +360,7 @@ describe("decideUpdateAction Algorithm", () => {
     // Out-of-bounds indices should be filtered out, returning empty array
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(0);
+    expect(result?.length).toBe(0);
   });
 
   test("Uses provided updatePrompt function", async () => {

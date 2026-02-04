@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-
-import type { BaseMessage } from "@langchain/core/messages";
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { BaseMessage } from "@langchain/core/messages";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 /**
  * Tests for afterAgent hook
@@ -34,24 +33,44 @@ describe("afterAgent Hook", () => {
   // Sample state for testing
   const sampleState: AfterAgentState = {
     messages: [
-      { lc_serialized: { type: "human" }, lc_kwargs: { content: "Hello, I went hiking this weekend" }, lc_id: ["human"], content: "Hello, I went hiking this weekend", additional_kwargs: {} },
-      { lc_serialized: { type: "ai" }, lc_kwargs: { content: "That sounds great!" }, lc_id: ["ai"], content: "That sounds great!", additional_kwargs: {} },
-      { lc_serialized: { type: "human" }, lc_kwargs: { content: "It was amazing, I love being outdoors" }, lc_id: ["human"], content: "It was amazing, I love being outdoors", additional_kwargs: {} },
-      { lc_serialized: { type: "ai" }, lc_kwargs: { content: "What else do you enjoy?" }, lc_id: ["ai"], content: "What else do you enjoy?", additional_kwargs: {} },
+      {
+        lc_serialized: { type: "human" },
+        lc_kwargs: { content: "Hello, I went hiking this weekend" },
+        lc_id: ["human"],
+        content: "Hello, I went hiking this weekend",
+        additional_kwargs: {},
+      },
+      {
+        lc_serialized: { type: "ai" },
+        lc_kwargs: { content: "That sounds great!" },
+        lc_id: ["ai"],
+        content: "That sounds great!",
+        additional_kwargs: {},
+      },
+      {
+        lc_serialized: { type: "human" },
+        lc_kwargs: { content: "It was amazing, I love being outdoors" },
+        lc_id: ["human"],
+        content: "It was amazing, I love being outdoors",
+        additional_kwargs: {},
+      },
+      {
+        lc_serialized: { type: "ai" },
+        lc_kwargs: { content: "What else do you enjoy?" },
+        lc_id: ["ai"],
+        content: "What else do you enjoy?",
+        additional_kwargs: {},
+      },
     ],
   };
 
   test("should export afterAgent function", async () => {
-    const { afterAgent } = await import(
-      "@/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
     expect(typeof afterAgent).toBe("function");
   });
 
   test("full pipeline executes successfully", async () => {
-    const { afterAgent } = await import(
-      "@/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     // Mock dependencies
     const mockSummarizationModel = {
@@ -98,9 +117,7 @@ describe("afterAgent Hook", () => {
   });
 
   test("no memories extracted → no VectorStore calls", async () => {
-    const { afterAgent } = await import(
-      "@/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     // Mock dependencies that return NO_TRAIT
     const mockSummarizationModel = {
@@ -146,9 +163,7 @@ describe("afterAgent Hook", () => {
   });
 
   test("empty messages returns without processing", async () => {
-    const { afterAgent } = await import(
-      "@/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     const emptyState = {
       messages: [],
@@ -193,9 +208,7 @@ describe("afterAgent Hook", () => {
   });
 
   test("error handling works (aborts gracefully)", async () => {
-    const { afterAgent } = await import(
-      "@/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     // Mock LLM that returns invalid content (triggers error handling)
     const mockSummarizationModel = {
@@ -235,9 +248,7 @@ describe("afterAgent Hook", () => {
   });
 
   test("handles multiple memories correctly", async () => {
-    const { afterAgent } = await import(
-      "@/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     // Mock dependencies that return multiple memories
     const mockSummarizationModel = {
@@ -295,7 +306,7 @@ describe("afterAgent Hook", () => {
 
     // Mock dependencies for extraction that returns a memory
     const mockSummarizationModel = {
-      invoke: async (input: string) => {
+      invoke: async (_input: string) => {
         callCount++;
         if (callCount === 1) {
           // First call: extraction response
@@ -305,11 +316,10 @@ describe("afterAgent Hook", () => {
             ],
           });
           return { content, text: content };
-        } else {
-          // Second call: decision response
-          const content = "Merge(0, User enjoys outdoor activities and hiking)";
-          return { content, text: content };
         }
+        // Second call: decision response
+        const content = "Merge(0, User enjoys outdoor activities and hiking)";
+        return { content, text: content };
       },
     };
 
@@ -327,7 +337,7 @@ describe("afterAgent Hook", () => {
           metadata: {
             id: "existing-memory-1",
             sessionId: "session-123",
-            timestamp: Date.now() - 100000,
+            timestamp: Date.now() - 100_000,
             turnReferences: [0],
           },
         },

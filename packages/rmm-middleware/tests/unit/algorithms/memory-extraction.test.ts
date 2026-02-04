@@ -37,16 +37,12 @@ describe("extractMemories Algorithm", () => {
   };
 
   test("should export extractMemories function", async () => {
-    const { extractMemories } = await import(
-      "@/algorithms/memory-extraction"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
     expect(typeof extractMemories).toBe("function");
   });
 
   test("valid extraction returns MemoryEntry array", async () => {
-    const { extractMemories } = await import(
-      "@/algorithms/memory-extraction"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     // Mock summarization model that returns valid extraction output
     const mockSummarizationModelValid = {
@@ -69,8 +65,7 @@ describe("extractMemories Algorithm", () => {
 
     // Mock embeddings that return predictable vectors
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -85,10 +80,10 @@ describe("extractMemories Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(2);
+    expect(result?.length).toBe(2);
 
     // Verify MemoryEntry structure
-    const firstMemory = result![0];
+    const firstMemory = result?.[0];
     expect(firstMemory.id).toBeDefined();
     expect(typeof firstMemory.topicSummary).toBe("string");
     expect(typeof firstMemory.rawDialogue).toBe("string");
@@ -100,9 +95,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("NO_TRAIT returns empty array", async () => {
-    const { extractMemories } = await import(
-      "@/algorithms/memory-extraction"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     // Mock summarization model that returns NO_TRAIT
     const mockSummarizationModelNoTrait = {
@@ -114,8 +107,7 @@ describe("extractMemories Algorithm", () => {
 
     // Mock embeddings
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -129,7 +121,7 @@ describe("extractMemories Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(0);
+    expect(result?.length).toBe(0);
   });
 
   test("invalid JSON returns null", async () => {
@@ -205,8 +197,7 @@ describe("extractMemories Algorithm", () => {
 
     // Mock embeddings (won't be called for empty session)
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -220,7 +211,7 @@ describe("extractMemories Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
-    expect(result!.length).toBe(0);
+    expect(result?.length).toBe(0);
   });
 
   test("formats session history into dialogue with turn markers", async () => {
@@ -242,8 +233,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -271,7 +261,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     let embedDocumentsCalled = false;
-    let embedQueryCalled = false;
+    let _embedQueryCalled = false;
 
     const mockSummarizationModelValid = {
       invoke: async () => {
@@ -286,7 +276,7 @@ describe("extractMemories Algorithm", () => {
 
     const mockEmbeddings = {
       embedQuery: async () => {
-        embedQueryCalled = true;
+        _embedQueryCalled = true;
         return Array.from({ length: 1536 }, () => Math.random());
       },
       embedDocuments: async (texts: string[]) => {
@@ -326,8 +316,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -340,8 +329,8 @@ describe("extractMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result![0].turnReferences).toEqual([0, 2]);
-    expect(result![1].turnReferences).toEqual([1, 3]);
+    expect(result?.[0].turnReferences).toEqual([0, 2]);
+    expect(result?.[1].turnReferences).toEqual([1, 3]);
   });
 
   test("uses provided sessionId in MemoryEntry", async () => {
@@ -361,8 +350,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -376,7 +364,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result![0].sessionId).toBe(sessionId);
+    expect(result?.[0].sessionId).toBe(sessionId);
   });
 
   test("generates UUID for each memory entry", async () => {
@@ -397,8 +385,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -411,13 +398,13 @@ describe("extractMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result![0].id).not.toBe(result![1].id);
+    expect(result?.[0].id).not.toBe(result?.[1].id);
 
     // Validate UUID format
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    expect(result![0].id).toMatch(uuidRegex);
-    expect(result![1].id).toMatch(uuidRegex);
+    expect(result?.[0].id).toMatch(uuidRegex);
+    expect(result?.[1].id).toMatch(uuidRegex);
   });
 
   test("includes timestamp in MemoryEntry", async () => {
@@ -435,8 +422,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -451,8 +437,8 @@ describe("extractMemories Algorithm", () => {
     const afterTime = Date.now();
 
     expect(result).not.toBeNull();
-    expect(result![0].timestamp).toBeGreaterThanOrEqual(beforeTime);
-    expect(result![0].timestamp).toBeLessThanOrEqual(afterTime);
+    expect(result?.[0].timestamp).toBeGreaterThanOrEqual(beforeTime);
+    expect(result?.[0].timestamp).toBeLessThanOrEqual(afterTime);
   });
 
   test("handles memories with empty reference array", async () => {
@@ -470,8 +456,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -484,7 +469,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result![0].turnReferences).toEqual([]);
+    expect(result?.[0].turnReferences).toEqual([]);
   });
 
   test("handles single memory extraction", async () => {
@@ -502,8 +487,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -516,7 +500,7 @@ describe("extractMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(1);
+    expect(result?.length).toBe(1);
   });
 
   test("handles many memories extraction", async () => {
@@ -537,8 +521,7 @@ describe("extractMemories Algorithm", () => {
     };
 
     const mockEmbeddings = {
-      embedQuery: async () =>
-        Array.from({ length: 1536 }, () => Math.random()),
+      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
       embedDocuments: async (texts: string[]) =>
         texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
     };
@@ -551,6 +534,6 @@ describe("extractMemories Algorithm", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.length).toBe(10);
+    expect(result?.length).toBe(10);
   });
 });

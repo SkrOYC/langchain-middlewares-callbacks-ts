@@ -33,16 +33,12 @@ describe("Memory Actions", () => {
 
   describe("addMemory", () => {
     test("should export addMemory function", async () => {
-      const { addMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { addMemory } = await import("@/algorithms/memory-actions");
       expect(typeof addMemory).toBe("function");
     });
 
     test("adds document to VectorStore", async () => {
-      const { addMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { addMemory } = await import("@/algorithms/memory-actions");
 
       const addedDocuments: Array<{
         pageContent: string;
@@ -51,27 +47,24 @@ describe("Memory Actions", () => {
 
       // Mock VectorStore that captures added documents
       const mockVectorStore = {
-        addDocuments: async (docs: Array<{
-          pageContent: string;
-          metadata: Record<string, unknown>;
-        }>) => {
+        addDocuments: async (
+          docs: Array<{
+            pageContent: string;
+            metadata: Record<string, unknown>;
+          }>
+        ) => {
           addedDocuments.push(...docs);
         },
       };
 
-      await addMemory(
-        sampleMemory as any,
-        mockVectorStore as any
-      );
+      await addMemory(sampleMemory as any, mockVectorStore as any);
 
       expect(addedDocuments.length).toBe(1);
       expect(addedDocuments[0].pageContent).toBe(sampleMemory.topicSummary);
     });
 
     test("includes correct metadata in document", async () => {
-      const { addMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { addMemory } = await import("@/algorithms/memory-actions");
 
       const addedDocuments: Array<{
         pageContent: string;
@@ -79,18 +72,17 @@ describe("Memory Actions", () => {
       }> = [];
 
       const mockVectorStore = {
-        addDocuments: async (docs: Array<{
-          pageContent: string;
-          metadata: Record<string, unknown>;
-        }>) => {
+        addDocuments: async (
+          docs: Array<{
+            pageContent: string;
+            metadata: Record<string, unknown>;
+          }>
+        ) => {
           addedDocuments.push(...docs);
         },
       };
 
-      await addMemory(
-        sampleMemory as any,
-        mockVectorStore as any
-      );
+      await addMemory(sampleMemory as any, mockVectorStore as any);
 
       expect(addedDocuments.length).toBe(1);
       const metadata = addedDocuments[0].metadata;
@@ -102,9 +94,7 @@ describe("Memory Actions", () => {
 
     test("handles VectorStore errors gracefully", async () => {
       await suppressWarnings(async () => {
-        const { addMemory } = await import(
-          "@/algorithms/memory-actions"
-        );
+        const { addMemory } = await import("@/algorithms/memory-actions");
 
         // Mock VectorStore that throws error
         const mockVectorStoreError = {
@@ -125,9 +115,7 @@ describe("Memory Actions", () => {
     });
 
     test("creates document with topicSummary as pageContent", async () => {
-      const { addMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { addMemory } = await import("@/algorithms/memory-actions");
 
       const addedDocuments: Array<{
         pageContent: string;
@@ -135,18 +123,17 @@ describe("Memory Actions", () => {
       }> = [];
 
       const mockVectorStore = {
-        addDocuments: async (docs: Array<{
-          pageContent: string;
-          metadata: Record<string, unknown>;
-        }>) => {
+        addDocuments: async (
+          docs: Array<{
+            pageContent: string;
+            metadata: Record<string, unknown>;
+          }>
+        ) => {
           addedDocuments.push(...docs);
         },
       };
 
-      await addMemory(
-        sampleMemory as any,
-        mockVectorStore as any
-      );
+      await addMemory(sampleMemory as any, mockVectorStore as any);
 
       expect(addedDocuments[0].pageContent).toBe(sampleMemory.topicSummary);
     });
@@ -154,16 +141,12 @@ describe("Memory Actions", () => {
 
   describe("mergeMemory", () => {
     test("should export mergeMemory function", async () => {
-      const { mergeMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
       expect(typeof mergeMemory).toBe("function");
     });
 
     test("updates existing document in VectorStore", async () => {
-      const { mergeMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
 
       const existingId = "existing-memory-456";
       const mergedSummary = "User enjoys outdoor activities including hiking";
@@ -173,7 +156,7 @@ describe("Memory Actions", () => {
         id: existingId,
         topicSummary: "Old content",
         rawDialogue: "Test raw dialogue",
-        timestamp: Date.now() - 100000,
+        timestamp: Date.now() - 100_000,
         sessionId: "session-123",
         embedding: [],
         turnReferences: [0],
@@ -188,10 +171,12 @@ describe("Memory Actions", () => {
       const mockDelete = async (_options: { ids: string[] }) => {};
 
       // Mock addDocuments to capture added documents
-      const mockAddDocuments = async (docs: Array<{
-        pageContent: string;
-        metadata: Record<string, unknown>;
-      }>) => {
+      const mockAddDocuments = async (
+        docs: Array<{
+          pageContent: string;
+          metadata: Record<string, unknown>;
+        }>
+      ) => {
         addedDocuments.push(...docs);
       };
 
@@ -200,26 +185,20 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(
-        existingMemory,
-        mergedSummary,
-        mockVectorStore as any
-      );
+      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       expect(addedDocuments.length).toBe(1);
       expect(addedDocuments[0].pageContent).toBe(mergedSummary);
     });
 
     test("includes existing metadata in updated document", async () => {
-      const { mergeMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
 
       const existingId = "existing-memory-456";
       const existingMetadata = {
         id: existingId,
         sessionId: "session-123",
-        timestamp: Date.now() - 100000,
+        timestamp: Date.now() - 100_000,
         turnReferences: [0],
         rawDialogue: "Test raw dialogue",
       };
@@ -246,16 +225,18 @@ describe("Memory Actions", () => {
         ];
       };
 
-      const addedMetadata: Array<Record<string, unknown>> = [];
+      const addedMetadata: Record<string, unknown>[] = [];
 
       // Mock delete
       const mockDelete = async (_options: { ids: string[] }) => {};
 
       // Mock addDocuments to capture metadata
-      const mockAddDocuments = async (docs: Array<{
-        pageContent: string;
-        metadata: Record<string, unknown>;
-      }>) => {
+      const mockAddDocuments = async (
+        docs: Array<{
+          pageContent: string;
+          metadata: Record<string, unknown>;
+        }>
+      ) => {
         addedMetadata.push(docs[0].metadata);
       };
 
@@ -265,11 +246,7 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(
-        existingMemory,
-        mergedSummary,
-        mockVectorStore as any
-      );
+      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       // The updated document should preserve metadata
       expect(addedMetadata.length).toBe(1);
@@ -281,9 +258,7 @@ describe("Memory Actions", () => {
 
     test("handles VectorStore errors gracefully", async () => {
       await suppressWarnings(async () => {
-        const { mergeMemory } = await import(
-          "@/algorithms/memory-actions"
-        );
+        const { mergeMemory } = await import("@/algorithms/memory-actions");
 
         // Create a memory object
         const existingMemory = {
@@ -320,9 +295,7 @@ describe("Memory Actions", () => {
     });
 
     test("uses provided existingId in update", async () => {
-      const { mergeMemory } = await import(
-        "@/algorithms/memory-actions"
-      );
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
 
       const existingId = "specific-existing-id-789";
       const mergedSummary = "Merged content";
@@ -369,11 +342,7 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(
-        existingMemory,
-        mergedSummary,
-        mockVectorStore as any
-      );
+      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       expect(deletedIds.length).toBe(1);
       expect(deletedIds[0][0]).toBe(existingId);
@@ -404,10 +373,12 @@ describe("Memory Actions", () => {
       const mockDelete = async (_options: { ids: string[] }) => {};
 
       // Mock addDocuments to capture pageContent
-      const mockAddDocuments = async (docs: Array<{
-        pageContent: string;
-        metadata: Record<string, unknown>;
-      }>) => {
+      const mockAddDocuments = async (
+        docs: Array<{
+          pageContent: string;
+          metadata: Record<string, unknown>;
+        }>
+      ) => {
         addedContent.push(docs[0].pageContent);
       };
 
@@ -416,11 +387,7 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(
-        existingMemory,
-        mergedSummary,
-        mockVectorStore as any
-      );
+      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       expect(addedContent.length).toBe(1);
       expect(addedContent[0]).toBe(mergedSummary);
@@ -448,10 +415,12 @@ describe("Memory Actions", () => {
       const addedContent: string[] = [];
 
       // Mock addDocuments to verify it's called with merged content
-      const mockAddDocuments = async (docs: Array<{
-        pageContent: string;
-        metadata: Record<string, unknown>;
-      }>) => {
+      const mockAddDocuments = async (
+        docs: Array<{
+          pageContent: string;
+          metadata: Record<string, unknown>;
+        }>
+      ) => {
         addDocumentsCalled = true;
         addedContent.push(docs[0].pageContent);
       };
@@ -463,11 +432,7 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(
-        existingMemory,
-        mergedSummary,
-        mockVectorStore as any
-      );
+      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       // With the new signature, we always merge when given a memory object
       expect(addDocumentsCalled).toBe(true);

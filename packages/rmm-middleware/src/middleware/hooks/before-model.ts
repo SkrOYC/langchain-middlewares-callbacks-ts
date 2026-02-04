@@ -1,0 +1,180 @@
+/**
+ * beforeModel hook for Retrospective Reflection
+ *
+ * Performs memory retrieval for the current query:
+ * 1. Extracts the last human message as the query
+ * 2. Retrieves Top-K memories from VectorStore
+ * 3. Transforms VectorStore results to RetrievedMemory format
+ * 4. Increments turn counter for session tracking
+ *
+ * Per Algorithm 1 from the paper: M_K ← f_θ(q, B)
+ */
+
+import type { Embeddings } from "@langchain/core/embeddings";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
+import type { BaseMessage, RerankerState, RetrievedMemory } from "@/schemas";
+import { extractLastHumanMessage } from "@/utils/memory-helpers";
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/**
+ * Configuration options for the beforeModel hook
+ */
+export interface BeforeModelOptions {
+  /**
+   * VectorStore instance for memory retrieval
+   */
+  vectorStore: VectorStoreInterface;
+
+  /**
+   * Embeddings instance for query encoding
+   * (Used if query embedding is needed)
+   */
+  embeddings: Embeddings;
+
+  /**
+   * Number of memories to retrieve (Top-K)
+   * @default 20
+   */
+  topK?: number;
+}
+
+/**
+ * Runtime interface for beforeModel hook
+ */
+interface BeforeModelRuntime {
+  context: {
+    vectorStore: VectorStoreInterface;
+    embeddings: Embeddings;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * State interface for beforeModel hook
+ */
+interface BeforeModelState {
+  messages: BaseMessage[];
+  _rerankerWeights: RerankerState;
+  _retrievedMemories: RetrievedMemory[];
+  _citations: unknown[];
+  _turnCountInSession: number;
+}
+
+// ============================================================================
+// Hook Factory
+// ============================================================================
+
+/**
+ * Creates a beforeModel hook for Retrospective Reflection
+ *
+ * This hook is responsible for:
+ * 1. Extracting the query from the last human message
+ * 2. Retrieving Top-K memories from the VectorStore
+ * 3. Transforming results to RetrievedMemory format
+ * 4. Incrementing the turn counter
+ *
+ * @param options - Configuration options
+ * @returns Middleware with beforeModel hook
+ *
+ * @example
+ * ```typescript
+ * const beforeModel = createRetrospectiveBeforeModel({
+ *   vectorStore,
+ *   embeddings,
+ *   topK: 20,
+ * });
+ *
+ * const agent = createAgent({
+ *   model,
+ *   middleware: [beforeModel],
+ * });
+ * ```
+ */
+export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
+  // Apply defaults
+  const topK = options.topK ?? 20;
+
+  return {
+    name: "rmm-before-model",
+
+    beforeModel: async (
+      state: BeforeModelState,
+      _runtime: BeforeModelRuntime
+    ): Promise<BeforeModelStateUpdate> => {
+      try {
+        // Step 1: Extract query from last human message
+        const query = extractLastHumanMessage(state.messages);
+
+        // If no human message found, skip retrieval
+        if (!query) {
+          return {};
+        }
+
+        // Step 2: Retrieve Top-K memories from VectorStore
+        const vectorStore = options.vectorStore;
+        const retrievedDocs = await vectorStore.similaritySearch(query, topK);
+
+        // Step 3: Transform to RetrievedMemory format
+        const retrievedMemories: RetrievedMemory[] = retrievedDocs.map(
+          (doc, index) => {
+            const metadata = doc.metadata as Record<string, unknown>;
+
+            return {
+              id: (metadata.id as string) ?? `memory-${index}`,
+              topicSummary: doc.pageContent,
+              rawDialogue: (metadata.rawDialogue as string) ?? "",
+              timestamp: (metadata.timestamp as number) ?? Date.now(),
+              sessionId: (metadata.sessionId as string) ?? "unknown",
+              turnReferences: (metadata.turnReferences as number[]) ?? [],
+              relevanceScore:
+                (metadata.score as number) ??
+                (doc as { score?: number }).score ??
+                -1,
+            };
+          }
+        );
+
+        // Step 4: Increment turn counter
+        const newTurnCount = (state._turnCountInSession ?? 0) + 1;
+
+        return {
+          _retrievedMemories: retrievedMemories,
+          _turnCountInSession: newTurnCount,
+        };
+      } catch (error) {
+        // Graceful degradation: continue without retrieval on error
+        console.warn(
+          "[before-model] Error during memory retrieval, continuing:",
+          error instanceof Error ? error.message : String(error)
+        );
+
+        // Still increment turn counter even on error
+        return {
+          _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
+        };
+      }
+    },
+  };
+}
+
+// ============================================================================
+// Type Exports
+// ============================================================================
+
+/**
+ * State update returned by the beforeModel hook
+ */
+interface BeforeModelStateUpdate {
+  /**
+   * Retrieved memories from VectorStore
+   */
+  _retrievedMemories?: RetrievedMemory[];
+
+  /**
+   * Incremented turn counter
+   */
+  _turnCountInSession?: number;
+}
