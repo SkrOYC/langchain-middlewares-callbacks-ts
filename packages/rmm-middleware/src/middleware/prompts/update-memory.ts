@@ -74,7 +74,7 @@ export function parseUpdateActions(
       if (match) {
         const indexStr = match[1];
         const merged_summary = match[2];
-        if (indexStr !== undefined) {
+        if (indexStr !== undefined && merged_summary !== undefined) {
           const index = Number.parseInt(indexStr, 10);
           // Validate index is within bounds
           if (index >= 0 && index < historyLength) {
