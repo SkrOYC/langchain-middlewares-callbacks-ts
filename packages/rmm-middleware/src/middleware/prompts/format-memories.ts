@@ -36,12 +36,9 @@ export function formatMemories(memories: FormattedMemory[]): string {
     .map((memory, index) => {
       const dialogueBlock = memory.dialogueTurns
         .map((turn) => {
-          // Escape quotes in dialogue
-          const escapedText = turn.text
-            .replace(/"/g, '\\"')
-            .replace(/'/g, "\\'")
-            .replace(/\n/g, " ");
-          return `    ${turn.speaker}: ${escapedText}`;
+          // Replace newlines with spaces to keep each turn on a single line
+          const formattedText = turn.text.replace(/\n/g, " ");
+          return `    ${turn.speaker}: ${formattedText}`;
         })
         .join("\n");
 

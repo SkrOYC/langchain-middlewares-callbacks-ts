@@ -171,14 +171,9 @@ export function updateMemory(
   historySummaries: string[],
   newSummary: string
 ): string {
-  // Format history summaries as JSON to match example format
-  // Use JSON.stringify for proper escaping, then format to match example style
-  const historyJson = JSON.stringify({ history_summaries: historySummaries })
-    .replace(/"([^"]+)":/g, '"$1": ')
-    .replace(/: "/g, ': "');
-  const newSummaryJson = JSON.stringify({ new_summary: newSummary })
-    .replace(/"([^"]+)":/g, '"$1": ')
-    .replace(/: "/g, ': "');
+  // Format history summaries as compact JSON
+  const historyJson = JSON.stringify({ history_summaries: historySummaries });
+  const newSummaryJson = JSON.stringify({ new_summary: newSummary });
 
   const prompt = `Task Description: Given a list of history personal summaries for a specific user and a new
 and similar personal summary from the same user, update the personal history summaries
