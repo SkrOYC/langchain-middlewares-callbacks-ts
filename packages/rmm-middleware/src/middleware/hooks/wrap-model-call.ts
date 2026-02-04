@@ -236,6 +236,9 @@ export function createRetrospectiveWrapModelCall(
           } else {
             // Memory doesn't have embedding - this shouldn't happen for exact REINFORCE
             // Create zero embedding as placeholder
+            console.warn(
+              `[wrap-model-call] Memory ${memory.id} missing embedding, using zero vector.`
+            );
             const zeroEmbedding = new Array(EMBEDDING_DIMENSION).fill(0);
             originalMemEmbeddings.push(zeroEmbedding);
 
@@ -353,6 +356,10 @@ function extractCitationsFromResponse(
     for (const idx of allIndices) {
       if (typeof idx === "number" && idx >= 0 && idx <= maxIndex) {
         citedIndicesInSelection.add(idx);
+      } else {
+        console.warn(
+          `[wrap-model-call] LLM returned out-of-bounds citation index: ${idx} (valid: 0-${maxIndex})`
+        );
       }
     }
   }

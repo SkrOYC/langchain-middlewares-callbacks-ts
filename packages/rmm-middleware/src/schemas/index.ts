@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createZeroMatrix } from "@/utils/matrix";
 
 // ============================================================================
 // Constants
@@ -224,15 +225,10 @@ export type GradientAccumulatorState = z.infer<
  * Initializes with zero matrices and empty samples array.
  */
 export function createEmptyGradientAccumulatorState(): GradientAccumulatorState {
-  const createZeroMatrix = (): number[][] =>
-    Array.from({ length: EMBEDDING_DIMENSION }, () =>
-      Array.from({ length: EMBEDDING_DIMENSION }, () => 0)
-    );
-
   return {
     samples: [],
-    accumulatedGradWq: createZeroMatrix(),
-    accumulatedGradWm: createZeroMatrix(),
+    accumulatedGradWq: createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION),
+    accumulatedGradWm: createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION),
     lastBatchIndex: 0,
     lastUpdated: Date.now(),
   };

@@ -165,18 +165,13 @@ export function gumbelSoftmaxSample(
     const fallbackProb = 1 / memories.length;
     const fallbackCount = Math.min(topM, memories.length);
     const fallbackIndices = Array.from({ length: fallbackCount }, (_, i) => i);
-    const fallbackMemories: RetrievedMemory[] = [];
-
-    for (const idx of fallbackIndices) {
-      const mem = memories[idx];
-      if (mem) {
-        fallbackMemories.push({ ...mem });
-      }
-    }
+    const fallbackMemories = memories
+      .slice(0, fallbackCount)
+      .map((mem) => ({ ...mem }));
 
     return {
       selectedMemories: fallbackMemories,
-      allProbabilities: fallbackIndices.map(() => fallbackProb),
+      allProbabilities: Array(memories.length).fill(fallbackProb),
       selectedIndices: fallbackIndices,
     };
   }

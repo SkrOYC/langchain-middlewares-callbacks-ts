@@ -3,7 +3,6 @@ import {
   createEmptyGradientAccumulatorState,
   type GradientAccumulatorState,
   GradientAccumulatorStateSchema,
-  type GradientSample,
 } from "@/schemas/index";
 
 /**
@@ -25,18 +24,6 @@ export interface GradientStorage {
    * @returns true on success, false on failure
    */
   save(userId: string, state: GradientAccumulatorState): Promise<boolean>;
-
-  /**
-   * Add a gradient sample to the accumulator and persist
-   * Automatically manages batch size limits (max 4 samples)
-   * @param userId - The user identifier
-   * @param sample - The gradient sample to add
-   * @returns Updated GradientAccumulatorState or null on failure
-   */
-  addSample(
-    userId: string,
-    sample: GradientSample
-  ): Promise<GradientAccumulatorState | null>;
 
   /**
    * Clear the gradient accumulator for a user
@@ -111,44 +98,6 @@ export function createGradientStorage(store: BaseStore): GradientStorage {
       } catch {
         // Graceful degradation: return false on any error
         return false;
-      }
-    },
-
-    async addSample(
-      userId: string,
-      sample: GradientSample
-    ): Promise<GradientAccumulatorState | null> {
-      try {
-        // Load existing state or create new one
-        const existingState = await this.load(userId);
-        const state = existingState ?? createEmptyGradientAccumulatorState();
-
-        // Validate sample before adding
-        const sampleValidation =
-          GradientAccumulatorStateSchema.shape.samples.element.safeParse(
-            sample
-          );
-        if (!sampleValidation.success) {
-          return null;
-        }
-
-        // Add sample to the accumulator
-        const updatedState: GradientAccumulatorState = {
-          ...state,
-          samples: [...state.samples, sample],
-          lastUpdated: Date.now(),
-        };
-
-        // Persist the updated state
-        const saved = await this.save(userId, updatedState);
-        if (!saved) {
-          return null;
-        }
-
-        return updatedState;
-      } catch {
-        // Graceful degradation: return null on any error
-        return null;
       }
     },
 
