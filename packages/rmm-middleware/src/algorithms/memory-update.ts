@@ -1,13 +1,13 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
-import type { MemoryEntry, RetrievedMemory } from "../../schemas/index.js";
-import { parseUpdateActions } from "../middleware/prompts/update-memory.js";
+import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
+import { parseUpdateActions } from "@/middleware/prompts/update-memory";
 
 /**
  * Interface for minimal summarization model needed by this algorithm
  */
 interface SummarizationModelInterface {
-  invoke(input: string): Promise<{ content: string }>;
+  invoke(input: string): Promise<{ content: any }>;
 }
 
 /**

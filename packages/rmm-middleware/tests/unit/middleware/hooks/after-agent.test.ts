@@ -43,14 +43,14 @@ describe("afterAgent Hook", () => {
 
   test("should export afterAgent function", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
     expect(typeof afterAgent).toBe("function");
   });
 
   test("full pipeline executes successfully", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock dependencies
@@ -100,7 +100,7 @@ describe("afterAgent Hook", () => {
 
   test("no memories extracted → no VectorStore calls", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock dependencies that return NO_TRAIT
@@ -147,7 +147,7 @@ describe("afterAgent Hook", () => {
 
   test("empty messages returns without processing", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     const emptyState = {
@@ -193,7 +193,7 @@ describe("afterAgent Hook", () => {
 
   test("error handling works (aborts gracefully)", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock LLM that returns invalid content (triggers error handling)
@@ -234,7 +234,7 @@ describe("afterAgent Hook", () => {
 
   test("handles multiple memories correctly", async () => {
     const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
+      "@/middleware/hooks/after-agent"
     );
 
     // Mock dependencies that return multiple memories

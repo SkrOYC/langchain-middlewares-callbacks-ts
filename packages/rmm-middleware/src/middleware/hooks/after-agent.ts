@@ -3,10 +3,10 @@ import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
-import { extractMemories } from "../../algorithms/memory-extraction";
-import { findSimilarMemories } from "../../algorithms/similarity-search";
-import { decideUpdateAction, type UpdateAction } from "../../algorithms/memory-update";
-import { addMemory, mergeMemory } from "../../algorithms/memory-actions";
+import { extractMemories } from "@/algorithms/memory-extraction";
+import { findSimilarMemories } from "@/algorithms/similarity-search";
+import { decideUpdateAction, type UpdateAction } from "@/algorithms/memory-update";
+import { addMemory, mergeMemory } from "@/algorithms/memory-actions";
 
 // ============================================================================
 // Constants

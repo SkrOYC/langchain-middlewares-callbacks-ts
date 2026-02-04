@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   extractCitations,
   validateCitations,
-} from "../../src/utils/citation-extractor";
+} from "@/utils/citation-extractor";
 
 // ============================================================================
 // extractCitations Tests

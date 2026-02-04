@@ -28,9 +28,9 @@ export function parseCitations(response: string, maxIndex = 1000): number[] {
 
   const citations: number[] = [];
   for (const match of matches) {
-    const content = match[1].trim();
+    const content = match[1]?.trim();
     // Skip NO_CITE
-    if (content === "NO_CITE") {
+    if (content === undefined || content === "NO_CITE") {
       continue;
     }
 

@@ -38,14 +38,14 @@ describe("extractMemories Algorithm", () => {
 
   test("should export extractMemories function", async () => {
     const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
+      "@/algorithms/memory-extraction"
     );
     expect(typeof extractMemories).toBe("function");
   });
 
   test("valid extraction returns MemoryEntry array", async () => {
     const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
+      "@/algorithms/memory-extraction"
     );
 
     // Mock summarization model that returns valid extraction output
@@ -102,7 +102,7 @@ describe("extractMemories Algorithm", () => {
 
   test("NO_TRAIT returns empty array", async () => {
     const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
+      "@/algorithms/memory-extraction"
     );
 
     // Mock summarization model that returns NO_TRAIT
@@ -135,7 +135,7 @@ describe("extractMemories Algorithm", () => {
   test("invalid JSON returns null", async () => {
     await suppressWarnings(async () => {
       const { extractMemories } = await import(
-        "../../../src/algorithms/memory-extraction.ts"
+        "@/algorithms/memory-extraction"
       );
 
       // Mock summarization model that returns invalid JSON
@@ -167,7 +167,7 @@ describe("extractMemories Algorithm", () => {
   test("LLM failure returns null (graceful degradation)", async () => {
     await suppressWarnings(async () => {
       const { extractMemories } = await import(
-        "../../../src/algorithms/memory-extraction.ts"
+        "@/algorithms/memory-extraction"
       );
 
       // Mock LLM that returns content causing parse failure (triggers catch block)

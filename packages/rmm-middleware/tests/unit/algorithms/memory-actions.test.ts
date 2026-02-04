@@ -34,14 +34,14 @@ describe("Memory Actions", () => {
   describe("addMemory", () => {
     test("should export addMemory function", async () => {
       const { addMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
       expect(typeof addMemory).toBe("function");
     });
 
     test("adds document to VectorStore", async () => {
       const { addMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
 
       const addedDocuments: Array<{
@@ -70,7 +70,7 @@ describe("Memory Actions", () => {
 
     test("includes correct metadata in document", async () => {
       const { addMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
 
       const addedDocuments: Array<{
@@ -103,7 +103,7 @@ describe("Memory Actions", () => {
     test("handles VectorStore errors gracefully", async () => {
       await suppressWarnings(async () => {
         const { addMemory } = await import(
-          "../../../src/algorithms/memory-actions.ts"
+          "@/algorithms/memory-actions"
         );
 
         // Mock VectorStore that throws error
@@ -126,7 +126,7 @@ describe("Memory Actions", () => {
 
     test("creates document with topicSummary as pageContent", async () => {
       const { addMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
 
       const addedDocuments: Array<{
@@ -155,14 +155,14 @@ describe("Memory Actions", () => {
   describe("mergeMemory", () => {
     test("should export mergeMemory function", async () => {
       const { mergeMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
       expect(typeof mergeMemory).toBe("function");
     });
 
     test("updates existing document in VectorStore", async () => {
       const { mergeMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
 
       const existingId = "existing-memory-456";
@@ -212,7 +212,7 @@ describe("Memory Actions", () => {
 
     test("includes existing metadata in updated document", async () => {
       const { mergeMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
 
       const existingId = "existing-memory-456";
@@ -282,7 +282,7 @@ describe("Memory Actions", () => {
     test("handles VectorStore errors gracefully", async () => {
       await suppressWarnings(async () => {
         const { mergeMemory } = await import(
-          "../../../src/algorithms/memory-actions.ts"
+          "@/algorithms/memory-actions"
         );
 
         // Create a memory object
@@ -321,7 +321,7 @@ describe("Memory Actions", () => {
 
     test("uses provided existingId in update", async () => {
       const { mergeMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
+        "@/algorithms/memory-actions"
       );
 
       const existingId = "specific-existing-id-789";

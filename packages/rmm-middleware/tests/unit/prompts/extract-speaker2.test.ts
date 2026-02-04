@@ -14,14 +14,14 @@ const INPUT_PATTERN = /Input:\s*\n/;
 describe("extractSpeaker2 Prompt Template", () => {
   test("should export a prompt template function", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     expect(typeof extractSpeaker2).toBe("function");
   });
 
   test("should accept dialogue session parameter", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const testDialogue = `
 * Turn 0:
@@ -35,7 +35,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should contain task description for SPEAKER_2", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("");
     expect(prompt).toContain("SPEAKER_2");
@@ -45,7 +45,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should specify JSON output format", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("");
     expect(prompt).toContain("JSON");
@@ -56,7 +56,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should specify NO_TRAIT special case", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("");
     expect(prompt).toContain("NO_TRAIT");
@@ -64,7 +64,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should contain few-shot examples with SPEAKER_2 focus", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("");
     expect(prompt).toContain("INPUT:");
@@ -74,7 +74,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should contain placeholder for dialogue input", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const emptyPrompt = extractSpeaker2("");
     expect(emptyPrompt).toMatch(INPUT_PATTERN);
@@ -82,7 +82,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should handle multi-turn dialogue", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const multiTurnDialogue = `
 * Turn 0:
@@ -103,7 +103,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should be a non-configurable built-in prompt", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("test");
     expect(prompt).not.toContain("{userConfig");
@@ -112,7 +112,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should contain reference format instructions", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("");
     expect(prompt).toContain("[turn_id]");
@@ -120,7 +120,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 
   test("should handle empty dialogue gracefully", async () => {
     const { extractSpeaker2 } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const prompt = extractSpeaker2("");
     expect(typeof prompt).toBe("string");
@@ -131,7 +131,7 @@ describe("extractSpeaker2 Prompt Template", () => {
 describe("extractSpeaker2 Output Schema", () => {
   test("should define valid extraction output schema", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     expect(typeof ExtractionOutputSchema).toBe("object");
     expect(typeof ExtractionOutputSchema.safeParse).toBe("function");
@@ -139,7 +139,7 @@ describe("extractSpeaker2 Output Schema", () => {
 
   test("should validate valid extraction JSON", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const validOutput = {
       extracted_memories: [
@@ -153,7 +153,7 @@ describe("extractSpeaker2 Output Schema", () => {
 
   test("should accept NO_TRAIT special case", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const noTraitOutput = "NO_TRAIT";
     const result = ExtractionOutputSchema.safeParse(noTraitOutput);
@@ -162,7 +162,7 @@ describe("extractSpeaker2 Output Schema", () => {
 
   test("should reject invalid extraction JSON", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const invalidOutput = {
       extracted_memories: [{ summary: "User enjoys hiking" }],
@@ -173,7 +173,7 @@ describe("extractSpeaker2 Output Schema", () => {
 
   test("should reject JSON without extracted_memories key", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const invalidOutput = {
       wrong_key: [{ summary: "Test", reference: [0] }],
@@ -184,7 +184,7 @@ describe("extractSpeaker2 Output Schema", () => {
 
   test("should require summary to be non-empty string", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const invalidOutput = {
       extracted_memories: [{ summary: "", reference: [0] }],
@@ -195,7 +195,7 @@ describe("extractSpeaker2 Output Schema", () => {
 
   test("should require reference to be array of numbers", async () => {
     const { ExtractionOutputSchema } = await import(
-      "../../../src/middleware/prompts/extract-speaker2.ts"
+      "@/middleware/prompts/extract-speaker2"
     );
     const invalidOutput = {
       extracted_memories: [

@@ -72,10 +72,10 @@ export function parseUpdateActions(
       // Parse Merge(index, merged_summary)
       const match = trimmedLine.match(MERGE_ACTION_REGEX);
       if (match) {
-        const index = Number.parseInt(match[1], 10);
+        const index = Number.parseInt(match[1]!, 10);
         // Validate index is within bounds
         if (index >= 0 && index < historyLength) {
-          const merged_summary = match[2];
+          const merged_summary = match[2]!;
           actions.push({ action: "Merge", index, merged_summary });
         }
       }
@@ -134,7 +134,7 @@ export function validateUpdateActions(
         continue;
       }
 
-      const index = Number.parseInt(match[1], 10);
+      const index = Number.parseInt(match[1]!, 10);
       if (index < 0 || index >= historyLength) {
         errors.push(
           `Line ${lineNum}: Merge index ${index} is out of bounds (history length: ${historyLength})`

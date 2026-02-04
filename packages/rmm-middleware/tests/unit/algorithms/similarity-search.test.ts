@@ -68,14 +68,14 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("should export findSimilarMemories function", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
     expect(typeof findSimilarMemories).toBe("function");
   });
 
   test("finds similar memories correctly", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     // Mock VectorStore that returns similar memories
@@ -109,7 +109,7 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("returns empty array when no matches", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     // Mock VectorStore that returns empty array
@@ -132,15 +132,15 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("respects topK parameter", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const capturedKValue: number[] = [];
 
     // Mock VectorStore that captures the k parameter
     const mockVectorStoreCapturing = {
-      similaritySearch: async (_query: string, options: { k: number }) => {
-        capturedKValue.push(options.k);
+      similaritySearch: async (_query: string, k: number) => {
+        capturedKValue.push(k);
         return [];
       },
     };
@@ -157,14 +157,14 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("uses default topK value when not specified", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const capturedKValue: number[] = [];
 
     const mockVectorStoreDefault = {
-      similaritySearch: async (_query: string, options: { k: number }) => {
-        capturedKValue.push(options.k);
+      similaritySearch: async (_query: string, k: number) => {
+        capturedKValue.push(k);
         return [];
       },
     };
@@ -181,7 +181,7 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("includes relevance scores in retrieved memories", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const mockVectorStoreWithScores = {
@@ -226,7 +226,7 @@ describe("findSimilarMemories Algorithm", () => {
   test("handles VectorStore errors gracefully", async () => {
     await suppressWarnings(async () => {
       const { findSimilarMemories } = await import(
-        "../../../src/algorithms/similarity-search.ts"
+        "@/algorithms/similarity-search"
       );
 
       // Mock VectorStore that throws error
@@ -251,7 +251,7 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("converts metadata to RetrievedMemory structure", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const expectedId = "test-conversion-id";
@@ -295,7 +295,7 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("handles multiple similar memories", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const mockVectorStoreMultiple = {
@@ -347,13 +347,13 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("uses topicSummary for similarity search query", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const capturedQuery: string[] = [];
 
     const mockVectorStoreQueryCapture = {
-      similaritySearch: async (query: string, _options: { k: number }) => {
+      similaritySearch: async (query: string, _k: number) => {
         capturedQuery.push(query);
         return [];
       },
@@ -372,14 +372,14 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("handles topK of 1", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const capturedKValue: number[] = [];
 
     const mockVectorStoreSingle = {
-      similaritySearch: async (_query: string, options: { k: number }) => {
-        capturedKValue.push(options.k);
+      similaritySearch: async (_query: string, k: number) => {
+        capturedKValue.push(k);
         return [];
       },
     };
@@ -395,14 +395,14 @@ describe("findSimilarMemories Algorithm", () => {
 
   test("handles large topK value", async () => {
     const { findSimilarMemories } = await import(
-      "../../../src/algorithms/similarity-search.ts"
+      "@/algorithms/similarity-search"
     );
 
     const capturedKValue: number[] = [];
 
     const mockVectorStoreLarge = {
-      similaritySearch: async (_query: string, options: { k: number }) => {
-        capturedKValue.push(options.k);
+      similaritySearch: async (_query: string, k: number) => {
+        capturedKValue.push(k);
         return [];
       },
     };

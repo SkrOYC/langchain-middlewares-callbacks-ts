@@ -59,14 +59,14 @@ describe("decideUpdateAction Algorithm", () => {
 
   test("should export decideUpdateAction function", async () => {
     const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
+      "@/algorithms/memory-update"
     );
     expect(typeof decideUpdateAction).toBe("function");
   });
 
   test("Add decision parsed correctly", async () => {
     const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
+      "@/algorithms/memory-update"
     );
 
     // Mock LLM that returns Add() decision

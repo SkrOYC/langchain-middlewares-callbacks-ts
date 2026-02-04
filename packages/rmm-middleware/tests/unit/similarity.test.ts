@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cosineSimilarity, dotProduct } from "../../src/utils/similarity";
+import { cosineSimilarity, dotProduct } from "@/utils/similarity";
 
 // ============================================================================
 // Dot Product Tests

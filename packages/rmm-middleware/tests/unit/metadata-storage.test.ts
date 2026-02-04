@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionMetadata } from "../../src/schemas/index.ts";
-import { createMetadataStorage } from "../../src/storage/metadata-storage";
+import type { SessionMetadata } from "@/schemas";
+import { createMetadataStorage } from "@/storage/metadata-storage";
 import {
   createFailingMockBaseStore,
   createMockBaseStore,

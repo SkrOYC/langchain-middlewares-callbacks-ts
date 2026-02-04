@@ -12,14 +12,14 @@ import { describe, expect, test } from "bun:test";
 describe("generateWithCitations Prompt Template", () => {
   test("should export a prompt template function", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     expect(typeof generateWithCitations).toBe("function");
   });
 
   test("should accept user query and memories parameters", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const userQuery = "What hobbies do I enjoy?";
     const memoriesBlock = `
@@ -35,7 +35,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should contain task description for response generation", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("natural and fluent response");
@@ -44,7 +44,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should specify citation format [i]", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("[i]");
@@ -53,7 +53,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should specify NO_CITE special case", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("[NO_CITE]");
@@ -62,7 +62,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should handle multiple citations [i, j, k]", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("[i, j, k]");
@@ -70,7 +70,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should contain examples with useful memories", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("Case 1: Useful Memories Found");
@@ -80,7 +80,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should contain example with NO_CITE", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("Case 2: No Useful Memories");
@@ -88,7 +88,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should be a non-configurable built-in prompt", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("test", "");
     expect(prompt).not.toContain("{userConfig");
@@ -97,7 +97,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should contain memory independence instruction", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("independent");
@@ -106,7 +106,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should contain citation evaluation instruction", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(prompt).toContain("original turns");
@@ -115,7 +115,7 @@ describe("generateWithCitations Prompt Template", () => {
 
   test("should handle empty memories gracefully", async () => {
     const { generateWithCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const prompt = generateWithCitations("Test query", "");
     expect(typeof prompt).toBe("string");
@@ -126,7 +126,7 @@ describe("generateWithCitations Prompt Template", () => {
 describe("generateWithCitations Citation Parsing", () => {
   test("should parse single citation [0]", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations("Response text [0]");
     expect(citations).toEqual([0]);
@@ -134,7 +134,7 @@ describe("generateWithCitations Citation Parsing", () => {
 
   test("should parse multiple citations [0, 1, 2]", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations("Response text [0, 1, 2]");
     expect(citations).toEqual([0, 1, 2]);
@@ -142,7 +142,7 @@ describe("generateWithCitations Citation Parsing", () => {
 
   test("should parse NO_CITE special case", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations("Response text [NO_CITE]");
     expect(citations).toEqual([]);
@@ -150,7 +150,7 @@ describe("generateWithCitations Citation Parsing", () => {
 
   test("should handle response without citations", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations("Response text without citations");
     expect(citations).toEqual([]);
@@ -158,7 +158,7 @@ describe("generateWithCitations Citation Parsing", () => {
 
   test("should handle empty response", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations("");
     expect(citations).toEqual([]);
@@ -166,7 +166,7 @@ describe("generateWithCitations Citation Parsing", () => {
 
   test("should handle citations at end of response", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations(
       "You enjoy hiking and playing guitar [0, 2]"
@@ -176,7 +176,7 @@ describe("generateWithCitations Citation Parsing", () => {
 
   test("should handle citations with spaces [ 0 , 1 ]", async () => {
     const { parseCitations } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const citations = parseCitations("Response [ 0 , 1 ]");
     expect(citations).toEqual([0, 1]);
@@ -186,7 +186,7 @@ describe("generateWithCitations Citation Parsing", () => {
 describe("generateWithCitations Response Examples", () => {
   test("should format example with multiple memories", async () => {
     const { formatExampleResponse } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const response = formatExampleResponse(
       "You enjoy hiking, playing guitar, and stargazing.",
@@ -199,7 +199,7 @@ describe("generateWithCitations Response Examples", () => {
 
   test("should format example with NO_CITE", async () => {
     const { formatExampleResponse } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const response = formatExampleResponse(
       "I don't have enough information to answer that.",
@@ -212,7 +212,7 @@ describe("generateWithCitations Response Examples", () => {
 
   test("should format example with single citation", async () => {
     const { formatExampleResponse } = await import(
-      "../../../src/middleware/prompts/generate-with-citations.ts"
+      "@/middleware/prompts/generate-with-citations"
     );
     const response = formatExampleResponse("You enjoy hiking.", [0]);
     expect(response).toBe("You enjoy hiking. [0]");
