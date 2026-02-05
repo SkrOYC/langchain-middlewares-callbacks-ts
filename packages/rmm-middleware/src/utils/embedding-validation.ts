@@ -1,4 +1,5 @@
 import type { Embeddings } from "@langchain/core/embeddings";
+import { ConfigurationError } from "./configuration-error";
 
 /**
  * Validates that embeddings produce vectors of the correct dimension
@@ -36,19 +37,13 @@ export async function validateEmbeddingDimension(
     const testVector = await embeddings.embedQuery("Dimension validation test");
 
     if (testVector.length !== expectedDimension) {
-      const { ConfigurationError } = await import(
-        "@/utils/configuration-error"
-      );
       throw new ConfigurationError(
         `Embedding dimension mismatch: expected ${expectedDimension}, got ${testVector.length}`
       );
     }
   } catch (error) {
-    // Re-throw dimension mismatch errors
-    if (
-      error instanceof Error &&
-      error.message.includes("dimension mismatch")
-    ) {
+    // Re-throw ConfigurationError (dimension mismatch)
+    if (error instanceof ConfigurationError) {
       throw error;
     }
 
