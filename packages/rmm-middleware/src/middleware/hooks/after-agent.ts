@@ -9,6 +9,7 @@ import {
   type UpdateAction,
 } from "@/algorithms/memory-update";
 import { findSimilarMemories } from "@/algorithms/similarity-search";
+import type { RetrievedMemory } from "@/schemas";
 
 // ============================================================================
 // Constants

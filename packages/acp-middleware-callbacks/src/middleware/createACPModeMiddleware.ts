@@ -140,7 +140,7 @@ export const STANDARD_MODES: Record<string, ACPModeConfig> = {
  */
 export function createACPModeMiddleware(
   config: ACPModeMiddlewareConfig
-) {
+): ReturnType<typeof createMiddleware> {
   // Validate configuration
   if (!config.modes || Object.keys(config.modes).length === 0) {
     throw new Error("Mode middleware requires at least one mode configuration");

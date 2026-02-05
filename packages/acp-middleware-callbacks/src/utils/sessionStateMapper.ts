@@ -61,10 +61,10 @@ export interface SessionState {
  */
 export const zSessionState = z.object({
   sessionId: z.string().min(1),
-  checkpoint: z.record(z.unknown()),
-  messages: z.array(z.record(z.unknown())),
-  customState: z.record(z.unknown()),
-  middlewareState: z.record(z.record(z.unknown())),
+  checkpoint: z.record(z.string(), z.unknown()),
+  messages: z.array(z.record(z.string(), z.unknown())),
+  customState: z.record(z.string(), z.unknown()),
+  middlewareState: z.record(z.string(), z.record(z.string(), z.unknown())),
   timestamp: z.string().datetime(),
   version: z.number().int().positive(),
 });
@@ -135,7 +135,7 @@ export function validateSessionStateDetailed(
     return { success: true };
   }
   
-  const errors = result.error.errors.map((err) => {
+  const errors = result.error.issues.map((err) => {
     const path = err.path.join('.');
     return `${path}: ${err.message}`;
   });

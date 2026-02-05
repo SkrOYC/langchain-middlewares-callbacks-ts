@@ -416,7 +416,7 @@ function processDecisions(
  */
 export function createACPPermissionMiddleware(
   config: ACPPermissionMiddlewareConfig
-) {
+): ReturnType<typeof createMiddleware> {
   // Validate configuration
   if (!config.permissionPolicy || Object.keys(config.permissionPolicy).length === 0) {
     throw new Error("Permission middleware requires a permissionPolicy configuration");

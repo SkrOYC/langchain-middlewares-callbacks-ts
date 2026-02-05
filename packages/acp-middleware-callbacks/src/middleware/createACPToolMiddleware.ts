@@ -177,7 +177,7 @@ export function mapToolKind(toolName: string): ToolKind {
  */
 export function createACPToolMiddleware(
   config: ACPToolMiddlewareConfig = {}
-) {
+): ReturnType<typeof createMiddleware> {
   // Default configuration
   const emitToolStart = config.emitToolStart ?? false;
   const emitToolResults = config.emitToolResults ?? true;

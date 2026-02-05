@@ -1,6 +1,6 @@
 {
   "name": "@skroyc/ag-ui-middleware-callbacks",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "LangChain.js integration providing middleware and callbacks for AG-UI protocol compatibility",
   "keywords": [
     "langchain",
@@ -47,14 +47,11 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.43",
+    "@langchain/core": "^1.0.0",
     "fast-json-patch": "^3.1.1",
-    "zod": "^3.22.4"
+    "zod": "^4.3.6"
   },
-  "devDependencies": {
-    "langchain": "1.2.3",
-    "tsup": "^8.5.0",
-    "typescript": "^5.0.0"
-  },
+  "devDependencies": {},
   "scripts": {
     "build": "tsup",
     "test": "bun test",

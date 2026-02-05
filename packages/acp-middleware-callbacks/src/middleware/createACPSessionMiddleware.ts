@@ -100,7 +100,7 @@ type RunnableConfig = Record<string, unknown>;
  */
 export function createACPSessionMiddleware(
   config: ACPSessionMiddlewareConfig = {}
-) {
+): ReturnType<typeof createMiddleware> {
   // Default configuration
   const emitStateSnapshots = config.emitStateSnapshots ?? "final";
   

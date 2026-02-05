@@ -1,6 +1,6 @@
 {
   "name": "@skroyc/acp-middleware-callbacks",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "LangChain.js integration providing middleware and callbacks for ACP protocol compatibility",
   "keywords": [
     "langchain",
@@ -41,15 +41,12 @@
     "typescript": ">=5"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.12.0",
-    "@langchain/mcp-adapters": "^1.0.0",
-    "langchain": "^1.2.3",
-    "zod": "^3.22.4"
+    "@agentclientprotocol/sdk": "^0.14.0",
+    "@langchain/mcp-adapters": "^1.1.2",
+    "langchain": "^1.2.17",
+    "zod": "^4.3.6"
   },
-  "devDependencies": {
-    "tsup": "^8.5.0",
-    "typescript": "^5.0.0"
-  },
+  "devDependencies": {},
   "scripts": {
     "build": "tsup",
     "test": "bun test",
