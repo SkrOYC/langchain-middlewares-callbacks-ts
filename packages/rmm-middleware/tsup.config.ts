@@ -22,6 +22,8 @@ export default defineConfig({
     "src/storage/metadata-storage.ts",
     "src/storage/weight-storage.ts",
     "src/utils/citation-extractor.ts",
+    "src/utils/configuration-error.ts",
+    "src/utils/embedding-validation.ts",
     "src/utils/matrix.ts",
     "src/utils/similarity.ts",
   ],

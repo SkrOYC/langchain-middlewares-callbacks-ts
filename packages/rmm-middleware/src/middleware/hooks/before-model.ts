@@ -68,6 +68,10 @@ interface BeforeModelState {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+// ============================================================================
 // Hook Factory
 // ============================================================================
 
@@ -98,8 +102,14 @@ interface BeforeModelState {
  * ```
  */
 export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
+  // Create lazy validator for embedding dimension (once per middleware instance)
+  const embeddings = options.embeddings;
+
   // Apply defaults
   const topK = options.topK ?? 20;
+
+  // Lazy validator state (created once, reused across calls)
+  let validateOnce: (() => Promise<void>) | null = null;
 
   return {
     name: "rmm-before-model",
@@ -108,6 +118,15 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
       state: BeforeModelState,
       _runtime: BeforeModelRuntime
     ): Promise<BeforeModelStateUpdate> => {
+      // Lazy validate embedding dimension on first call
+      if (!validateOnce) {
+        const { createLazyValidator } = await import(
+          "@/utils/embedding-validation"
+        );
+        validateOnce = createLazyValidator(embeddings);
+      }
+      await validateOnce();
+
       // Validate reranker weights have required properties
       const weights = state._rerankerWeights;
       if (

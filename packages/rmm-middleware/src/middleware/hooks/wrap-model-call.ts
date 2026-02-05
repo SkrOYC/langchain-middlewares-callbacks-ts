@@ -96,6 +96,10 @@ interface ModelRequest {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+// ============================================================================
 // Hook Factory
 // ============================================================================
 
@@ -125,6 +129,12 @@ interface ModelRequest {
 export function createRetrospectiveWrapModelCall(
   options: WrapModelCallOptions
 ) {
+  // Create lazy validator for embedding dimension
+  const embeddings = options.embeddings;
+
+  // Lazy validator state (created once, reused across calls)
+  let validateOnce: (() => Promise<void>) | null = null;
+
   return {
     name: "rmm-wrap-model-call",
 
@@ -135,6 +145,16 @@ export function createRetrospectiveWrapModelCall(
       ) => Promise<{ content: string; text: string }>
     ): Promise<{ content: string; text: string }> => {
       const { state, runtime } = request;
+
+      // Lazy validate embedding dimension on first call
+      if (!validateOnce) {
+        const { createLazyValidator } = await import(
+          "@/utils/embedding-validation"
+        );
+        validateOnce = createLazyValidator(embeddings);
+      }
+      await validateOnce();
+
       const memories = state._retrievedMemories;
 
       // If no memories to process, call handler directly
@@ -300,10 +320,6 @@ export function createRetrospectiveWrapModelCall(
     },
   };
 }
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
 
 // ============================================================================
 // Helper Functions
