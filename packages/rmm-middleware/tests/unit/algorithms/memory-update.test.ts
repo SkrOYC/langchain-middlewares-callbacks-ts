@@ -97,9 +97,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Merge decision parsed correctly", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     // Mock LLM that returns Merge() decision
     const mockSummarizationModelMerge = {
@@ -137,9 +135,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Multiple decisions handled", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     // Mock LLM that returns multiple decisions
     const mockSummarizationModelMultiple = {
@@ -182,9 +178,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Invalid decision returns empty array", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     // Mock LLM that returns invalid decision
     const mockSummarizationModelInvalid = {
@@ -216,9 +210,7 @@ describe("decideUpdateAction Algorithm", () => {
 
   test("LLM failure returns empty array", async () => {
     await suppressWarnings(async () => {
-      const { decideUpdateAction } = await import(
-        "../../../src/algorithms/memory-update.ts"
-      );
+      const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
       // Mock LLM that returns invalid action (triggers error handling)
       const mockSummarizationModelError = {
@@ -250,9 +242,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Empty similar memories uses empty array for history", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     const capturedInputs: Array<{ history: string[]; new: string }> = [];
 
@@ -289,9 +279,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Formats similar memories as history summaries", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     const capturedInputs: Array<{ history: string[]; new: string }> = [];
 
@@ -331,9 +319,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Handles out-of-bounds Merge index gracefully", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     // Mock LLM that returns out-of-bounds Merge index
     const mockSummarizationModelOutOfBounds = {
@@ -366,9 +352,7 @@ describe("decideUpdateAction Algorithm", () => {
   });
 
   test("Uses provided updatePrompt function", async () => {
-    const { decideUpdateAction } = await import(
-      "../../../src/algorithms/memory-update.ts"
-    );
+    const { decideUpdateAction } = await import("@/algorithms/memory-update");
 
     const customPromptCalled: boolean[] = [];
 

@@ -197,9 +197,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("empty session returns empty array", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     // Mock embeddings (won't be called for empty session)
     const mockEmbeddings = {
@@ -221,9 +219,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("formats session history into dialogue with turn markers", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const capturedInput: string[] = [];
 
@@ -262,9 +258,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("generates embeddings for extracted summaries", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     let embedDocumentsCalled = false;
     let _embedQueryCalled = false;
@@ -305,9 +299,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("includes turn references in MemoryEntry", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const mockSummarizationModelValid = {
       invoke: () => {
@@ -340,9 +332,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("uses provided sessionId in MemoryEntry", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const sessionId = "custom-session-id-456";
 
@@ -374,9 +364,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("generates UUID for each memory entry", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const mockSummarizationModelValid = {
       invoke: () => {
@@ -412,9 +400,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("includes timestamp in MemoryEntry", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const mockSummarizationModelValid = {
       invoke: () => {
@@ -446,9 +432,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("handles memories with empty reference array", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const customMockModel = {
       invoke: () => {
@@ -477,9 +461,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("handles single memory extraction", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const customMockModel = {
       invoke: () => {
@@ -508,9 +490,7 @@ describe("extractMemories Algorithm", () => {
   });
 
   test("handles many memories extraction", async () => {
-    const { extractMemories } = await import(
-      "../../../src/algorithms/memory-extraction.ts"
-    );
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const customMockModel = {
       invoke: () => {

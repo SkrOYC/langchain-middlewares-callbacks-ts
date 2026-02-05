@@ -359,9 +359,7 @@ describe("Memory Actions", () => {
     });
 
     test("uses provided mergedSummary as pageContent", async () => {
-      const { mergeMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
-      );
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
 
       const existingId = "existing-id";
       const mergedSummary = "This is the merged summary content";
@@ -406,9 +404,7 @@ describe("Memory Actions", () => {
     });
 
     test("always merges when memory object is provided", async () => {
-      const { mergeMemory } = await import(
-        "../../../src/algorithms/memory-actions.ts"
-      );
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
 
       // Create a memory object to merge
       const existingMemory = {

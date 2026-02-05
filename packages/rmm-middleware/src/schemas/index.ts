@@ -383,6 +383,97 @@ export const SessionMetadataSchema = z.object({
 export type SessionMetadata = z.infer<typeof SessionMetadataSchema>;
 
 // ============================================================================
+// ReflectionConfig Schema
+// ============================================================================
+
+/**
+ * Schema for prospective reflection trigger configuration.
+ * Controls when memory extraction occurs based on turn count and inactivity.
+ *
+ * Trigger modes:
+ * - "relaxed": Reflection triggers when EITHER min threshold is met (OR)
+ * - "strict": Reflection triggers only when BOTH min thresholds are met (AND)
+ *
+ * Max thresholds act as "force" triggers - reflection happens regardless of
+ * the other condition when max is reached.
+ */
+export const ReflectionConfigSchema = z.object({
+  /** Minimum turns before reflection is eligible */
+  minTurns: z.number().int().positive().default(2),
+  /** Maximum turns before reflection is forced (regardless of inactivity) */
+  maxTurns: z.number().int().positive().default(50),
+  /** Minimum inactivity time in milliseconds before reflection is eligible (default: 10 minutes) */
+  minInactivityMs: z.number().int().positive().default(600_000),
+  /** Maximum inactivity time in milliseconds before reflection is forced (default: 30 minutes) */
+  maxInactivityMs: z.number().int().positive().default(1_800_000),
+  /** Trigger mode: "relaxed" (OR logic) or "strict" (AND logic) */
+  mode: z.union([z.literal("relaxed"), z.literal("strict")]).default("strict"),
+  /** Maximum buffer size to prevent unbounded growth */
+  maxBufferSize: z.number().int().positive().default(100),
+});
+
+export type ReflectionConfig = z.infer<typeof ReflectionConfigSchema>;
+
+/**
+ * Default reflection configuration with paper-aligned values.
+ * Uses strict mode requiring both sufficient turns AND inactivity period.
+ */
+export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
+  minTurns: 2,
+  maxTurns: 50,
+  minInactivityMs: 600_000, // 10 minutes
+  maxInactivityMs: 1_800_000, // 30 minutes
+  mode: "strict",
+  maxBufferSize: 100,
+} as const;
+
+// ============================================================================
+// MessageBuffer Schema
+// ============================================================================
+
+/**
+ * Schema for the persisted message buffer in BaseStore.
+ * Stores messages across threads for batched prospective reflection.
+ *
+ * Note: messages are stored as z.any() since they are full LangChain BaseMessage
+ * objects that get serialized. The actual type is BaseMessage from @langchain/core/messages.
+ */
+export const MessageBufferSchema = z.object({
+  /** Array of serialized messages waiting for reflection */
+  messages: z.array(z.any()),
+  /** Count of human messages in the buffer (for quick threshold checks) */
+  humanMessageCount: z.number().int().nonnegative(),
+  /** Timestamp of the last message added to the buffer */
+  lastMessageTimestamp: z.number().int().positive(),
+  /** Timestamp when buffer was created */
+  createdAt: z.number().int().positive(),
+});
+
+/**
+ * Message buffer type for cross-thread message persistence.
+ * The messages array contains LangChain BaseMessage objects.
+ */
+export interface MessageBuffer {
+  messages: import("@langchain/core/messages").BaseMessage[];
+  humanMessageCount: number;
+  lastMessageTimestamp: number;
+  createdAt: number;
+}
+
+/**
+ * Creates an empty message buffer for initialization.
+ */
+export function createEmptyMessageBuffer(): MessageBuffer {
+  const now = Date.now();
+  return {
+    messages: [],
+    humanMessageCount: 0,
+    lastMessageTimestamp: now,
+    createdAt: now,
+  };
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

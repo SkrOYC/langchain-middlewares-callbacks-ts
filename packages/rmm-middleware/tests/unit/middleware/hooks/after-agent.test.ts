@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseMessage } from "@langchain/core/messages";
 
+// Constants for test configuration
+const ELEVEN_MINUTES_MS = 11 * 60 * 1000;
+
 /**
  * Tests for afterAgent hook
  *
@@ -83,6 +86,30 @@ describe("afterAgent Hook", () => {
       },
     };
 
+    // Mock BaseStore for message buffer persistence
+    // Pre-populate with a buffer that has an old timestamp to trigger inactivity
+    const storeData = new Map();
+    storeData.set("rmm|test-user|buffer|message-buffer", {
+      value: {
+        messages: [],
+        humanMessageCount: 0,
+        lastMessageTimestamp: Date.now() - ELEVEN_MINUTES_MS,
+        createdAt: Date.now() - ELEVEN_MINUTES_MS,
+      },
+    });
+
+    const mockStore = {
+      get: async (namespace: string[], key: string) => {
+        const fullKey = [...namespace, key].join("|");
+        return await Promise.resolve(storeData.get(fullKey) ?? null);
+      },
+      put: async (namespace: string[], key: string, value: unknown) => {
+        const fullKey = [...namespace, key].join("|");
+        storeData.set(fullKey, { value });
+        return await Promise.resolve();
+      },
+    };
+
     const mockRuntime = {
       context: {
         summarizationModel: mockSummarizationModel,
@@ -93,6 +120,16 @@ describe("afterAgent Hook", () => {
     const mockDeps = {
       vectorStore: mockVectorStore,
       extractSpeaker1: (dialogue: string) => `Prompt for: ${dialogue}`,
+      userId: "test-user",
+      store: mockStore,
+      reflectionConfig: {
+        minTurns: 2,
+        maxTurns: 50,
+        minInactivityMs: 600_000, // 10 minutes
+        maxInactivityMs: 1_800_000, // 30 minutes
+        mode: "strict" as const,
+        maxBufferSize: 100,
+      },
     };
 
     const result = await afterAgent(sampleState, mockRuntime, mockDeps);
@@ -267,6 +304,30 @@ describe("afterAgent Hook", () => {
       },
     };
 
+    // Mock BaseStore for message buffer persistence
+    // Pre-populate with a buffer that has an old timestamp to trigger inactivity
+    const storeData = new Map();
+    storeData.set("rmm|test-user|buffer|message-buffer", {
+      value: {
+        messages: [],
+        humanMessageCount: 0,
+        lastMessageTimestamp: Date.now() - ELEVEN_MINUTES_MS,
+        createdAt: Date.now() - ELEVEN_MINUTES_MS,
+      },
+    });
+
+    const mockStore = {
+      get: async (namespace: string[], key: string) => {
+        const fullKey = [...namespace, key].join("|");
+        return await Promise.resolve(storeData.get(fullKey) ?? null);
+      },
+      put: async (namespace: string[], key: string, value: unknown) => {
+        const fullKey = [...namespace, key].join("|");
+        storeData.set(fullKey, { value });
+        return await Promise.resolve();
+      },
+    };
+
     const mockRuntime5 = {
       context: {
         summarizationModel: mockSummarizationModel,
@@ -277,6 +338,16 @@ describe("afterAgent Hook", () => {
     const mockDeps5 = {
       vectorStore: mockVectorStore,
       extractSpeaker1: (dialogue: string) => `Prompt for: ${dialogue}`,
+      userId: "test-user",
+      store: mockStore,
+      reflectionConfig: {
+        minTurns: 2,
+        maxTurns: 50,
+        minInactivityMs: 600_000, // 10 minutes
+        maxInactivityMs: 1_800_000, // 30 minutes
+        mode: "strict" as const,
+        maxBufferSize: 100,
+      },
     };
 
     const result5 = await afterAgent(sampleState, mockRuntime5, mockDeps5);
@@ -286,9 +357,7 @@ describe("afterAgent Hook", () => {
   });
 
   test("handles merge decisions correctly", async () => {
-    const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     // Track call count to distinguish between extraction and decision
     let callCount = 0;
@@ -339,6 +408,30 @@ describe("afterAgent Hook", () => {
       },
     };
 
+    // Mock BaseStore for message buffer persistence
+    // Pre-populate with a buffer that has an old timestamp to trigger inactivity
+    const storeData = new Map();
+    storeData.set("rmm|test-user|buffer|message-buffer", {
+      value: {
+        messages: [],
+        humanMessageCount: 0,
+        lastMessageTimestamp: Date.now() - ELEVEN_MINUTES_MS,
+        createdAt: Date.now() - ELEVEN_MINUTES_MS,
+      },
+    });
+
+    const mockStore = {
+      get: async (namespace: string[], key: string) => {
+        const fullKey = [...namespace, key].join("|");
+        return await Promise.resolve(storeData.get(fullKey) ?? null);
+      },
+      put: async (namespace: string[], key: string, value: unknown) => {
+        const fullKey = [...namespace, key].join("|");
+        storeData.set(fullKey, { value });
+        return await Promise.resolve();
+      },
+    };
+
     const mockRuntime6 = {
       context: {
         summarizationModel: mockSummarizationModel,
@@ -351,6 +444,16 @@ describe("afterAgent Hook", () => {
       extractSpeaker1: (dialogue: string) => `Prompt for: ${dialogue}`,
       updateMemory: (history: string[], newSummary: string) =>
         `Update prompt for: ${history.length} memories, new: ${newSummary}`,
+      userId: "test-user",
+      store: mockStore,
+      reflectionConfig: {
+        minTurns: 2,
+        maxTurns: 50,
+        minInactivityMs: 600_000, // 10 minutes
+        maxInactivityMs: 1_800_000, // 30 minutes
+        mode: "strict" as const,
+        maxBufferSize: 100,
+      },
     };
 
     const result6 = await afterAgent(sampleState, mockRuntime6, mockDeps6);
@@ -360,9 +463,7 @@ describe("afterAgent Hook", () => {
   });
 
   test("returns empty object on success", async () => {
-    const { afterAgent } = await import(
-      "../../../../src/middleware/hooks/after-agent"
-    );
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
 
     // Mock dependencies
     const mockSummarizationModel = {
@@ -399,5 +500,87 @@ describe("afterAgent Hook", () => {
     const result7 = await afterAgent(sampleState, mockRuntime7, mockDeps7);
 
     expect(result7).toEqual({});
+  });
+
+  test("relaxed mode triggers reflection when turns threshold met without inactivity", async () => {
+    const { afterAgent } = await import("@/middleware/hooks/after-agent");
+
+    // Mock dependencies
+    const mockSummarizationModel = {
+      invoke: () => {
+        const content = JSON.stringify({
+          extracted_memories: [
+            { summary: "User enjoys testing", reference: [0] },
+          ],
+        });
+        return { content, text: content };
+      },
+    };
+
+    const mockEmbeddings = {
+      embedDocuments: async (texts: string[]) =>
+        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
+    };
+
+    let addDocumentsCalled = false;
+
+    const mockVectorStore = {
+      similaritySearch: () => [],
+      addDocuments: () => {
+        addDocumentsCalled = true;
+      },
+    };
+
+    // Mock store with VERY recent timestamp (no inactivity)
+    const storeData = new Map();
+    storeData.set("rmm|test-user|buffer|message-buffer", {
+      value: {
+        messages: [],
+        humanMessageCount: 0,
+        lastMessageTimestamp: Date.now() - 1000, // 1 second ago (no inactivity)
+        createdAt: Date.now() - 1000,
+      },
+    });
+
+    const mockStore = {
+      get: async (namespace: string[], key: string) => {
+        const fullKey = [...namespace, key].join("|");
+        return await Promise.resolve(storeData.get(fullKey) ?? null);
+      },
+      put: async (namespace: string[], key: string, value: unknown) => {
+        const fullKey = [...namespace, key].join("|");
+        storeData.set(fullKey, { value });
+        return await Promise.resolve();
+      },
+    };
+
+    const mockRuntime = {
+      context: {
+        summarizationModel: mockSummarizationModel,
+        embeddings: mockEmbeddings,
+      },
+    };
+
+    // Use relaxed mode - should trigger with just turn count, no inactivity needed
+    const mockDeps = {
+      vectorStore: mockVectorStore,
+      extractSpeaker1: (dialogue: string) => `Prompt for: ${dialogue}`,
+      userId: "test-user",
+      store: mockStore,
+      reflectionConfig: {
+        minTurns: 2,
+        maxTurns: 50,
+        minInactivityMs: 600_000, // 10 minutes (not met)
+        maxInactivityMs: 1_800_000,
+        mode: "relaxed" as const, // OR logic - turns only
+        maxBufferSize: 100,
+      },
+    };
+
+    const result = await afterAgent(sampleState, mockRuntime, mockDeps);
+
+    // Relaxed mode should trigger because minTurns (2) is met, even though inactivity is not
+    expect(result).not.toBeNull();
+    expect(addDocumentsCalled).toBe(true);
   });
 });
