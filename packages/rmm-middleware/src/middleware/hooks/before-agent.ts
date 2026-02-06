@@ -274,17 +274,36 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
             );
 
             if (shouldTrigger) {
-              // Process reflection asynchronously (non-blocking)
+              // Snapshot the buffer for async reflection (staging pattern)
+              // This prevents message loss if new messages arrive during reflection
+              const bufferToStage: typeof item.value = {
+                messages: item.value.messages,
+                humanMessageCount: item.value.humanMessageCount,
+                lastMessageTimestamp: item.value.lastMessageTimestamp,
+                createdAt: item.value.createdAt,
+              };
+
+              // Stage the buffer for reflection
+              const staged = await bufferStorage.stageBuffer(userId, bufferToStage);
+
+              if (!staged) {
+                console.warn(
+                  "[before-agent] Failed to stage buffer, skipping reflection"
+                );
+                return;
+              }
+
+              // Process reflection asynchronously on staged content (non-blocking)
               // We don't await this to not delay the agent
               processReflection(
-                { messages: item.value.messages, humanMessageCount: item.value.humanMessageCount },
+                { messages: bufferToStage.messages, humanMessageCount: bufferToStage.humanMessageCount },
                 options.reflectionDeps
               )
                 .then(async () => {
-                  // Clear buffer after reflection
-                  await bufferStorage.clearBuffer(userId);
+                  // Clear staging buffer after reflection completes
+                  await bufferStorage.clearStaging(userId);
                   console.debug(
-                    "[before-agent] Reflection completed, buffer cleared"
+                    "[before-agent] Reflection completed, staging cleared"
                   );
                 })
                 .catch((error) => {
@@ -292,6 +311,7 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
                     "[before-agent] Reflection failed:",
                     error instanceof Error ? error.message : String(error)
                   );
+                  // Staging is preserved for retry on next trigger
                 });
             }
           }

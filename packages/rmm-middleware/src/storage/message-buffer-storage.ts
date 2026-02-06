@@ -26,12 +26,36 @@ export interface MessageBufferStorage {
   loadBufferItem(userId: string): Promise<Item | null>;
 
   /**
+   * Load staging buffer for a user from BaseStore.
+   * Used during async reflection to work on a snapshot.
+   * @param userId - The user identifier
+   * @returns MessageBuffer or null if not found
+   */
+  loadStagingBuffer(userId: string): Promise<MessageBuffer | null>;
+
+  /**
    * Save message buffer for a user to BaseStore.
    * @param userId - The user identifier
    * @param buffer - The message buffer to persist
    * @returns true on success, false on failure
    */
   saveBuffer(userId: string, buffer: MessageBuffer): Promise<boolean>;
+
+  /**
+   * Stage current buffer for async processing.
+   * Creates a snapshot of the buffer for reflection.
+   * @param userId - The user identifier
+   * @param buffer - The buffer to stage
+   * @returns true on success, false on failure
+   */
+  stageBuffer(userId: string, buffer: MessageBuffer): Promise<boolean>;
+
+  /**
+   * Clear staging buffer after reflection completes.
+   * @param userId - The user identifier
+   * @returns true on success, false on failure
+   */
+  clearStaging(userId: string): Promise<boolean>;
 
   /**
    * Clear message buffer for a user.
@@ -44,18 +68,28 @@ export interface MessageBufferStorage {
 /**
  * Creates a MessageBufferStorage adapter for the given BaseStore instance.
  * @param store - BaseStore instance from @langchain/langgraph-checkpoint
+ * @param customNamespace - Optional custom namespace prefix for isolation
  * @returns MessageBufferStorage implementation
  */
 export function createMessageBufferStorage(
-  store: BaseStore
+  store: BaseStore,
+  customNamespace?: string[]
 ): MessageBufferStorage {
   const NAMESPACE_KEY = "message-buffer" as const;
+  const STAGING_KEY = "staging" as const;
 
-  const buildNamespace = (userId: string): string[] => [
-    "rmm",
-    userId,
-    "buffer",
-  ];
+  const buildNamespace = (
+    userId: string,
+    type: "main" | "staging" = "main"
+  ): string[] => {
+    const baseNamespace = customNamespace ?? ["rmm", userId, "buffer"];
+
+    if (type === "staging") {
+      return [...baseNamespace, STAGING_KEY];
+    }
+
+    return baseNamespace;
+  };
 
   return {
     async loadBuffer(userId: string): Promise<MessageBuffer> {
@@ -85,7 +119,7 @@ export function createMessageBufferStorage(
 
     async loadBufferItem(userId: string): Promise<Item | null> {
       try {
-        const namespace = buildNamespace(userId);
+        const namespace = buildNamespace(userId, "main");
         return await store.get(namespace, NAMESPACE_KEY);
       } catch (error) {
         console.warn(
@@ -96,9 +130,39 @@ export function createMessageBufferStorage(
       }
     },
 
+    async loadStagingBuffer(userId: string): Promise<MessageBuffer | null> {
+      try {
+        const namespace = buildNamespace(userId, "staging");
+        const item = await store.get(namespace, NAMESPACE_KEY);
+
+        if (item === null || item === undefined) {
+          return null;
+        }
+
+        const parseResult = MessageBufferSchema.safeParse(item.value);
+
+        if (!parseResult.success) {
+          return null;
+        }
+
+        // Return null if buffer is empty (already cleared)
+        if (parseResult.data.messages.length === 0) {
+          return null;
+        }
+
+        return parseResult.data;
+      } catch (error) {
+        console.warn(
+          "[message-buffer-storage] Error loading staging buffer, returning null:",
+          error instanceof Error ? error.message : String(error)
+        );
+        return null;
+      }
+    },
+
     async saveBuffer(userId: string, buffer: MessageBuffer): Promise<boolean> {
       try {
-        const namespace = buildNamespace(userId);
+        const namespace = buildNamespace(userId, "main");
 
         const validationResult = MessageBufferSchema.safeParse(buffer);
         if (!validationResult.success) {
@@ -120,9 +184,47 @@ export function createMessageBufferStorage(
       }
     },
 
+    async stageBuffer(userId: string, buffer: MessageBuffer): Promise<boolean> {
+      try {
+        const namespace = buildNamespace(userId, "staging");
+
+        const validationResult = MessageBufferSchema.safeParse(buffer);
+        if (!validationResult.success) {
+          console.warn(
+            "[message-buffer-storage] Staging buffer validation failed:",
+            validationResult.error
+          );
+          return false;
+        }
+
+        await store.put(namespace, NAMESPACE_KEY, validationResult.data);
+        return true;
+      } catch (error) {
+        console.warn(
+          "[message-buffer-storage] Error staging buffer:",
+          error instanceof Error ? error.message : String(error)
+        );
+        return false;
+      }
+    },
+
+    async clearStaging(userId: string): Promise<boolean> {
+      try {
+        const namespace = buildNamespace(userId, "staging");
+        await store.put(namespace, NAMESPACE_KEY, createEmptyMessageBuffer());
+        return true;
+      } catch (error) {
+        console.warn(
+          "[message-buffer-storage] Error clearing staging:",
+          error instanceof Error ? error.message : String(error)
+        );
+        return false;
+      }
+    },
+
     async clearBuffer(userId: string): Promise<boolean> {
       try {
-        const namespace = buildNamespace(userId);
+        const namespace = buildNamespace(userId, "main");
         await store.put(namespace, NAMESPACE_KEY, createEmptyMessageBuffer());
         return true;
       } catch (error) {
