@@ -55,7 +55,7 @@ function createMockStore(existingBuffer?: Record<string, unknown>): {
   return {
     get: async (namespace: string[], key: string) => {
       const fullKey = [...namespace, key].join("|");
-      return storeData.get(fullKey) ?? null;
+      return await Promise.resolve(storeData.get(fullKey) ?? null);
     },
     put: async (namespace: string[], key: string, value: unknown) => {
       const fullKey = [...namespace, key].join("|");
@@ -66,6 +66,7 @@ function createMockStore(existingBuffer?: Record<string, unknown>): {
         created_at: new Date(),
         updated_at: new Date(),
       });
+      return await Promise.resolve();
     },
   };
 }
@@ -136,7 +137,7 @@ describe("afterAgent Hook - Append Only", () => {
 
     const mockVectorStore = {
       similaritySearch: () => [],
-      addDocuments: () => {},
+      addDocuments: () => undefined,
     };
 
     // Mock store starts with empty buffer
@@ -173,8 +174,8 @@ describe("afterAgent Hook - Append Only", () => {
       "message-buffer"
     );
     expect(savedItem).not.toBeNull();
-    expect(savedItem!.value.messages).toHaveLength(4);
-    expect(savedItem!.value.humanMessageCount).toBe(2);
+    expect(savedItem?.value.messages).toHaveLength(4);
+    expect(savedItem?.value.humanMessageCount).toBe(2);
   });
 
   test("appends messages to existing buffer", async () => {
@@ -196,7 +197,7 @@ describe("afterAgent Hook - Append Only", () => {
 
     const mockVectorStore = {
       similaritySearch: () => [],
-      addDocuments: () => {},
+      addDocuments: () => undefined,
     };
 
     // Mock store starts with existing buffer (2 messages)
@@ -255,8 +256,8 @@ describe("afterAgent Hook - Append Only", () => {
       "message-buffer"
     );
     expect(savedItem).not.toBeNull();
-    expect(savedItem!.value.messages).toHaveLength(6); // 2 old + 4 new
-    expect(savedItem!.value.humanMessageCount).toBe(3); // 1 old + 2 new
+    expect(savedItem?.value.messages).toHaveLength(6); // 2 old + 4 new
+    expect(savedItem?.value.humanMessageCount).toBe(3); // 1 old + 2 new
   });
 
   test("handles empty messages gracefully", async () => {
@@ -276,7 +277,7 @@ describe("afterAgent Hook - Append Only", () => {
 
     const mockVectorStore = {
       similaritySearch: () => [],
-      addDocuments: () => {},
+      addDocuments: () => undefined,
     };
 
     const mockStore = createMockStore();
@@ -334,7 +335,7 @@ describe("afterAgent Hook - Append Only", () => {
 
     const mockVectorStore = {
       similaritySearch: () => [],
-      addDocuments: () => {},
+      addDocuments: () => undefined,
     };
 
     const mockStore = createMockStore();
@@ -347,7 +348,7 @@ describe("afterAgent Hook - Append Only", () => {
     ) => {
       putCalled = true;
       savedValue = value;
-      return originalPut(namespace, key, value);
+      return await originalPut(namespace, key, value);
     };
 
     const mockRuntime: AfterAgentRuntime = {
@@ -399,7 +400,7 @@ describe("afterAgent Hook - Append Only", () => {
 
     const mockVectorStore = {
       similaritySearch: () => [],
-      addDocuments: () => {},
+      addDocuments: () => undefined,
     };
 
     // Start with 3 human messages in buffer
@@ -497,6 +498,6 @@ describe("afterAgent Hook - Append Only", () => {
       "message-buffer"
     );
     expect(savedItem).not.toBeNull();
-    expect(savedItem!.value.humanMessageCount).toBe(4);
+    expect(savedItem?.value.humanMessageCount).toBe(4);
   });
 });

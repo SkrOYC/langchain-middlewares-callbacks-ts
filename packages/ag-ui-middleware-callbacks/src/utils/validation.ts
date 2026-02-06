@@ -1,13 +1,13 @@
 /**
  * AG-UI Event Validation Utilities
- * 
+ *
  * Provides optional runtime validation of AG-UI events using @ag-ui/core Zod schemas.
  * Validation is disabled by default for performance; enable in development for debugging.
- * 
+ *
  * @example
  * ```typescript
  * import { validateEvent, isValidEvent } from './utils/validation';
- * 
+ *
  * // Safe validation (returns result object)
  * const result = validateEvent(event);
  * if (result.success) {
@@ -15,7 +15,7 @@
  * } else {
  *   console.error('Invalid event:', result.error);
  * }
- * 
+ *
  * // Boolean check
  * if (isValidEvent(event)) {
  *   // event is valid
@@ -23,113 +23,123 @@
  * ```
  */
 
-import { EventSchemas } from '@ag-ui/core';
-import type { BaseEvent } from '../events';
+import { EventSchemas } from "@ag-ui/core";
+import type { BaseEvent } from "../events";
 
 /**
  * Result of event validation.
  */
 export interface ValidationResult<T = BaseEvent> {
-  success: boolean;
-  data?: T;
-  error?: {
-    message: string;
-    issues: Array<{
-      path: (string | number)[];
-      message: string;
-    }>;
-  };
+	success: boolean;
+	data?: T;
+	error?: {
+		message: string;
+		issues: Array<{
+			path: (string | number)[];
+			message: string;
+		}>;
+	};
 }
 
 /**
  * Validate an AG-UI event against @ag-ui/core schemas.
- * 
+ *
  * Events are now emitted with camelCase field names (toolCalls, toolCallId)
  * which matches the @ag-ui/core schema directly.
- * 
+ *
  * @param event - The event to validate
  * @returns ValidationResult with success status and any errors
  */
 export function validateEvent(event: unknown): ValidationResult {
-  try {
-    const result = EventSchemas.safeParse(event);
-    
-    if (result.success) {
-      return {
-        success: true,
-        data: event as BaseEvent,
-      };
-    }
-    
-    return {
-      success: false,
-      error: {
-        message: 'Event validation failed',
-        issues: result.error.issues.map(issue => ({
-          path: issue.path,
-          message: issue.message,
-        })),
-      },
-    };
-  } catch (err) {
-    return {
-      success: false,
-      error: {
-        message: err instanceof Error ? err.message : 'Unknown validation error',
-        issues: [],
-      },
-    };
-  }
+	try {
+		const result = EventSchemas.safeParse(event);
+
+		if (result.success) {
+			return {
+				success: true,
+				data: event as BaseEvent,
+			};
+		}
+
+		return {
+			success: false,
+			error: {
+				message: "Event validation failed",
+				issues: result.error.issues.map((issue) => ({
+					path: issue.path,
+					message: issue.message,
+				})),
+			},
+		};
+	} catch (err) {
+		return {
+			success: false,
+			error: {
+				message:
+					err instanceof Error ? err.message : "Unknown validation error",
+				issues: [],
+			},
+		};
+	}
 }
 
 /**
  * Check if an event is valid according to @ag-ui/core schemas.
- * 
+ *
  * @param event - The event to check
  * @returns true if valid, false otherwise
  */
 export function isValidEvent(event: unknown): event is BaseEvent {
-  return validateEvent(event).success;
+	return validateEvent(event).success;
 }
 
 /**
  * Create a validating callback wrapper.
  * Wraps any callback function to add validation before emission.
- * 
+ *
  * @param callback - The callback function to wrap
  * @param options - Validation options
  * @returns Wrapped callback with validation
  */
-export function createValidatingCallback<T extends { emit: (event: BaseEvent) => void }>(
-  callback: T,
-  options: {
-    /** Throw on invalid events (default: false - just log warning) */
-    throwOnInvalid?: boolean;
-    /** Custom logger for validation errors */
-    onValidationError?: (event: BaseEvent, error: ValidationResult['error']) => void;
-  } = {}
+export function createValidatingCallback<
+	T extends { emit: (event: BaseEvent) => void },
+>(
+	callback: T,
+	options: {
+		/** Throw on invalid events (default: false - just log warning) */
+		throwOnInvalid?: boolean;
+		/** Custom logger for validation errors */
+		onValidationError?: (
+			event: BaseEvent,
+			error: ValidationResult["error"],
+		) => void;
+	} = {},
 ): T {
-  const { throwOnInvalid = false, onValidationError } = options;
-  
-  return {
-    ...callback,
-    emit: (event: BaseEvent) => {
-      const result = validateEvent(event);
-      
-      if (!result.success) {
-        if (onValidationError) {
-          onValidationError(event, result.error);
-        } else {
-          console.warn('[AG-UI Validation] Invalid event:', event.type, result.error);
-        }
-        
-        if (throwOnInvalid) {
-          throw new Error(`Invalid AG-UI event: ${result.error?.message}`);
-        }
-      }
-      
-      // Always emit (validation is advisory)
-      callback.emit(event);
-    },
-  };
+	const { throwOnInvalid = false, onValidationError } = options;
+
+	return {
+		...callback,
+		emit: (event: BaseEvent) => {
+			const result = validateEvent(event);
+
+			if (!result.success) {
+				if (onValidationError) {
+					onValidationError(event, result.error);
+				} else {
+					console.warn(
+						"[AG-UI Validation] Invalid event:",
+						event.type,
+						result.error,
+					);
+				}
+
+				if (throwOnInvalid) {
+					throw new Error(`Invalid AG-UI event: ${result.error?.message}`);
+				}
+			}
+
+			// Always emit (validation is advisory)
+			callback.emit(event);
+		},
+	};
 }

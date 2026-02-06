@@ -20,29 +20,34 @@ function createAsyncMockStore(initialData?: Map<string, unknown>): {
     async get(_namespace, key) {
       const namespaceKey = [...(_namespace as string[]), key].join("|");
       const item = storedData.get(namespaceKey);
-      return item
-        ? {
-            value: item,
-            key,
-            namespace: _namespace,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }
-        : null;
+      return await Promise.resolve(
+        item
+          ? {
+              value: item,
+              key,
+              namespace: _namespace,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            }
+          : null
+      );
     },
     async put(namespace, key, value) {
       const namespaceKey = [...namespace, key].join("|");
       storedData.set(namespaceKey, value);
+      return await Promise.resolve();
     },
-    async delete() {},
+    async delete() {
+      return await Promise.resolve();
+    },
     async batch() {
-      return [];
+      return await Promise.resolve([]);
     },
     async search() {
-      return [];
+      return await Promise.resolve([]);
     },
     async listNamespaces() {
-      return [];
+      return await Promise.resolve([]);
     },
   };
 }
@@ -348,9 +353,11 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -411,12 +418,12 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async (docs: string[]) => {
+        addDocuments: async (_docs: string[]) => {
           // Simulate slow reflection - during this time, new messages arrive
           await new Promise((resolve) => setTimeout(resolve, 100));
         },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -531,9 +538,11 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -592,9 +601,11 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -672,9 +683,10 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         addDocuments: async (docs: string[], _metadatas?: unknown[]) => {
           // Capture the messages being reflected
           capturedMessages = docs;
+          return await Promise.resolve();
         },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -744,10 +756,10 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       vectorStore: {
         similaritySearch: async () => [],
         addDocuments: async () => {
-          throw new Error("Reflection failed");
+          return await Promise.reject(new Error("Reflection failed"));
         },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -834,7 +846,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
           throw new Error("Reflection failed");
         },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -957,39 +969,44 @@ describe("beforeAgent Hook - Namespace Isolation", () => {
         const namespaceKey = [...(_namespace as string[]), key].join("|");
         const item = storedBuffers.get(namespaceKey);
         if (item) {
-          return {
+          return await Promise.resolve({
             value: item,
             key,
             namespace: _namespace,
             createdAt: new Date(),
             updatedAt: new Date(),
-          };
+          });
         }
-        return null;
+        return await Promise.resolve(null);
       },
       async put(namespace, key, value) {
         storedKeys.push(`put|${[...namespace, key].join("|")}`);
         const namespaceKey = [...namespace, key].join("|");
         storedBuffers.set(namespaceKey, value);
+        return await Promise.resolve();
       },
-      async delete() {},
+      async delete() {
+        return await Promise.resolve();
+      },
       async batch() {
-        return [];
+        return await Promise.resolve([]);
       },
       async search() {
-        return [];
+        return await Promise.resolve([]);
       },
       async listNamespaces() {
-        return [];
+        return await Promise.resolve([]);
       },
     };
 
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
-      extractSpeaker1: (dialogue: string) => "Speaker1",
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
     };
 
     const middleware = createRetrospectiveBeforeAgent({

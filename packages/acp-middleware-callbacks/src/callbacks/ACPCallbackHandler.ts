@@ -7,17 +7,20 @@
  * @packageDocumentation
  */
 
-import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type {
-  ContentBlock,
-  TextContent,
-  ContentChunk,
-  AgentSideConnection,
+	AgentSideConnection,
+	ContentBlock,
+	ContentChunk,
+	TextContent,
 } from "@agentclientprotocol/sdk";
-import type { ContentBlockMapper, DefaultContentBlockMapper } from "../utils/contentBlockMapper.js";
-import { defaultContentBlockMapper } from "../utils/contentBlockMapper.js";
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { ACPCallbackHandlerConfig } from "../types/middleware.js";
-import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
+import type {
+	ContentBlockMapper,
+	DefaultContentBlockMapper,
+} from "../utils/contentBlockMapper.js";
+import { defaultContentBlockMapper } from "../utils/contentBlockMapper.js";
+import { ACP_ERROR_CODES, mapLangChainError } from "../utils/index.js";
 
 /**
  * Callback handler for ACP protocol streaming events.
@@ -31,931 +34,1019 @@ import { mapLangChainError, ACP_ERROR_CODES } from "../utils/index.js";
  * - State snapshot updates for real-time agent communication
  */
 export class ACPCallbackHandler extends BaseCallbackHandler {
-  name = "acp-callback-handler";
+	name = "acp-callback-handler";
 
-  protected connection: AgentSideConnection;
-  protected contentBlockMapper: ContentBlockMapper;
-  protected emitTextChunks: boolean;
-  protected includeIntermediateStates: boolean;
-  protected maxMessagesInSnapshot: number;
-  protected emitReasoningAsThought: boolean;
-  
-  private currentMessageId: string | null = null;
-  private currentTextContent: string = "";
-  private currentToolCallId: string | null = null;
-  private sessionId: string | null = null;
-  
-  // Reasoning content tracking
-  private currentThoughtMessageId: string | null = null;
-  private currentReasoningContent: string = "";
-  private isInReasoningBlock: boolean = false;
-  private reasoningBlockStartToken: string | null = null;
+	protected connection: AgentSideConnection;
+	protected contentBlockMapper: ContentBlockMapper;
+	protected emitTextChunks: boolean;
+	protected includeIntermediateStates: boolean;
+	protected maxMessagesInSnapshot: number;
+	protected emitReasoningAsThought: boolean;
 
-  constructor(config: ACPCallbackHandlerConfig) {
-    super();
-    
-    this.connection = config.connection;
-    this.sessionId = config.sessionId ?? null;
-    this.contentBlockMapper = config.contentBlockMapper ?? defaultContentBlockMapper;
-    this.emitTextChunks = config.emitTextChunks ?? false;
-    this.includeIntermediateStates = config.includeIntermediateStates ?? true;
-    this.maxMessagesInSnapshot = config.maxMessagesInSnapshot ?? 50;
-    // Whether to emit reasoning content as agent_thought_chunk (unstable protocol feature)
-    // Falls back to agent_message_chunk if false
-    this.emitReasoningAsThought = config.emitReasoningAsThought ?? true;
-  }
+	private currentMessageId: string | null = null;
+	private currentTextContent: string = "";
+	private currentToolCallId: string | null = null;
+	private sessionId: string | null = null;
 
-  /**
-   * Dispose of the callback handler.
-   * Note: Connection lifecycle is managed by the SDK, not this handler.
-   */
-  async dispose(): Promise<void> {
-    // Connection lifecycle is managed by AgentSideConnection
-    // No action needed here
-  }
+	// Reasoning content tracking
+	private currentThoughtMessageId: string | null = null;
+	private currentReasoningContent: string = "";
+	private isInReasoningBlock: boolean = false;
+	private reasoningBlockStartToken: string | null = null;
 
-  /**
-   * Sets the session ID for this callback handler.
-   * Should be called by the session middleware before agent execution.
-   * 
-   * @param sessionId - The session ID to use for session updates
-   */
-  setSessionId(sessionId: string): void {
-    this.sessionId = sessionId;
-  }
+	constructor(config: ACPCallbackHandlerConfig) {
+		super();
 
-  /**
-   * Gets the current session ID.
-   */
-  getSessionId(): string | null {
-    return this.sessionId;
-  }
+		this.connection = config.connection;
+		this.sessionId = config.sessionId ?? null;
+		this.contentBlockMapper =
+			config.contentBlockMapper ?? defaultContentBlockMapper;
+		this.emitTextChunks = config.emitTextChunks ?? false;
+		this.includeIntermediateStates = config.includeIntermediateStates ?? true;
+		this.maxMessagesInSnapshot = config.maxMessagesInSnapshot ?? 50;
+		// Whether to emit reasoning content as agent_thought_chunk (unstable protocol feature)
+		// Falls back to agent_message_chunk if false
+		this.emitReasoningAsThought = config.emitReasoningAsThought ?? true;
+	}
 
-  /**
-   * Called when an LLM starts processing.
-   * 
-   * @param _llm - The LLM being used
-   * @param _prompts - The prompts sent to the LLM
-   * @param runId - The run ID for this LLM call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   * @param _extraParams - Additional parameters
-   * @param _tags - Optional tags for this LLM call
-   * @param _metadata - Optional metadata for this LLM call
-   * @param _runName - Optional run name
-   */
-  override async handleLLMStart(
-    _llm: any,
-    _prompts: string[],
-    runId: string,
-    _parentRunId?: string,
-    _extraParams?: Record<string, unknown>,
-    _tags?: string[],
-    _metadata?: Record<string, unknown>,
-    _runName?: string
-  ): Promise<void> {
-    // Generate a new message ID for this LLM response
-    this.currentMessageId = this.generateMessageId();
-    this.currentTextContent = "";
-    
-    // Reset reasoning state
-    this.currentThoughtMessageId = null;
-    this.currentReasoningContent = "";
-    this.isInReasoningBlock = false;
-    this.reasoningBlockStartToken = null;
-  }
+	/**
+	 * Dispose of the callback handler.
+	 * Note: Connection lifecycle is managed by the SDK, not this handler.
+	 */
+	async dispose(): Promise<void> {
+		// Connection lifecycle is managed by AgentSideConnection
+		// No action needed here
+	}
 
-  /**
-   * Called when a new token is generated by the LLM.
-   * This is the primary method for streaming LLM output to ACP clients.
-   * 
-   * For LangChain v1.0.0, this handles:
-   * - Regular text tokens → agent_message_chunk
-   * - Reasoning content blocks → agent_thought_chunk (with audience: ['assistant'])
-   * - Tool call chunks → tool_call/tool_call_update
-   * 
-   * @param token - The new token generated by the LLM
-   * @param _idx - Token index information
-   * @param runId - The run ID for this LLM call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   * @param _tags - Optional tags
-   * @param fields - Additional fields that may contain chunk/content block data
-   */
-  override async handleLLMNewToken(
-    token: string,
-    _idx: any,
-    runId: string,
-    _parentRunId?: string,
-    _tags?: string[],
-    fields?: any
-  ): Promise<void> {
-    if (!this.currentMessageId) {
-      this.currentMessageId = this.generateMessageId();
-    }
-    
-    // Check for LangChain v1.0.0 structured content blocks in the chunk
-    // The fields parameter may contain chunk data with content blocks
-    const chunkContents = this.extractChunkContent(fields);
-    
-    if (chunkContents.length > 0) {
-      // We have structured content from LangChain v1.0.0
-      await this.processChunkContent(chunkContents, fields);
-      return;
-    }
-    
-    // Fallback: Check if this token is part of a reasoning block
-    // This handles streaming from providers that don't expose content blocks
-    const isReasoningToken = this.isReasoningToken(token, fields);
-    
-    if (isReasoningToken && !this.isInReasoningBlock) {
-      // Start of reasoning block
-      this.isInReasoningBlock = true;
-      this.reasoningBlockStartToken = token;
-      this.currentReasoningContent = token;
-      this.currentThoughtMessageId = this.generateMessageId();
-      
-      await this.sendAgentThoughtChunk(
-        this.currentThoughtMessageId,
-        token,
-        token
-      );
-      return;
-    }
-    
-    if (this.isInReasoningBlock) {
-      // Check if this token ends the reasoning block
-      if (this.isReasoningEndToken(token, fields)) {
-        await this.sendAgentThoughtChunk(
-          this.currentThoughtMessageId!,
-          token,
-          this.currentReasoningContent
-        );
-        
-        this.isInReasoningBlock = false;
-        this.currentReasoningContent = "";
-        this.currentThoughtMessageId = null;
-        this.reasoningBlockStartToken = null;
-        return;
-      }
-      
-      // Continue accumulating reasoning content
-      this.currentReasoningContent += token;
-      
-      await this.sendAgentThoughtChunk(
-        this.currentThoughtMessageId!,
-        token,
-        this.currentReasoningContent
-      );
-      return;
-    }
-    
-    // Regular text content
-    this.currentTextContent += token;
+	/**
+	 * Sets the session ID for this callback handler.
+	 * Should be called by the session middleware before agent execution.
+	 *
+	 * @param sessionId - The session ID to use for session updates
+	 */
+	setSessionId(sessionId: string): void {
+		this.sessionId = sessionId;
+	}
 
-    try {
-      await this.sendAgentMessageChunk(
-        this.currentMessageId,
-        token,
-        this.currentTextContent
-      );
-    } catch {
-      // Fail-safe: don't let emit errors break agent execution
-    }
-  }
-  
-  /**
-   * Extracts content blocks from a streaming chunk.
-   * LangChain v1.0.0 provides content blocks in various formats during streaming.
-   * 
-   * The fields parameter contains chunk data from ChatGenerationChunk:
-   * - fields.chunk: The GenerationChunk or ChatGenerationChunk
-   * - fields.chunk.message: The AIMessageChunk
-   * - fields.chunk.message.content: Content (string or content blocks array)
-   * 
-   * @param fields - The fields from handleLLMNewToken
-   * @returns Array of extracted content blocks
-   */
-  private extractChunkContent(fields?: any): Array<{ type: string; reasoning?: string; text?: string }> {
-    if (!fields) return [];
-    
-    // Check for ChatGenerationChunk structure (most common in LangChain v1.0.0)
-    // fields.chunk.message.content contains the actual content
-    if (fields.chunk && typeof fields.chunk === 'object') {
-      const chunk = fields.chunk;
-      
-      // Check for message property (ChatGenerationChunk)
-      if (chunk.message && typeof chunk.message === 'object') {
-        const message = chunk.message;
-        
-        // Check for OpenAI/xAI reasoning_content in additional_kwargs FIRST
-        // LangChain stores delta.reasoning_content here for streaming responses
-        // This must be checked before content array (which may be empty)
-        if (message.additional_kwargs?.reasoning_content && 
-            typeof message.additional_kwargs.reasoning_content === "string") {
-          return [{ type: "reasoning", reasoning: message.additional_kwargs.reasoning_content }];
-        }
-        
-        // Check for OpenAI Responses API reasoning format
-        // ChatOpenAIResponses stores reasoning in message.additional_kwargs.reasoning
-        // This must be checked BEFORE content array (which may be empty)
-        if (message.additional_kwargs?.reasoning && 
-            typeof message.additional_kwargs.reasoning === "object") {
-          const reasoning = message.additional_kwargs.reasoning;
-          // Extract summary text from reasoning object
-          if (reasoning.summary && Array.isArray(reasoning.summary)) {
-            const summaryText = reasoning.summary
-              .map((s: any) => s.text || "")
-              .join("");
-            if (summaryText) {
-              return [{ type: "reasoning", reasoning: summaryText }];
-            }
-          }
-        }
-        
-        // Check for content property on the message (can be string or array)
-        if (message.content !== undefined) {
-          const content = message.content;
-          
-          // If content is a string, return as single text block
-          if (typeof content === "string") {
-            return [{ type: "text", text: content }];
-          }
-          
-          // If content is an array of content blocks, return all blocks
-          if (Array.isArray(content)) {
-            const blocks: Array<{ type: string; reasoning?: string; text?: string }> = [];
-            for (const block of content) {
-              if (block && typeof block === "object") {
-                if (block.type === "text" && block.text) {
-                  blocks.push({ type: "text", text: block.text });
-                } else if (block.type === "reasoning" && block.reasoning) {
-                  blocks.push({ type: "reasoning", reasoning: block.reasoning });
-                }
-                // Handle Anthropic's thinking block - LangChain translates to reasoning
-                else if (block.type === "thinking" && block.thinking) {
-                  blocks.push({ type: "reasoning", reasoning: block.thinking });
-                }
-              }
-            }
-            return blocks;
-          }
-        }
-      }
-      
-      // Check for direct reasoning property on chunk (older format)
-      if (chunk.reasoning && typeof chunk.reasoning === "string") {
-        return [{ type: "reasoning", reasoning: chunk.reasoning }];
-      }
-      
-      // Check for direct text property on chunk (GenerationChunk)
-      if (chunk.text && typeof chunk.text === "string") {
-        return [{ type: "text", text: chunk.text }];
-      }
-      
-      // Check for OpenAI Responses API streaming format with reasoning directly on chunk
-      // Some streaming chunks from ChatOpenAIResponses have reasoning at chunk.additional_kwargs
-      // not inside chunk.message.additional_kwargs
-      if (chunk.additional_kwargs?.reasoning && 
-          typeof chunk.additional_kwargs.reasoning === "object") {
-        const reasoning = chunk.additional_kwargs.reasoning;
-        if (reasoning.summary && Array.isArray(reasoning.summary)) {
-          const summaryText = reasoning.summary
-            .map((s: any) => s.text || "")
-            .join("");
-          if (summaryText) {
-            return [{ type: "reasoning", reasoning: summaryText }];
-          }
-        }
-      }
-    }
-    
-    // Check for direct content blocks in fields (alternative structure)
-    if (fields.content && Array.isArray(fields.content)) {
-      const blocks: Array<{ type: string; reasoning?: string; text?: string }> = [];
-      for (const block of fields.content) {
-        if (block && typeof block === "object" && block.type) {
-          if (block.type === "text" && block.text) {
-            blocks.push({ type: "text", text: block.text });
-          } else if (block.type === "reasoning" && block.reasoning) {
-            blocks.push({ type: "reasoning", reasoning: block.reasoning });
-          }
-        }
-      }
-      return blocks;
-    }
-    
-    // Check for explicit reasoning flag
-    if (fields.reasoning === true && fields.text) {
-      return [{ type: "reasoning", reasoning: fields.text }];
-    }
-    
-    // Check for OpenAI/xAI streaming format with delta.reasoning_content
-    // This is the standard streaming format where reasoning arrives in a separate delta field
-    if (fields.chunk?.delta && typeof fields.chunk.delta === "object") {
-      const delta = fields.chunk.delta;
-      
-      // OpenAI/xAI reasoning_content format
-      if (delta.reasoning_content && typeof delta.reasoning_content === "string") {
-        return [{ type: "reasoning", reasoning: delta.reasoning_content }];
-      }
-    }
-    
-    return [];
-  }
-  
-  /**
-   * Processes content from a streaming chunk.
-   * Emits reasoning blocks as agent_thought_chunk.
-   * 
-   * @param content - The content block to process
-   * @param fields - Full fields from the callback
-   */
-  private async processChunkContent(
-    contents: Array<{ type: string; reasoning?: string; text?: string }>,
-    _fields?: any
-  ): Promise<void> {
-    for (const content of contents) {
-      if (content.type === "reasoning" && content.reasoning) {
-        // Emit as agent_thought_chunk
-        const thoughtMessageId = this.generateMessageId();
-        await this.sendAgentThoughtChunk(
-          thoughtMessageId,
-          content.reasoning,
-          content.reasoning
-        );
-      } else if (content.type === "text" && content.text) {
-        // Emit as agent_message_chunk
-        this.currentTextContent += content.text;
-        
-        await this.sendAgentMessageChunk(
-          this.currentMessageId!,
-          content.text,
-          this.currentTextContent
-        );
-      }
-    }
-  }
+	/**
+	 * Gets the current session ID.
+	 */
+	getSessionId(): string | null {
+		return this.sessionId;
+	}
 
-  /**
-   * Called when an LLM call ends.
-   * 
-   * @param output - The output from the LLM (may contain content blocks with reasoning)
-   * @param runId - The run ID for this LLM call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   * @param _tags - Optional tags
-   * @param _extraParams - Additional parameters
-   */
-  override async handleLLMEnd(
-    _output: any,
-    runId: string,
-    _parentRunId?: string,
-    _tags?: string[],
-    _extraParams?: Record<string, unknown>
-  ): Promise<void> {
-    // Finalize any pending reasoning content from streaming
-    if (this.isInReasoningBlock && this.currentThoughtMessageId) {
-      try {
-        await this.sendAgentThoughtChunk(
-          this.currentThoughtMessageId,
-          "",
-          this.currentReasoningContent
-        );
-      } catch {
-        // Fail-safe: don't let emit errors break agent execution
-      }
-    }
-    
-    // Clean up state - all content was emitted during streaming via handleLLMNewToken
-    // Client knows streaming is complete via stopReason in session/prompt response
-    this.isInReasoningBlock = false;
-    this.currentReasoningContent = "";
-    this.currentThoughtMessageId = null;
-    this.reasoningBlockStartToken = null;
-    this.currentMessageId = null;
-    this.currentTextContent = "";
-  }
-  
-  /**
-   * Called when an LLM call encounters an error.
-   * Called when an LLM call encounters an error.
-   * 
-   * @param _error - The error that occurred
-   * @param runId - The run ID for this LLM call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   */
-  override async handleLLMError(
-    _error: Error,
-    runId: string,
-    _parentRunId?: string
-  ): Promise<void> {
-    if (this.currentMessageId) {
-      try {
-        // Emit error as agent_message_chunk via sessionUpdate
-        const contentChunk: ContentChunk = {
-          _meta: null,
-          content: {
-            type: "text",
-            text: `Error: ${_error.message}`,
-            _meta: null,
-            annotations: null,
-          } as ContentBlock,
-        };
+	/**
+	 * Called when an LLM starts processing.
+	 *
+	 * @param _llm - The LLM being used
+	 * @param _prompts - The prompts sent to the LLM
+	 * @param runId - The run ID for this LLM call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 * @param _extraParams - Additional parameters
+	 * @param _tags - Optional tags for this LLM call
+	 * @param _metadata - Optional metadata for this LLM call
+	 * @param _runName - Optional run name
+	 */
+	override async handleLLMStart(
+		_llm: any,
+		_prompts: string[],
+		runId: string,
+		_parentRunId?: string,
+		_extraParams?: Record<string, unknown>,
+		_tags?: string[],
+		_metadata?: Record<string, unknown>,
+		_runName?: string,
+	): Promise<void> {
+		// Generate a new message ID for this LLM response
+		this.currentMessageId = this.generateMessageId();
+		this.currentTextContent = "";
 
-        await this.connection.sessionUpdate({
-          sessionId: this.sessionId || "default",
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            ...contentChunk,
-          },
-        });
-      } catch {
-        // Fail-safe: don't let emit errors break agent execution
-      }
+		// Reset reasoning state
+		this.currentThoughtMessageId = null;
+		this.currentReasoningContent = "";
+		this.isInReasoningBlock = false;
+		this.reasoningBlockStartToken = null;
+	}
 
-      this.currentMessageId = null;
-      this.currentTextContent = "";
-    }
-  }
+	/**
+	 * Called when a new token is generated by the LLM.
+	 * This is the primary method for streaming LLM output to ACP clients.
+	 *
+	 * For LangChain v1.0.0, this handles:
+	 * - Regular text tokens → agent_message_chunk
+	 * - Reasoning content blocks → agent_thought_chunk (with audience: ['assistant'])
+	 * - Tool call chunks → tool_call/tool_call_update
+	 *
+	 * @param token - The new token generated by the LLM
+	 * @param _idx - Token index information
+	 * @param runId - The run ID for this LLM call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 * @param _tags - Optional tags
+	 * @param fields - Additional fields that may contain chunk/content block data
+	 */
+	override async handleLLMNewToken(
+		token: string,
+		_idx: any,
+		runId: string,
+		_parentRunId?: string,
+		_tags?: string[],
+		fields?: any,
+	): Promise<void> {
+		if (!this.currentMessageId) {
+			this.currentMessageId = this.generateMessageId();
+		}
 
-  /**
-   * Called when a tool starts execution.
-   * 
-   * @param tool - The tool being executed
-   * @param input - The input to the tool
-   * @param runId - The run ID for this tool call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   * @param _tags - Optional tags
-   * @param _metadata - Optional metadata
-   * @param _runName - Optional run name
-   */
-  override async handleToolStart(
-    tool: any,
-    input: string,
-    runId: string,
-    _parentRunId?: string,
-    _tags?: string[],
-    _metadata?: Record<string, unknown>,
-    runName?: string
-  ): Promise<void> {
-    // Extract tool name following Callbacks Mastery pattern:
-    // runName (from LangChain) → fallback
-    const toolName = runName || "unknown_tool";
-    
-    this.currentToolCallId = this.generateToolCallId();
-    
-    try {
-      await this.sendToolCallStart(this.currentToolCallId, toolName, input);
-    } catch {
-      // Fail-safe: don't let emit errors break agent execution
-    }
-  }
+		// Check for LangChain v1.0.0 structured content blocks in the chunk
+		// The fields parameter may contain chunk data with content blocks
+		const chunkContents = this.extractChunkContent(fields);
 
-  /**
-   * Called when a tool call ends.
-   * 
-   * @param output - The output from the tool
-   * @param runId - The run ID for this tool call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   */
-  override async handleToolEnd(
-    output: any,
-    runId: string,
-    _parentRunId?: string
-  ): Promise<void> {
-    if (this.currentToolCallId) {
-      try {
-        await this.sendToolCallEnd(this.currentToolCallId, "completed", output);
-      } catch {
-        // Fail-safe: don't let emit errors break agent execution
-      }
-      
-      this.currentToolCallId = null;
-    }
-  }
+		if (chunkContents.length > 0) {
+			// We have structured content from LangChain v1.0.0
+			await this.processChunkContent(chunkContents, fields);
+			return;
+		}
 
-  /**
-   * Called when a tool call encounters an error.
-   * 
-   * @param _error - The error that occurred
-   * @param runId - The run ID for this tool call
-   * @param _parentRunId - The parent run ID if this is a nested call
-   */
-  override async handleToolError(
-    _error: Error,
-    runId: string,
-    _parentRunId?: string
-  ): Promise<void> {
-    if (this.currentToolCallId) {
-      try {
-        await this.sendToolCallEnd(
-          this.currentToolCallId, 
-          "failed", 
-          _error.message,
-          _error.message
-        );
-      } catch {
-        // Fail-safe: don't let emit errors break agent execution
-      }
-      
-      this.currentToolCallId = null;
-    }
-  }
+		// Fallback: Check if this token is part of a reasoning block
+		// This handles streaming from providers that don't expose content blocks
+		const isReasoningToken = this.isReasoningToken(token, fields);
 
-  /**
-   * Called when an agent encounters an error.
-   * 
-   * This method handles agent-level errors by mapping them to ACP error codes
-   * and sending the error as an agent_message_chunk to the ACP client.
-   * 
-   * @param error - The error that occurred
-   * @param runId - The run ID for this agent execution
-   * @param _parentRunId - The parent run ID if this is a nested call
-   */
-  async handleAgentError(
-    error: Error,
-    runId: string,
-    _parentRunId?: string
-  ): Promise<void> {
-    // Map the LangChain error to an ACP error code
-    const errorCode = mapLangChainError(error);
+		if (isReasoningToken && !this.isInReasoningBlock) {
+			// Start of reasoning block
+			this.isInReasoningBlock = true;
+			this.reasoningBlockStartToken = token;
+			this.currentReasoningContent = token;
+			this.currentThoughtMessageId = this.generateMessageId();
 
-    // Format the error message with the ACP error code
-    const errorMessage = `[Error ${errorCode}] ${error.message}`;
+			await this.sendAgentThoughtChunk(
+				this.currentThoughtMessageId,
+				token,
+				token,
+			);
+			return;
+		}
 
-    try {
-      // Emit error as agent_message_chunk via sessionUpdate
-      const contentChunk: ContentChunk = {
-        _meta: null,
-        content: {
-          type: "text",
-          text: errorMessage,
-          _meta: null,
-          annotations: null,
-        } as ContentBlock,
-      };
+		if (this.isInReasoningBlock) {
+			// Check if this token ends the reasoning block
+			if (this.isReasoningEndToken(token, fields)) {
+				await this.sendAgentThoughtChunk(
+					this.currentThoughtMessageId!,
+					token,
+					this.currentReasoningContent,
+				);
 
-      await this.connection.sessionUpdate({
-        sessionId: this.sessionId || "default",
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          ...contentChunk,
-        },
-      });
-    } catch (e) {
-      // Fail-safe: don't let emit errors break agent execution
-      // Log the error for debugging purposes
-      console.error("ACPCallbackHandler: Failed to send agent error to client:", e);
-    }
-  }
+				this.isInReasoningBlock = false;
+				this.currentReasoningContent = "";
+				this.currentThoughtMessageId = null;
+				this.reasoningBlockStartToken = null;
+				return;
+			}
 
-  /**
-   * Sends an agent message chunk to the ACP client.
-   *
-   * @param messageId - Unique identifier for this message
-   * @param delta - The text delta to send
-   * @param currentText - The accumulated text so far
-   */
-  private async sendAgentMessageChunk(
-    messageId: string,
-    delta: string,
-    currentText: string
-  ): Promise<void> {
-    // Skip empty tokens to avoid unnecessary updates
-    if (!delta || delta.length === 0) {
-      return;
-    }
+			// Continue accumulating reasoning content
+			this.currentReasoningContent += token;
 
-    const textContent: TextContent & { type: "text" } = {
-      type: "text",
-      text: delta,
-      _meta: null,
-      annotations: null,
-    };
+			await this.sendAgentThoughtChunk(
+				this.currentThoughtMessageId!,
+				token,
+				this.currentReasoningContent,
+			);
+			return;
+		}
 
-    // Wrap in ContentChunk for agent_message_chunk
-    const contentChunk: ContentChunk = {
-      _meta: null,
-      content: textContent as ContentBlock,
-    };
+		// Regular text content
+		this.currentTextContent += token;
 
-    // Emit via sessionUpdate
-    await this.connection.sessionUpdate({
-      sessionId: this.sessionId || "default",
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        ...contentChunk,
-      },
-    });
-  }
-  
-  /**
-   * Sends an agent thought chunk to the ACP client.
-   * Emits reasoning content as agent_thought_chunk with audience: ['assistant'].
-   *
-   * The agent_thought_chunk is a SessionUpdate variant that wraps a ContentChunk
-   * containing reasoning content. The content block has audience: ['assistant']
-   * annotation to indicate it's internal thought content.
-   *
-   * @param messageId - Unique identifier for this thought message
-   * @param delta - The text delta to send
-   * @param currentText - The accumulated reasoning content so far
-   */
-  private async sendAgentThoughtChunk(
-    messageId: string,
-    delta: string,
-    currentText: string
-  ): Promise<void> {
-    // Build the content block with audience: ['assistant'] annotation
-    const textContent: TextContent & { type: "text" } = {
-      type: "text",
-      text: delta,
-      _meta: { _internal: true, reasoning: true },
-      annotations: {
-        _meta: null,
-        audience: ["assistant"] as const,
-        lastModified: null,
-        priority: null,
-      },
-    };
+		try {
+			await this.sendAgentMessageChunk(
+				this.currentMessageId,
+				token,
+				this.currentTextContent,
+			);
+		} catch {
+			// Fail-safe: don't let emit errors break agent execution
+		}
+	}
 
-    // Wrap in ContentChunk for agent_thought_chunk
-    const contentChunk: ContentChunk = {
-      _meta: null,
-      content: textContent as ContentBlock,
-    };
+	/**
+	 * Extracts content blocks from a streaming chunk.
+	 * LangChain v1.0.0 provides content blocks in various formats during streaming.
+	 *
+	 * The fields parameter contains chunk data from ChatGenerationChunk:
+	 * - fields.chunk: The GenerationChunk or ChatGenerationChunk
+	 * - fields.chunk.message: The AIMessageChunk
+	 * - fields.chunk.message.content: Content (string or content blocks array)
+	 *
+	 * @param fields - The fields from handleLLMNewToken
+	 * @returns Array of extracted content blocks
+	 */
+	private extractChunkContent(
+		fields?: any,
+	): Array<{ type: string; reasoning?: string; text?: string }> {
+		if (!fields) return [];
 
-    // Emit agent_thought_chunk via sessionUpdate
-    await this.connection.sessionUpdate({
-      sessionId: this.sessionId || "default",
-      update: {
-        sessionUpdate: "agent_thought_chunk",
-        ...contentChunk,
-      },
-    });
-  }
-  
-  /**
-   * Checks if a token indicates the start of a reasoning block.
-   * Detects reasoning content based on token patterns and metadata.
-   * 
-   * This detection is used during streaming when content blocks aren't yet formed.
-   * For LangChain v1.0.0 structured content, use handleLLMEnd instead.
-   * 
-   * @param token - The token to check
-   * @param fields - Additional fields from the LLM callback
-   * @returns True if this token starts a reasoning block
-   */
-  private isReasoningToken(token: string, fields?: any): boolean {
-    // Check fields for explicit reasoning flag (LangChain v1.0.0 metadata)
-    if (fields?.reasoning === true || fields?.reasoningContent) {
-      return true;
-    }
-    
-    // Check for reasoning-specific prefixes or patterns
-    // These patterns are used by models like Anthropic for reasoning output
-    const reasoningPatterns = [
-      /^<reasoning>/i,
-      /^<thought>/i,
-      /^<thinking>/i,
-      /^\[reasoning\]/i,
-      /^\[thought\]/i,
-      /^\[thinking\]/i,
-      /^<internal>/i,
-      /^\(thinking\)/i,
-    ];
-    
-    for (const pattern of reasoningPatterns) {
-      if (pattern.test(token)) {
-        return true;
-      }
-    }
-    
-    // Check for explicit reasoning markers at the start of content
-    // Models often prefix reasoning with specific markers
-    const trimmedToken = token.trim();
-    const reasoningMarkers = [
-      "<think>",
-      "<reasoning>",
-      "<thought>",
-      "[reasoning]",
-      "(thinking)",
-    ];
-    
-    for (const marker of reasoningMarkers) {
-      if (trimmedToken.startsWith(marker) || trimmedToken === marker) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
-  
-  /**
-   * Checks if a token indicates the end of a reasoning block.
-   * 
-   * @param token - The token to check
-   * @param fields - Additional fields from the LLM callback
-   * @returns True if this token ends a reasoning block
-   */
-  private isReasoningEndToken(token: string, fields?: any): boolean {
-    // Check fields for explicit end flag
-    if (fields?.reasoning === false || fields?.reasoningEnd === true) {
-      return true;
-    }
-    
-    // Check for reasoning-specific end patterns
-    const reasoningEndPatterns = [
-      /<\/reasoning>/i,
-      /<\/thought>/i,
-      /<\/thinking>/i,
-      /^\[\/reasoning\]/i,
-      /^\[\/thought\]/i,
-      /^\[\/thinking\]/i,
-      /^\]\)\s*$/,
-      /^<end reasoning>/i,
-    ];
-    
-    for (const pattern of reasoningEndPatterns) {
-      if (pattern.test(token)) {
-        return true;
-      }
-    }
-    
-    // Check for closing reasoning markers
-    const trimmedToken = token.trim();
-    const closingMarkers = [
-      "<\/reasoning>",
-      "<\/thought>",
-      "<\/thinking>",
-      "]<",
-      "])",
-    ];
-    
-    for (const marker of closingMarkers) {
-      if (trimmedToken.includes(marker)) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
+		// Check for ChatGenerationChunk structure (most common in LangChain v1.0.0)
+		// fields.chunk.message.content contains the actual content
+		if (fields.chunk && typeof fields.chunk === "object") {
+			const chunk = fields.chunk;
 
-  /**
-   * Generates a unique message ID.
-   * Uses a combination of timestamp, counter, and random suffix for uniqueness.
-   */
-  private generateMessageId(): string {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    const counter = (this as any)._messageCounter ?? ((this as any)._messageCounter = 0);
-    (this as any)._messageCounter = counter + 1;
-    return `msg-${timestamp}-${counter}-${random}`;
-  }
+			// Check for message property (ChatGenerationChunk)
+			if (chunk.message && typeof chunk.message === "object") {
+				const message = chunk.message;
 
-  /**
-   * Generates a unique tool call ID.
-   * Uses a combination of timestamp, counter, and random suffix for uniqueness.
-   */
-  private generateToolCallId(): string {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    const counter = (this as any)._toolCallCounter ?? ((this as any)._toolCallCounter = 0);
-    (this as any)._toolCallCounter = counter + 1;
-    return `tool-${timestamp}-${counter}-${random}`;
-  }
+				// Check for OpenAI/xAI reasoning_content in additional_kwargs FIRST
+				// LangChain stores delta.reasoning_content here for streaming responses
+				// This must be checked before content array (which may be empty)
+				if (
+					message.additional_kwargs?.reasoning_content &&
+					typeof message.additional_kwargs.reasoning_content === "string"
+				) {
+					return [
+						{
+							type: "reasoning",
+							reasoning: message.additional_kwargs.reasoning_content,
+						},
+					];
+				}
 
-  /**
-   * Detects the tool kind from the tool name.
-   * Maps common tool names to appropriate ACP tool kinds.
-   * 
-   * @param toolName - The name of the tool
-   * @returns The detected tool kind
-   */
-  private detectToolKind(toolName: string): "read" | "edit" | "delete" | "move" | "search" | "execute" | "think" | "fetch" | "switch_mode" | "other" {
-    const name = toolName.toLowerCase();
-    
-    if (name.includes("read") || name.includes("file") || name.includes("load") || name.includes("get")) {
-      return "read";
-    }
-    if (name.includes("write") || name.includes("edit") || name.includes("create") || name.includes("update") || name.includes("modify")) {
-      return "edit";
-    }
-    if (name.includes("delete") || name.includes("remove") || name.includes("rm")) {
-      return "delete";
-    }
-    if (name.includes("move") || name.includes("rename") || name.includes("mv")) {
-      return "move";
-    }
-    if (name.includes("search") || name.includes("find") || name.includes("grep") || name.includes("query")) {
-      return "search";
-    }
-    if (name.includes("exec") || name.includes("run") || name.includes("command") || name.includes("shell") || name.includes("bash") || name.includes("cmd")) {
-      return "execute";
-    }
-    if (name.includes("think") || name.includes("reason") || name.includes("analyze")) {
-      return "think";
-    }
-    if (name.includes("fetch") || name.includes("http") || name.includes("request") || name.includes("api") || name.includes("url")) {
-      return "fetch";
-    }
-    if (name.includes("mode") || name.includes("switch")) {
-      return "switch_mode";
-    }
-    
-    return "other";
-  }
+				// Check for OpenAI Responses API reasoning format
+				// ChatOpenAIResponses stores reasoning in message.additional_kwargs.reasoning
+				// This must be checked BEFORE content array (which may be empty)
+				if (
+					message.additional_kwargs?.reasoning &&
+					typeof message.additional_kwargs.reasoning === "object"
+				) {
+					const reasoning = message.additional_kwargs.reasoning;
+					// Extract summary text from reasoning object
+					if (reasoning.summary && Array.isArray(reasoning.summary)) {
+						const summaryText = reasoning.summary
+							.map((s: any) => s.text || "")
+							.join("");
+						if (summaryText) {
+							return [{ type: "reasoning", reasoning: summaryText }];
+						}
+					}
+				}
 
-  /**
-   * Sends a session update for tool call creation.
-   * 
-   * @param toolCallId - Unique identifier for the tool call
-   * @param toolName - Name of the tool being called
-   * @param input - Input parameters for the tool
-   */
-  private async sendToolCallStart(
-    toolCallId: string,
-    toolName: string,
-    input: string
-  ): Promise<void> {
-    await this.connection.sessionUpdate({
-      sessionId: this.sessionId || "default",
-      update: {
-        sessionUpdate: "tool_call",
-        toolCallId,
-        title: `Calling tool: ${toolName}`,
-        kind: this.detectToolKind(toolName),
-        status: "in_progress",
-        rawInput: input,
-      },
-    });
-  }
+				// Check for content property on the message (can be string or array)
+				if (message.content !== undefined) {
+					const content = message.content;
 
-  /**
-   * Sends a session update for tool call completion.
-   * 
-   * @param toolCallId - Unique identifier for the tool call
-   * @param status - Completion status (completed or failed)
-   * @param output - Output from the tool
-   * @param errorMessage - Error message if failed
-   */
-  private async sendToolCallEnd(
-    toolCallId: string,
-    status: "completed" | "failed",
-    output: unknown,
-    errorMessage?: string
-  ): Promise<void> {
-    // Wrap content in ToolCallContent structure
-    // ToolCallContent expects: { type: "content", content: ContentBlock }
-    // Extract actual content from ToolMessage (output.content) rather than using String(output)
-    const extractContent = (obj: unknown): string => {
-      if (!obj) return "";
-      // Handle LangChain ToolMessage objects where content is in output.content
-      if (typeof obj === "object" && "content" in obj) {
-        const content = (obj as any).content;
-        return typeof content === "string" ? content : String(content);
-      }
-      return String(obj);
-    };
+					// If content is a string, return as single text block
+					if (typeof content === "string") {
+						return [{ type: "text", text: content }];
+					}
 
-    const toolCallContent = status === "completed"
-      ? [{
-          type: "content" as const,
-          content: {
-            type: "text" as const,
-            text: extractContent(output),
-            _meta: null,
-            annotations: null,
-          },
-        }]
-      : [{
-          type: "content" as const,
-          content: {
-            type: "text" as const,
-            text: errorMessage || extractContent(output),
-            _meta: null,
-            annotations: null,
-          },
-        }];
+					// If content is an array of content blocks, return all blocks
+					if (Array.isArray(content)) {
+						const blocks: Array<{
+							type: string;
+							reasoning?: string;
+							text?: string;
+						}> = [];
+						for (const block of content) {
+							if (block && typeof block === "object") {
+								if (block.type === "text" && block.text) {
+									blocks.push({ type: "text", text: block.text });
+								} else if (block.type === "reasoning" && block.reasoning) {
+									blocks.push({
+										type: "reasoning",
+										reasoning: block.reasoning,
+									});
+								}
+								// Handle Anthropic's thinking block - LangChain translates to reasoning
+								else if (block.type === "thinking" && block.thinking) {
+									blocks.push({ type: "reasoning", reasoning: block.thinking });
+								}
+							}
+						}
+						return blocks;
+					}
+				}
+			}
 
-    await this.connection.sessionUpdate({
-      sessionId: this.sessionId || "default",
-      update: {
-        sessionUpdate: "tool_call_update",
-        toolCallId,
-        status,
-        content: toolCallContent,
-        rawOutput: output,
-        _meta: null,
-      },
-    });
-  }
+			// Check for direct reasoning property on chunk (older format)
+			if (chunk.reasoning && typeof chunk.reasoning === "string") {
+				return [{ type: "reasoning", reasoning: chunk.reasoning }];
+			}
+
+			// Check for direct text property on chunk (GenerationChunk)
+			if (chunk.text && typeof chunk.text === "string") {
+				return [{ type: "text", text: chunk.text }];
+			}
+
+			// Check for OpenAI Responses API streaming format with reasoning directly on chunk
+			// Some streaming chunks from ChatOpenAIResponses have reasoning at chunk.additional_kwargs
+			// not inside chunk.message.additional_kwargs
+			if (
+				chunk.additional_kwargs?.reasoning &&
+				typeof chunk.additional_kwargs.reasoning === "object"
+			) {
+				const reasoning = chunk.additional_kwargs.reasoning;
+				if (reasoning.summary && Array.isArray(reasoning.summary)) {
+					const summaryText = reasoning.summary
+						.map((s: any) => s.text || "")
+						.join("");
+					if (summaryText) {
+						return [{ type: "reasoning", reasoning: summaryText }];
+					}
+				}
+			}
+		}
+
+		// Check for direct content blocks in fields (alternative structure)
+		if (fields.content && Array.isArray(fields.content)) {
+			const blocks: Array<{ type: string; reasoning?: string; text?: string }> =
+				[];
+			for (const block of fields.content) {
+				if (block && typeof block === "object" && block.type) {
+					if (block.type === "text" && block.text) {
+						blocks.push({ type: "text", text: block.text });
+					} else if (block.type === "reasoning" && block.reasoning) {
+						blocks.push({ type: "reasoning", reasoning: block.reasoning });
+					}
+				}
+			}
+			return blocks;
+		}
+
+		// Check for explicit reasoning flag
+		if (fields.reasoning === true && fields.text) {
+			return [{ type: "reasoning", reasoning: fields.text }];
+		}
+
+		// Check for OpenAI/xAI streaming format with delta.reasoning_content
+		// This is the standard streaming format where reasoning arrives in a separate delta field
+		if (fields.chunk?.delta && typeof fields.chunk.delta === "object") {
+			const delta = fields.chunk.delta;
+
+			// OpenAI/xAI reasoning_content format
+			if (
+				delta.reasoning_content &&
+				typeof delta.reasoning_content === "string"
+			) {
+				return [{ type: "reasoning", reasoning: delta.reasoning_content }];
+			}
+		}
+
+		return [];
+	}
+
+	/**
+	 * Processes content from a streaming chunk.
+	 * Emits reasoning blocks as agent_thought_chunk.
+	 *
+	 * @param content - The content block to process
+	 * @param fields - Full fields from the callback
+	 */
+	private async processChunkContent(
+		contents: Array<{ type: string; reasoning?: string; text?: string }>,
+		_fields?: any,
+	): Promise<void> {
+		for (const content of contents) {
+			if (content.type === "reasoning" && content.reasoning) {
+				// Emit as agent_thought_chunk
+				const thoughtMessageId = this.generateMessageId();
+				await this.sendAgentThoughtChunk(
+					thoughtMessageId,
+					content.reasoning,
+					content.reasoning,
+				);
+			} else if (content.type === "text" && content.text) {
+				// Emit as agent_message_chunk
+				this.currentTextContent += content.text;
+
+				await this.sendAgentMessageChunk(
+					this.currentMessageId!,
+					content.text,
+					this.currentTextContent,
+				);
+			}
+		}
+	}
+
+	/**
+	 * Called when an LLM call ends.
+	 *
+	 * @param output - The output from the LLM (may contain content blocks with reasoning)
+	 * @param runId - The run ID for this LLM call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 * @param _tags - Optional tags
+	 * @param _extraParams - Additional parameters
+	 */
+	override async handleLLMEnd(
+		_output: any,
+		runId: string,
+		_parentRunId?: string,
+		_tags?: string[],
+		_extraParams?: Record<string, unknown>,
+	): Promise<void> {
+		// Finalize any pending reasoning content from streaming
+		if (this.isInReasoningBlock && this.currentThoughtMessageId) {
+			try {
+				await this.sendAgentThoughtChunk(
+					this.currentThoughtMessageId,
+					"",
+					this.currentReasoningContent,
+				);
+			} catch {
+				// Fail-safe: don't let emit errors break agent execution
+			}
+		}
+
+		// Clean up state - all content was emitted during streaming via handleLLMNewToken
+		// Client knows streaming is complete via stopReason in session/prompt response
+		this.isInReasoningBlock = false;
+		this.currentReasoningContent = "";
+		this.currentThoughtMessageId = null;
+		this.reasoningBlockStartToken = null;
+		this.currentMessageId = null;
+		this.currentTextContent = "";
+	}
+
+	/**
+	 * Called when an LLM call encounters an error.
+	 * Called when an LLM call encounters an error.
+	 *
+	 * @param _error - The error that occurred
+	 * @param runId - The run ID for this LLM call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 */
+	override async handleLLMError(
+		_error: Error,
+		runId: string,
+		_parentRunId?: string,
+	): Promise<void> {
+		if (this.currentMessageId) {
+			try {
+				// Emit error as agent_message_chunk via sessionUpdate
+				const contentChunk: ContentChunk = {
+					_meta: null,
+					content: {
+						type: "text",
+						text: `Error: ${_error.message}`,
+						_meta: null,
+						annotations: null,
+					} as ContentBlock,
+				};
+
+				await this.connection.sessionUpdate({
+					sessionId: this.sessionId || "default",
+					update: {
+						sessionUpdate: "agent_message_chunk",
+						...contentChunk,
+					},
+				});
+			} catch {
+				// Fail-safe: don't let emit errors break agent execution
+			}
+
+			this.currentMessageId = null;
+			this.currentTextContent = "";
+		}
+	}
+
+	/**
+	 * Called when a tool starts execution.
+	 *
+	 * @param tool - The tool being executed
+	 * @param input - The input to the tool
+	 * @param runId - The run ID for this tool call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 * @param _tags - Optional tags
+	 * @param _metadata - Optional metadata
+	 * @param _runName - Optional run name
+	 */
+	override async handleToolStart(
+		tool: any,
+		input: string,
+		runId: string,
+		_parentRunId?: string,
+		_tags?: string[],
+		_metadata?: Record<string, unknown>,
+		runName?: string,
+	): Promise<void> {
+		// Extract tool name following Callbacks Mastery pattern:
+		// runName (from LangChain) → fallback
+		const toolName = runName || "unknown_tool";
+
+		this.currentToolCallId = this.generateToolCallId();
+
+		try {
+			await this.sendToolCallStart(this.currentToolCallId, toolName, input);
+		} catch {
+			// Fail-safe: don't let emit errors break agent execution
+		}
+	}
+
+	/**
+	 * Called when a tool call ends.
+	 *
+	 * @param output - The output from the tool
+	 * @param runId - The run ID for this tool call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 */
+	override async handleToolEnd(
+		output: any,
+		runId: string,
+		_parentRunId?: string,
+	): Promise<void> {
+		if (this.currentToolCallId) {
+			try {
+				await this.sendToolCallEnd(this.currentToolCallId, "completed", output);
+			} catch {
+				// Fail-safe: don't let emit errors break agent execution
+			}
+
+			this.currentToolCallId = null;
+		}
+	}
+
+	/**
+	 * Called when a tool call encounters an error.
+	 *
+	 * @param _error - The error that occurred
+	 * @param runId - The run ID for this tool call
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 */
+	override async handleToolError(
+		_error: Error,
+		runId: string,
+		_parentRunId?: string,
+	): Promise<void> {
+		if (this.currentToolCallId) {
+			try {
+				await this.sendToolCallEnd(
+					this.currentToolCallId,
+					"failed",
+					_error.message,
+					_error.message,
+				);
+			} catch {
+				// Fail-safe: don't let emit errors break agent execution
+			}
+
+			this.currentToolCallId = null;
+		}
+	}
+
+	/**
+	 * Called when an agent encounters an error.
+	 *
+	 * This method handles agent-level errors by mapping them to ACP error codes
+	 * and sending the error as an agent_message_chunk to the ACP client.
+	 *
+	 * @param error - The error that occurred
+	 * @param runId - The run ID for this agent execution
+	 * @param _parentRunId - The parent run ID if this is a nested call
+	 */
+	async handleAgentError(
+		error: Error,
+		runId: string,
+		_parentRunId?: string,
+	): Promise<void> {
+		// Map the LangChain error to an ACP error code
+		const errorCode = mapLangChainError(error);
+
+		// Format the error message with the ACP error code
+		const errorMessage = `[Error ${errorCode}] ${error.message}`;
+
+		try {
+			// Emit error as agent_message_chunk via sessionUpdate
+			const contentChunk: ContentChunk = {
+				_meta: null,
+				content: {
+					type: "text",
+					text: errorMessage,
+					_meta: null,
+					annotations: null,
+				} as ContentBlock,
+			};
+
+			await this.connection.sessionUpdate({
+				sessionId: this.sessionId || "default",
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					...contentChunk,
+				},
+			});
+		} catch (e) {
+			// Fail-safe: don't let emit errors break agent execution
+			// Log the error for debugging purposes
+			console.error(
+				"ACPCallbackHandler: Failed to send agent error to client:",
+				e,
+			);
+		}
+	}
+
+	/**
+	 * Sends an agent message chunk to the ACP client.
+	 *
+	 * @param messageId - Unique identifier for this message
+	 * @param delta - The text delta to send
+	 * @param currentText - The accumulated text so far
+	 */
+	private async sendAgentMessageChunk(
+		messageId: string,
+		delta: string,
+		currentText: string,
+	): Promise<void> {
+		// Skip empty tokens to avoid unnecessary updates
+		if (!delta || delta.length === 0) {
+			return;
+		}
+
+		const textContent: TextContent & { type: "text" } = {
+			type: "text",
+			text: delta,
+			_meta: null,
+			annotations: null,
+		};
+
+		// Wrap in ContentChunk for agent_message_chunk
+		const contentChunk: ContentChunk = {
+			_meta: null,
+			content: textContent as ContentBlock,
+		};
+
+		// Emit via sessionUpdate
+		await this.connection.sessionUpdate({
+			sessionId: this.sessionId || "default",
+			update: {
+				sessionUpdate: "agent_message_chunk",
+				...contentChunk,
+			},
+		});
+	}
+
+	/**
+	 * Sends an agent thought chunk to the ACP client.
+	 * Emits reasoning content as agent_thought_chunk with audience: ['assistant'].
+	 *
+	 * The agent_thought_chunk is a SessionUpdate variant that wraps a ContentChunk
+	 * containing reasoning content. The content block has audience: ['assistant']
+	 * annotation to indicate it's internal thought content.
+	 *
+	 * @param messageId - Unique identifier for this thought message
+	 * @param delta - The text delta to send
+	 * @param currentText - The accumulated reasoning content so far
+	 */
+	private async sendAgentThoughtChunk(
+		messageId: string,
+		delta: string,
+		currentText: string,
+	): Promise<void> {
+		// Build the content block with audience: ['assistant'] annotation
+		const textContent: TextContent & { type: "text" } = {
+			type: "text",
+			text: delta,
+			_meta: { _internal: true, reasoning: true },
+			annotations: {
+				_meta: null,
+				audience: ["assistant"] as const,
+				lastModified: null,
+				priority: null,
+			},
+		};
+
+		// Wrap in ContentChunk for agent_thought_chunk
+		const contentChunk: ContentChunk = {
+			_meta: null,
+			content: textContent as ContentBlock,
+		};
+
+		// Emit agent_thought_chunk via sessionUpdate
+		await this.connection.sessionUpdate({
+			sessionId: this.sessionId || "default",
+			update: {
+				sessionUpdate: "agent_thought_chunk",
+				...contentChunk,
+			},
+		});
+	}
+
+	/**
+	 * Checks if a token indicates the start of a reasoning block.
+	 * Detects reasoning content based on token patterns and metadata.
+	 *
+	 * This detection is used during streaming when content blocks aren't yet formed.
+	 * For LangChain v1.0.0 structured content, use handleLLMEnd instead.
+	 *
+	 * @param token - The token to check
+	 * @param fields - Additional fields from the LLM callback
+	 * @returns True if this token starts a reasoning block
+	 */
+	private isReasoningToken(token: string, fields?: any): boolean {
+		// Check fields for explicit reasoning flag (LangChain v1.0.0 metadata)
+		if (fields?.reasoning === true || fields?.reasoningContent) {
+			return true;
+		}
+
+		// Check for reasoning-specific prefixes or patterns
+		// These patterns are used by models like Anthropic for reasoning output
+		const reasoningPatterns = [
+			/^<reasoning>/i,
+			/^<thought>/i,
+			/^<thinking>/i,
+			/^\[reasoning\]/i,
+			/^\[thought\]/i,
+			/^\[thinking\]/i,
+			/^<internal>/i,
+			/^\(thinking\)/i,
+		];
+
+		for (const pattern of reasoningPatterns) {
+			if (pattern.test(token)) {
+				return true;
+			}
+		}
+
+		// Check for explicit reasoning markers at the start of content
+		// Models often prefix reasoning with specific markers
+		const trimmedToken = token.trim();
+		const reasoningMarkers = [
+			"<think>",
+			"<reasoning>",
+			"<thought>",
+			"[reasoning]",
+			"(thinking)",
+		];
+
+		for (const marker of reasoningMarkers) {
+			if (trimmedToken.startsWith(marker) || trimmedToken === marker) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Checks if a token indicates the end of a reasoning block.
+	 *
+	 * @param token - The token to check
+	 * @param fields - Additional fields from the LLM callback
+	 * @returns True if this token ends a reasoning block
+	 */
+	private isReasoningEndToken(token: string, fields?: any): boolean {
+		// Check fields for explicit end flag
+		if (fields?.reasoning === false || fields?.reasoningEnd === true) {
+			return true;
+		}
+
+		// Check for reasoning-specific end patterns
+		const reasoningEndPatterns = [
+			/<\/reasoning>/i,
+			/<\/thought>/i,
+			/<\/thinking>/i,
+			/^\[\/reasoning\]/i,
+			/^\[\/thought\]/i,
+			/^\[\/thinking\]/i,
+			/^\]\)\s*$/,
+			/^<end reasoning>/i,
+		];
+
+		for (const pattern of reasoningEndPatterns) {
+			if (pattern.test(token)) {
+				return true;
+			}
+		}
+
+		// Check for closing reasoning markers
+		const trimmedToken = token.trim();
+		const closingMarkers = [
+			"</reasoning>",
+			"</thought>",
+			"</thinking>",
+			"]<",
+			"])",
+		];
+
+		for (const marker of closingMarkers) {
+			if (trimmedToken.includes(marker)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Generates a unique message ID.
+	 * Uses a combination of timestamp, counter, and random suffix for uniqueness.
+	 */
+	private generateMessageId(): string {
+		const timestamp = Date.now();
+		const random = Math.random().toString(36).substring(2, 8);
+		const counter =
+			(this as any)._messageCounter ?? ((this as any)._messageCounter = 0);
+		(this as any)._messageCounter = counter + 1;
+		return `msg-${timestamp}-${counter}-${random}`;
+	}
+
+	/**
+	 * Generates a unique tool call ID.
+	 * Uses a combination of timestamp, counter, and random suffix for uniqueness.
+	 */
+	private generateToolCallId(): string {
+		const timestamp = Date.now();
+		const random = Math.random().toString(36).substring(2, 8);
+		const counter =
+			(this as any)._toolCallCounter ?? ((this as any)._toolCallCounter = 0);
+		(this as any)._toolCallCounter = counter + 1;
+		return `tool-${timestamp}-${counter}-${random}`;
+	}
+
+	/**
+	 * Detects the tool kind from the tool name.
+	 * Maps common tool names to appropriate ACP tool kinds.
+	 *
+	 * @param toolName - The name of the tool
+	 * @returns The detected tool kind
+	 */
+	private detectToolKind(
+		toolName: string,
+	):
+		| "read"
+		| "edit"
+		| "delete"
+		| "move"
+		| "search"
+		| "execute"
+		| "think"
+		| "fetch"
+		| "switch_mode"
+		| "other" {
+		const name = toolName.toLowerCase();
+
+		if (
+			name.includes("read") ||
+			name.includes("file") ||
+			name.includes("load") ||
+			name.includes("get")
+		) {
+			return "read";
+		}
+		if (
+			name.includes("write") ||
+			name.includes("edit") ||
+			name.includes("create") ||
+			name.includes("update") ||
+			name.includes("modify")
+		) {
+			return "edit";
+		}
+		if (
+			name.includes("delete") ||
+			name.includes("remove") ||
+			name.includes("rm")
+		) {
+			return "delete";
+		}
+		if (
+			name.includes("move") ||
+			name.includes("rename") ||
+			name.includes("mv")
+		) {
+			return "move";
+		}
+		if (
+			name.includes("search") ||
+			name.includes("find") ||
+			name.includes("grep") ||
+			name.includes("query")
+		) {
+			return "search";
+		}
+		if (
+			name.includes("exec") ||
+			name.includes("run") ||
+			name.includes("command") ||
+			name.includes("shell") ||
+			name.includes("bash") ||
+			name.includes("cmd")
+		) {
+			return "execute";
+		}
+		if (
+			name.includes("think") ||
+			name.includes("reason") ||
+			name.includes("analyze")
+		) {
+			return "think";
+		}
+		if (
+			name.includes("fetch") ||
+			name.includes("http") ||
+			name.includes("request") ||
+			name.includes("api") ||
+			name.includes("url")
+		) {
+			return "fetch";
+		}
+		if (name.includes("mode") || name.includes("switch")) {
+			return "switch_mode";
+		}
+
+		return "other";
+	}
+
+	/**
+	 * Sends a session update for tool call creation.
+	 *
+	 * @param toolCallId - Unique identifier for the tool call
+	 * @param toolName - Name of the tool being called
+	 * @param input - Input parameters for the tool
+	 */
+	private async sendToolCallStart(
+		toolCallId: string,
+		toolName: string,
+		input: string,
+	): Promise<void> {
+		await this.connection.sessionUpdate({
+			sessionId: this.sessionId || "default",
+			update: {
+				sessionUpdate: "tool_call",
+				toolCallId,
+				title: `Calling tool: ${toolName}`,
+				kind: this.detectToolKind(toolName),
+				status: "in_progress",
+				rawInput: input,
+			},
+		});
+	}
+
+	/**
+	 * Sends a session update for tool call completion.
+	 *
+	 * @param toolCallId - Unique identifier for the tool call
+	 * @param status - Completion status (completed or failed)
+	 * @param output - Output from the tool
+	 * @param errorMessage - Error message if failed
+	 */
+	private async sendToolCallEnd(
+		toolCallId: string,
+		status: "completed" | "failed",
+		output: unknown,
+		errorMessage?: string,
+	): Promise<void> {
+		// Wrap content in ToolCallContent structure
+		// ToolCallContent expects: { type: "content", content: ContentBlock }
+		// Extract actual content from ToolMessage (output.content) rather than using String(output)
+		const extractContent = (obj: unknown): string => {
+			if (!obj) return "";
+			// Handle LangChain ToolMessage objects where content is in output.content
+			if (typeof obj === "object" && "content" in obj) {
+				const content = (obj as any).content;
+				return typeof content === "string" ? content : String(content);
+			}
+			return String(obj);
+		};
+
+		const toolCallContent =
+			status === "completed"
+				? [
+						{
+							type: "content" as const,
+							content: {
+								type: "text" as const,
+								text: extractContent(output),
+								_meta: null,
+								annotations: null,
+							},
+						},
+					]
+				: [
+						{
+							type: "content" as const,
+							content: {
+								type: "text" as const,
+								text: errorMessage || extractContent(output),
+								_meta: null,
+								annotations: null,
+							},
+						},
+					];
+
+		await this.connection.sessionUpdate({
+			sessionId: this.sessionId || "default",
+			update: {
+				sessionUpdate: "tool_call_update",
+				toolCallId,
+				status,
+				content: toolCallContent,
+				rawOutput: output,
+				_meta: null,
+			},
+		});
+	}
 }
 
 /**
  * Factory function for creating an ACPCallbackHandler.
- * 
+ *
  * @param config - Configuration options for the callback handler
  * @returns A new ACPCallbackHandler instance
- * 
+ *
  * @example
  * ```typescript
  * const handler = createACPCallbackHandler({
@@ -965,7 +1056,7 @@ export class ACPCallbackHandler extends BaseCallbackHandler {
  * ```
  */
 export function createACPCallbackHandler(
-  config: ACPCallbackHandlerConfig
+	config: ACPCallbackHandlerConfig,
 ): ACPCallbackHandler {
-  return new ACPCallbackHandler(config);
+	return new ACPCallbackHandler(config);
 }

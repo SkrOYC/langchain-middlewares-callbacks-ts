@@ -1,43 +1,43 @@
-import { test, expect } from "bun:test";
-import { createMockCallback } from "../../fixtures/mockTransport";
+import { expect, test } from "bun:test";
 import { AGUIMiddlewareOptionsSchema } from "../../../src/middleware/types";
+import { createMockCallback } from "../../fixtures/mockTransport";
 
 test("AGUIMiddlewareOptionsSchema validates valid options", () => {
-  const mockCallback = createMockCallback();
-  const validOptions = {
-    onEvent: mockCallback.emit,
-    emitToolResults: true,
-    emitStateSnapshots: "initial",
-    maxUIPayloadSize: 50 * 1024,
-    errorDetailLevel: "message"
-  };
+	const mockCallback = createMockCallback();
+	const validOptions = {
+		onEvent: mockCallback.emit,
+		emitToolResults: true,
+		emitStateSnapshots: "initial",
+		maxUIPayloadSize: 50 * 1024,
+		errorDetailLevel: "message",
+	};
 
-  expect(() => AGUIMiddlewareOptionsSchema.parse(validOptions)).not.toThrow();
+	expect(() => AGUIMiddlewareOptionsSchema.parse(validOptions)).not.toThrow();
 });
 
 test("AGUIMiddlewareOptionsSchema validates minimal options", () => {
-  const mockCallback = createMockCallback();
-  const minimalOptions = {
-    onEvent: mockCallback.emit
-  };
+	const mockCallback = createMockCallback();
+	const minimalOptions = {
+		onEvent: mockCallback.emit,
+	};
 
-  expect(() => AGUIMiddlewareOptionsSchema.parse(minimalOptions)).not.toThrow();
+	expect(() => AGUIMiddlewareOptionsSchema.parse(minimalOptions)).not.toThrow();
 });
 
 test("AGUIMiddlewareOptionsSchema rejects invalid onEvent", () => {
-  const invalidOptions = {
-    onEvent: "not-a-function"
-  };
+	const invalidOptions = {
+		onEvent: "not-a-function",
+	};
 
-  expect(() => AGUIMiddlewareOptionsSchema.parse(invalidOptions)).toThrow();
+	expect(() => AGUIMiddlewareOptionsSchema.parse(invalidOptions)).toThrow();
 });
 
 test("AGUIMiddlewareOptionsSchema rejects invalid emitStateSnapshots", () => {
-  const mockCallback = createMockCallback();
-  const invalidOptions = {
-    onEvent: mockCallback.emit,
-    emitStateSnapshots: "invalid"
-  };
+	const mockCallback = createMockCallback();
+	const invalidOptions = {
+		onEvent: mockCallback.emit,
+		emitStateSnapshots: "invalid",
+	};
 
-  expect(() => AGUIMiddlewareOptionsSchema.parse(invalidOptions)).toThrow();
+	expect(() => AGUIMiddlewareOptionsSchema.parse(invalidOptions)).toThrow();
 });

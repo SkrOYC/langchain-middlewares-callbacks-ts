@@ -286,22 +286,25 @@ function multiplyAccumulate(
     const idx2 = (j + 2) * bCols + k;
     const idx3 = (j + 3) * bCols + k;
 
-    const b0 = bTransposed[idx0]!;
-    const b1 = bTransposed[idx1]!;
-    const b2 = bTransposed[idx2]!;
-    const b3 = bTransposed[idx3]!;
+    const b0 = bTransposed[idx0];
+    const b1 = bTransposed[idx1];
+    const b2 = bTransposed[idx2];
+    const b3 = bTransposed[idx3];
 
-    result[resultRowOffset + j]! += aVal * b0;
-    result[resultRowOffset + j + 1]! += aVal * b1;
-    result[resultRowOffset + j + 2]! += aVal * b2;
-    result[resultRowOffset + j + 3]! += aVal * b3;
+    // Float32Array always returns number, never undefined
+    // result is pre-allocated to zeros, so all indices are valid
+    result[resultRowOffset + j] += aVal * (b0 ?? 0);
+    result[resultRowOffset + j + 1] += aVal * (b1 ?? 0);
+    result[resultRowOffset + j + 2] += aVal * (b2 ?? 0);
+    result[resultRowOffset + j + 3] += aVal * (b3 ?? 0);
   }
 
   // Remaining elements
   for (; j < colEnd; j++) {
     const bVal = bTransposed[j * bCols + k];
     if (bVal !== undefined) {
-      result[resultRowOffset + j]! += aVal * bVal;
+      // Float32Array always returns number, never undefined
+      result[resultRowOffset + j] += aVal * bVal;
     }
   }
 }
@@ -319,7 +322,11 @@ function convertToNumberArray(
     const row: number[] = [];
     const rowOffset = i * bCols;
     for (let j = 0; j < bCols; j++) {
-      row.push(result[rowOffset + j]!);
+      // Float32Array always returns number, never undefined
+      const value = result[rowOffset + j];
+      if (value !== undefined) {
+        row.push(value);
+      }
     }
     resultMatrix.push(row);
   }

@@ -12,14 +12,6 @@ import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
  * 3. Custom namespace isolation
  */
 
-interface TestMessage {
-  lc_serialized: { type: string };
-  lc_kwargs: { content: string };
-  lc_id: string[];
-  content: string;
-  additional_kwargs: Record<string, unknown>;
-}
-
 function createMockStore(existingItems?: Map<string, Item>): {
   get: BaseStore["get"];
   put: BaseStore["put"];
@@ -30,7 +22,7 @@ function createMockStore(existingItems?: Map<string, Item>): {
   return {
     async get(namespace, key) {
       const fullKey = [...namespace, key].join("|");
-      return storeItems.get(fullKey) ?? null;
+      return await Promise.resolve(storeItems.get(fullKey) ?? null);
     },
     async put(namespace, key, value) {
       const fullKey = [...namespace, key].join("|");
@@ -41,10 +33,12 @@ function createMockStore(existingItems?: Map<string, Item>): {
         created_at: new Date(),
         updated_at: new Date(),
       });
+      return await Promise.resolve();
     },
     async delete(namespace, key) {
       const fullKey = [...namespace, key].join("|");
       storeItems.delete(fullKey);
+      return await Promise.resolve();
     },
   };
 }
@@ -150,8 +144,8 @@ describe("MessageBufferStorage", () => {
       const item = await storage.loadBufferItem("test-user");
 
       expect(item).not.toBeNull();
-      expect(item!.updated_at.getTime()).toBeGreaterThan(
-        item!.created_at.getTime()
+      expect(item?.updated_at.getTime()).toBeGreaterThan(
+        item?.created_at.getTime()
       );
     });
   });
@@ -185,8 +179,8 @@ describe("MessageBufferStorage", () => {
       // Verify staging buffer was created with same content
       const stagingBuffer = await storage.loadStagingBuffer("test-user");
       expect(stagingBuffer).not.toBeNull();
-      expect(stagingBuffer!.messages).toHaveLength(1);
-      expect(stagingBuffer!.messages[0].content).toBe("Original message");
+      expect(stagingBuffer?.messages).toHaveLength(1);
+      expect(stagingBuffer?.messages[0].content).toBe("Original message");
     });
 
     test("loadStagingBuffer returns null when no staging exists", async () => {
@@ -288,8 +282,8 @@ describe("MessageBufferStorage", () => {
 
       // Verify staging buffer still has original content
       const stagingBuffer = await storage.loadStagingBuffer("test-user");
-      expect(stagingBuffer!.messages).toHaveLength(1);
-      expect(stagingBuffer!.messages[0].content).toBe("Message 1");
+      expect(stagingBuffer?.messages).toHaveLength(1);
+      expect(stagingBuffer?.messages[0].content).toBe("Message 1");
 
       // Clear staging (simulating end of async reflection)
       await storage.clearStaging("test-user");
@@ -361,7 +355,7 @@ describe("MessageBufferStorage", () => {
       // Verify staging buffer exists
       const stagingBuffer = await storage.loadStagingBuffer("test-user");
       expect(stagingBuffer).not.toBeNull();
-      expect(stagingBuffer!.messages).toHaveLength(1);
+      expect(stagingBuffer?.messages).toHaveLength(1);
     });
 
     test("different namespaces create isolated storage", async () => {
@@ -415,13 +409,23 @@ describe("MessageBufferStorage", () => {
     test("loadBuffer handles store errors gracefully", async () => {
       const mockStore: BaseStore = {
         get: async () => {
-          throw new Error("Store error");
+          return await Promise.reject(new Error("Store error"));
         },
-        put: async () => {},
-        delete: async () => {},
-        batch: async () => [],
-        search: async () => [],
-        listNamespaces: async () => [],
+        put: async () => {
+          return await Promise.resolve();
+        },
+        delete: async () => {
+          return await Promise.resolve();
+        },
+        batch: async () => {
+          return await Promise.resolve([]);
+        },
+        search: async () => {
+          return await Promise.resolve([]);
+        },
+        listNamespaces: async () => {
+          return await Promise.resolve([]);
+        },
       };
 
       const storage = createMessageBufferStorage(mockStore);

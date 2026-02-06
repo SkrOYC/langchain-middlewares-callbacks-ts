@@ -3,164 +3,172 @@
  * Tests ACTIVITY_SNAPSHOT and ACTIVITY_DELTA emission.
  */
 
-import { test, expect, describe } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
-  createMockCallback,
-  createTestAgent,
-  formatAgentInput,
-  getEventsByType,
-  createTextModel,
+	createMockCallback,
+	createTestAgent,
+	createTextModel,
+	formatAgentInput,
+	getEventsByType,
 } from "../helpers/testUtils";
 
 describe("Activity Events", () => {
-  describe("ACTIVITY_SNAPSHOT and ACTIVITY_DELTA", () => {
-    test("ACTIVITY_SNAPSHOT and ACTIVITY_DELTA are emitted for agent steps", async () => {
-      const callback = createMockCallback();
-      const model = createTextModel(["Hello!"]);
+	describe("ACTIVITY_SNAPSHOT and ACTIVITY_DELTA", () => {
+		test("ACTIVITY_SNAPSHOT and ACTIVITY_DELTA are emitted for agent steps", async () => {
+			const callback = createMockCallback();
+			const model = createTextModel(["Hello!"]);
 
-      const { agent } = createTestAgent(model, [], callback, {
-        emitActivities: true,
-      });
+			const { agent } = createTestAgent(model, [], callback, {
+				emitActivities: true,
+			});
 
-      await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
+			await agent.invoke(
+				formatAgentInput([{ role: "user", content: "Hello" }]),
+			);
 
-      // Should have ACTIVITY_SNAPSHOT for the model call
-      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
-      expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+			// Should have ACTIVITY_SNAPSHOT for the model call
+			const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
+			expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
-      // Should have ACTIVITY_DELTA for completion
-      const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
-      expect(deltaEvents.length).toBeGreaterThanOrEqual(1);
+			// Should have ACTIVITY_DELTA for completion
+			const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
+			expect(deltaEvents.length).toBeGreaterThanOrEqual(1);
 
-      // Verify activity structure
-      const snapshot = snapshotEvents[0];
-      expect(snapshot.messageId).toBeDefined();
-      expect(snapshot.activityType).toBe("AGENT_STEP");
-      expect(snapshot.content).toBeDefined();
-      expect(snapshot.content.status).toBe("started");
+			// Verify activity structure
+			const snapshot = snapshotEvents[0];
+			expect(snapshot.messageId).toBeDefined();
+			expect(snapshot.activityType).toBe("AGENT_STEP");
+			expect(snapshot.content).toBeDefined();
+			expect(snapshot.content.status).toBe("started");
 
-      const delta = deltaEvents[0];
-      expect(delta.messageId).toBe(snapshot.messageId);
-      expect(delta.activityType).toBe("AGENT_STEP");
-      expect(delta.patch).toBeDefined();
-      expect(Array.isArray(delta.patch)).toBe(true);
-    });
+			const delta = deltaEvents[0];
+			expect(delta.messageId).toBe(snapshot.messageId);
+			expect(delta.activityType).toBe("AGENT_STEP");
+			expect(delta.patch).toBeDefined();
+			expect(Array.isArray(delta.patch)).toBe(true);
+		});
 
-    test("ACTIVITY_SNAPSHOT contains model name and input preview", async () => {
-      const callback = createMockCallback();
-      const model = createTextModel(["Response text"]);
+		test("ACTIVITY_SNAPSHOT contains model name and input preview", async () => {
+			const callback = createMockCallback();
+			const model = createTextModel(["Response text"]);
 
-      const { agent } = createTestAgent(model, [], callback, {
-        emitActivities: true,
-      });
+			const { agent } = createTestAgent(model, [], callback, {
+				emitActivities: true,
+			});
 
-      await agent.invoke(formatAgentInput([{ role: "user", content: "What is the weather?" }]));
+			await agent.invoke(
+				formatAgentInput([{ role: "user", content: "What is the weather?" }]),
+			);
 
-      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
-      expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+			const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
+			expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
-      const snapshot = snapshotEvents[0];
-      expect(snapshot.content.modelName).toBeDefined();
-      expect(snapshot.content.inputPreview).toBeDefined();
-      expect(snapshot.content.inputPreview).toContain("weather");
-    });
+			const snapshot = snapshotEvents[0];
+			expect(snapshot.content.modelName).toBeDefined();
+			expect(snapshot.content.inputPreview).toBeDefined();
+			expect(snapshot.content.inputPreview).toContain("weather");
+		});
 
-    test("ACTIVITY_DELTA contains completion status and output type", async () => {
-      const callback = createMockCallback();
-      const model = createTextModel(["Simple response"]);
+		test("ACTIVITY_DELTA contains completion status and output type", async () => {
+			const callback = createMockCallback();
+			const model = createTextModel(["Simple response"]);
 
-      const { agent } = createTestAgent(model, [], callback, {
-        emitActivities: true,
-      });
+			const { agent } = createTestAgent(model, [], callback, {
+				emitActivities: true,
+			});
 
-      await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+			await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
 
-      const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
-      expect(deltaEvents.length).toBeGreaterThanOrEqual(1);
+			const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
+			expect(deltaEvents.length).toBeGreaterThanOrEqual(1);
 
-      // The last delta should have status "completed"
-      const lastDelta = deltaEvents[deltaEvents.length - 1];
-      expect(lastDelta.patch).toBeDefined();
-      
-      // Check if status was updated to "completed" in the patch
-      const statusUpdate = lastDelta.patch.find((op: any) => 
-        op.path === "/status" && op.value === "completed"
-      );
-      expect(statusUpdate).toBeDefined();
-    });
+			// The last delta should have status "completed"
+			const lastDelta = deltaEvents[deltaEvents.length - 1];
+			expect(lastDelta.patch).toBeDefined();
 
-    test("No activity events when emitActivities is false (default)", async () => {
-      const callback = createMockCallback();
-      const model = createTextModel(["Hello!"]);
+			// Check if status was updated to "completed" in the patch
+			const statusUpdate = lastDelta.patch.find(
+				(op: any) => op.path === "/status" && op.value === "completed",
+			);
+			expect(statusUpdate).toBeDefined();
+		});
 
-      const { agent } = createTestAgent(model, [], callback);
+		test("No activity events when emitActivities is false (default)", async () => {
+			const callback = createMockCallback();
+			const model = createTextModel(["Hello!"]);
 
-      await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
+			const { agent } = createTestAgent(model, [], callback);
 
-      // Should NOT have any activity events
-      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
-      const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
+			await agent.invoke(
+				formatAgentInput([{ role: "user", content: "Hello" }]),
+			);
 
-      expect(snapshotEvents.length).toBe(0);
-      expect(deltaEvents.length).toBe(0);
-    });
+			// Should NOT have any activity events
+			const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
+			const deltaEvents = getEventsByType(callback, "ACTIVITY_DELTA");
 
-    test("activityMapper transforms activity content", async () => {
-      const callback = createMockCallback();
-      const model = createTextModel(["Response text"]);
+			expect(snapshotEvents.length).toBe(0);
+			expect(deltaEvents.length).toBe(0);
+		});
 
-      // Custom mapper that transforms the activity content
-      const customMapper = (node: any) => ({
-        customField: "customValue",
-        step: node.stepName,
-        // Note: activityMapper returns a new object, not modifying the original
-      });
+		test("activityMapper transforms activity content", async () => {
+			const callback = createMockCallback();
+			const model = createTextModel(["Response text"]);
 
-      const { agent } = createTestAgent(model, [], callback, {
-        emitActivities: true,
-        activityMapper: customMapper,
-      });
+			// Custom mapper that transforms the activity content
+			const customMapper = (node: any) => ({
+				customField: "customValue",
+				step: node.stepName,
+				// Note: activityMapper returns a new object, not modifying the original
+			});
 
-      await agent.invoke(formatAgentInput([{ role: "user", content: "Hello" }]));
+			const { agent } = createTestAgent(model, [], callback, {
+				emitActivities: true,
+				activityMapper: customMapper,
+			});
 
-      // Should have ACTIVITY_SNAPSHOT with transformed content
-      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
-      expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+			await agent.invoke(
+				formatAgentInput([{ role: "user", content: "Hello" }]),
+			);
 
-      const snapshot = snapshotEvents[0];
-      expect(snapshot.content.customField).toBe("customValue");
-      expect(snapshot.content.step).toBeDefined();
-      // The mapper completely replaces content, so original fields won't exist
-      expect(snapshot.content.stepName).toBeUndefined();
-    });
+			// Should have ACTIVITY_SNAPSHOT with transformed content
+			const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
+			expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
 
-    test("activityMapper receives base content with all fields", async () => {
-      const callback = createMockCallback();
-      const model = createTextModel(["Response text"]);
+			const snapshot = snapshotEvents[0];
+			expect(snapshot.content.customField).toBe("customValue");
+			expect(snapshot.content.step).toBeDefined();
+			// The mapper completely replaces content, so original fields won't exist
+			expect(snapshot.content.stepName).toBeUndefined();
+		});
 
-      // Mapper that logs received fields for verification
-      const receivedFields: string[] = [];
-      const fieldMapper = (node: any) => {
-        Object.keys(node).forEach((key) => receivedFields.push(key));
-        return node;
-      };
+		test("activityMapper receives base content with all fields", async () => {
+			const callback = createMockCallback();
+			const model = createTextModel(["Response text"]);
 
-      const { agent } = createTestAgent(model, [], callback, {
-        emitActivities: true,
-        activityMapper: fieldMapper,
-      });
+			// Mapper that logs received fields for verification
+			const receivedFields: string[] = [];
+			const fieldMapper = (node: any) => {
+				Object.keys(node).forEach((key) => receivedFields.push(key));
+				return node;
+			};
 
-      await agent.invoke(formatAgentInput([{ role: "user", content: "Test" }]));
+			const { agent } = createTestAgent(model, [], callback, {
+				emitActivities: true,
+				activityMapper: fieldMapper,
+			});
 
-      // Verify base content has expected fields
-      const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
-      expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+			await agent.invoke(formatAgentInput([{ role: "user", content: "Test" }]));
 
-      // Should have received standard fields
-      expect(receivedFields).toContain("status");
-      expect(receivedFields).toContain("timestamp");
-      expect(receivedFields).toContain("stepName");
-      expect(receivedFields).toContain("modelName");
-    });
-  });
+			// Verify base content has expected fields
+			const snapshotEvents = getEventsByType(callback, "ACTIVITY_SNAPSHOT");
+			expect(snapshotEvents.length).toBeGreaterThanOrEqual(1);
+
+			// Should have received standard fields
+			expect(receivedFields).toContain("status");
+			expect(receivedFields).toContain("timestamp");
+			expect(receivedFields).toContain("stepName");
+			expect(receivedFields).toContain("modelName");
+		});
+	});
 });

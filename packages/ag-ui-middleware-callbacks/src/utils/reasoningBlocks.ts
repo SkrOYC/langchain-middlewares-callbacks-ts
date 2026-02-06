@@ -5,17 +5,17 @@
  * Uses the canonical contentBlocks API which auto-translates provider-specific formats.
  */
 
-import type { BaseMessage, AIMessage } from "@langchain/core/messages";
+import type { AIMessage, BaseMessage } from "@langchain/core/messages";
 
 /**
  * Reasoning content block structure from LangChain V1 contentBlocks API.
  * Auto-translated from provider formats (Anthropic, Google, OpenAI, etc.)
  */
 export interface ReasoningBlock {
-  type: "reasoning";
-  reasoning: string;
-  signature?: string;
-  index?: number;
+	type: "reasoning";
+	reasoning: string;
+	signature?: string;
+	index?: number;
 }
 
 /**
@@ -25,7 +25,7 @@ export interface ReasoningBlock {
  * @returns True if the block is a reasoning block
  */
 export function isReasoningBlock(block: ContentBlock): block is ReasoningBlock {
-  return block != null && block.type === "reasoning";
+	return block != null && block.type === "reasoning";
 }
 
 /**
@@ -33,8 +33,8 @@ export function isReasoningBlock(block: ContentBlock): block is ReasoningBlock {
  * This is a discriminated union covering all possible block types.
  */
 type ContentBlock = {
-  type: string;
-  [key: string]: unknown;
+	type: string;
+	[key: string]: unknown;
 };
 
 /**
@@ -47,21 +47,21 @@ type ContentBlock = {
  * @returns Array of reasoning blocks, empty if not an AI message or no reasoning content
  */
 export function extractReasoningBlocks(message: BaseMessage): ReasoningBlock[] {
-  const aiMessage = message as AIMessage;
+	const aiMessage = message as AIMessage;
 
-  // Only AI messages can have reasoning content
-  if (aiMessage._getType() !== "ai") {
-    return [];
-  }
+	// Only AI messages can have reasoning content
+	if (aiMessage._getType() !== "ai") {
+		return [];
+	}
 
-  // Access contentBlocks getter (LangChain V1 canonical API)
-  const contentBlocks = aiMessage.contentBlocks;
+	// Access contentBlocks getter (LangChain V1 canonical API)
+	const contentBlocks = aiMessage.contentBlocks;
 
-  if (!Array.isArray(contentBlocks)) {
-    return [];
-  }
+	if (!Array.isArray(contentBlocks)) {
+		return [];
+	}
 
-  return contentBlocks.filter(isReasoningBlock);
+	return contentBlocks.filter(isReasoningBlock);
 }
 
 /**
@@ -71,9 +71,12 @@ export function extractReasoningBlocks(message: BaseMessage): ReasoningBlock[] {
  * @returns Array of reasoning text strings, filtered to non-empty strings
  */
 export function extractReasoningText(message: BaseMessage): string[] {
-  return extractReasoningBlocks(message)
-    .map((block) => block.reasoning)
-    .filter((text): text is string => typeof text === "string" && text.trim().length > 0);
+	return extractReasoningBlocks(message)
+		.map((block) => block.reasoning)
+		.filter(
+			(text): text is string =>
+				typeof text === "string" && text.trim().length > 0,
+		);
 }
 
 /**
@@ -87,17 +90,17 @@ export function extractReasoningText(message: BaseMessage): string[] {
  * @returns Map of index to array of reasoning blocks for that phase
  */
 export function groupReasoningBlocksByIndex(
-  message: BaseMessage
+	message: BaseMessage,
 ): Map<number, ReasoningBlock[]> {
-  const blocks = extractReasoningBlocks(message);
-  const grouped = new Map<number, ReasoningBlock[]>();
+	const blocks = extractReasoningBlocks(message);
+	const grouped = new Map<number, ReasoningBlock[]>();
 
-  for (const block of blocks) {
-    const index = block.index ?? 0;
-    const existing = grouped.get(index) ?? [];
-    existing.push(block);
-    grouped.set(index, existing);
-  }
+	for (const block of blocks) {
+		const index = block.index ?? 0;
+		const existing = grouped.get(index) ?? [];
+		existing.push(block);
+		grouped.set(index, existing);
+	}
 
-  return grouped;
+	return grouped;
 }

@@ -4,33 +4,36 @@
  * Creates a LangChain agent with automatic AG-UI protocol integration.
  *
  * Architecture:
-  * - Uses createAgent() from langchain package
-  * - Returns agent with callbacks bound to graph via withConfig
-  * - Emits lifecycle events for agent execution (RUN_STARTED, RUN_FINISHED, etc.)
-  * - Callbacks are merged with user-provided callbacks by LangChain
-  * - Abort signal from context enables client disconnect handling
+ * - Uses createAgent() from langchain package
+ * - Returns agent with callbacks bound to graph via withConfig
+ * - Emits lifecycle events for agent execution (RUN_STARTED, RUN_FINISHED, etc.)
+ * - Callbacks are merged with user-provided callbacks by LangChain
+ * - Abort signal from context enables client disconnect handling
  */
 
 import { createAgent } from "langchain";
-import { AGUICallbackHandler, type AGUICallbackHandlerOptions } from "./callbacks/AGUICallbackHandler";
+import {
+	AGUICallbackHandler,
+	type AGUICallbackHandlerOptions,
+} from "./callbacks/AGUICallbackHandler";
+import { type BaseEvent, EventType } from "./events";
 import { createAGUIMiddleware } from "./middleware/createAGUIMiddleware";
 import type { AGUIMiddlewareOptions } from "./middleware/types";
-import { EventType, type BaseEvent } from "./events";
 
 /**
  * Configuration for creating an AG-UI enabled agent.
  */
 export interface AGUIAgentConfig {
-  /** The language model to use */
-  model: any;
-  /** The tools available to the agent */
-  tools: any[];
-  /** Callback function for AG-UI events */
-  onEvent: (event: BaseEvent) => void;
-  /** Optional middleware configuration */
-  middlewareOptions?: Partial<AGUIMiddlewareOptions>;
-  /** Optional callback handler configuration */
-  callbackOptions?: Omit<AGUICallbackHandlerOptions, 'onEvent'>;
+	/** The language model to use */
+	model: any;
+	/** The tools available to the agent */
+	tools: any[];
+	/** Callback function for AG-UI events */
+	onEvent: (event: BaseEvent) => void;
+	/** Optional middleware configuration */
+	middlewareOptions?: Partial<AGUIMiddlewareOptions>;
+	/** Optional callback handler configuration */
+	callbackOptions?: Omit<AGUICallbackHandlerOptions, "onEvent">;
 }
 
 /**
@@ -50,51 +53,59 @@ export interface AGUIAgentConfig {
  * @returns An agent with AG-UI protocol support
  */
 export function createAGUIAgent(config: AGUIAgentConfig) {
-  // Create middleware with callback
-  const middleware = createAGUIMiddleware({
-    onEvent: config.onEvent,
-    emitToolResults: config.middlewareOptions?.emitToolResults ?? true,
-    emitStateSnapshots: config.middlewareOptions?.emitStateSnapshots ?? "initial",
-    emitActivities: config.middlewareOptions?.emitActivities ?? false,
-    maxUIPayloadSize: config.middlewareOptions?.maxUIPayloadSize ?? 50 * 1024,
-    chunkLargeResults: config.middlewareOptions?.chunkLargeResults ?? false,
-    threadIdOverride: config.middlewareOptions?.threadIdOverride,
-    runIdOverride: config.middlewareOptions?.runIdOverride,
-    errorDetailLevel: config.middlewareOptions?.errorDetailLevel ?? "message",
-    stateMapper: config.middlewareOptions?.stateMapper,
-    resultMapper: config.middlewareOptions?.resultMapper,
-    activityMapper: config.middlewareOptions?.activityMapper,
-    validateEvents: config.middlewareOptions?.validateEvents ?? false,
-  });
+	// Create middleware with callback
+	const middleware = createAGUIMiddleware({
+		onEvent: config.onEvent,
+		emitToolResults: config.middlewareOptions?.emitToolResults ?? true,
+		emitStateSnapshots:
+			config.middlewareOptions?.emitStateSnapshots ?? "initial",
+		emitActivities: config.middlewareOptions?.emitActivities ?? false,
+		maxUIPayloadSize: config.middlewareOptions?.maxUIPayloadSize ?? 50 * 1024,
+		chunkLargeResults: config.middlewareOptions?.chunkLargeResults ?? false,
+		threadIdOverride: config.middlewareOptions?.threadIdOverride,
+		runIdOverride: config.middlewareOptions?.runIdOverride,
+		errorDetailLevel: config.middlewareOptions?.errorDetailLevel ?? "message",
+		stateMapper: config.middlewareOptions?.stateMapper,
+		resultMapper: config.middlewareOptions?.resultMapper,
+		activityMapper: config.middlewareOptions?.activityMapper,
+		validateEvents: config.middlewareOptions?.validateEvents ?? false,
+	});
 
-  // Create base agent with middleware
-  // Note: Callbacks are NOT bound here - they must be passed at runtime
-  const agent = createAgent({
-    model: config.model,
-    tools: config.tools,
-    middleware: [middleware],
-  });
+	// Create base agent with middleware
+	// Note: Callbacks are NOT bound here - they must be passed at runtime
+	const agent = createAgent({
+		model: config.model,
+		tools: config.tools,
+		middleware: [middleware],
+	});
 
-  // Attach global listeners for guaranteed cleanup and error handling if supported
-  if (agent && typeof (agent as any).withListeners === "function") {
-    return (agent as any).withListeners({
-      onError: (run: any) => {
-        try {
-          // Extract threadId and runId from run config if available
-          const threadId = run.config?.configurable?.threadId as string | undefined;
-          const agentRunId = run.config?.configurable?.runId as string | undefined;
-          config.onEvent({
-           type: EventType.RUN_ERROR,
-           message: typeof run.error === "string" ? run.error : (run.error as any)?.message || "Agent execution failed",
-           code: "AGENT_EXECUTION_ERROR",
-           timestamp: Date.now(),
-         } as BaseEvent);
-        } catch {
-          // Fail-safe
-        }
-      },
-    });
-  }
+	// Attach global listeners for guaranteed cleanup and error handling if supported
+	if (agent && typeof (agent as any).withListeners === "function") {
+		return (agent as any).withListeners({
+			onError: (run: any) => {
+				try {
+					// Extract threadId and runId from run config if available
+					const threadId = run.config?.configurable?.threadId as
+						| string
+						| undefined;
+					const agentRunId = run.config?.configurable?.runId as
+						| string
+						| undefined;
+					config.onEvent({
+						type: EventType.RUN_ERROR,
+						message:
+							typeof run.error === "string"
+								? run.error
+								: (run.error as any)?.message || "Agent execution failed",
+						code: "AGENT_EXECUTION_ERROR",
+						timestamp: Date.now(),
+					} as BaseEvent);
+				} catch {
+					// Fail-safe
+				}
+			},
+		});
+	}
 
-  return agent;
+	return agent;
 }
