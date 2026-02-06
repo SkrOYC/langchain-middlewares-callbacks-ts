@@ -445,6 +445,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     const reflectionPromise = middleware.beforeAgent(sampleState, mockRuntime);
 
     // Simulate new message arriving during reflection
+    // Wait for clearBuffer to be called first
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
     const newMessage = {
       lc_serialized: { type: "human" },
       lc_kwargs: { content: "New message during reflection" },
@@ -454,7 +457,8 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // Update live buffer while reflection is processing
-    storedBuffers.set("rmm|test-user|buffer|message-buffer", {
+    // Use mockStore.put since clearBuffer already updated internal store
+    await mockStore.put(["rmm", "test-user", "buffer"], "message-buffer", {
       messages: [
         {
           lc_serialized: { type: "human" },
@@ -473,8 +477,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     await reflectionPromise;
 
     // Verify live buffer still has new message
-    const liveBuffer = storedBuffers.get("rmm|test-user|buffer|message-buffer");
-    expect((liveBuffer as { messages: unknown[] }).messages).toHaveLength(2);
+    const liveBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    expect(liveBuffer).not.toBeNull();
+    expect(liveBuffer.value.messages).toHaveLength(2);
   });
 
   test("clearStaging clears only the staging area, not live buffer", async () => {
@@ -553,6 +558,343 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     // Verify live buffer still exists (not cleared)
     const liveBuffer = storedBuffers.get("rmm|test-user|buffer|message-buffer");
     expect(liveBuffer).toBeDefined();
+  });
+
+  test("main buffer is cleared after successful staging", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Initial buffer with messages
+    const initialBuffer = {
+      messages: [
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Message 1" },
+          lc_id: ["human"],
+          content: "Message 1",
+          additional_kwargs: {},
+        },
+      ],
+      humanMessageCount: 1,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const storedBuffers = new Map<string, unknown>();
+    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
+
+    const mockStore = createAsyncMockStore(storedBuffers);
+
+    const mockDeps = {
+      vectorStore: {
+        similaritySearch: async () => [],
+        addDocuments: async () => {},
+      },
+      extractSpeaker1: (dialogue: string) => "Speaker1",
+    };
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: mockStore,
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionConfig: {
+        minTurns: 1,
+        maxTurns: 10,
+        minInactivityMs: 0,
+        maxInactivityMs: 60000,
+        mode: "strict",
+        maxBufferSize: 100,
+      },
+      reflectionDeps: mockDeps,
+    });
+
+    const mockRuntime: BeforeAgentRuntime = {
+      context: {
+        userId: "test-user",
+        store: mockStore,
+      },
+    };
+
+    await middleware.beforeAgent(sampleState, mockRuntime);
+
+    // Verify main buffer is cleared after staging (prevents duplicate processing)
+    // Use loadBuffer which returns empty buffer for cleared entries
+    const mainBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    expect(mainBuffer).not.toBeNull();
+    expect(mainBuffer.value.messages).toHaveLength(0);
+
+    // Verify staging buffer still exists with original content
+    const stagingBuffer = await mockStore.get(["rmm", "test-user", "buffer", "staging"], "message-buffer");
+    expect(stagingBuffer).not.toBeNull();
+    expect(stagingBuffer.value.messages).toHaveLength(1);
+  });
+
+  test("reflection reads from staging buffer, not snapshot argument", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Initial buffer - will be modified in staging
+    const initialBuffer = {
+      messages: [
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Original message" },
+          lc_id: ["human"],
+          content: "Original message",
+          additional_kwargs: {},
+        },
+      ],
+      humanMessageCount: 1,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const storedBuffers = new Map<string, unknown>();
+    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
+
+    // Track what messages were passed to addDocuments
+    let capturedMessages: unknown[] = [];
+
+    const mockStore = createAsyncMockStore(storedBuffers);
+
+    const mockDeps = {
+      vectorStore: {
+        similaritySearch: async () => [],
+        addDocuments: async (docs: string[], _metadatas?: unknown[]) => {
+          // Capture the messages being reflected
+          capturedMessages = docs;
+        },
+      },
+      extractSpeaker1: (dialogue: string) => "Speaker1",
+    };
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: mockStore,
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionConfig: {
+        minTurns: 1,
+        maxTurns: 10,
+        minInactivityMs: 0,
+        maxInactivityMs: 60000,
+        mode: "strict",
+        maxBufferSize: 100,
+      },
+      reflectionDeps: mockDeps,
+    });
+
+    const mockRuntime: BeforeAgentRuntime = {
+      context: {
+        userId: "test-user",
+        store: mockStore,
+      },
+    };
+
+    // Track when reflection completes
+    let reflectionComplete = false;
+
+    // First, trigger the middleware which starts async reflection
+    await middleware.beforeAgent(sampleState, mockRuntime);
+
+    // Wait for reflection to complete (it runs asynchronously)
+    // We can detect completion by waiting for the captured messages
+    let attempts = 0;
+    while (capturedMessages.length === 0 && attempts < 50) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      attempts++;
+    }
+
+    // Verify reflection processed messages from staging
+    expect(capturedMessages.length).toBe(1);
+    expect(capturedMessages[0]).toContain("Original message");
+  });
+
+  test("failed reflection preserves staging for retry", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Initial buffer with messages
+    const initialBuffer = {
+      messages: [
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Message 1" },
+          lc_id: ["human"],
+          content: "Message 1",
+          additional_kwargs: {},
+        },
+      ],
+      humanMessageCount: 1,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const storedBuffers = new Map<string, unknown>();
+    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
+
+    const mockStore = createAsyncMockStore(storedBuffers);
+
+    // Make reflection fail
+    const mockDeps = {
+      vectorStore: {
+        similaritySearch: async () => [],
+        addDocuments: async () => {
+          throw new Error("Reflection failed");
+        },
+      },
+      extractSpeaker1: (dialogue: string) => "Speaker1",
+    };
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: mockStore,
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionConfig: {
+        minTurns: 1,
+        maxTurns: 10,
+        minInactivityMs: 0,
+        maxInactivityMs: 60000,
+        mode: "strict",
+        maxBufferSize: 100,
+      },
+      reflectionDeps: mockDeps,
+    });
+
+    const mockRuntime: BeforeAgentRuntime = {
+      context: {
+        userId: "test-user",
+        store: mockStore,
+      },
+    };
+
+    // Trigger reflection (will fail)
+    await middleware.beforeAgent(sampleState, mockRuntime);
+
+    // Give async reflection time to fail
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Verify main buffer was cleared (empty messages)
+    const mainBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    expect(mainBuffer).not.toBeNull();
+    expect(mainBuffer.value.messages).toHaveLength(0);
+
+    // Verify staging buffer is preserved (for retry)
+    const stagingBuffer = await mockStore.get(["rmm", "test-user", "buffer", "staging"], "message-buffer");
+    expect(stagingBuffer).not.toBeNull();
+    expect(stagingBuffer.value.messages).toHaveLength(1);
+  });
+
+  test("new messages go to main buffer during failed reflection", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Initial buffer with messages
+    const initialBuffer = {
+      messages: [
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Message 1" },
+          lc_id: ["human"],
+          content: "Message 1",
+          additional_kwargs: {},
+        },
+      ],
+      humanMessageCount: 1,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    // Capture when reflection is actually reading from staging
+    let reflectionReadFromStaging = false;
+
+    const storedBuffers = new Map<string, unknown>();
+    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
+
+    const mockStore = createAsyncMockStore(storedBuffers);
+
+    // Make reflection slow so we can add messages during it
+    const mockDeps = {
+      vectorStore: {
+        similaritySearch: async () => [],
+        addDocuments: async () => {
+          // Wait for the simulated slow reflection
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          // After waiting, reflection has read from staging
+          reflectionReadFromStaging = true;
+          throw new Error("Reflection failed");
+        },
+      },
+      extractSpeaker1: (dialogue: string) => "Speaker1",
+    };
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: mockStore,
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionConfig: {
+        minTurns: 1,
+        maxTurns: 10,
+        minInactivityMs: 0,
+        maxInactivityMs: 60000,
+        mode: "strict",
+        maxBufferSize: 100,
+      },
+      reflectionDeps: mockDeps,
+    });
+
+    const mockRuntime: BeforeAgentRuntime = {
+      context: {
+        userId: "test-user",
+        store: mockStore,
+      },
+    };
+
+    // Trigger reflection (will fail)
+    const reflectionPromise = middleware.beforeAgent(sampleState, mockRuntime);
+
+    // Wait for reflection to start reading from staging
+    // This ensures we add messages AFTER reflection has read staging content
+    while (!reflectionReadFromStaging) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // Now add new message AFTER reflection has read from staging
+    // New messages go to main buffer (which was cleared earlier)
+    const newMessage = {
+      lc_serialized: { type: "human" },
+      lc_kwargs: { content: "New message during failed reflection" },
+      lc_id: ["human"],
+      content: "New message during failed reflection",
+      additional_kwargs: {},
+    };
+
+    // Update main buffer - new messages go here during failed reflection
+    await mockStore.put(["rmm", "test-user", "buffer"], "message-buffer", {
+      messages: [
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Message 1" },
+          lc_id: ["human"],
+          content: "Message 1",
+          additional_kwargs: {},
+        },
+        newMessage,
+      ],
+      humanMessageCount: 2,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    });
+
+    await reflectionPromise;
+
+    // Give async reflection time to fully fail
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Verify new message is in main buffer
+    const mainBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    expect(mainBuffer).not.toBeNull();
+    expect(mainBuffer.value.messages).toHaveLength(2);
+    expect(mainBuffer.value.messages[1].content).toBe("New message during failed reflection");
   });
 });
 

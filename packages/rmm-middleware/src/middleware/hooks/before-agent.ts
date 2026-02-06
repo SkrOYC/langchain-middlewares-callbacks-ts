@@ -136,20 +136,24 @@ export function checkReflectionTriggers(
  * Processes reflection on buffered messages.
  * Extracts memories and updates the memory bank.
  *
- * Note: This is a simplified implementation for testing.
- * Full implementation requires summarizationModel and embeddings.
+ * Reads from staging buffer to ensure atomic reflection processing.
  */
 async function processReflection(
-  buffer: { messages: unknown[]; humanMessageCount: number },
+  userId: string,
+  bufferStorage: MessageBufferStorage,
   deps: NonNullable<BeforeAgentOptions["reflectionDeps"]>
 ): Promise<void> {
-  if (buffer.messages.length === 0) {
+  // Read from staging buffer (source of truth for reflection)
+  const stagedBuffer = await bufferStorage.loadStagingBuffer(userId);
+
+  if (!stagedBuffer || stagedBuffer.messages.length === 0) {
+    console.debug("[before-agent] No staged buffer to reflect on");
     return;
   }
 
   try {
     // Format dialogue for extraction
-    const dialogue = (buffer.messages as Record<string, unknown>[])
+    const dialogue = (stagedBuffer.messages as Record<string, unknown>[])
       .map((msg) => {
         const content = msg.content ?? "";
         const type = msg.lc_serialized
@@ -162,7 +166,7 @@ async function processReflection(
     // For now, just add the raw dialogue as a "memory" placeholder
     // In full implementation, this would use extractMemories with LLM
     console.debug(
-      `[before-agent] Processing reflection on ${buffer.humanMessageCount} human messages`
+      `[before-agent] Processing reflection on ${stagedBuffer.humanMessageCount} human messages`
     );
 
     // Simulate memory extraction - in production this would call extractMemories
@@ -175,6 +179,7 @@ async function processReflection(
       "[before-agent] Error during reflection processing:",
       error instanceof Error ? error.message : String(error)
     );
+    throw error; // Re-throw to signal failure to the caller
   }
 }
 
@@ -293,25 +298,31 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
                 return;
               }
 
+              // Clear main buffer to prevent duplicate processing
+              // New messages will go to main buffer during reflection
+              await bufferStorage.clearBuffer(userId);
+
               // Process reflection asynchronously on staged content (non-blocking)
               // We don't await this to not delay the agent
               processReflection(
-                { messages: bufferToStage.messages, humanMessageCount: bufferToStage.humanMessageCount },
+                userId,
+                bufferStorage,
                 options.reflectionDeps
               )
                 .then(async () => {
-                  // Clear staging buffer after reflection completes
+                  // Clear staging buffer after reflection completes successfully
                   await bufferStorage.clearStaging(userId);
                   console.debug(
                     "[before-agent] Reflection completed, staging cleared"
                   );
                 })
                 .catch((error) => {
+                  // Staging is preserved for retry on next trigger
                   console.warn(
-                    "[before-agent] Reflection failed:",
+                    "[before-agent] Reflection failed, staging preserved for retry:",
                     error instanceof Error ? error.message : String(error)
                   );
-                  // Staging is preserved for retry on next trigger
+                  // Do NOT re-throw - this prevents .then() from running
                 });
             }
           }

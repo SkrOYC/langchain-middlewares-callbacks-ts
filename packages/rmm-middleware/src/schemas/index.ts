@@ -397,20 +397,29 @@ export type SessionMetadata = z.infer<typeof SessionMetadataSchema>;
  * Max thresholds act as "force" triggers - reflection happens regardless of
  * the other condition when max is reached.
  */
-export const ReflectionConfigSchema = z.object({
-  /** Minimum turns before reflection is eligible */
-  minTurns: z.number().int().positive().default(2),
-  /** Maximum turns before reflection is forced (regardless of inactivity) */
-  maxTurns: z.number().int().positive().default(50),
-  /** Minimum inactivity time in milliseconds before reflection is eligible (default: 10 minutes) */
-  minInactivityMs: z.number().int().positive().default(600_000),
-  /** Maximum inactivity time in milliseconds before reflection is forced (default: 30 minutes) */
-  maxInactivityMs: z.number().int().positive().default(1_800_000),
-  /** Trigger mode: "relaxed" (OR logic) or "strict" (AND logic) */
-  mode: z.union([z.literal("relaxed"), z.literal("strict")]).default("strict"),
-  /** Maximum buffer size to prevent unbounded growth */
-  maxBufferSize: z.number().int().positive().default(100),
-});
+export const ReflectionConfigSchema = z
+  .object({
+    /** Minimum turns before reflection is eligible */
+    minTurns: z.number().int().positive().default(2),
+    /** Maximum turns before reflection is forced (regardless of inactivity) */
+    maxTurns: z.number().int().positive().default(50),
+    /** Minimum inactivity time in milliseconds before reflection is eligible (default: 10 minutes) */
+    minInactivityMs: z.number().int().positive().default(600_000),
+    /** Maximum inactivity time in milliseconds before reflection is forced (default: 30 minutes) */
+    maxInactivityMs: z.number().int().positive().default(1_800_000),
+    /** Trigger mode: "relaxed" (OR logic) or "strict" (AND logic) */
+    mode: z.union([z.literal("relaxed"), z.literal("strict")]).default("strict"),
+    /** Maximum buffer size to prevent unbounded growth */
+    maxBufferSize: z.number().int().positive().default(100),
+  })
+  .refine((val) => val.maxTurns >= val.minTurns, {
+    message: "maxTurns must be >= minTurns",
+    path: ["maxTurns"],
+  })
+  .refine((val) => val.maxInactivityMs >= val.minInactivityMs, {
+    message: "maxInactivityMs must be >= minInactivityMs",
+    path: ["maxInactivityMs"],
+  });
 
 export type ReflectionConfig = z.infer<typeof ReflectionConfigSchema>;
 
