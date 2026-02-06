@@ -22,7 +22,9 @@ function createConfig(
   maxTurns: number,
   minInactivityMs: number,
   maxInactivityMs: number,
-  mode: "strict" | "relaxed"
+  mode: "strict" | "relaxed",
+  maxRetries = 3,
+  retryDelayMs = 1000
 ): ReflectionConfig {
   return {
     minTurns,
@@ -30,6 +32,8 @@ function createConfig(
     minInactivityMs,
     maxInactivityMs,
     mode,
+    maxRetries,
+    retryDelayMs,
   };
 }
 

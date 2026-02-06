@@ -70,6 +70,22 @@ export interface BeforeAgentOptions {
     extractSpeaker1: (dialogue: string) => string;
     updateMemory?: (history: string[], newSummary: string) => string;
   };
+
+  /**
+   * Optional custom namespace for buffer/staging isolation.
+   * Controls how message buffers are partitioned for concurrent access.
+   *
+   * Options:
+   * - ["rmm", userId, "buffer"] (default) - user isolation only
+   * - ["rmm", userId, threadId, "buffer"] - user + thread isolation
+   * - ["rmm", userId, agentId, "buffer"] - user + agent isolation
+   * - ["rmm", userId, threadId, agentId, "buffer"] - user + thread + agent isolation
+   *
+   * For single-threaded deployments, the default user isolation is sufficient.
+   * For multi-threaded/multi-agent deployments, include threadId and/or agentId
+   * in the namespace to prevent race conditions between concurrent sessions.
+   */
+  namespace?: string[];
 }
 
 /**
@@ -225,8 +241,11 @@ async function processReflection(
 
     const reStaged = await bufferStorage.stageBuffer(userId, retryBuffer);
     if (!reStaged) {
-      console.warn("[before-agent] Failed to re-stage buffer for retry, giving up");
-      await bufferStorage.clearStaging(userId);
+      console.warn(
+        `[before-agent] Failed to re-stage buffer for retry (storage issue), ${stagedBuffer.messages.length} messages preserved in existing staging`
+      );
+      // Don't throw - staging is preserved, reflection will retry on next trigger
+      return;
     }
 
     // Re-throw to trigger retry in caller
@@ -314,7 +333,10 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
         // =========================================================================
 
         if (userId && options.reflectionDeps && runtime.context.store) {
-          const bufferStorage = createMessageBufferStorage(runtime.context.store);
+          const bufferStorage = createMessageBufferStorage(
+            runtime.context.store,
+            options.namespace
+          );
           const item = await bufferStorage.loadBufferItem(userId);
 
           if (item && item.value.messages.length > 0) {
