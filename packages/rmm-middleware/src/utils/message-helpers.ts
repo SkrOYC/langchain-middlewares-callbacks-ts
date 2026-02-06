@@ -2,8 +2,8 @@ import type { StoredMessage } from "@langchain/core/messages";
 
 /**
  * Checks if a message is a human message.
- * Handles StoredMessage format with lc_serialized.type.
- * @param message - The message to check (StoredMessage format)
+ * Handles both StoredMessage format (nested type) and flattened format (top-level type).
+ * @param message - The message to check
  * @returns true if the message is from a human user
  */
 export function isHumanMessage(message: StoredMessage): boolean {

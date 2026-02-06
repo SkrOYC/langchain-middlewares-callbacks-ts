@@ -8,20 +8,20 @@
  * 4. Clears buffer after reflection
  */
 
-import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type {
   BaseMessage,
   CitationRecord,
   MessageBuffer,
   ReflectionConfig,
-  RetrievedMemory,
   RerankerState,
+  RetrievedMemory,
 } from "@/schemas";
+import { DEFAULT_REFLECTION_CONFIG } from "@/schemas";
 import {
-  createEmptyMessageBuffer,
-  DEFAULT_REFLECTION_CONFIG,
-} from "@/schemas";
-import { createMessageBufferStorage, type MessageBufferStorage } from "@/storage/message-buffer-storage";
+  createMessageBufferStorage,
+  type MessageBufferStorage,
+} from "@/storage/message-buffer-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { initializeMatrix } from "@/utils/matrix";
 
@@ -75,11 +75,13 @@ export interface BeforeAgentOptions {
    * Optional custom namespace for buffer/staging isolation.
    * Controls how message buffers are partitioned for concurrent access.
    *
-   * Options:
-   * - ["rmm", userId, "buffer"] (default) - user isolation only
-   * - ["rmm", userId, threadId, "buffer"] - user + thread isolation
-   * - ["rmm", userId, agentId, "buffer"] - user + agent isolation
-   * - ["rmm", userId, threadId, agentId, "buffer"] - user + thread + agent isolation
+   * The namespace is used as: [namespace..., "buffer"] for main buffer
+   * and [namespace..., "buffer", "staging"] for staging buffer.
+   *
+   * Default (3 elements): ["rmm", userId, "buffer"]
+   * With thread isolation (4 elements): ["rmm", userId, threadId, "buffer"]
+   * With agent isolation (4 elements): ["rmm", userId, agentId, "buffer"]
+   * With full isolation (5 elements): ["rmm", userId, threadId, agentId, "buffer"]
    *
    * For single-threaded deployments, the default user isolation is sufficient.
    * For multi-threaded/multi-agent deployments, include threadId and/or agentId
@@ -192,7 +194,7 @@ async function processReflection(
   }
 
   // Calculate exponential backoff delay
-  const delayMs = config.retryDelayMs * Math.pow(2, retryCount);
+  const delayMs = config.retryDelayMs * 2 ** retryCount;
   console.debug(
     `[before-agent] Reflection attempt ${retryCount + 1}/${config.maxRetries + 1}, ` +
       `delay ${delayMs}ms`
@@ -205,13 +207,12 @@ async function processReflection(
 
   try {
     // Format dialogue for extraction
-    const dialogue = (stagedBuffer.messages as unknown[])
+    const dialogue = stagedBuffer.messages
       .map((msg) => {
-        const message = msg as Record<string, unknown>;
-        const content = message.content ?? "";
-        const type = message.lc_serialized
-          ? (message.lc_serialized as Record<string, unknown>).type
-          : "unknown";
+        // Handle both formats: StoredMessage (nested data.content) and flattened (top-level content)
+        const msgAny = msg as unknown as { data?: { content?: string }; content?: string };
+        const content = msgAny.data?.content ?? msgAny.content ?? "";
+        const type = msg.type ?? "unknown";
         return `${type}: ${content}`;
       })
       .join("\n");
@@ -225,7 +226,9 @@ async function processReflection(
     // Simulate memory extraction - in production this would call extractMemories
     // For testing, we just mark that reflection was attempted
     if (deps.vectorStore.addDocuments) {
-      await deps.vectorStore.addDocuments([`Reflection marker: ${dialogue.substring(0, 100)}...`]);
+      await deps.vectorStore.addDocuments([
+        `Reflection marker: ${dialogue.substring(0, 100)}...`,
+      ]);
     }
   } catch (error) {
     console.warn(
@@ -291,7 +294,8 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
   const weightStorage = createWeightStorage(options.store);
 
   // Get reflection config or use default
-  const reflectionConfig = options.reflectionConfig ?? DEFAULT_REFLECTION_CONFIG;
+  const reflectionConfig =
+    options.reflectionConfig ?? DEFAULT_REFLECTION_CONFIG;
 
   return {
     name: "rmm-before-agent",
@@ -363,7 +367,10 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
               };
 
               // Stage the buffer for reflection
-              const staged = await bufferStorage.stageBuffer(userId, bufferToStage);
+              const staged = await bufferStorage.stageBuffer(
+                userId,
+                bufferToStage
+              );
 
               if (!staged) {
                 console.warn(
