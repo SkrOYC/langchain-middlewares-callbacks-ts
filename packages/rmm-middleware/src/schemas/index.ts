@@ -1,5 +1,5 @@
-import { z } from "zod";
 import type { StoredMessage } from "@langchain/core/messages";
+import { z } from "zod";
 import { createZeroMatrix } from "@/utils/matrix";
 
 // ============================================================================
@@ -409,11 +409,13 @@ export const ReflectionConfigSchema = z
     /** Maximum inactivity time in milliseconds before reflection is forced (default: 30 minutes) */
     maxInactivityMs: z.number().int().positive().default(1_800_000),
     /** Trigger mode: "relaxed" (OR logic) or "strict" (AND logic) */
-    mode: z.union([z.literal("relaxed"), z.literal("strict")]).default("strict"),
+    mode: z
+      .union([z.literal("relaxed"), z.literal("strict")])
+      .default("strict"),
     /** Maximum retry attempts for failed reflection (default: 3) */
     maxRetries: z.number().int().nonnegative().default(3),
     /** Base delay in milliseconds between retries (default: 1000) */
-    retryDelayMs: z.number().int().positive().default(1_000),
+    retryDelayMs: z.number().int().positive().default(1000),
   })
   .refine((val) => val.maxTurns >= val.minTurns, {
     message: "maxTurns must be >= minTurns",
@@ -437,7 +439,7 @@ export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
   maxInactivityMs: 1_800_000, // 30 minutes
   mode: "strict",
   maxRetries: 3,
-  retryDelayMs: 1_000,
+  retryDelayMs: 1000,
 } as const;
 
 // ============================================================================
@@ -483,7 +485,8 @@ export const SerializedMessageSchema = z
       );
     },
     {
-      message: "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
+      message:
+        "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
       path: ["type"],
     }
   );

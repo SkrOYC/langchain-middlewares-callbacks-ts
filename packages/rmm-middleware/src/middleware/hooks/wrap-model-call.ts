@@ -32,10 +32,13 @@ import {
   type CitationResult,
   extractCitations,
 } from "@/utils/citation-extractor";
+import { getLogger } from "@/utils/logger";
 import {
   extractLastHumanMessage,
   formatMemoriesBlock,
 } from "@/utils/memory-helpers";
+
+const logger = getLogger("wrap-model-call");
 
 // ============================================================================
 // Configuration
@@ -173,9 +176,7 @@ export function createRetrospectiveWrapModelCall(
             reranker.config
           )
         ) {
-          console.warn(
-            "[wrap-model-call] Invalid reranker weights, skipping reranking"
-          );
+          logger.warn("Invalid reranker weights, skipping reranking");
           return handler(request);
         }
 
@@ -256,8 +257,8 @@ export function createRetrospectiveWrapModelCall(
           } else {
             // Memory doesn't have embedding - this shouldn't happen for exact REINFORCE
             // Create zero embedding as placeholder
-            console.warn(
-              `[wrap-model-call] Memory ${memory.id} missing embedding, using zero vector.`
+            logger.warn(
+              `Memory ${memory.id} missing embedding, using zero vector.`
             );
             const zeroEmbedding = new Array(EMBEDDING_DIMENSION).fill(0);
             originalMemEmbeddings.push(zeroEmbedding);
@@ -310,8 +311,8 @@ export function createRetrospectiveWrapModelCall(
         return response;
       } catch (error) {
         // Graceful degradation: call handler normally on error
-        console.warn(
-          "[wrap-model-call] Error during reranking, calling handler normally:",
+        logger.warn(
+          "Error during reranking, calling handler normally:",
           error instanceof Error ? error.message : String(error)
         );
 
@@ -347,8 +348,8 @@ function parseCitedIndices(
     if (typeof idx === "number" && idx >= 0 && idx <= maxIndex) {
       citedIndices.add(idx);
     } else {
-      console.warn(
-        `[wrap-model-call] LLM returned out-of-bounds citation index: ${idx} (valid: 0-${maxIndex})`
+      logger.warn(
+        `LLM returned out-of-bounds citation index: ${idx} (valid: 0-${maxIndex})`
       );
     }
   }
@@ -421,9 +422,7 @@ function extractCitationsFromResponse(
   const citationResult: CitationResult = extractCitations(responseContent);
 
   if (citationResult.type === "malformed") {
-    console.warn(
-      "[wrap-model-call] Malformed citation format in response, RL update aborted"
-    );
+    logger.warn("Malformed citation format in response, RL update aborted");
     return [];
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseMessage } from "@langchain/core/messages";
-import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { RerankerState } from "@/schemas/index";
 
 /**
@@ -360,7 +360,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -426,7 +426,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -475,7 +475,10 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     await reflectionPromise;
 
     // Verify live buffer still has new message
-    const liveBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    const liveBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer"],
+      "message-buffer"
+    );
     expect(liveBuffer).not.toBeNull();
     expect(liveBuffer.value.messages).toHaveLength(2);
   });
@@ -518,7 +521,10 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     const storedBuffers = new Map<string, unknown>();
     storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
-    storedBuffers.set("rmm|test-user|buffer|staging|message-buffer", stagedContent);
+    storedBuffers.set(
+      "rmm|test-user|buffer|staging|message-buffer",
+      stagedContent
+    );
 
     const mockStore = createAsyncMockStore(storedBuffers);
 
@@ -537,7 +543,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -598,7 +604,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -615,12 +621,18 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     // Verify main buffer is cleared after staging (prevents duplicate processing)
     // Use loadBuffer which returns empty buffer for cleared entries
-    const mainBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    const mainBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer"],
+      "message-buffer"
+    );
     expect(mainBuffer).not.toBeNull();
     expect(mainBuffer.value.messages).toHaveLength(0);
 
     // Verify staging buffer still exists with original content
-    const stagingBuffer = await mockStore.get(["rmm", "test-user", "buffer", "staging"], "message-buffer");
+    const stagingBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer", "staging"],
+      "message-buffer"
+    );
     expect(stagingBuffer).not.toBeNull();
     expect(stagingBuffer.value.messages).toHaveLength(1);
   });
@@ -672,7 +684,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -686,7 +698,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // Track when reflection completes
-    let reflectionComplete = false;
+    const reflectionComplete = false;
 
     // First, trigger the middleware which starts async reflection
     await middleware.beforeAgent(sampleState, mockRuntime);
@@ -748,7 +760,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -768,12 +780,18 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Verify main buffer was cleared (empty messages)
-    const mainBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    const mainBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer"],
+      "message-buffer"
+    );
     expect(mainBuffer).not.toBeNull();
     expect(mainBuffer.value.messages).toHaveLength(0);
 
     // Verify staging buffer is preserved (for retry)
-    const stagingBuffer = await mockStore.get(["rmm", "test-user", "buffer", "staging"], "message-buffer");
+    const stagingBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer", "staging"],
+      "message-buffer"
+    );
     expect(stagingBuffer).not.toBeNull();
     expect(stagingBuffer.value.messages).toHaveLength(1);
   });
@@ -829,7 +847,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000,
+        maxInactivityMs: 60_000,
         mode: "strict",
       },
       reflectionDeps: mockDeps,
@@ -884,10 +902,15 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // Verify new message is in main buffer
-    const mainBuffer = await mockStore.get(["rmm", "test-user", "buffer"], "message-buffer");
+    const mainBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer"],
+      "message-buffer"
+    );
     expect(mainBuffer).not.toBeNull();
     expect(mainBuffer.value.messages).toHaveLength(2);
-    expect(mainBuffer.value.messages[1].content).toBe("New message during failed reflection");
+    expect(mainBuffer.value.messages[1].content).toBe(
+      "New message during failed reflection"
+    );
   });
 });
 
@@ -921,8 +944,8 @@ describe("beforeAgent Hook - Namespace Isolation", () => {
         },
       ],
       humanMessageCount: 1,
-      lastMessageTimestamp: Date.now() - 120000, // 2 minutes ago to trigger reflection
-      createdAt: Date.now() - 120000,
+      lastMessageTimestamp: Date.now() - 120_000, // 2 minutes ago to trigger reflection
+      createdAt: Date.now() - 120_000,
     };
 
     const storedBuffers = new Map<string, unknown>();
@@ -979,7 +1002,7 @@ describe("beforeAgent Hook - Namespace Isolation", () => {
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
-        maxInactivityMs: 60000, // 1 minute max inactivity
+        maxInactivityMs: 60_000, // 1 minute max inactivity
         mode: "strict",
       },
       reflectionDeps: mockDeps,

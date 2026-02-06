@@ -340,7 +340,11 @@ describe("afterAgent Hook - Append Only", () => {
     const mockStore = createMockStore();
     const originalPut = mockStore.put;
 
-    mockStore.put = async (namespace: string[], key: string, value: unknown) => {
+    mockStore.put = async (
+      namespace: string[],
+      key: string,
+      value: unknown
+    ) => {
       putCalled = true;
       savedValue = value;
       return originalPut(namespace, key, value);
@@ -401,11 +405,41 @@ describe("afterAgent Hook - Append Only", () => {
     // Start with 3 human messages in buffer
     const existingBuffer = {
       messages: [
-        { lc_serialized: { type: "human" }, lc_kwargs: { content: "Msg1" }, lc_id: ["human"], content: "Msg1", additional_kwargs: {} },
-        { lc_serialized: { type: "ai" }, lc_kwargs: { content: "Resp1" }, lc_id: ["ai"], content: "Resp1", additional_kwargs: {} },
-        { lc_serialized: { type: "human" }, lc_kwargs: { content: "Msg2" }, lc_id: ["human"], content: "Msg2", additional_kwargs: {} },
-        { lc_serialized: { type: "ai" }, lc_kwargs: { content: "Resp2" }, lc_id: ["ai"], content: "Resp2", additional_kwargs: {} },
-        { lc_serialized: { type: "human" }, lc_kwargs: { content: "Msg3" }, lc_id: ["human"], content: "Msg3", additional_kwargs: {} },
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Msg1" },
+          lc_id: ["human"],
+          content: "Msg1",
+          additional_kwargs: {},
+        },
+        {
+          lc_serialized: { type: "ai" },
+          lc_kwargs: { content: "Resp1" },
+          lc_id: ["ai"],
+          content: "Resp1",
+          additional_kwargs: {},
+        },
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Msg2" },
+          lc_id: ["human"],
+          content: "Msg2",
+          additional_kwargs: {},
+        },
+        {
+          lc_serialized: { type: "ai" },
+          lc_kwargs: { content: "Resp2" },
+          lc_id: ["ai"],
+          content: "Resp2",
+          additional_kwargs: {},
+        },
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Msg3" },
+          lc_id: ["human"],
+          content: "Msg3",
+          additional_kwargs: {},
+        },
       ],
       humanMessageCount: 3,
       lastMessageTimestamp: Date.now(),
@@ -417,8 +451,20 @@ describe("afterAgent Hook - Append Only", () => {
     // New messages: 1 human + 1 ai
     const newMessages: AfterAgentState = {
       messages: [
-        { lc_serialized: { type: "human" }, lc_kwargs: { content: "New msg" }, lc_id: ["human"], content: "New msg", additional_kwargs: {} },
-        { lc_serialized: { type: "ai" }, lc_kwargs: { content: "New resp" }, lc_id: ["ai"], content: "New resp", additional_kwargs: {} },
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "New msg" },
+          lc_id: ["human"],
+          content: "New msg",
+          additional_kwargs: {},
+        },
+        {
+          lc_serialized: { type: "ai" },
+          lc_kwargs: { content: "New resp" },
+          lc_id: ["ai"],
+          content: "New resp",
+          additional_kwargs: {},
+        },
       ],
     };
 

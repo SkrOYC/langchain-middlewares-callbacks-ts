@@ -4,6 +4,9 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import type { BaseMessage } from "@langchain/core/messages";
 
 import type { MemoryEntry } from "@/schemas/index";
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("memory-extraction");
 
 /**
  * Formats a session history into a dialogue string with turn markers.
@@ -104,10 +107,7 @@ export async function extractMemories(
       extractionOutput = JSON.parse(responseContent) as ExtractionOutput;
     } catch {
       // Invalid JSON - return null for graceful degradation
-      console.warn(
-        "[memory-extraction] Failed to parse LLM response as JSON:",
-        responseContent
-      );
+      logger.warn("Failed to parse LLM response as JSON:", responseContent);
       return null;
     }
 
@@ -118,10 +118,7 @@ export async function extractMemories(
         Array.isArray(extractionOutput.extracted_memories)
       )
     ) {
-      console.warn(
-        "[memory-extraction] Invalid extraction output structure:",
-        extractionOutput
-      );
+      logger.warn("Invalid extraction output structure:", extractionOutput);
       return null;
     }
 
@@ -180,7 +177,7 @@ export async function extractMemories(
     return memories;
   } catch (error) {
     // LLM failure - return null for graceful degradation
-    console.warn("[memory-extraction] Error during memory extraction:", error);
+    logger.warn("Error during memory extraction:", error);
     return null;
   }
 }

@@ -1,5 +1,8 @@
 import type { Embeddings } from "@langchain/core/embeddings";
+import { getLogger } from "@/utils/logger";
 import { ConfigurationError } from "./configuration-error";
+
+const logger = getLogger("embedding-validation");
 
 /**
  * Validates that embeddings produce vectors of the correct dimension
@@ -49,8 +52,8 @@ export async function validateEmbeddingDimension(
 
     // Other errors (network, timeouts, etc.) - log and continue
     // This allows graceful degradation when embeddings service is temporarily unavailable
-    console.warn(
-      "[embedding-validation] Skipping validation due to error:",
+    logger.warn(
+      "Skipping validation due to error:",
       error instanceof Error ? error.message : String(error)
     );
   }

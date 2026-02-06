@@ -2,6 +2,9 @@ import type { Document } from "@langchain/core/documents";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("memory-actions");
 
 /**
  * Adds a new memory to the VectorStore.
@@ -40,8 +43,8 @@ export async function addMemory(
     await vectorStore.addDocuments([document]);
   } catch (error) {
     // Graceful degradation: log warning but don't throw
-    console.warn(
-      "[memory-actions] Error adding memory, continuing:",
+    logger.warn(
+      "Error adding memory, continuing:",
       error instanceof Error ? error.message : String(error)
     );
   }
@@ -101,13 +104,13 @@ export async function mergeMemory(
       } catch {
         // If delete fails, we still attempt to add - some backends
         // handle ID conflicts by upserting (overwriting) automatically
-        console.warn(
-          `[memory-actions] Delete failed for memory: ${existingId}, attempting upsert`
+        logger.warn(
+          `Delete failed for memory: ${existingId}, attempting upsert`
         );
       }
     } else {
-      console.warn(
-        "[memory-actions] VectorStore does not support delete method, merge may create duplicate"
+      logger.warn(
+        "VectorStore does not support delete method, merge may create duplicate"
       );
     }
 
@@ -115,8 +118,8 @@ export async function mergeMemory(
     await vectorStore.addDocuments([updatedDoc]);
   } catch (error) {
     // Graceful degradation: log warning but don't throw
-    console.warn(
-      "[memory-actions] Error merging memory, continuing:",
+    logger.warn(
+      "Error merging memory, continuing:",
       error instanceof Error ? error.message : String(error)
     );
   }
