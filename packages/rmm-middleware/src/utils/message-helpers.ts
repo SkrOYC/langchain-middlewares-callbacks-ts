@@ -40,6 +40,8 @@ export function isHumanMessage(
 /**
  * Counts human messages in a message array.
  * Uses for-loop to avoid array allocation from filter.
+ * Note: We use manual counting instead of filterMessages because the buffer
+ * stores serialized messages (plain objects), not runtime BaseMessage objects.
  * @param messages - Array of messages
  * @returns Count of human messages
  */

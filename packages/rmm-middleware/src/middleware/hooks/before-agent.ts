@@ -102,10 +102,10 @@ interface BeforeAgentState {
  * - "strict": BOTH minTurns AND minInactivityMs must be met
  * - "relaxed": EITHER minTurns OR minInactivityMs must be met
  *
- * @param humanMessageCount - Count of human messages in buffer
- * @param timeSinceLastUpdate - Time in ms since BaseStore's updated_at
- * @param config - Reflection configuration
- * @returns true if reflection should be triggered
+ * @param humanMessageCount - Number of human messages in the buffer
+ * @param timeSinceLastUpdate - Milliseconds elapsed since buffer was last updated (using BaseStore's updatedAt)
+ * @param config - Reflection configuration with min/max thresholds and mode
+ * @returns true if reflection should be triggered, false otherwise
  */
 export function checkReflectionTriggers(
   humanMessageCount: number,
@@ -137,6 +137,9 @@ export function checkReflectionTriggers(
  * Extracts memories and updates the memory bank.
  *
  * Reads from staging buffer to ensure atomic reflection processing.
+ *
+ * TODO: Complete implementation with proper memory extraction using LLM.
+ * Current implementation is a placeholder that adds raw dialogue as memory.
  */
 async function processReflection(
   userId: string,

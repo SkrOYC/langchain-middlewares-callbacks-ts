@@ -120,13 +120,6 @@ export async function afterAgent(
     // Append new messages to buffer
     buffer = appendMessagesToBuffer(buffer, state.messages, now);
 
-    // Enforce max buffer size (trim oldest messages)
-    if (buffer.messages.length > config.maxBufferSize) {
-      const excess = buffer.messages.length - config.maxBufferSize;
-      buffer.messages = buffer.messages.slice(excess);
-      buffer.humanMessageCount = countHumanMessages(buffer.messages);
-    }
-
     // Persist buffer (BaseStore will update updated_at automatically)
     await bufferStorage.saveBuffer(userId, buffer);
 

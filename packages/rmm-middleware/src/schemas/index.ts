@@ -441,18 +441,60 @@ export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
 // ============================================================================
 
 /**
+ * Schema for a serialized LangChain message in the buffer.
+ * Handles LangChain's serialization format with lc_serialized, lc_id, etc.
+ */
+const SerializedMessageSchema = z.object({
+  /** LangChain serialized type identifier (preferred) */
+  lc_serialized: z
+    .object({
+      type: z.string(),
+    })
+    .optional(),
+  /** LangChain internal ID array */
+  lc_id: z.array(z.string()).optional(),
+  /** Message type identifier (fallback) */
+  type: z.string().optional(),
+  /** Message content (required) */
+  content: z.union([z.string(), z.array(z.unknown()), z.unknown()]),
+  /** Additional kwargs for the message */
+  additional_kwargs: z.record(z.unknown()).optional(),
+  /** Message name */
+  name: z.string().optional(),
+  /** Message ID */
+  id: z.string().optional(),
+  /** Response metadata */
+  response_metadata: z.record(z.unknown()).optional(),
+  /** Usage metadata */
+  usage_metadata: z.record(z.number()).optional(),
+}).refine(
+  (val) => {
+    // Must have at least one type identifier
+    return (
+      val.lc_serialized !== undefined ||
+      val.lc_id !== undefined ||
+      val.type !== undefined
+    );
+  },
+  {
+    message: "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
+    path: ["type"],
+  }
+);
+
+/**
  * Schema for the persisted message buffer in BaseStore.
  * Stores messages across threads for batched prospective reflection.
  *
- * Note: messages are stored as z.any() since they are full LangChain BaseMessage
- * objects that get serialized. The actual type is BaseMessage from @langchain/core/messages.
+ * Note: messages are validated using SerializedMessageSchema to ensure they
+ * conform to LangChain's message serialization format.
  *
  * Inactivity is tracked via BaseStore's updated_at timestamp, not within the buffer itself.
  * This ensures that appending messages doesn't reset the inactivity clock.
  */
 export const MessageBufferSchema = z.object({
   /** Array of serialized messages waiting for reflection */
-  messages: z.array(z.any()),
+  messages: z.array(SerializedMessageSchema),
   /** Count of human messages in the buffer (for quick threshold checks) */
   humanMessageCount: z.number().int().nonnegative(),
   /** Timestamp of the last message added to the buffer */
