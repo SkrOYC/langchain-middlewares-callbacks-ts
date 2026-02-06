@@ -95,13 +95,14 @@ export interface BeforeAgentOptions {
 
 /**
  * Runtime interface for beforeAgent hook
+ * Documents expected context properties from LangChain runtime
  */
 interface BeforeAgentRuntime {
   context: {
     userId?: string;
     store?: BaseStore;
+    sessionId?: string;
   };
-  [key: string]: unknown;
 }
 
 /**
@@ -267,6 +268,205 @@ async function processReflection(
 // ============================================================================
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Loads reranker weights from storage or initializes new ones
+ *
+ * @param userId - User identifier for weight isolation (null for anonymous)
+ * @param weightStorage - Storage adapter for weights
+ * @returns Promise resolving to RerankerState
+ */
+async function loadOrInitializeWeights(
+  userId: string | null | undefined,
+  weightStorage: ReturnType<typeof createWeightStorage>
+): Promise<RerankerState> {
+  if (!userId) {
+    return initializeRerankerState();
+  }
+
+  const existingWeights = await weightStorage.loadWeights(userId);
+
+  if (existingWeights) {
+    return existingWeights;
+  }
+
+  return initializeRerankerState();
+}
+
+/**
+ * Checks reflection triggers and stages buffer if needed
+ * Handles all nested conditions for reflection decision
+ *
+ * @param userId - User identifier for buffer isolation
+ * @param runtime - Runtime context with store access
+ * @param reflectionConfig - Configuration for reflection thresholds
+ * @param options - Full hook options including dependencies
+ * @param rerankerState - Current reranker state (for logging)
+ */
+async function checkAndStageReflection(
+  userId: string | null | undefined,
+  runtime: BeforeAgentRuntime,
+  reflectionConfig: ReflectionConfig,
+  options: BeforeAgentOptions,
+  _rerankerState: RerankerState
+): Promise<void> {
+  // Skip if no userId, no deps, or no store available
+  if (!(userId && options.reflectionDeps && runtime.context.store)) {
+    return;
+  }
+
+  const bufferStorage = createMessageBufferStorage(
+    runtime.context.store,
+    options.namespace
+  );
+
+  const item = await bufferStorage.loadBufferItem(userId);
+
+  // Check buffer exists and has messages
+  if (!item || item.value.messages.length === 0) {
+    return;
+  }
+
+  // Calculate time since last buffer update
+  const now = Date.now();
+  const timeSinceLastUpdate = now - item.updatedAt.getTime();
+
+  // Check if reflection should trigger
+  if (
+    !checkReflectionTriggers(
+      item.value.humanMessageCount,
+      timeSinceLastUpdate,
+      reflectionConfig
+    )
+  ) {
+    return;
+  }
+
+  // Stage buffer for async reflection
+  // Note: item.value is typed as Record<string, unknown> by loader, cast to MessageBuffer
+  await stageBufferForReflection(
+    userId,
+    bufferStorage,
+    item.value as unknown as MessageBuffer,
+    reflectionConfig,
+    options.reflectionDeps
+  );
+}
+
+/**
+ * Stages the buffer for asynchronous reflection processing
+ * Handles staging, clearing, and triggering the async reflection
+ */
+async function stageBufferForReflection(
+  userId: string,
+  bufferStorage: MessageBufferStorage,
+  buffer: MessageBuffer,
+  reflectionConfig: ReflectionConfig,
+  reflectionDeps: NonNullable<BeforeAgentOptions["reflectionDeps"]>
+): Promise<void> {
+  // Snapshot buffer for reflection
+  const bufferToStage: MessageBuffer = {
+    messages: buffer.messages,
+    humanMessageCount: buffer.humanMessageCount,
+    lastMessageTimestamp: buffer.lastMessageTimestamp,
+    createdAt: buffer.createdAt,
+  };
+
+  // Stage the buffer
+  const staged = await bufferStorage.stageBuffer(userId, bufferToStage);
+
+  if (!staged) {
+    logger.warn("Failed to stage buffer, skipping reflection");
+    return;
+  }
+
+  // Clear main buffer to prevent duplicate processing
+  await bufferStorage.clearBuffer(userId);
+
+  // Process reflection asynchronously (non-blocking)
+  processReflection(userId, bufferStorage, reflectionConfig, reflectionDeps)
+    .then(async () => {
+      await bufferStorage.clearStaging(userId);
+      logger.debug("Reflection completed, staging cleared");
+    })
+    .catch((error) => {
+      logger.warn(
+        "Reflection failed, staging preserved for retry:",
+        error instanceof Error ? error.message : String(error)
+      );
+    });
+}
+
+/**
+ * Creates initial state update for the agent
+ */
+function createInitialStateUpdate(
+  rerankerState: RerankerState
+): BeforeAgentStateUpdate {
+  return {
+    _rerankerWeights: rerankerState,
+    _retrievedMemories: [],
+    _citations: [],
+    _turnCountInSession: 0,
+  };
+}
+
+/**
+ * Creates error state update with initialized reranker
+ */
+function createErrorStateUpdate(error: unknown): BeforeAgentStateUpdate {
+  logger.warn(
+    "Error loading weights, using initialized state:",
+    error instanceof Error ? error.message : String(error)
+  );
+
+  return {
+    _rerankerWeights: initializeRerankerState(),
+    _retrievedMemories: [],
+    _citations: [],
+    _turnCountInSession: 0,
+  };
+}
+
+/**
+ * Initializes a new reranker state with Gaussian-weighted matrices
+ *
+ * Per paper recommendation: W_q[i][j] ~ N(0, 0.01), W_m[i][j] ~ N(0, 0.01)
+ * This initialization prevents gradient vanishing during early training.
+ *
+ * @returns New RerankerState with zero-config weights
+ */
+function initializeRerankerState(): RerankerState {
+  const EMBEDDING_DIMENSION = 1536;
+
+  return {
+    weights: {
+      queryTransform: initializeMatrix(
+        EMBEDDING_DIMENSION,
+        EMBEDDING_DIMENSION,
+        0,
+        0.01
+      ),
+      memoryTransform: initializeMatrix(
+        EMBEDDING_DIMENSION,
+        EMBEDDING_DIMENSION,
+        0,
+        0.01
+      ),
+    },
+    config: {
+      topK: DEFAULT_CONFIG.topK,
+      topM: DEFAULT_CONFIG.topM,
+      temperature: DEFAULT_CONFIG.temperature,
+      learningRate: DEFAULT_CONFIG.learningRate,
+      baseline: DEFAULT_CONFIG.baseline,
+    },
+  };
+}
+
+// ============================================================================
 // Hook Factory
 // ============================================================================
 
@@ -311,171 +511,29 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
       runtime: BeforeAgentRuntime
     ): Promise<BeforeAgentStateUpdate> => {
       try {
-        // Extract userId for multi-user isolation
         const userId = options.userIdExtractor(runtime);
 
         if (!userId) {
           logger.warn("No userId provided, cannot load or save weights");
         }
 
-        // Load existing weights or initialize new ones
-        let rerankerState: RerankerState;
-
-        if (userId) {
-          const existingWeights = await weightStorage.loadWeights(userId);
-
-          if (existingWeights) {
-            // Use loaded weights
-            rerankerState = existingWeights;
-          } else {
-            // Initialize new weights with Gaussian distribution
-            rerankerState = initializeRerankerState();
-          }
-        } else {
-          // No userId, use in-memory initialization
-          rerankerState = initializeRerankerState();
-        }
-
-        // =========================================================================
-        // Prospective Reflection: Check triggers using BaseStore's updated_at
-        // =========================================================================
-
-        if (userId && options.reflectionDeps && runtime.context.store) {
-          const bufferStorage = createMessageBufferStorage(
-            runtime.context.store,
-            options.namespace
-          );
-          const item = await bufferStorage.loadBufferItem(userId);
-
-          if (item && item.value.messages.length > 0) {
-            // Calculate time since last buffer update using BaseStore's updatedAt
-            const now = Date.now();
-            const timeSinceLastUpdate = now - item.updatedAt.getTime();
-
-            // Check if reflection should trigger
-            const shouldTrigger = checkReflectionTriggers(
-              item.value.humanMessageCount,
-              timeSinceLastUpdate,
-              reflectionConfig
-            );
-
-            if (shouldTrigger) {
-              // Snapshot the buffer for async reflection (staging pattern)
-              // This prevents message loss if new messages arrive during reflection
-              const existingBuffer = item.value as MessageBuffer;
-              const bufferToStage: MessageBuffer = {
-                messages: existingBuffer.messages,
-                humanMessageCount: existingBuffer.humanMessageCount,
-                lastMessageTimestamp: existingBuffer.lastMessageTimestamp,
-                createdAt: existingBuffer.createdAt,
-              };
-
-              // Stage the buffer for reflection
-              const staged = await bufferStorage.stageBuffer(
-                userId,
-                bufferToStage
-              );
-
-              if (!staged) {
-                logger.warn("Failed to stage buffer, skipping reflection");
-                return {
-                  _rerankerWeights: rerankerState,
-                  _retrievedMemories: [],
-                  _citations: [],
-                  _turnCountInSession: 0,
-                };
-              }
-
-              // Clear main buffer to prevent duplicate processing
-              // New messages will go to main buffer during reflection
-              await bufferStorage.clearBuffer(userId);
-
-              // Process reflection asynchronously on staged content (non-blocking)
-              // We don't await this to not delay the agent
-              processReflection(
-                userId,
-                bufferStorage,
-                reflectionConfig,
-                options.reflectionDeps
-              )
-                .then(async () => {
-                  // Clear staging buffer after reflection completes successfully
-                  await bufferStorage.clearStaging(userId);
-                  logger.debug("Reflection completed, staging cleared");
-                })
-                .catch((error) => {
-                  // Staging is preserved for retry on next trigger
-                  logger.warn(
-                    "Reflection failed, staging preserved for retry:",
-                    error instanceof Error ? error.message : String(error)
-                  );
-                  // Do NOT re-throw - this prevents .then() from running
-                });
-            }
-          }
-        }
-
-        // Reset transient state fields for new invocation
-        return {
-          _rerankerWeights: rerankerState,
-          _retrievedMemories: [],
-          _citations: [],
-          _turnCountInSession: 0,
-        };
-      } catch (error) {
-        // Graceful degradation: initialize in-memory state on error
-        logger.warn(
-          "Error loading weights, using initialized state:",
-          error instanceof Error ? error.message : String(error)
+        const rerankerState = await loadOrInitializeWeights(
+          userId,
+          weightStorage
         );
 
-        return {
-          _rerankerWeights: initializeRerankerState(),
-          _retrievedMemories: [],
-          _citations: [],
-          _turnCountInSession: 0,
-        };
+        await checkAndStageReflection(
+          userId,
+          runtime,
+          reflectionConfig,
+          options,
+          rerankerState
+        );
+
+        return createInitialStateUpdate(rerankerState);
+      } catch (error) {
+        return createErrorStateUpdate(error);
       }
-    },
-  };
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Initializes a new reranker state with Gaussian-weighted matrices
- *
- * Per paper recommendation: W_q[i][j] ~ N(0, 0.01), W_m[i][j] ~ N(0, 0.01)
- * This initialization prevents gradient vanishing during early training.
- *
- * @returns New RerankerState with zero-config weights
- */
-function initializeRerankerState(): RerankerState {
-  const EMBEDDING_DIMENSION = 1536;
-
-  return {
-    weights: {
-      queryTransform: initializeMatrix(
-        EMBEDDING_DIMENSION,
-        EMBEDDING_DIMENSION,
-        0,
-        0.01
-      ),
-      memoryTransform: initializeMatrix(
-        EMBEDDING_DIMENSION,
-        EMBEDDING_DIMENSION,
-        0,
-        0.01
-      ),
-    },
-    config: {
-      topK: DEFAULT_CONFIG.topK,
-      topM: DEFAULT_CONFIG.topM,
-      temperature: DEFAULT_CONFIG.temperature,
-      learningRate: DEFAULT_CONFIG.learningRate,
-      baseline: DEFAULT_CONFIG.baseline,
     },
   };
 }

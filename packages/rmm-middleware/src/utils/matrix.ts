@@ -286,26 +286,27 @@ function multiplyAccumulate(
     const idx2 = (j + 2) * bCols + k;
     const idx3 = (j + 3) * bCols + k;
 
-    const b0 = bTransposed[idx0];
-    const b1 = bTransposed[idx1];
-    const b2 = bTransposed[idx2];
-    const b3 = bTransposed[idx3];
+    // Float32Array indexed access always returns number at runtime
+    const b0 = bTransposed[idx0] as number;
+    const b1 = bTransposed[idx1] as number;
+    const b2 = bTransposed[idx2] as number;
+    const b3 = bTransposed[idx3] as number;
 
-    // Float32Array always returns number, never undefined
-    // result is pre-allocated to zeros, so all indices are valid
-    result[resultRowOffset + j] += aVal * (b0 ?? 0);
-    result[resultRowOffset + j + 1] += aVal * (b1 ?? 0);
-    result[resultRowOffset + j + 2] += aVal * (b2 ?? 0);
-    result[resultRowOffset + j + 3] += aVal * (b3 ?? 0);
+    result[resultRowOffset + j] =
+      (result[resultRowOffset + j] as number) + aVal * b0;
+    result[resultRowOffset + j + 1] =
+      (result[resultRowOffset + j + 1] as number) + aVal * b1;
+    result[resultRowOffset + j + 2] =
+      (result[resultRowOffset + j + 2] as number) + aVal * b2;
+    result[resultRowOffset + j + 3] =
+      (result[resultRowOffset + j + 3] as number) + aVal * b3;
   }
 
   // Remaining elements
   for (; j < colEnd; j++) {
-    const bVal = bTransposed[j * bCols + k];
-    if (bVal !== undefined) {
-      // Float32Array always returns number, never undefined
-      result[resultRowOffset + j] += aVal * bVal;
-    }
+    const bVal = bTransposed[j * bCols + k] as number;
+    result[resultRowOffset + j] =
+      (result[resultRowOffset + j] as number) + aVal * bVal;
   }
 }
 

@@ -33,12 +33,7 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./algorithms/*": "./dist/*.js",
-    "./middleware/*": "./dist/*.js",
-    "./schemas/*": "./dist/*.js",
-    "./storage/*": "./dist/*.js",
-    "./utils/*": "./dist/*.js"
+    }
   },
   "type": "module",
   "peerDependencies": {
@@ -66,11 +61,14 @@
       "optional": false
     }
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
   "scripts": {
     "build": "tsup",
     "test": "bun test",
     "check": "bunx biome check",
-    "fix": "bunx biome check --write"
+    "fix": "bunx biome check --write",
+    "typecheck": "tsc --noEmit"
   }
 }

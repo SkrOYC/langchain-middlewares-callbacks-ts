@@ -54,6 +54,12 @@ bun test --test-name-pattern "SSE" packages/ag-ui-middleware-callbacks
 - **Functional Middleware:** Composable functions intercepting `beforeAgent`, `afterAgent`, `wrapModelCall`, `wrapToolCall`
 - **Build:** Uses `tsup` with externals for peer dependencies (`langchain`, `@ag-ui/core`, `@ag-ui/proto`, etc.)
 
+### Import Aliases
+- Use consistent `@/*` aliases for all internal imports
+- Pattern: `import X from "@/utils/file"` or `import { Y } from "@/algorithms/file"`
+- Never use relative paths like `../../utils`
+- Configure via `tsconfig.json` paths and supported by Biome
+
 ## AG-UI Protocol Mandate
 
 **CRITICAL:** This project uses the AG-UI protocol. For tasks involving messaging, events, RxJS observables, or wire formats (SSE/Protobuf):
