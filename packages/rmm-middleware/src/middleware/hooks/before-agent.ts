@@ -12,6 +12,7 @@ import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
 import type {
   BaseMessage,
   CitationRecord,
+  MessageBuffer,
   ReflectionConfig,
   RetrievedMemory,
   RerankerState,
@@ -20,7 +21,7 @@ import {
   createEmptyMessageBuffer,
   DEFAULT_REFLECTION_CONFIG,
 } from "@/schemas";
-import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
+import { createMessageBufferStorage, type MessageBufferStorage } from "@/storage/message-buffer-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { initializeMatrix } from "@/utils/matrix";
 
@@ -138,6 +139,9 @@ export function checkReflectionTriggers(
  * Reads from staging buffer to ensure atomic reflection processing.
  * Implements retry logic with exponential backoff.
  *
+ * TODO: Complete implementation with proper memory extraction using LLM.
+ * This is a placeholder that adds raw dialogue markers to the vector store.
+ *
  * @param userId - User identifier for buffer isolation
  * @param bufferStorage - Storage adapter for buffer operations
  * @param config - Reflection configuration with retry settings
@@ -185,11 +189,12 @@ async function processReflection(
 
   try {
     // Format dialogue for extraction
-    const dialogue = (stagedBuffer.messages as Record<string, unknown>[])
+    const dialogue = (stagedBuffer.messages as unknown[])
       .map((msg) => {
-        const content = msg.content ?? "";
-        const type = msg.lc_serialized
-          ? (msg.lc_serialized as Record<string, unknown>).type
+        const message = msg as Record<string, unknown>;
+        const content = message.content ?? "";
+        const type = message.lc_serialized
+          ? (message.lc_serialized as Record<string, unknown>).type
           : "unknown";
         return `${type}: ${content}`;
       })
@@ -327,11 +332,12 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
             if (shouldTrigger) {
               // Snapshot the buffer for async reflection (staging pattern)
               // This prevents message loss if new messages arrive during reflection
-              const bufferToStage: typeof item.value = {
-                messages: item.value.messages,
-                humanMessageCount: item.value.humanMessageCount,
-                lastMessageTimestamp: item.value.lastMessageTimestamp,
-                createdAt: item.value.createdAt,
+              const existingBuffer = item.value as MessageBuffer;
+              const bufferToStage: MessageBuffer = {
+                messages: existingBuffer.messages,
+                humanMessageCount: existingBuffer.humanMessageCount,
+                lastMessageTimestamp: existingBuffer.lastMessageTimestamp,
+                createdAt: existingBuffer.createdAt,
               };
 
               // Stage the buffer for reflection
@@ -341,7 +347,12 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
                 console.warn(
                   "[before-agent] Failed to stage buffer, skipping reflection"
                 );
-                return;
+                return {
+                  _rerankerWeights: rerankerState,
+                  _retrievedMemories: [],
+                  _citations: [],
+                  _turnCountInSession: 0,
+                };
               }
 
               // Clear main buffer to prevent duplicate processing

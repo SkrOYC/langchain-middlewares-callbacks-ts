@@ -463,15 +463,15 @@ export const SerializedMessageSchema = z
     /** Message content */
     content: z.union([z.string(), z.array(z.unknown()), z.unknown()]),
     /** Additional kwargs */
-    additional_kwargs: z.record(z.unknown()).optional(),
+    additional_kwargs: z.record(z.string(), z.unknown()).optional(),
     /** Message name */
     name: z.string().optional(),
     /** Message ID */
     id: z.string().optional(),
     /** Response metadata */
-    response_metadata: z.record(z.unknown()).optional(),
+    response_metadata: z.record(z.string(), z.unknown()).optional(),
     /** Usage metadata */
-    usage_metadata: z.record(z.number()).optional(),
+    usage_metadata: z.record(z.string(), z.number()).optional(),
   })
   .refine(
     (val) => {
