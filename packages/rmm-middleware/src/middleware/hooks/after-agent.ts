@@ -2,6 +2,7 @@ import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import { addMemory, mergeMemory } from "@/algorithms/memory-actions";
 import { extractMemories } from "@/algorithms/memory-extraction";
 import {
@@ -48,13 +49,7 @@ interface AfterAgentDependencies {
   extractSpeaker1: (dialogueSession: string) => string;
   updateMemory?: (historySummaries: string[], newSummary: string) => string;
   userId?: string;
-  store?: {
-    get: (
-      namespace: string[],
-      key: string
-    ) => Promise<{ value: unknown } | null>;
-    put: (namespace: string[], key: string, value: unknown) => Promise<void>;
-  };
+  store?: BaseStore;
   reflectionConfig?: ReflectionConfig;
 }
 
@@ -280,9 +275,7 @@ async function loadMessageBuffer(
   now: number
 ): Promise<MessageBuffer> {
   if (userId && store) {
-    const bufferStorage = createMessageBufferStorage(
-      store as Parameters<typeof createMessageBufferStorage>[0]
-    );
+    const bufferStorage = createMessageBufferStorage(store);
     return await bufferStorage.loadBuffer(userId);
   }
 
@@ -364,9 +357,7 @@ async function persistMessageBuffer(
     return;
   }
 
-  const bufferStorage = createMessageBufferStorage(
-    store as Parameters<typeof createMessageBufferStorage>[0]
-  );
+  const bufferStorage = createMessageBufferStorage(store);
   const saved = await bufferStorage.saveBuffer(userId, buffer);
 
   if (!saved) {
@@ -462,9 +453,7 @@ export async function afterAgent(
 
       // Clear persisted buffer after reflection using dedicated method
       if (userId && store) {
-        const bufferStorage = createMessageBufferStorage(
-          store as Parameters<typeof createMessageBufferStorage>[0]
-        );
+        const bufferStorage = createMessageBufferStorage(store);
         await bufferStorage.clearBuffer(userId);
       }
       buffer = createEmptyMessageBuffer();
