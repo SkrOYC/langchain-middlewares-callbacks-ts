@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { BaseMessage } from "@langchain/core/messages";
 import { createZeroMatrix } from "@/utils/matrix";
 
 // ============================================================================
@@ -409,8 +410,10 @@ export const ReflectionConfigSchema = z
     maxInactivityMs: z.number().int().positive().default(1_800_000),
     /** Trigger mode: "relaxed" (OR logic) or "strict" (AND logic) */
     mode: z.union([z.literal("relaxed"), z.literal("strict")]).default("strict"),
-    /** Maximum buffer size to prevent unbounded growth */
-    maxBufferSize: z.number().int().positive().default(100),
+    /** Maximum retry attempts for failed reflection (default: 3) */
+    maxRetries: z.number().int().nonnegative().default(3),
+    /** Base delay in milliseconds between retries (default: 1000) */
+    retryDelayMs: z.number().int().positive().default(1_000),
   })
   .refine((val) => val.maxTurns >= val.minTurns, {
     message: "maxTurns must be >= minTurns",
@@ -433,7 +436,8 @@ export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
   minInactivityMs: 600_000, // 10 minutes
   maxInactivityMs: 1_800_000, // 30 minutes
   mode: "strict",
-  maxBufferSize: 100,
+  maxRetries: 3,
+  retryDelayMs: 1_000,
 } as const;
 
 // ============================================================================
@@ -441,46 +445,89 @@ export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
 // ============================================================================
 
 /**
- * Schema for a serialized LangChain message in the buffer.
- * Handles LangChain's serialization format with lc_serialized, lc_id, etc.
+ * Schema for a serialized LangChain message (StoredMessage format).
+ * Uses LangChain's canonical serialization format for BaseMessage.
  */
-const SerializedMessageSchema = z.object({
-  /** LangChain serialized type identifier (preferred) */
-  lc_serialized: z
-    .object({
-      type: z.string(),
-    })
-    .optional(),
-  /** LangChain internal ID array */
-  lc_id: z.array(z.string()).optional(),
-  /** Message type identifier (fallback) */
-  type: z.string().optional(),
-  /** Message content (required) */
-  content: z.union([z.string(), z.array(z.unknown()), z.unknown()]),
-  /** Additional kwargs for the message */
-  additional_kwargs: z.record(z.unknown()).optional(),
-  /** Message name */
-  name: z.string().optional(),
-  /** Message ID */
-  id: z.string().optional(),
-  /** Response metadata */
-  response_metadata: z.record(z.unknown()).optional(),
-  /** Usage metadata */
-  usage_metadata: z.record(z.number()).optional(),
-}).refine(
-  (val) => {
-    // Must have at least one type identifier
-    return (
-      val.lc_serialized !== undefined ||
-      val.lc_id !== undefined ||
-      val.type !== undefined
-    );
-  },
-  {
-    message: "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
-    path: ["type"],
+export const SerializedMessageSchema = z
+  .object({
+    /** LangChain serialized type identifier (lc format) */
+    lc_serialized: z
+      .object({
+        type: z.string(),
+      })
+      .optional(),
+    /** LangChain internal ID array */
+    lc_id: z.array(z.string()).optional(),
+    /** Message type identifier (legacy format) */
+    type: z.string().optional(),
+    /** Message content */
+    content: z.union([z.string(), z.array(z.unknown()), z.unknown()]),
+    /** Additional kwargs */
+    additional_kwargs: z.record(z.unknown()).optional(),
+    /** Message name */
+    name: z.string().optional(),
+    /** Message ID */
+    id: z.string().optional(),
+    /** Response metadata */
+    response_metadata: z.record(z.unknown()).optional(),
+    /** Usage metadata */
+    usage_metadata: z.record(z.number()).optional(),
+  })
+  .refine(
+    (val) => {
+      // Must have at least one type identifier
+      return (
+        val.lc_serialized !== undefined ||
+        val.lc_id !== undefined ||
+        val.type !== undefined
+      );
+    },
+    {
+      message: "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
+      path: ["type"],
+    }
+  );
+
+/**
+ * Type representing a serialized message in the buffer.
+ * Matches LangChain's StoredMessage format.
+ */
+export type SerializedMessage = z.infer<typeof SerializedMessageSchema>;
+
+/**
+ * Serialize messages to stored format for persistence.
+ * Handles both BaseMessage instances and plain objects.
+ *
+ * @param messages - Array of messages (BaseMessage or plain objects)
+ * @returns Array of serialized messages suitable for BaseStore
+ */
+export function serializeMessages(messages: Array<BaseMessage | Record<string, unknown>>): SerializedMessage[] {
+  return messages.map((msg) => {
+    // If it's a BaseMessage with toDict method, use it
+    if (typeof msg === "object" && msg !== null && "toDict" in msg && typeof msg.toDict === "function") {
+      return msg.toDict() as SerializedMessage;
+    }
+
+    // Otherwise, assume it's already in serialized format or can be used directly
+    return msg as SerializedMessage;
+  });
+}
+
+/**
+ * Deserialize stored messages back to BaseMessage instances.
+ * Uses LangChain's conversion when available, otherwise returns plain objects.
+ *
+ * @param messages - Array of serialized messages from BaseStore
+ * @returns Array of BaseMessage instances (or plain objects if conversion fails)
+ */
+export function deserializeMessages(messages: SerializedMessage[]): BaseMessage[] {
+  try {
+    return mapStoredMessagesToChatMessages(messages);
+  } catch {
+    // Fallback: return as-is if LangChain conversion fails
+    return messages as unknown as BaseMessage[];
   }
-);
+}
 
 /**
  * Schema for the persisted message buffer in BaseStore.
@@ -501,19 +548,40 @@ export const MessageBufferSchema = z.object({
   lastMessageTimestamp: z.number().int().positive(),
   /** Timestamp when buffer was created */
   createdAt: z.number().int().positive(),
+  /** Number of reflection retry attempts (for staging buffer) */
+  retryCount: z.number().int().nonnegative().optional(),
 });
 
 /**
- * Message buffer type for cross-thread message persistence.
- * The messages array contains LangChain BaseMessage objects.
+ * Message buffer for cross-thread message persistence.
+ * The messages array contains LangChain BaseMessage instances.
  *
- * Note: Inactivity is tracked via BaseStore's updated_at timestamp externally.
+ * Note: Messages are serialized to StoredMessage format when persisted to BaseStore
+ * and deserialized back to BaseMessage when loaded. Use serializeMessages() and
+ * deserializeMessages() for the storage boundary.
+ *
+ * Inactivity is tracked via BaseStore's updated_at timestamp externally.
  */
 export interface MessageBuffer {
-  messages: import("@langchain/core/messages").BaseMessage[];
+  messages: BaseMessage[];
   humanMessageCount: number;
   lastMessageTimestamp: number;
   createdAt: number;
+  /** Number of reflection retry attempts (for staging buffer) */
+  retryCount?: number;
+}
+
+/**
+ * Serialized message buffer for BaseStore persistence.
+ * Uses StoredMessage format for JSON serialization.
+ */
+export interface SerializedMessageBuffer {
+  messages: SerializedMessage[];
+  humanMessageCount: number;
+  lastMessageTimestamp: number;
+  createdAt: number;
+  /** Number of reflection retry attempts (for staging buffer) */
+  retryCount?: number;
 }
 
 /**

@@ -23,7 +23,6 @@ import {
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { initializeMatrix } from "@/utils/matrix";
-import { countHumanMessages } from "@/utils/message-helpers";
 
 // ============================================================================
 // Configuration
@@ -137,13 +136,17 @@ export function checkReflectionTriggers(
  * Extracts memories and updates the memory bank.
  *
  * Reads from staging buffer to ensure atomic reflection processing.
+ * Implements retry logic with exponential backoff.
  *
- * TODO: Complete implementation with proper memory extraction using LLM.
- * Current implementation is a placeholder that adds raw dialogue as memory.
+ * @param userId - User identifier for buffer isolation
+ * @param bufferStorage - Storage adapter for buffer operations
+ * @param config - Reflection configuration with retry settings
+ * @param deps - Dependencies for memory extraction
  */
 async function processReflection(
   userId: string,
   bufferStorage: MessageBufferStorage,
+  config: ReflectionConfig,
   deps: NonNullable<BeforeAgentOptions["reflectionDeps"]>
 ): Promise<void> {
   // Read from staging buffer (source of truth for reflection)
@@ -152,6 +155,32 @@ async function processReflection(
   if (!stagedBuffer || stagedBuffer.messages.length === 0) {
     console.debug("[before-agent] No staged buffer to reflect on");
     return;
+  }
+
+  const retryCount = stagedBuffer.retryCount ?? 0;
+
+  // Check if we've exceeded max retries
+  if (retryCount >= config.maxRetries) {
+    console.warn(
+      `[before-agent] Reflection failed after ${retryCount} retries, giving up`,
+      stagedBuffer.messages.length,
+      "messages lost"
+    );
+    // Clear staging to prevent indefinite retention of failed buffer
+    await bufferStorage.clearStaging(userId);
+    return;
+  }
+
+  // Calculate exponential backoff delay
+  const delayMs = config.retryDelayMs * Math.pow(2, retryCount);
+  console.debug(
+    `[before-agent] Reflection attempt ${retryCount + 1}/${config.maxRetries + 1}, ` +
+      `delay ${delayMs}ms`
+  );
+
+  // Wait before processing (if not first attempt)
+  if (retryCount > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   try {
@@ -179,10 +208,24 @@ async function processReflection(
     }
   } catch (error) {
     console.warn(
-      "[before-agent] Error during reflection processing:",
+      `[before-agent] Reflection attempt ${retryCount + 1} failed:`,
       error instanceof Error ? error.message : String(error)
     );
-    throw error; // Re-throw to signal failure to the caller
+
+    // Increment retry count and re-stage for next attempt
+    const retryBuffer: typeof stagedBuffer = {
+      ...stagedBuffer,
+      retryCount: retryCount + 1,
+    };
+
+    const reStaged = await bufferStorage.stageBuffer(userId, retryBuffer);
+    if (!reStaged) {
+      console.warn("[before-agent] Failed to re-stage buffer for retry, giving up");
+      await bufferStorage.clearStaging(userId);
+    }
+
+    // Re-throw to trigger retry in caller
+    throw error;
   }
 }
 
@@ -310,6 +353,7 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
               processReflection(
                 userId,
                 bufferStorage,
+                reflectionConfig,
                 options.reflectionDeps
               )
                 .then(async () => {
