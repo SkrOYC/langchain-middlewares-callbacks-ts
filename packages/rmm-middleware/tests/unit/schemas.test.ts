@@ -612,7 +612,6 @@ describe("ReflectionConfigSchema", () => {
       minInactivityMs: 600000,
       maxInactivityMs: 1800000,
       mode: "strict",
-      maxBufferSize: 100,
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
     expect(result.success).toBe(true);
@@ -625,7 +624,6 @@ describe("ReflectionConfigSchema", () => {
       minInactivityMs: 600000,
       maxInactivityMs: 1800000,
       mode: "strict" as const,
-      maxBufferSize: 100,
     };
     const result = ReflectionConfigSchema.safeParse(invalidConfig);
     expect(result.success).toBe(false);
@@ -638,7 +636,6 @@ describe("ReflectionConfigSchema", () => {
       minInactivityMs: 1800000,
       maxInactivityMs: 600000, // Invalid: max < min
       mode: "strict" as const,
-      maxBufferSize: 100,
     };
     const result = ReflectionConfigSchema.safeParse(invalidConfig);
     expect(result.success).toBe(false);
@@ -651,7 +648,6 @@ describe("ReflectionConfigSchema", () => {
       minInactivityMs: 600000,
       maxInactivityMs: 1800000,
       mode: "relaxed" as const,
-      maxBufferSize: 100,
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
     expect(result.success).toBe(true);
@@ -664,7 +660,6 @@ describe("ReflectionConfigSchema", () => {
       minInactivityMs: 1000000,
       maxInactivityMs: 1000000, // Valid: max = min
       mode: "strict" as const,
-      maxBufferSize: 100,
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
     expect(result.success).toBe(true);

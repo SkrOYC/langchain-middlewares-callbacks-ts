@@ -16,12 +16,11 @@ import type { StoredMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import {
   createEmptyMessageBuffer,
-  DEFAULT_REFLECTION_CONFIG,
   type MessageBuffer,
   type ReflectionConfig,
 } from "@/schemas";
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
-import { countHumanMessages, isHumanMessage } from "@/utils/message-helpers";
+import { countHumanMessages } from "@/utils/message-helpers";
 
 // ============================================================================
 // Interfaces
@@ -38,7 +37,6 @@ interface AfterAgentRuntimeContext {
  * Interface for the afterAgent dependencies (injected for testing)
  */
 interface AfterAgentDependencies {
-  extractSpeaker1?: (dialogueSession: string) => string;
   userId?: string;
   store?: BaseStore;
   reflectionConfig?: ReflectionConfig;
@@ -128,8 +126,7 @@ export async function afterAgent(
       return {};
     }
 
-    const { userId, store, reflectionConfig } = deps ?? {};
-    const config = reflectionConfig ?? DEFAULT_REFLECTION_CONFIG;
+    const { userId, store } = deps ?? {};
     const now = Date.now();
 
     // If no store or userId, we can't persist - just return

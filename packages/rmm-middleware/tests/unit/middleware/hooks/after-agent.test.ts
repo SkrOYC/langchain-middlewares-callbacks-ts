@@ -160,7 +160,6 @@ describe("afterAgent Hook - Append Only", () => {
         minInactivityMs: 600_000,
         maxInactivityMs: 1_800_000,
         mode: "strict" as const,
-        maxBufferSize: 100,
       },
     };
 
@@ -243,7 +242,6 @@ describe("afterAgent Hook - Append Only", () => {
         minInactivityMs: 600_000,
         maxInactivityMs: 1_800_000,
         mode: "strict" as const,
-        maxBufferSize: 100,
       },
     };
 
@@ -305,7 +303,6 @@ describe("afterAgent Hook - Append Only", () => {
         minInactivityMs: 600_000,
         maxInactivityMs: 1_800_000,
         mode: "strict" as const,
-        maxBufferSize: 100,
       },
     };
 
@@ -367,7 +364,6 @@ describe("afterAgent Hook - Append Only", () => {
         minInactivityMs: 600_000,
         maxInactivityMs: 1_800_000,
         mode: "strict" as const,
-        maxBufferSize: 100,
       },
     };
 
@@ -444,7 +440,6 @@ describe("afterAgent Hook - Append Only", () => {
         minInactivityMs: 600_000,
         maxInactivityMs: 1_800_000,
         mode: "strict" as const,
-        maxBufferSize: 100,
       },
     };
 

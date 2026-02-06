@@ -519,16 +519,6 @@ export const MessageBufferSchema = z.object({
 
 /**
  * Message buffer for cross-thread message persistence.
- * The messages array contains LangChain BaseMessage instances.
- *
- * Note: Messages are serialized to StoredMessage format when persisted to BaseStore
- * and deserialized back to BaseMessage when loaded. Use serializeMessages() and
- * deserializeMessages() for the storage boundary.
- *
- * Inactivity is tracked via BaseStore's updated_at timestamp externally.
- */
-/**
- * Message buffer for cross-thread message persistence.
  * Uses StoredMessage[] (plain objects) matching LangChain's serialization format.
  *
  * Note: Messages stay as StoredMessage[] throughout - no conversion at storage boundary.

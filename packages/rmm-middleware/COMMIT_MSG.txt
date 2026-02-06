@@ -1,7 +1,0 @@
-refactor: Use StoredMessage[] throughout buffer
-
-- Messages stay as StoredMessage[] (plain objects) throughout the system
-- Remove serializeMessages/deserializeMessages conversion functions
-- Buffer.messages is now StoredMessage[] matching LangChain's format
-- Add toStoredMessage helper for BaseMessage conversion at append boundary
-- No conversion needed at BaseStore storage boundary

@@ -30,7 +30,6 @@ function createConfig(
     minInactivityMs,
     maxInactivityMs,
     mode,
-    maxBufferSize: 100,
   };
 }
 

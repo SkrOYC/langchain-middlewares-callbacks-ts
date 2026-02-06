@@ -362,7 +362,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -429,7 +428,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -541,7 +539,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -603,7 +600,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -678,7 +674,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -755,7 +750,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -837,7 +831,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000,
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
@@ -988,7 +981,6 @@ describe("beforeAgent Hook - Namespace Isolation", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60000, // 1 minute max inactivity
         mode: "strict",
-        maxBufferSize: 100,
       },
       reflectionDeps: mockDeps,
     });
