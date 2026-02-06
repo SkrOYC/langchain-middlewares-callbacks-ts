@@ -1,24 +1,26 @@
-import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { BaseMessage } from "@langchain/core/messages";
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import { addMemory, mergeMemory } from "@/algorithms/memory-actions";
-import { extractMemories } from "@/algorithms/memory-extraction";
-import {
-  decideUpdateAction,
-  type UpdateAction,
-} from "@/algorithms/memory-update";
-import { findSimilarMemories } from "@/algorithms/similarity-search";
-import type { RetrievedMemory } from "@/schemas";
-
-// ============================================================================
-// Constants
-// ============================================================================
-
 /**
- * Default number of similar memories to retrieve for merge decisions
+ * afterAgent hook for Prospective Reflection - Append Only
+ *
+ * Responsibilities:
+ * 1. Append new messages to the existing buffer
+ * 2. Update humanMessageCount
+ * 3. Persist buffer to BaseStore (which updates updated_at)
+ *
+ * Note: Trigger logic has been moved to beforeAgent hook to avoid contamination
+ * from the current execution. This ensures triggers are checked using the buffer's
+ * original state before any new messages are appended.
  */
-const DEFAULT_TOP_K = 5;
+
+import type { BaseMessage } from "@langchain/core/messages";
+import type { StoredMessage } from "@langchain/core/messages";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import {
+  createEmptyMessageBuffer,
+  type MessageBuffer,
+  type ReflectionConfig,
+} from "@/schemas";
+import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
+import { countHumanMessages } from "@/utils/message-helpers";
 
 // ============================================================================
 // Interfaces
@@ -28,17 +30,16 @@ const DEFAULT_TOP_K = 5;
  * Interface for the afterAgent runtime context
  */
 interface AfterAgentRuntimeContext {
-  summarizationModel: BaseChatModel;
-  embeddings: Embeddings;
+  [key: string]: unknown;
 }
 
 /**
  * Interface for the afterAgent dependencies (injected for testing)
  */
 interface AfterAgentDependencies {
-  vectorStore: VectorStoreInterface;
-  extractSpeaker1: (dialogueSession: string) => string;
-  updateMemory?: (historySummaries: string[], newSummary: string) => string;
+  userId?: string;
+  store?: BaseStore;
+  reflectionConfig?: ReflectionConfig;
 }
 
 /**
@@ -53,186 +54,100 @@ interface AfterAgentState {
 // ============================================================================
 
 /**
- * Validates that required dependencies are present
+ * Converts a message to StoredMessage format.
+ * Handles both BaseMessage instances and plain objects (already serialized).
  */
-function validateDependencies(deps: AfterAgentDependencies | undefined): {
-  vectorStore: VectorStoreInterface;
-  extractSpeaker1: (dialogueSession: string) => string;
-} | null {
-  const vectorStore = deps?.vectorStore;
-  const extractSpeaker1 = deps?.extractSpeaker1;
-
-  if (!(vectorStore && extractSpeaker1)) {
-    console.warn(
-      "[after-agent] Missing required dependencies, skipping memory extraction"
-    );
-    return null;
+function toStoredMessage(message: BaseMessage | StoredMessage): StoredMessage {
+  // If it's a BaseMessage with toDict method, use it
+  if (typeof message === "object" && message !== null && "toDict" in message && typeof message.toDict === "function") {
+    return message.toDict() as StoredMessage;
   }
 
-  return { vectorStore, extractSpeaker1 };
+  // Otherwise, assume it's already in StoredMessage format
+  return message as StoredMessage;
 }
 
 /**
- * Processes a single memory: finds similar memories and decides actions
- */
-async function processMemory(
-  memory: ExtractedMemory,
-  vectorStore: VectorStoreInterface,
-  summarizationModel: BaseChatModel,
-  updateMemoryPrompt: AfterAgentDependencies["updateMemory"]
-): Promise<UpdateAction[]> {
-  const similarMemories = await findSimilarMemories(
-    memory,
-    vectorStore,
-    DEFAULT_TOP_K
-  );
-
-  if (similarMemories.length === 0) {
-    return [{ action: "Add" }];
-  }
-
-  if (updateMemoryPrompt) {
-    return decideUpdateAction(
-      memory,
-      similarMemories,
-      summarizationModel,
-      updateMemoryPrompt
-    );
-  }
-
-  try {
-    const prompts = await import("../../middleware/prompts/update-memory");
-    return decideUpdateAction(
-      memory,
-      similarMemories,
-      summarizationModel,
-      prompts.updateMemory
-    );
-  } catch (importError) {
-    console.warn(
-      "[after-agent] Failed to load update-memory prompt, defaulting to Add:",
-      importError instanceof Error ? importError.message : String(importError)
-    );
-    return [{ action: "Add" }];
-  }
-}
-
-/**
- * Executes a single update action
- */
-async function executeAction(
-  action: UpdateAction,
-  memory: ExtractedMemory,
-  similarMemories: RetrievedMemory[],
-  vectorStore: VectorStoreInterface
-): Promise<void> {
-  if (action.action === "Add") {
-    await addMemory(memory, vectorStore);
-    return;
-  }
-
-  if (action.action !== "Merge") {
-    return;
-  }
-
-  if (action.index === undefined || action.merged_summary === undefined) {
-    console.warn(
-      "[after-agent] Merge action missing index or merged_summary, skipping"
-    );
-    return;
-  }
-
-  const existingMemory = similarMemories[action.index];
-  if (!existingMemory) {
-    console.warn(
-      `[after-agent] Merge action has invalid index ${action.index}, skipping`
-    );
-    return;
-  }
-
-  await mergeMemory(existingMemory, action.merged_summary, vectorStore);
-}
-
-/**
- * Type for extracted memory from memory-extraction
- */
-type ExtractedMemory = NonNullable<
-  Awaited<ReturnType<typeof extractMemories>>
->[number];
-
-/**
- * Prospective Reflection: afterAgent hook implementation.
+ * Appends current session messages to the buffer.
+ * Returns updated buffer with new messages and counts.
  *
- * This hook orchestrates the full Prospective Reflection pipeline:
- * 1. Extract memories from the session using LLM summarization
- * 2. Find similar existing memories for each extracted memory
- * 3. Decide whether to Add or Merge each new memory
- * 4. Execute the appropriate action
+ * @param buffer - Existing message buffer with StoredMessage[]
+ * @param messages - New messages from agent state (BaseMessage[])
+ * @param now - Current timestamp
+ * @returns Updated MessageBuffer with StoredMessage[]
+ */
+function appendMessagesToBuffer(
+  buffer: MessageBuffer,
+  messages: BaseMessage[],
+  now: number
+): MessageBuffer {
+  // Convert BaseMessage[] to StoredMessage[] and append
+  const newMessages: StoredMessage[] = [
+    ...buffer.messages,
+    ...messages.map(toStoredMessage),
+  ];
+  const newHumanCount = countHumanMessages(newMessages);
+
+  return {
+    messages: newMessages,
+    humanMessageCount: newHumanCount,
+    lastMessageTimestamp: now,
+    createdAt: buffer.createdAt,
+  };
+}
+
+// ============================================================================
+// Main Hook
+// ============================================================================
+
+/**
+ * Prospective Reflection: afterAgent hook implementation (Append Only)
+ *
+ * This hook appends new messages to the persisted buffer:
+ * 1. Load persisted message buffer from BaseStore (user-scoped)
+ * 2. Append current session messages to buffer
+ * 3. Save updated buffer to BaseStore (which updates updated_at timestamp)
+ *
+ * Note: Trigger logic is handled in beforeAgent to avoid contamination.
  *
  * @param state - The current agent state containing messages
- * @param runtime - The runtime context with model and embeddings
- * @param deps - Optional dependencies for testing (vectorStore, prompts)
- * @returns Empty object (no state changes from Prospective Reflection)
- *
- * @example
- * ```typescript
- * const result = await afterAgent(state, runtime, {
- *   vectorStore,
- *   extractSpeaker1
- * });
- * ```
+ * @param _runtime - The runtime context (unused in append-only mode)
+ * @param deps - Optional dependencies (store, userId for persistence)
+ * @returns Empty object (no state changes)
  */
 export async function afterAgent(
   state: AfterAgentState,
-  runtime: { context: AfterAgentRuntimeContext },
+  _runtime: { context: AfterAgentRuntimeContext },
   deps?: AfterAgentDependencies
 ): Promise<Record<string, unknown>> {
   try {
-    const depsResult = validateDependencies(deps);
-    if (!depsResult) {
-      return {};
-    }
-
-    const { vectorStore, extractSpeaker1 } = depsResult;
-
+    // Skip if no messages
     if (!state.messages || state.messages.length === 0) {
       return {};
     }
 
-    const memories = await extractMemories(
-      state.messages,
-      runtime.context.summarizationModel,
-      runtime.context.embeddings,
-      extractSpeaker1
-    );
+    const { userId, store } = deps ?? {};
+    const now = Date.now();
 
-    if (!memories || memories.length === 0) {
+    // If no store or userId, we can't persist - just return
+    if (!userId || !store) {
       return {};
     }
 
-    for (const memory of memories) {
-      const actions = await processMemory(
-        memory,
-        vectorStore,
-        runtime.context.summarizationModel,
-        deps?.updateMemory
-      );
+    // Load existing buffer or create new one
+    const bufferStorage = createMessageBufferStorage(store);
+    let buffer = await bufferStorage.loadBuffer(userId);
 
-      const similarMemories = await findSimilarMemories(
-        memory,
-        vectorStore,
-        DEFAULT_TOP_K
-      );
+    // Append new messages to buffer
+    buffer = appendMessagesToBuffer(buffer, state.messages, now);
 
-      for (const action of actions) {
-        await executeAction(action, memory, similarMemories, vectorStore);
-      }
-    }
+    // Persist buffer (BaseStore will update updated_at automatically)
+    await bufferStorage.saveBuffer(userId, buffer);
 
     return {};
   } catch (error) {
     console.warn(
-      "[after-agent] Error during Prospective Reflection, continuing:",
+      "[after-agent] Error during message buffering, continuing:",
       error instanceof Error ? error.message : String(error)
     );
     return {};

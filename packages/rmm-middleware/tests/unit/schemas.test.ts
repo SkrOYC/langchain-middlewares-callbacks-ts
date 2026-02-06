@@ -13,6 +13,8 @@ import {
   MiddlewareOptionsSchema,
   type RerankerState,
   RerankerStateSchema,
+  type ReflectionConfig,
+  ReflectionConfigSchema,
   type RetrievedMemory,
   RetrievedMemorySchema,
   type RMMState,
@@ -595,5 +597,81 @@ describe("Utility Functions", () => {
       const result = RerankerStateSchema.safeParse(state);
       expect(result.success).toBe(true);
     });
+  });
+});
+
+// ============================================================================
+// ReflectionConfig Schema Tests
+// ============================================================================
+
+describe("ReflectionConfigSchema", () => {
+  test("validates correct reflection config", () => {
+    const validConfig: ReflectionConfig = {
+      minTurns: 2,
+      maxTurns: 50,
+      minInactivityMs: 600000,
+      maxInactivityMs: 1800000,
+      mode: "strict",
+    };
+    const result = ReflectionConfigSchema.safeParse(validConfig);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects when maxTurns is less than minTurns", () => {
+    const invalidConfig = {
+      minTurns: 10,
+      maxTurns: 5, // Invalid: max < min
+      minInactivityMs: 600000,
+      maxInactivityMs: 1800000,
+      mode: "strict" as const,
+    };
+    const result = ReflectionConfigSchema.safeParse(invalidConfig);
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects when maxInactivityMs is less than minInactivityMs", () => {
+    const invalidConfig = {
+      minTurns: 2,
+      maxTurns: 50,
+      minInactivityMs: 1800000,
+      maxInactivityMs: 600000, // Invalid: max < min
+      mode: "strict" as const,
+    };
+    const result = ReflectionConfigSchema.safeParse(invalidConfig);
+    expect(result.success).toBe(false);
+  });
+
+  test("accepts when maxTurns equals minTurns", () => {
+    const validConfig = {
+      minTurns: 5,
+      maxTurns: 5, // Valid: max = min
+      minInactivityMs: 600000,
+      maxInactivityMs: 1800000,
+      mode: "relaxed" as const,
+    };
+    const result = ReflectionConfigSchema.safeParse(validConfig);
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts when maxInactivityMs equals minInactivityMs", () => {
+    const validConfig = {
+      minTurns: 2,
+      maxTurns: 50,
+      minInactivityMs: 1000000,
+      maxInactivityMs: 1000000, // Valid: max = min
+      mode: "strict" as const,
+    };
+    const result = ReflectionConfigSchema.safeParse(validConfig);
+    expect(result.success).toBe(true);
+  });
+
+  test("uses default values when optional fields are omitted", () => {
+    const result = ReflectionConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.minTurns).toBe(2);
+      expect(result.data.maxTurns).toBe(50);
+      expect(result.data.mode).toBe("strict");
+    }
   });
 });

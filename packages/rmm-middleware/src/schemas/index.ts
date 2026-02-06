@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { StoredMessage } from "@langchain/core/messages";
 import { createZeroMatrix } from "@/utils/matrix";
 
 // ============================================================================
@@ -381,6 +382,169 @@ export const SessionMetadataSchema = z.object({
 });
 
 export type SessionMetadata = z.infer<typeof SessionMetadataSchema>;
+
+// ============================================================================
+// ReflectionConfig Schema
+// ============================================================================
+
+/**
+ * Schema for prospective reflection trigger configuration.
+ * Controls when memory extraction occurs based on turn count and inactivity.
+ *
+ * Trigger modes:
+ * - "relaxed": Reflection triggers when EITHER min threshold is met (OR)
+ * - "strict": Reflection triggers only when BOTH min thresholds are met (AND)
+ *
+ * Max thresholds act as "force" triggers - reflection happens regardless of
+ * the other condition when max is reached.
+ */
+export const ReflectionConfigSchema = z
+  .object({
+    /** Minimum turns before reflection is eligible */
+    minTurns: z.number().int().positive().default(2),
+    /** Maximum turns before reflection is forced (regardless of inactivity) */
+    maxTurns: z.number().int().positive().default(50),
+    /** Minimum inactivity time in milliseconds before reflection is eligible (default: 10 minutes) */
+    minInactivityMs: z.number().int().positive().default(600_000),
+    /** Maximum inactivity time in milliseconds before reflection is forced (default: 30 minutes) */
+    maxInactivityMs: z.number().int().positive().default(1_800_000),
+    /** Trigger mode: "relaxed" (OR logic) or "strict" (AND logic) */
+    mode: z.union([z.literal("relaxed"), z.literal("strict")]).default("strict"),
+    /** Maximum retry attempts for failed reflection (default: 3) */
+    maxRetries: z.number().int().nonnegative().default(3),
+    /** Base delay in milliseconds between retries (default: 1000) */
+    retryDelayMs: z.number().int().positive().default(1_000),
+  })
+  .refine((val) => val.maxTurns >= val.minTurns, {
+    message: "maxTurns must be >= minTurns",
+    path: ["maxTurns"],
+  })
+  .refine((val) => val.maxInactivityMs >= val.minInactivityMs, {
+    message: "maxInactivityMs must be >= minInactivityMs",
+    path: ["maxInactivityMs"],
+  });
+
+export type ReflectionConfig = z.infer<typeof ReflectionConfigSchema>;
+
+/**
+ * Default reflection configuration with paper-aligned values.
+ * Uses strict mode requiring both sufficient turns AND inactivity period.
+ */
+export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
+  minTurns: 2,
+  maxTurns: 50,
+  minInactivityMs: 600_000, // 10 minutes
+  maxInactivityMs: 1_800_000, // 30 minutes
+  mode: "strict",
+  maxRetries: 3,
+  retryDelayMs: 1_000,
+} as const;
+
+// ============================================================================
+// MessageBuffer Schema
+// ============================================================================
+
+/**
+ * Schema for a serialized LangChain message (StoredMessage format).
+ * Uses LangChain's canonical serialization format for BaseMessage.
+ */
+export const SerializedMessageSchema = z
+  .object({
+    /** LangChain serialized type identifier (lc format) */
+    lc_serialized: z
+      .object({
+        type: z.string(),
+      })
+      .optional(),
+    /** LangChain internal ID array */
+    lc_id: z.array(z.string()).optional(),
+    /** Message type identifier (legacy format) */
+    type: z.string().optional(),
+    /** Message content */
+    content: z.union([z.string(), z.array(z.unknown()), z.unknown()]),
+    /** Additional kwargs */
+    additional_kwargs: z.record(z.string(), z.unknown()).optional(),
+    /** Message name */
+    name: z.string().optional(),
+    /** Message ID */
+    id: z.string().optional(),
+    /** Response metadata */
+    response_metadata: z.record(z.string(), z.unknown()).optional(),
+    /** Usage metadata */
+    usage_metadata: z.record(z.string(), z.number()).optional(),
+  })
+  .refine(
+    (val) => {
+      // Must have at least one type identifier
+      return (
+        val.lc_serialized !== undefined ||
+        val.lc_id !== undefined ||
+        val.type !== undefined
+      );
+    },
+    {
+      message: "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
+      path: ["type"],
+    }
+  );
+
+/**
+ * Type representing a serialized message in the buffer.
+ * Matches LangChain's StoredMessage format.
+ */
+export type SerializedMessage = StoredMessage;
+
+/**
+ * Schema for the persisted message buffer in BaseStore.
+ * Stores messages across threads for batched prospective reflection.
+ *
+ * Note: messages are stored as StoredMessage[] (plain objects), matching
+ * LangChain's serialization format. No conversion needed at storage boundary.
+ *
+ * Inactivity is tracked via BaseStore's updated_at timestamp, not within the buffer itself.
+ * This ensures that appending messages doesn't reset the inactivity clock.
+ */
+export const MessageBufferSchema = z.object({
+  /** Array of serialized messages waiting for reflection */
+  messages: z.array(SerializedMessageSchema),
+  /** Count of human messages in the buffer (for quick threshold checks) */
+  humanMessageCount: z.number().int().nonnegative(),
+  /** Timestamp of the last message added to the buffer */
+  lastMessageTimestamp: z.number().int().positive(),
+  /** Timestamp when buffer was created */
+  createdAt: z.number().int().positive(),
+  /** Number of reflection retry attempts (for staging buffer) */
+  retryCount: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Message buffer for cross-thread message persistence.
+ * Uses StoredMessage[] (plain objects) matching LangChain's serialization format.
+ *
+ * Note: Messages stay as StoredMessage[] throughout - no conversion at storage boundary.
+ * Inactivity is tracked via BaseStore's updated_at timestamp externally.
+ */
+export interface MessageBuffer {
+  messages: StoredMessage[];
+  humanMessageCount: number;
+  lastMessageTimestamp: number;
+  createdAt: number;
+  /** Number of reflection retry attempts (for staging buffer) */
+  retryCount?: number;
+}
+
+/**
+ * Creates an empty message buffer for initialization.
+ */
+export function createEmptyMessageBuffer(): MessageBuffer {
+  const now = Date.now();
+  return {
+    messages: [],
+    humanMessageCount: 0,
+    lastMessageTimestamp: now,
+    createdAt: now,
+  };
+}
 
 // ============================================================================
 // Utility Functions
