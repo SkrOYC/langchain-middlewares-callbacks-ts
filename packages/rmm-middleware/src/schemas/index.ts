@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { BaseMessage } from "@langchain/core/messages";
+import type { StoredMessage } from "@langchain/core/messages";
 import { createZeroMatrix } from "@/utils/matrix";
 
 // ============================================================================
@@ -492,49 +492,14 @@ export const SerializedMessageSchema = z
  * Type representing a serialized message in the buffer.
  * Matches LangChain's StoredMessage format.
  */
-export type SerializedMessage = z.infer<typeof SerializedMessageSchema>;
-
-/**
- * Serialize messages to stored format for persistence.
- * Handles both BaseMessage instances and plain objects.
- *
- * @param messages - Array of messages (BaseMessage or plain objects)
- * @returns Array of serialized messages suitable for BaseStore
- */
-export function serializeMessages(messages: Array<BaseMessage | Record<string, unknown>>): SerializedMessage[] {
-  return messages.map((msg) => {
-    // If it's a BaseMessage with toDict method, use it
-    if (typeof msg === "object" && msg !== null && "toDict" in msg && typeof msg.toDict === "function") {
-      return msg.toDict() as SerializedMessage;
-    }
-
-    // Otherwise, assume it's already in serialized format or can be used directly
-    return msg as SerializedMessage;
-  });
-}
-
-/**
- * Deserialize stored messages back to BaseMessage instances.
- * Uses LangChain's conversion when available, otherwise returns plain objects.
- *
- * @param messages - Array of serialized messages from BaseStore
- * @returns Array of BaseMessage instances (or plain objects if conversion fails)
- */
-export function deserializeMessages(messages: SerializedMessage[]): BaseMessage[] {
-  try {
-    return mapStoredMessagesToChatMessages(messages);
-  } catch {
-    // Fallback: return as-is if LangChain conversion fails
-    return messages as unknown as BaseMessage[];
-  }
-}
+export type SerializedMessage = StoredMessage;
 
 /**
  * Schema for the persisted message buffer in BaseStore.
  * Stores messages across threads for batched prospective reflection.
  *
- * Note: messages are validated using SerializedMessageSchema to ensure they
- * conform to LangChain's message serialization format.
+ * Note: messages are stored as StoredMessage[] (plain objects), matching
+ * LangChain's serialization format. No conversion needed at storage boundary.
  *
  * Inactivity is tracked via BaseStore's updated_at timestamp, not within the buffer itself.
  * This ensures that appending messages doesn't reset the inactivity clock.
@@ -562,21 +527,15 @@ export const MessageBufferSchema = z.object({
  *
  * Inactivity is tracked via BaseStore's updated_at timestamp externally.
  */
-export interface MessageBuffer {
-  messages: BaseMessage[];
-  humanMessageCount: number;
-  lastMessageTimestamp: number;
-  createdAt: number;
-  /** Number of reflection retry attempts (for staging buffer) */
-  retryCount?: number;
-}
-
 /**
- * Serialized message buffer for BaseStore persistence.
- * Uses StoredMessage format for JSON serialization.
+ * Message buffer for cross-thread message persistence.
+ * Uses StoredMessage[] (plain objects) matching LangChain's serialization format.
+ *
+ * Note: Messages stay as StoredMessage[] throughout - no conversion at storage boundary.
+ * Inactivity is tracked via BaseStore's updated_at timestamp externally.
  */
-export interface SerializedMessageBuffer {
-  messages: SerializedMessage[];
+export interface MessageBuffer {
+  messages: StoredMessage[];
   humanMessageCount: number;
   lastMessageTimestamp: number;
   createdAt: number;

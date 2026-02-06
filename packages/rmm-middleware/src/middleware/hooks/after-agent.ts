@@ -12,6 +12,7 @@
  */
 
 import type { BaseMessage } from "@langchain/core/messages";
+import type { StoredMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import {
   createEmptyMessageBuffer,
@@ -55,15 +56,38 @@ interface AfterAgentState {
 // ============================================================================
 
 /**
+ * Converts a message to StoredMessage format.
+ * Handles both BaseMessage instances and plain objects (already serialized).
+ */
+function toStoredMessage(message: BaseMessage | StoredMessage): StoredMessage {
+  // If it's a BaseMessage with toDict method, use it
+  if (typeof message === "object" && message !== null && "toDict" in message && typeof message.toDict === "function") {
+    return message.toDict() as StoredMessage;
+  }
+
+  // Otherwise, assume it's already in StoredMessage format
+  return message as StoredMessage;
+}
+
+/**
  * Appends current session messages to the buffer.
  * Returns updated buffer with new messages and counts.
+ *
+ * @param buffer - Existing message buffer with StoredMessage[]
+ * @param messages - New messages from agent state (BaseMessage[])
+ * @param now - Current timestamp
+ * @returns Updated MessageBuffer with StoredMessage[]
  */
 function appendMessagesToBuffer(
   buffer: MessageBuffer,
   messages: BaseMessage[],
   now: number
 ): MessageBuffer {
-  const newMessages = [...buffer.messages, ...messages];
+  // Convert BaseMessage[] to StoredMessage[] and append
+  const newMessages: StoredMessage[] = [
+    ...buffer.messages,
+    ...messages.map(toStoredMessage),
+  ];
   const newHumanCount = countHumanMessages(newMessages);
 
   return {

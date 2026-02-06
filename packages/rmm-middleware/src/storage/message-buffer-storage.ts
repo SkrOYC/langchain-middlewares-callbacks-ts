@@ -3,8 +3,6 @@ import {
   createEmptyMessageBuffer,
   type MessageBuffer,
   MessageBufferSchema,
-  serializeMessages,
-  deserializeMessages,
 } from "@/schemas/index";
 
 /**
@@ -109,12 +107,8 @@ export function createMessageBufferStorage(
           return createEmptyMessageBuffer();
         }
 
-        // Deserialize messages back to BaseMessage instances
-        const messages = deserializeMessages(parseResult.data.messages);
-        return {
-          ...parseResult.data,
-          messages,
-        };
+        // Messages are already StoredMessage[] - return directly
+        return parseResult.data;
       } catch (error) {
         console.warn(
           "[message-buffer-storage] Error loading buffer, returning empty:",
@@ -157,12 +151,8 @@ export function createMessageBufferStorage(
           return null;
         }
 
-        // Deserialize messages back to BaseMessage instances
-        const messages = deserializeMessages(parseResult.data.messages);
-        return {
-          ...parseResult.data,
-          messages,
-        };
+        // Messages are already StoredMessage[] - return directly
+        return parseResult.data;
       } catch (error) {
         console.warn(
           "[message-buffer-storage] Error loading staging buffer, returning null:",
@@ -176,14 +166,8 @@ export function createMessageBufferStorage(
       try {
         const namespace = buildNamespace(userId, "main");
 
-        // Validate and serialize messages for storage
-        const serializedMessages = serializeMessages(buffer.messages);
-        const dataToSave = {
-          ...buffer,
-          messages: serializedMessages,
-        };
-
-        const validationResult = MessageBufferSchema.safeParse(dataToSave);
+        // Messages are already StoredMessage[] - validate and save directly
+        const validationResult = MessageBufferSchema.safeParse(buffer);
         if (!validationResult.success) {
           console.warn(
             "[message-buffer-storage] Buffer validation failed:",
@@ -207,14 +191,8 @@ export function createMessageBufferStorage(
       try {
         const namespace = buildNamespace(userId, "staging");
 
-        // Validate and serialize messages for storage
-        const serializedMessages = serializeMessages(buffer.messages);
-        const dataToSave = {
-          ...buffer,
-          messages: serializedMessages,
-        };
-
-        const validationResult = MessageBufferSchema.safeParse(dataToSave);
+        // Messages are already StoredMessage[] - validate and save directly
+        const validationResult = MessageBufferSchema.safeParse(buffer);
         if (!validationResult.success) {
           console.warn(
             "[message-buffer-storage] Staging buffer validation failed:",
