@@ -49,21 +49,7 @@ function toMatrix(arr: number[][]): Matrix {
  *
  * @param m - Matrix in optimized format
  * @returns 2D array
- */
-// Unused - kept for reference
-/*
-function fromMatrix(m: Matrix): number[][] {
-  const result: number[][] = [];
-  for (let i = 0; i < m.rows; i++) {
-    const row: number[] = [];
-    for (let j = 0; j < m.cols; j++) {
-      row.push(m.data[i * m.cols + j] ?? 0);
-    }
-    result.push(row);
-  }
-  return result;
-}
-*/
+ }
 
 /**
  * Transposes a matrix in-place using Float32Array.

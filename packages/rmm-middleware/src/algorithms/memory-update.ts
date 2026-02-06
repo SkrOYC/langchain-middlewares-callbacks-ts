@@ -1,6 +1,9 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { parseUpdateActions } from "@/middleware/prompts/update-memory";
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("memory-update");
 
 /**
  * Update action types for memory updates
@@ -59,8 +62,8 @@ export async function decideUpdateAction(
     return actions;
   } catch (error) {
     // Graceful degradation: return empty array on error
-    console.warn(
-      "[memory-update] Error during update decision, returning empty array:",
+    logger.warn(
+      "Error during update decision, returning empty array:",
       error instanceof Error ? error.message : String(error)
     );
     return [];

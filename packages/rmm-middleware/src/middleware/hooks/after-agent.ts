@@ -11,16 +11,14 @@
  * original state before any new messages are appended.
  */
 
-import type { BaseMessage } from "@langchain/core/messages";
-import type { StoredMessage } from "@langchain/core/messages";
+import type { BaseMessage, StoredMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import {
-  createEmptyMessageBuffer,
-  type MessageBuffer,
-  type ReflectionConfig,
-} from "@/schemas";
+import type { MessageBuffer, ReflectionConfig } from "@/schemas";
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
+import { getLogger } from "@/utils/logger";
 import { countHumanMessages } from "@/utils/message-helpers";
+
+const logger = getLogger("after-agent");
 
 // ============================================================================
 // Interfaces
@@ -59,7 +57,12 @@ interface AfterAgentState {
  */
 function toStoredMessage(message: BaseMessage | StoredMessage): StoredMessage {
   // If it's a BaseMessage with toDict method, use it
-  if (typeof message === "object" && message !== null && "toDict" in message && typeof message.toDict === "function") {
+  if (
+    typeof message === "object" &&
+    message !== null &&
+    "toDict" in message &&
+    typeof message.toDict === "function"
+  ) {
     return message.toDict() as StoredMessage;
   }
 
@@ -130,7 +133,7 @@ export async function afterAgent(
     const now = Date.now();
 
     // If no store or userId, we can't persist - just return
-    if (!userId || !store) {
+    if (!(userId && store)) {
       return {};
     }
 
@@ -146,8 +149,8 @@ export async function afterAgent(
 
     return {};
   } catch (error) {
-    console.warn(
-      "[after-agent] Error during message buffering, continuing:",
+    logger.warn(
+      "Error during message buffering, continuing:",
       error instanceof Error ? error.message : String(error)
     );
     return {};

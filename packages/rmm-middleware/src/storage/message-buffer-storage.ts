@@ -4,6 +4,9 @@ import {
   type MessageBuffer,
   MessageBufferSchema,
 } from "@/schemas/index";
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("message-buffer-storage");
 
 /**
  * Interface for message buffer storage operations.
@@ -110,8 +113,8 @@ export function createMessageBufferStorage(
         // Messages are already StoredMessage[] - return directly
         return parseResult.data;
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error loading buffer, returning empty:",
+        logger.warn(
+          "Error loading buffer, returning empty:",
           error instanceof Error ? error.message : String(error)
         );
         return createEmptyMessageBuffer();
@@ -123,8 +126,8 @@ export function createMessageBufferStorage(
         const namespace = buildNamespace(userId, "main");
         return await store.get(namespace, NAMESPACE_KEY);
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error loading buffer item, returning null:",
+        logger.warn(
+          "Error loading buffer item, returning null:",
           error instanceof Error ? error.message : String(error)
         );
         return null;
@@ -154,8 +157,8 @@ export function createMessageBufferStorage(
         // Messages are already StoredMessage[] - return directly
         return parseResult.data;
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error loading staging buffer, returning null:",
+        logger.warn(
+          "Error loading staging buffer, returning null:",
           error instanceof Error ? error.message : String(error)
         );
         return null;
@@ -169,18 +172,15 @@ export function createMessageBufferStorage(
         // Messages are already StoredMessage[] - validate and save directly
         const validationResult = MessageBufferSchema.safeParse(buffer);
         if (!validationResult.success) {
-          console.warn(
-            "[message-buffer-storage] Buffer validation failed:",
-            validationResult.error
-          );
+          logger.warn("Buffer validation failed:", validationResult.error);
           return false;
         }
 
         await store.put(namespace, NAMESPACE_KEY, validationResult.data);
         return true;
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error saving buffer:",
+        logger.warn(
+          "Error saving buffer:",
           error instanceof Error ? error.message : String(error)
         );
         return false;
@@ -194,8 +194,8 @@ export function createMessageBufferStorage(
         // Messages are already StoredMessage[] - validate and save directly
         const validationResult = MessageBufferSchema.safeParse(buffer);
         if (!validationResult.success) {
-          console.warn(
-            "[message-buffer-storage] Staging buffer validation failed:",
+          logger.warn(
+            "Staging buffer validation failed:",
             validationResult.error
           );
           return false;
@@ -204,8 +204,8 @@ export function createMessageBufferStorage(
         await store.put(namespace, NAMESPACE_KEY, validationResult.data);
         return true;
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error staging buffer:",
+        logger.warn(
+          "Error staging buffer:",
           error instanceof Error ? error.message : String(error)
         );
         return false;
@@ -218,8 +218,8 @@ export function createMessageBufferStorage(
         await store.put(namespace, NAMESPACE_KEY, createEmptyMessageBuffer());
         return true;
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error clearing staging:",
+        logger.warn(
+          "Error clearing staging:",
           error instanceof Error ? error.message : String(error)
         );
         return false;
@@ -232,8 +232,8 @@ export function createMessageBufferStorage(
         await store.put(namespace, NAMESPACE_KEY, createEmptyMessageBuffer());
         return true;
       } catch (error) {
-        console.warn(
-          "[message-buffer-storage] Error clearing buffer:",
+        logger.warn(
+          "Error clearing buffer:",
           error instanceof Error ? error.message : String(error)
         );
         return false;

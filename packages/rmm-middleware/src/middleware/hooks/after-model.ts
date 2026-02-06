@@ -28,7 +28,10 @@ import type {
 import { EMBEDDING_DIMENSION } from "@/schemas";
 import { createGradientStorage } from "@/storage/gradient-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
+import { getLogger } from "@/utils/logger";
 import { addMatrix, clipMatrix, createZeroMatrix } from "@/utils/matrix";
+
+const logger = getLogger("after-model");
 
 // ============================================================================
 // Constants
@@ -148,9 +151,7 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
 
       // Missing required context → skip update
       if (!(userId && store)) {
-        console.warn(
-          "[after-model] Missing userId or store, skipping RL update"
-        );
+        logger.warn("Missing userId or store, skipping RL update");
         return {
           _turnCountInSession: state._turnCountInSession,
         };
@@ -253,7 +254,7 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
         const saved = await weightStorage.saveWeights(userId, updatedWeights);
 
         if (!saved) {
-          console.warn("[after-model] Failed to persist updated weights");
+          logger.warn("Failed to persist updated weights");
         }
 
         // Persist accumulator state
@@ -270,8 +271,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
           _turnCountInSession: state._turnCountInSession,
         };
       } catch (error) {
-        console.warn(
-          "[after-model] Error during RL update, continuing:",
+        logger.warn(
+          "Error during RL update, continuing:",
           error instanceof Error ? error.message : String(error)
         );
 

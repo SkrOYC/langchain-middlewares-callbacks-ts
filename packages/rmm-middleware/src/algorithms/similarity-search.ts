@@ -2,6 +2,9 @@ import type { Document } from "@langchain/core/documents";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("similarity-search");
 
 /**
  * Interface for document metadata stored in VectorStore
@@ -73,8 +76,8 @@ export async function findSimilarMemories(
     return retrievedMemories;
   } catch (error) {
     // Graceful degradation: return empty array on error
-    console.warn(
-      "[similarity-search] Error during similarity search, returning empty array:",
+    logger.warn(
+      "Error during similarity search, returning empty array:",
       error instanceof Error ? error.message : String(error)
     );
     return [];

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseMessage } from "@langchain/core/messages";
-import { isHumanMessage, countHumanMessages, getLastHumanMessage } from "@/utils/message-helpers";
 import { MessageBufferSchema } from "@/schemas";
+import {
+  countHumanMessages,
+  getLastHumanMessage,
+  isHumanMessage,
+} from "@/utils/message-helpers";
 
 /**
  * Tests for message helpers
@@ -20,7 +24,10 @@ interface TestMessage {
   additional_kwargs?: Record<string, unknown>;
 }
 
-function createTestMessage(type: string, content: string): TestMessage & BaseMessage {
+function createTestMessage(
+  type: string,
+  content: string
+): TestMessage & BaseMessage {
   return {
     lc_serialized: { type },
     lc_id: [type],

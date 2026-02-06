@@ -23,7 +23,10 @@ import {
   type MessageBufferStorage,
 } from "@/storage/message-buffer-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
+import { getLogger } from "@/utils/logger";
 import { initializeMatrix } from "@/utils/matrix";
+
+const logger = getLogger("before-agent");
 
 // ============================================================================
 // Configuration
@@ -183,8 +186,8 @@ async function processReflection(
 
   // Check if we've exceeded max retries
   if (retryCount >= config.maxRetries) {
-    console.warn(
-      `[before-agent] Reflection failed after ${retryCount} retries, giving up`,
+    logger.warn(
+      `Reflection failed after ${retryCount} retries, giving up`,
       stagedBuffer.messages.length,
       "messages lost"
     );
@@ -210,7 +213,10 @@ async function processReflection(
     const dialogue = stagedBuffer.messages
       .map((msg) => {
         // Handle both formats: StoredMessage (nested data.content) and flattened (top-level content)
-        const msgAny = msg as unknown as { data?: { content?: string }; content?: string };
+        const msgAny = msg as unknown as {
+          data?: { content?: string };
+          content?: string;
+        };
         const content = msgAny.data?.content ?? msgAny.content ?? "";
         const type = msg.type ?? "unknown";
         return `${type}: ${content}`;
@@ -231,8 +237,8 @@ async function processReflection(
       ]);
     }
   } catch (error) {
-    console.warn(
-      `[before-agent] Reflection attempt ${retryCount + 1} failed:`,
+    logger.warn(
+      `Reflection attempt ${retryCount + 1} failed:`,
       error instanceof Error ? error.message : String(error)
     );
 
@@ -244,8 +250,8 @@ async function processReflection(
 
     const reStaged = await bufferStorage.stageBuffer(userId, retryBuffer);
     if (!reStaged) {
-      console.warn(
-        `[before-agent] Failed to re-stage buffer for retry (storage issue), ${stagedBuffer.messages.length} messages preserved in existing staging`
+      logger.warn(
+        `Failed to re-stage buffer for retry (storage issue), ${stagedBuffer.messages.length} messages preserved in existing staging`
       );
       // Don't throw - staging is preserved, reflection will retry on next trigger
       return;
@@ -309,9 +315,7 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
         const userId = options.userIdExtractor(runtime);
 
         if (!userId) {
-          console.warn(
-            "[before-agent] No userId provided, cannot load or save weights"
-          );
+          logger.warn("No userId provided, cannot load or save weights");
         }
 
         // Load existing weights or initialize new ones
@@ -373,9 +377,7 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
               );
 
               if (!staged) {
-                console.warn(
-                  "[before-agent] Failed to stage buffer, skipping reflection"
-                );
+                logger.warn("Failed to stage buffer, skipping reflection");
                 return {
                   _rerankerWeights: rerankerState,
                   _retrievedMemories: [],
@@ -399,14 +401,12 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
                 .then(async () => {
                   // Clear staging buffer after reflection completes successfully
                   await bufferStorage.clearStaging(userId);
-                  console.debug(
-                    "[before-agent] Reflection completed, staging cleared"
-                  );
+                  logger.debug("Reflection completed, staging cleared");
                 })
                 .catch((error) => {
                   // Staging is preserved for retry on next trigger
-                  console.warn(
-                    "[before-agent] Reflection failed, staging preserved for retry:",
+                  logger.warn(
+                    "Reflection failed, staging preserved for retry:",
                     error instanceof Error ? error.message : String(error)
                   );
                   // Do NOT re-throw - this prevents .then() from running
@@ -424,8 +424,8 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
         };
       } catch (error) {
         // Graceful degradation: initialize in-memory state on error
-        console.warn(
-          "[before-agent] Error loading weights, using initialized state:",
+        logger.warn(
+          "Error loading weights, using initialized state:",
           error instanceof Error ? error.message : String(error)
         );
 

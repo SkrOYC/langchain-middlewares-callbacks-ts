@@ -14,7 +14,10 @@ import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
+import { getLogger } from "@/utils/logger";
 import { extractLastHumanMessage } from "@/utils/memory-helpers";
+
+const logger = getLogger("before-model");
 
 // ============================================================================
 // Configuration
@@ -136,9 +139,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
           weights.config
         )
       ) {
-        console.warn(
-          "[before-model] Invalid reranker weights, skipping retrieval"
-        );
+        logger.warn("Invalid reranker weights, skipping retrieval");
         // Preserve existing state
         return {
           _retrievedMemories: state._retrievedMemories ?? [],
@@ -204,8 +205,8 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         };
       } catch (error) {
         // Graceful degradation: continue without retrieval on error
-        console.warn(
-          "[before-model] Error during memory retrieval, continuing:",
+        logger.warn(
+          "Error during memory retrieval, continuing:",
           error instanceof Error ? error.message : String(error)
         );
 

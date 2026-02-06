@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
-import { createMessageBufferStorage, MessageBufferStorage } from "@/storage/message-buffer-storage";
 import type { MessageBuffer } from "@/schemas/index";
+import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
 
 /**
  * Tests for MessageBufferStorage
@@ -150,7 +150,9 @@ describe("MessageBufferStorage", () => {
       const item = await storage.loadBufferItem("test-user");
 
       expect(item).not.toBeNull();
-      expect(item!.updated_at.getTime()).toBeGreaterThan(item!.created_at.getTime());
+      expect(item!.updated_at.getTime()).toBeGreaterThan(
+        item!.created_at.getTime()
+      );
     });
   });
 
@@ -295,14 +297,19 @@ describe("MessageBufferStorage", () => {
       // Verify new message is still in live buffer
       const finalLiveBuffer = await storage.loadBuffer("test-user");
       expect(finalLiveBuffer.messages).toHaveLength(2);
-      expect(finalLiveBuffer.messages[1].content).toBe("Message 2 (arrived during async)");
+      expect(finalLiveBuffer.messages[1].content).toBe(
+        "Message 2 (arrived during async)"
+      );
     });
   });
 
   describe("Namespace Isolation", () => {
     test("custom namespace prefixes storage keys correctly", async () => {
       const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore, ["custom", "namespace"]);
+      const storage = createMessageBufferStorage(mockStore, [
+        "custom",
+        "namespace",
+      ]);
 
       const buffer: MessageBuffer = {
         messages: [
@@ -328,7 +335,10 @@ describe("MessageBufferStorage", () => {
 
     test("staging uses same custom namespace", async () => {
       const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore, ["custom", "namespace"]);
+      const storage = createMessageBufferStorage(mockStore, [
+        "custom",
+        "namespace",
+      ]);
 
       const buffer: MessageBuffer = {
         messages: [
@@ -360,14 +370,30 @@ describe("MessageBufferStorage", () => {
       const storage2 = createMessageBufferStorage(mockStore, ["namespace-b"]);
 
       const buffer1: MessageBuffer = {
-        messages: [{ lc_serialized: { type: "human" }, lc_kwargs: { content: "A" }, lc_id: ["human"], content: "A", additional_kwargs: {} }],
+        messages: [
+          {
+            lc_serialized: { type: "human" },
+            lc_kwargs: { content: "A" },
+            lc_id: ["human"],
+            content: "A",
+            additional_kwargs: {},
+          },
+        ],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
       };
 
       const buffer2: MessageBuffer = {
-        messages: [{ lc_serialized: { type: "human" }, lc_kwargs: { content: "B" }, lc_id: ["human"], content: "B", additional_kwargs: {} }],
+        messages: [
+          {
+            lc_serialized: { type: "human" },
+            lc_kwargs: { content: "B" },
+            lc_id: ["human"],
+            content: "B",
+            additional_kwargs: {},
+          },
+        ],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),

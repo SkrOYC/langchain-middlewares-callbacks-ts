@@ -11,10 +11,10 @@ import {
   MergeDecisionSchema,
   type MiddlewareOptions,
   MiddlewareOptionsSchema,
-  type RerankerState,
-  RerankerStateSchema,
   type ReflectionConfig,
   ReflectionConfigSchema,
+  type RerankerState,
+  RerankerStateSchema,
   type RetrievedMemory,
   RetrievedMemorySchema,
   type RMMState,
@@ -609,8 +609,8 @@ describe("ReflectionConfigSchema", () => {
     const validConfig: ReflectionConfig = {
       minTurns: 2,
       maxTurns: 50,
-      minInactivityMs: 600000,
-      maxInactivityMs: 1800000,
+      minInactivityMs: 600_000,
+      maxInactivityMs: 1_800_000,
       mode: "strict",
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
@@ -621,8 +621,8 @@ describe("ReflectionConfigSchema", () => {
     const invalidConfig = {
       minTurns: 10,
       maxTurns: 5, // Invalid: max < min
-      minInactivityMs: 600000,
-      maxInactivityMs: 1800000,
+      minInactivityMs: 600_000,
+      maxInactivityMs: 1_800_000,
       mode: "strict" as const,
     };
     const result = ReflectionConfigSchema.safeParse(invalidConfig);
@@ -633,8 +633,8 @@ describe("ReflectionConfigSchema", () => {
     const invalidConfig = {
       minTurns: 2,
       maxTurns: 50,
-      minInactivityMs: 1800000,
-      maxInactivityMs: 600000, // Invalid: max < min
+      minInactivityMs: 1_800_000,
+      maxInactivityMs: 600_000, // Invalid: max < min
       mode: "strict" as const,
     };
     const result = ReflectionConfigSchema.safeParse(invalidConfig);
@@ -645,8 +645,8 @@ describe("ReflectionConfigSchema", () => {
     const validConfig = {
       minTurns: 5,
       maxTurns: 5, // Valid: max = min
-      minInactivityMs: 600000,
-      maxInactivityMs: 1800000,
+      minInactivityMs: 600_000,
+      maxInactivityMs: 1_800_000,
       mode: "relaxed" as const,
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
@@ -657,8 +657,8 @@ describe("ReflectionConfigSchema", () => {
     const validConfig = {
       minTurns: 2,
       maxTurns: 50,
-      minInactivityMs: 1000000,
-      maxInactivityMs: 1000000, // Valid: max = min
+      minInactivityMs: 1_000_000,
+      maxInactivityMs: 1_000_000, // Valid: max = min
       mode: "strict" as const,
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
