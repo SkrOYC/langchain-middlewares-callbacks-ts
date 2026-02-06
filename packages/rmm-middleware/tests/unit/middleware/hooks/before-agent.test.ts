@@ -697,9 +697,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       },
     };
 
-    // Track when reflection completes
-    const reflectionComplete = false;
-
     // First, trigger the middleware which starts async reflection
     await middleware.beforeAgent(sampleState, mockRuntime);
 
