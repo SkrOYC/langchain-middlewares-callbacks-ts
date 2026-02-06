@@ -437,6 +437,9 @@ export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
  *
  * Note: messages are stored as z.any() since they are full LangChain BaseMessage
  * objects that get serialized. The actual type is BaseMessage from @langchain/core/messages.
+ *
+ * Inactivity is tracked via BaseStore's updated_at timestamp, not within the buffer itself.
+ * This ensures that appending messages doesn't reset the inactivity clock.
  */
 export const MessageBufferSchema = z.object({
   /** Array of serialized messages waiting for reflection */
@@ -452,6 +455,8 @@ export const MessageBufferSchema = z.object({
 /**
  * Message buffer type for cross-thread message persistence.
  * The messages array contains LangChain BaseMessage objects.
+ *
+ * Note: Inactivity is tracked via BaseStore's updated_at timestamp externally.
  */
 export interface MessageBuffer {
   messages: import("@langchain/core/messages").BaseMessage[];

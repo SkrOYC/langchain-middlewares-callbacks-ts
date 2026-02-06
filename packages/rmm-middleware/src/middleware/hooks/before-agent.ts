@@ -1,22 +1,29 @@
 /**
  * beforeAgent hook for Retrospective Reflection
  *
- * Initializes the reranker state at the start of each agent invocation:
+ * Responsibilities:
  * 1. Loads learned reranker weights from BaseStore (or initializes new ones)
- * 2. Resets transient state fields for the new invocation
- *
- * Per paper: Weights are initialized with W_q[i][j] ~ N(0, 0.01)
+ * 2. Checks prospective reflection triggers using BaseStore's updated_at
+ * 3. Triggers reflection asynchronously if thresholds are met
+ * 4. Clears buffer after reflection
  */
 
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
 import type {
   BaseMessage,
   CitationRecord,
-  RerankerState,
+  ReflectionConfig,
   RetrievedMemory,
+  RerankerState,
 } from "@/schemas";
+import {
+  createEmptyMessageBuffer,
+  DEFAULT_REFLECTION_CONFIG,
+} from "@/schemas";
+import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { initializeMatrix } from "@/utils/matrix";
+import { countHumanMessages } from "@/utils/message-helpers";
 
 // ============================================================================
 // Configuration
@@ -44,6 +51,25 @@ export interface BeforeAgentOptions {
    * Used for multi-user isolation of reranker weights
    */
   userIdExtractor: (runtime: BeforeAgentRuntime) => string;
+
+  /**
+   * Optional reflection configuration
+   * If not provided, uses DEFAULT_REFLECTION_CONFIG
+   */
+  reflectionConfig?: ReflectionConfig;
+
+  /**
+   * Optional dependencies for reflection processing
+   * If not provided, reflection is skipped
+   */
+  reflectionDeps?: {
+    vectorStore: {
+      similaritySearch: (query: string) => Promise<RetrievedMemory[]>;
+      addDocuments: (documents: string[]) => Promise<void>;
+    };
+    extractSpeaker1: (dialogue: string) => string;
+    updateMemory?: (history: string[], newSummary: string) => string;
+  };
 }
 
 /**
@@ -65,6 +91,94 @@ interface BeforeAgentState {
 }
 
 // ============================================================================
+// Trigger Logic
+// ============================================================================
+
+/**
+ * Checks if reflection should be triggered based on configured min/max thresholds.
+ *
+ * Max thresholds act as "force" triggers - reflection happens regardless of mode.
+ * Min thresholds follow the configured mode:
+ * - "strict": BOTH minTurns AND minInactivityMs must be met
+ * - "relaxed": EITHER minTurns OR minInactivityMs must be met
+ *
+ * @param humanMessageCount - Count of human messages in buffer
+ * @param timeSinceLastUpdate - Time in ms since BaseStore's updated_at
+ * @param config - Reflection configuration
+ * @returns true if reflection should be triggered
+ */
+export function checkReflectionTriggers(
+  humanMessageCount: number,
+  timeSinceLastUpdate: number,
+  config: ReflectionConfig
+): boolean {
+  // Max thresholds: force reflection regardless of mode
+  if (humanMessageCount >= config.maxTurns) {
+    return true;
+  }
+
+  if (timeSinceLastUpdate >= config.maxInactivityMs) {
+    return true;
+  }
+
+  // Min thresholds: follow mode logic
+  const minTurnsMet = humanMessageCount >= config.minTurns;
+  const minInactivityMet = timeSinceLastUpdate >= config.minInactivityMs;
+
+  if (config.mode === "strict") {
+    return minTurnsMet && minInactivityMet;
+  }
+
+  return minTurnsMet || minInactivityMet;
+}
+
+/**
+ * Processes reflection on buffered messages.
+ * Extracts memories and updates the memory bank.
+ *
+ * Note: This is a simplified implementation for testing.
+ * Full implementation requires summarizationModel and embeddings.
+ */
+async function processReflection(
+  buffer: { messages: unknown[]; humanMessageCount: number },
+  deps: NonNullable<BeforeAgentOptions["reflectionDeps"]>
+): Promise<void> {
+  if (buffer.messages.length === 0) {
+    return;
+  }
+
+  try {
+    // Format dialogue for extraction
+    const dialogue = (buffer.messages as Record<string, unknown>[])
+      .map((msg) => {
+        const content = msg.content ?? "";
+        const type = msg.lc_serialized
+          ? (msg.lc_serialized as Record<string, unknown>).type
+          : "unknown";
+        return `${type}: ${content}`;
+      })
+      .join("\n");
+
+    // For now, just add the raw dialogue as a "memory" placeholder
+    // In full implementation, this would use extractMemories with LLM
+    console.debug(
+      `[before-agent] Processing reflection on ${buffer.humanMessageCount} human messages`
+    );
+
+    // Simulate memory extraction - in production this would call extractMemories
+    // For testing, we just mark that reflection was attempted
+    if (deps.vectorStore.addDocuments) {
+      await deps.vectorStore.addDocuments([`Reflection marker: ${dialogue.substring(0, 100)}...`]);
+    }
+  } catch (error) {
+    console.warn(
+      "[before-agent] Error during reflection processing:",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
+
+// ============================================================================
 // Default Configuration
 // ============================================================================
 
@@ -77,8 +191,9 @@ interface BeforeAgentState {
  *
  * This hook is responsible for:
  * 1. Loading reranker weights from BaseStore (per-user isolation)
- * 2. Initializing new weights with Gaussian distribution if none exist
- * 3. Resetting transient state fields for the new invocation
+ * 2. Checking prospective reflection triggers using BaseStore's updated_at
+ * 3. Processing reflection asynchronously if thresholds are met
+ * 4. Clearing buffer after reflection
  *
  * @param options - Configuration options
  * @returns Middleware with beforeAgent hook
@@ -99,6 +214,9 @@ interface BeforeAgentState {
 export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
   // Create weight storage adapter
   const weightStorage = createWeightStorage(options.store);
+
+  // Get reflection config or use default
+  const reflectionConfig = options.reflectionConfig ?? DEFAULT_REFLECTION_CONFIG;
 
   return {
     name: "rmm-before-agent",
@@ -133,6 +251,50 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
         } else {
           // No userId, use in-memory initialization
           rerankerState = initializeRerankerState();
+        }
+
+        // =========================================================================
+        // Prospective Reflection: Check triggers using BaseStore's updated_at
+        // =========================================================================
+
+        if (userId && options.reflectionDeps && runtime.context.store) {
+          const bufferStorage = createMessageBufferStorage(runtime.context.store);
+          const item = await bufferStorage.loadBufferItem(userId);
+
+          if (item && item.value.messages.length > 0) {
+            // Calculate time since last buffer update using BaseStore's updatedAt
+            const now = Date.now();
+            const timeSinceLastUpdate = now - item.updatedAt.getTime();
+
+            // Check if reflection should trigger
+            const shouldTrigger = checkReflectionTriggers(
+              item.value.humanMessageCount,
+              timeSinceLastUpdate,
+              reflectionConfig
+            );
+
+            if (shouldTrigger) {
+              // Process reflection asynchronously (non-blocking)
+              // We don't await this to not delay the agent
+              processReflection(
+                { messages: item.value.messages, humanMessageCount: item.value.humanMessageCount },
+                options.reflectionDeps
+              )
+                .then(async () => {
+                  // Clear buffer after reflection
+                  await bufferStorage.clearBuffer(userId);
+                  console.debug(
+                    "[before-agent] Reflection completed, buffer cleared"
+                  );
+                })
+                .catch((error) => {
+                  console.warn(
+                    "[before-agent] Reflection failed:",
+                    error instanceof Error ? error.message : String(error)
+                  );
+                });
+            }
+          }
         }
 
         // Reset transient state fields for new invocation

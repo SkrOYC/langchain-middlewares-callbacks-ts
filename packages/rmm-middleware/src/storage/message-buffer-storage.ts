@@ -1,4 +1,4 @@
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
 import {
   createEmptyMessageBuffer,
   type MessageBuffer,
@@ -17,6 +17,13 @@ export interface MessageBufferStorage {
    * @returns MessageBuffer or empty buffer
    */
   loadBuffer(userId: string): Promise<MessageBuffer>;
+
+  /**
+   * Load the full Item (including BaseStore's updated_at) for trigger checks.
+   * @param userId - The user identifier
+   * @returns Item with buffer value, or null if not found
+   */
+  loadBufferItem(userId: string): Promise<Item | null>;
 
   /**
    * Save message buffer for a user to BaseStore.
@@ -73,6 +80,19 @@ export function createMessageBufferStorage(
           error instanceof Error ? error.message : String(error)
         );
         return createEmptyMessageBuffer();
+      }
+    },
+
+    async loadBufferItem(userId: string): Promise<Item | null> {
+      try {
+        const namespace = buildNamespace(userId);
+        return await store.get(namespace, NAMESPACE_KEY);
+      } catch (error) {
+        console.warn(
+          "[message-buffer-storage] Error loading buffer item, returning null:",
+          error instanceof Error ? error.message : String(error)
+        );
+        return null;
       }
     },
 
