@@ -35,6 +35,7 @@ describe("rmmMiddleware Factory", () => {
     const middleware = rmmMiddleware({
       vectorStore: mockVectorStore as any,
       embeddings: mockEmbeddings as any,
+      embeddingDimension: 1536,
       llm: mockLLM as any,
       enabled: true,
     });
@@ -96,6 +97,7 @@ describe("rmmMiddleware Factory", () => {
     const middleware = rmmMiddleware({
       vectorStore: mockVectorStore as any,
       embeddings: mockEmbeddings as any,
+      embeddingDimension: 1536,
       // No LLM - reflection should be disabled
       enabled: true,
     });

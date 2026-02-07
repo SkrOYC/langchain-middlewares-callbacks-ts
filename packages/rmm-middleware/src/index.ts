@@ -121,6 +121,20 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     });
   }
 
+  // Validate embeddings and embeddingDimension (both required together)
+  if (parsedConfig.embeddings && !parsedConfig.embeddingDimension) {
+    throw new Error(
+      "embeddingDimension is required when embeddings is provided. " +
+        "Please specify the output dimension of your embeddings model."
+    );
+  }
+  if (parsedConfig.embeddingDimension && !parsedConfig.embeddings) {
+    throw new Error(
+      "embeddings is required when embeddingDimension is provided. " +
+        "Please provide an embeddings instance."
+    );
+  }
+
   // Validate topM <= topK (cap topM at topK if exceeds)
   const effectiveTopM = Math.min(parsedConfig.topM, parsedConfig.topK);
   if (effectiveTopM < parsedConfig.topM) {
@@ -203,17 +217,14 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   const afterModelHook = extractHook(afterModelMiddleware, "afterModel");
 
   // Create wrapModelCall hook only if embeddings is present (optional for retrospective reflection)
-  let wrapModelCallHook = undefined;
+  let wrapModelCallHook: ReturnType<typeof extractHook> | undefined;
   if (parsedConfig.embeddings) {
     const wrapModelCallOptions: WrapModelCallOptions = {
       embeddings: parsedConfig.embeddings as Embeddings,
     };
     const wrapModelCallMiddleware =
       createRetrospectiveWrapModelCall(wrapModelCallOptions);
-    wrapModelCallHook = extractHook(
-      wrapModelCallMiddleware,
-      "wrapModelCall"
-    );
+    wrapModelCallHook = extractHook(wrapModelCallMiddleware, "wrapModelCall");
   }
 
   // Create the combined middleware

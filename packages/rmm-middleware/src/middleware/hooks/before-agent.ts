@@ -48,10 +48,10 @@ const DEFAULT_CONFIG = {
 } as const;
 
 /**
- * Default embedding dimension for reranker matrices
- * Matches common embedding model outputs (e.g., OpenAI ada-002)
+ * Default embedding dimension used only when reranker is not active.
+ * When retrospective reflection is enabled, embeddingDimension must be provided.
  */
-const DEFAULT_EMBEDDING_DIMENSION = 1536;
+const DEFAULT_CONFIG_EMBEDDING_DIMENSION = 1536;
 
 /**
  * Configuration options for the beforeAgent hook
@@ -665,8 +665,10 @@ function createErrorStateUpdate(
 function initializeRerankerState(
   config?: BeforeAgentOptions["rerankerConfig"]
 ): RerankerState {
+  // embeddingDimension is required when reranker is used (retrospective reflection)
+  // When only prospective reflection is used, dimension doesn't matter for reranker
   const embeddingDimension =
-    config?.embeddingDimension ?? DEFAULT_EMBEDDING_DIMENSION;
+    config?.embeddingDimension ?? DEFAULT_CONFIG_EMBEDDING_DIMENSION;
   const topK = config?.topK ?? DEFAULT_CONFIG.topK;
   const topM = config?.topM ?? DEFAULT_CONFIG.topM;
   const temperature = config?.temperature ?? DEFAULT_CONFIG.temperature;

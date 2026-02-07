@@ -88,10 +88,10 @@ export const rmmConfigSchema = z.object({
 
   /**
    * Embedding dimension for the reranker matrices.
-   * Should match the output dimension of your embeddings model.
-   * @default 1536 (OpenAI ada-002)
+   * Required when using retrospective reflection (when embeddings is provided).
+   * Must match the output dimension of your embeddings model.
    */
-  embeddingDimension: z.number().int().positive().default(1536),
+  embeddingDimension: z.number().int().positive().optional(),
 
   /**
    * Session identifier for memory isolation.

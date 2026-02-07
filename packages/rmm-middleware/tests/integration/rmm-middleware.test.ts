@@ -179,6 +179,7 @@ describe("rmmMiddleware Integration", () => {
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
       enabled: true,
     });
 
@@ -197,6 +198,7 @@ describe("rmmMiddleware Integration", () => {
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
       enabled: false,
     });
 
@@ -220,6 +222,7 @@ describe("rmmMiddleware Integration", () => {
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
       store,
       enabled: true,
     });
@@ -252,6 +255,7 @@ describe("rmmMiddleware Integration", () => {
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
       topK: 3,
       enabled: true,
     });
@@ -276,6 +280,7 @@ describe("rmmMiddleware Integration", () => {
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
       store,
       enabled: true,
     });
@@ -306,6 +311,7 @@ describe("rmmMiddleware Integration", () => {
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
       topK: 10,
       topM: 3,
       sessionId: "my-session",
@@ -320,10 +326,11 @@ describe("rmmMiddleware Integration", () => {
     const vectorStore = createMockVectorStore();
     const embeddings = createMockEmbeddings();
 
-    // Only required options
+    // Only required options (embeddings requires embeddingDimension)
     const middleware = rmmMiddleware({
       vectorStore,
       embeddings,
+      embeddingDimension: 1536,
     });
 
     expect(middleware).toBeDefined();
