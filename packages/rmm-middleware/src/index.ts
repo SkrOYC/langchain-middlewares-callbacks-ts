@@ -8,9 +8,9 @@
  */
 
 import { createMiddleware } from "langchain/agents";
-import { type RmmConfig, rmmConfigSchema } from "./schemas/config.js";
+import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 
-export type { RmmConfig } from "./schemas/config.js";
+export type { RmmConfig } from "@/schemas/config.js";
 
 /**
  * Creates RMM middleware for LangChain createAgent

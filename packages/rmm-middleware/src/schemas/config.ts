@@ -79,4 +79,3 @@ export const rmmConfigSchema = z.object({
 });
 
 export type RmmConfig = z.input<typeof rmmConfigSchema>;
-export type RmmConfigInput = z.input<typeof rmmConfigSchema>;
