@@ -765,7 +765,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     expect(typeof capturedDocuments[0].metadata?.timestamp).toBe("number");
   });
 
-  test("failed reflection preserves staging for retry", async () => {
+  test("failed memory extraction clears staging buffer on graceful degradation", async () => {
     const { createRetrospectiveBeforeAgent } = await import(
       "@/middleware/hooks/before-agent"
     );
@@ -859,6 +859,112 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       "message-buffer"
     );
     // Staging should exist but have empty messages (cleared to empty buffer)
+    expect(stagingBuffer).not.toBeNull();
+    expect(stagingBuffer.value.messages).toHaveLength(0);
+  });
+
+  test("addDocuments failure triggers retry logic", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Initial buffer with messages
+    const initialBuffer = {
+      messages: [
+        {
+          type: "human",
+          data: {
+            content: "Message 1",
+          },
+        },
+      ],
+      humanMessageCount: 1,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const storedBuffers = new Map<string, unknown>();
+    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
+
+    const mockStore = createAsyncMockStore(storedBuffers);
+
+    // Capture addDocuments calls to track retry behavior
+    let addDocumentsCalls = 0;
+
+    // Mock LLM that returns valid extraction output
+    const mockLLM = {
+      invoke: () => {
+        const content = JSON.stringify({
+          extracted_memories: [
+            {
+              summary: "Test memory",
+              reference: [0],
+            },
+          ],
+        });
+        return { content, text: content };
+      },
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    const mockDeps = {
+      vectorStore: {
+        similaritySearch: async () => [],
+        addDocuments: async () => {
+          addDocumentsCalls++;
+          // Fail on first call to trigger retry
+          if (addDocumentsCalls === 1) {
+            throw new Error("Vector store connection failed");
+          }
+          return await Promise.resolve();
+        },
+      },
+      extractSpeaker1: (_dialogue: string) => "Speaker1",
+      llm: mockLLM as any,
+      embeddings: mockEmbeddings as any,
+    };
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: mockStore,
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionConfig: {
+        minTurns: 1,
+        maxTurns: 10,
+        minInactivityMs: 0,
+        maxInactivityMs: 60_000,
+        mode: "strict",
+        retryDelayMs: 50, // Short delay for faster test
+        maxRetries: 3,
+      },
+      reflectionDeps: mockDeps,
+    });
+
+    const mockRuntime: BeforeAgentRuntime = {
+      context: {
+        userId: "test-user",
+        store: mockStore,
+      },
+    };
+
+    // Trigger reflection (will retry after addDocuments failure)
+    await middleware.beforeAgent(sampleState, mockRuntime);
+
+    // Give retry logic time to execute (increased timeout for exponential backoff)
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Verify addDocuments was called at least twice (initial + retry)
+    expect(addDocumentsCalls).toBeGreaterThanOrEqual(2);
+
+    // Verify staging buffer was cleared after successful retry
+    const stagingBuffer = await mockStore.get(
+      ["rmm", "test-user", "buffer", "staging"],
+      "message-buffer"
+    );
+    // After successful retry, staging should be cleared
     expect(stagingBuffer).not.toBeNull();
     expect(stagingBuffer.value.messages).toHaveLength(0);
   });

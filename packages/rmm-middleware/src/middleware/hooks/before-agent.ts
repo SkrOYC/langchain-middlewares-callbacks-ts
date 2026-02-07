@@ -16,14 +16,15 @@ import {
 } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import { extractMemories } from "@/algorithms/memory-extraction";
-import type {
-  CitationRecord,
-  MessageBuffer,
-  ReflectionConfig,
-  RerankerState,
-  RetrievedMemory,
+import {
+  type CitationRecord,
+  DEFAULT_REFLECTION_CONFIG,
+  type MessageBuffer,
+  MessageBufferSchema,
+  type ReflectionConfig,
+  type RerankerState,
+  type RetrievedMemory,
 } from "@/schemas";
-import { DEFAULT_REFLECTION_CONFIG } from "@/schemas";
 import {
   createMessageBufferStorage,
   type MessageBufferStorage,
@@ -325,7 +326,6 @@ async function processReflection(
  * @param bufferStorage - Storage adapter
  * @param config - Reflection configuration
  * @param retryCount - Current retry count
- * @param error - Original error that triggered retry
  */
 async function handleRetryStagingFailure(
   userId: string,
@@ -347,9 +347,18 @@ async function handleRetryStagingFailure(
     );
 
     if (currentStaging) {
+      // Validate and parse the staging buffer before modification
+      const parseResult = MessageBufferSchema.safeParse(currentStaging.value);
+      if (!parseResult.success) {
+        logger.warn(
+          `Failed to parse staging buffer during retry handling: ${parseResult.error.message}`
+        );
+        return;
+      }
+
       // Increment retry count
       const updatedStaging = {
-        ...currentStaging.value,
+        ...parseResult.data,
         retryCount: retryCount + 1,
       };
       await bufferStorage.store.put(
@@ -503,17 +512,62 @@ async function stageBufferForReflection(
   await bufferStorage.clearBuffer(userId);
 
   // Process reflection asynchronously (non-blocking)
-  processReflection(userId, bufferStorage, reflectionConfig, reflectionDeps)
-    .then(async () => {
+  const processWithRetry = async (): Promise<void> => {
+    try {
+      await processReflection(
+        userId,
+        bufferStorage,
+        reflectionConfig,
+        reflectionDeps
+      );
       await bufferStorage.clearStaging(userId);
       logger.debug("Reflection completed, staging cleared");
-    })
-    .catch((error) => {
-      logger.warn(
-        "Reflection failed, staging preserved for retry:",
-        error instanceof Error ? error.message : String(error)
-      );
-    });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.warn(`Reflection failed: ${errorMessage}`);
+
+      // Check if we should retry by reading the current retry count from staging
+      const currentStaging = await bufferStorage.loadStagingBuffer(userId);
+      if (currentStaging && currentStaging.retryCount !== undefined) {
+        const retryCount = currentStaging.retryCount;
+        if (retryCount < reflectionConfig.maxRetries) {
+          // Calculate exponential backoff delay
+          const delayMs = reflectionConfig.retryDelayMs * 2 ** retryCount;
+          logger.debug(
+            `Scheduling retry attempt ${retryCount + 2}/${reflectionConfig.maxRetries + 1} in ${delayMs}ms`
+          );
+
+          // Schedule retry after delay
+          setTimeout(() => {
+            processWithRetry().catch((retryError) => {
+              logger.error(
+                "Retry failed:",
+                retryError instanceof Error
+                  ? retryError.message
+                  : String(retryError)
+              );
+            });
+          }, delayMs);
+        } else {
+          logger.warn(
+            `Reflection failed after ${retryCount} retries, giving up`
+          );
+          await bufferStorage.clearStaging(userId);
+        }
+      } else {
+        // No staging buffer or no retry count, give up
+        logger.warn("Reflection failed, no staging buffer for retry");
+      }
+    }
+  };
+
+  processWithRetry().catch((finalError) => {
+    logger.error(
+      "Unexpected error in reflection process:",
+      finalError instanceof Error ? finalError.message : String(finalError)
+    );
+  });
 }
 
 /**
