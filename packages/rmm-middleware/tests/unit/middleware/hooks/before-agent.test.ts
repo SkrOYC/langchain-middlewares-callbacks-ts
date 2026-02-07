@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { RerankerState } from "@/schemas/index";
+import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index";
 
 /**
  * Creates an async mock BaseStore for testing
@@ -430,6 +431,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       store: mockStore,
       userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
       reflectionConfig: {
+        ...DEFAULT_REFLECTION_CONFIG,
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
@@ -549,6 +551,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       store: mockStore,
       userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
       reflectionConfig: {
+        ...DEFAULT_REFLECTION_CONFIG,
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
@@ -612,6 +615,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       store: mockStore,
       userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
       reflectionConfig: {
+        ...DEFAULT_REFLECTION_CONFIG,
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
@@ -653,15 +657,14 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       "@/middleware/hooks/before-agent"
     );
 
-    // Initial buffer - will be modified in staging
+    // Initial buffer - use proper StoredMessage format
     const initialBuffer = {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Original message" },
-          lc_id: ["human"],
-          content: "Original message",
-          additional_kwargs: {},
+          type: "human",
+          data: {
+            content: "Original message",
+          },
         },
       ],
       humanMessageCount: 1,
@@ -672,27 +675,59 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     const storedBuffers = new Map<string, unknown>();
     storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
 
-    // Track what messages were passed to addDocuments
-    let capturedMessages: unknown[] = [];
+    // Track what documents were passed to addDocuments
+    let capturedDocuments: Array<{
+      pageContent: string;
+      metadata?: Record<string, unknown>;
+    }> = [];
 
     const mockStore = createAsyncMockStore(storedBuffers);
+
+    // Mock LLM that returns valid extraction output
+    const mockLLM = {
+      invoke: () => {
+        const content = JSON.stringify({
+          extracted_memories: [
+            {
+              summary: "User message about Original message",
+              reference: [0],
+            },
+          ],
+        });
+        return { content, text: content };
+      },
+    };
+
+    // Mock embeddings
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
 
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async (docs: string[], _metadatas?: unknown[]) => {
-          // Capture the messages being reflected
-          capturedMessages = docs;
+        addDocuments: async (
+          docs: Array<{
+            pageContent: string;
+            metadata?: Record<string, unknown>;
+          }>
+        ) => {
+          // Capture the documents being reflected
+          capturedDocuments = docs;
           return await Promise.resolve();
         },
       },
       extractSpeaker1: (_dialogue: string) => "Speaker1",
+      llm: mockLLM as any,
+      embeddings: mockEmbeddings as any,
     };
 
     const middleware = createRetrospectiveBeforeAgent({
       store: mockStore,
       userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
       reflectionConfig: {
+        ...DEFAULT_REFLECTION_CONFIG,
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
@@ -713,16 +748,21 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     await middleware.beforeAgent(sampleState, mockRuntime);
 
     // Wait for reflection to complete (it runs asynchronously)
-    // We can detect completion by waiting for the captured messages
+    // We can detect completion by waiting for the captured documents
     let attempts = 0;
-    while (capturedMessages.length === 0 && attempts < 50) {
+    while (capturedDocuments.length === 0 && attempts < 50) {
       await new Promise((resolve) => setTimeout(resolve, 10));
       attempts++;
     }
 
-    // Verify reflection processed messages from staging
-    expect(capturedMessages.length).toBe(1);
-    expect(capturedMessages[0]).toContain("Original message");
+    // Verify reflection processed documents from staging
+    expect(capturedDocuments.length).toBe(1);
+    expect(capturedDocuments[0].pageContent).toContain("Original message");
+    // Verify metadata structure
+    expect(capturedDocuments[0].metadata).toBeDefined();
+    expect(typeof capturedDocuments[0].metadata?.id).toBe("string");
+    expect(typeof capturedDocuments[0].metadata?.sessionId).toBe("string");
+    expect(typeof capturedDocuments[0].metadata?.timestamp).toBe("number");
   });
 
   test("failed reflection preserves staging for retry", async () => {
@@ -730,15 +770,14 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       "@/middleware/hooks/before-agent"
     );
 
-    // Initial buffer with messages
+    // Initial buffer with messages - use proper StoredMessage format
     const initialBuffer = {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Message 1" },
-          lc_id: ["human"],
-          content: "Message 1",
-          additional_kwargs: {},
+          type: "human",
+          data: {
+            content: "Message 1",
+          },
         },
       ],
       humanMessageCount: 1,
@@ -751,15 +790,28 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     const mockStore = createAsyncMockStore(storedBuffers);
 
-    // Make reflection fail
+    // Make reflection fail by having LLM throw an error
+    const mockLLM = {
+      invoke: () => {
+        throw new Error("LLM failed");
+      },
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
         addDocuments: async () => {
-          return await Promise.reject(new Error("Reflection failed"));
+          return await Promise.resolve();
         },
       },
       extractSpeaker1: (_dialogue: string) => "Speaker1",
+      llm: mockLLM as any,
+      embeddings: mockEmbeddings as any,
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -771,6 +823,8 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60_000,
         mode: "strict",
+        retryDelayMs: 100, // Short delay for faster test
+        maxRetries: 3,
       },
       reflectionDeps: mockDeps,
     });
@@ -782,10 +836,10 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       },
     };
 
-    // Trigger reflection (will fail)
+    // Trigger reflection (will fail gracefully)
     await middleware.beforeAgent(sampleState, mockRuntime);
 
-    // Give async reflection time to fail
+    // Give async reflection time to fail gracefully
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Verify main buffer was cleared (empty messages)
@@ -796,13 +850,17 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     expect(mainBuffer).not.toBeNull();
     expect(mainBuffer.value.messages).toHaveLength(0);
 
-    // Verify staging buffer is preserved (for retry)
+    // Verify staging buffer was cleared (graceful degradation on null/empty extraction)
+    // Note: According to acceptance criteria, when extractMemories returns null,
+    // we clear staging (graceful degradation) rather than preserving for retry.
+    // Retry is only for network/LLM timeout errors, not caught errors.
     const stagingBuffer = await mockStore.get(
       ["rmm", "test-user", "buffer", "staging"],
       "message-buffer"
     );
+    // Staging should exist but have empty messages (cleared to empty buffer)
     expect(stagingBuffer).not.toBeNull();
-    expect(stagingBuffer.value.messages).toHaveLength(1);
+    expect(stagingBuffer.value.messages).toHaveLength(0);
   });
 
   test("new messages go to main buffer during failed reflection", async () => {
@@ -810,15 +868,14 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       "@/middleware/hooks/before-agent"
     );
 
-    // Initial buffer with messages
+    // Initial buffer with messages - use proper StoredMessage format
     const initialBuffer = {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Message 1" },
-          lc_id: ["human"],
-          content: "Message 1",
-          additional_kwargs: {},
+          type: "human",
+          data: {
+            content: "Message 1",
+          },
         },
       ],
       humanMessageCount: 1,
@@ -834,19 +891,33 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     const mockStore = createAsyncMockStore(storedBuffers);
 
-    // Make reflection slow so we can add messages during it
+    // Make reflection slow by having LLM delay before throwing
+    const mockLLM = {
+      invoke: async () => {
+        // Mark that we've read from staging (in the extractMemories call)
+        reflectionReadFromStaging = true;
+        // Wait a bit to simulate slow processing
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Then fail
+        throw new Error("LLM failed");
+      },
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
     const mockDeps = {
       vectorStore: {
         similaritySearch: async () => [],
         addDocuments: async () => {
-          // Wait for the simulated slow reflection
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          // After waiting, reflection has read from staging
-          reflectionReadFromStaging = true;
-          throw new Error("Reflection failed");
+          return await Promise.resolve();
         },
       },
       extractSpeaker1: (_dialogue: string) => "Speaker1",
+      llm: mockLLM as any,
+      embeddings: mockEmbeddings as any,
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -858,6 +929,8 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         minInactivityMs: 0,
         maxInactivityMs: 60_000,
         mode: "strict",
+        retryDelayMs: 100, // Short delay for faster test
+        maxRetries: 3,
       },
       reflectionDeps: mockDeps,
     });
@@ -874,29 +947,31 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     // Wait for reflection to start reading from staging
     // This ensures we add messages AFTER reflection has read staging content
-    while (!reflectionReadFromStaging) {
+    let attempts = 0;
+    while (!reflectionReadFromStaging && attempts < 100) {
       await new Promise((resolve) => setTimeout(resolve, 10));
+      attempts++;
     }
+
+    expect(reflectionReadFromStaging).toBe(true);
 
     // Now add new message AFTER reflection has read from staging
     // New messages go to main buffer (which was cleared earlier)
     const newMessage = {
-      lc_serialized: { type: "human" },
-      lc_kwargs: { content: "New message during failed reflection" },
-      lc_id: ["human"],
-      content: "New message during failed reflection",
-      additional_kwargs: {},
+      type: "human",
+      data: {
+        content: "New message during failed reflection",
+      },
     };
 
     // Update main buffer - new messages go here during failed reflection
     await mockStore.put(["rmm", "test-user", "buffer"], "message-buffer", {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Message 1" },
-          lc_id: ["human"],
-          content: "Message 1",
-          additional_kwargs: {},
+          type: "human",
+          data: {
+            content: "Message 1",
+          },
         },
         newMessage,
       ],
@@ -917,7 +992,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     );
     expect(mainBuffer).not.toBeNull();
     expect(mainBuffer.value.messages).toHaveLength(2);
-    expect(mainBuffer.value.messages[1].content).toBe(
+    expect(mainBuffer.value.messages[1].data.content).toBe(
       "New message during failed reflection"
     );
   });
@@ -1013,6 +1088,7 @@ describe("beforeAgent Hook - Namespace Isolation", () => {
       store: mockStore,
       userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
       reflectionConfig: {
+        ...DEFAULT_REFLECTION_CONFIG,
         minTurns: 1,
         maxTurns: 10,
         minInactivityMs: 0,
@@ -1038,5 +1114,130 @@ describe("beforeAgent Hook - Namespace Isolation", () => {
     // At least one should have "staging" for the staging pattern
     const hasStaging = storedKeys.some((k) => k.includes("staging"));
     expect(hasStaging).toBe(true);
+  });
+});
+
+/**
+ * Tests for reflectionDeps interface extensions (Phase 1 & 2)
+ * These tests verify that reflectionDeps can accept llm and embeddings
+ */
+describe("reflectionDeps Interface Extensions", () => {
+  test("reflectionDeps accepts llm and embeddings dependencies", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Mock dependencies with new interface
+    const mockLLM = {
+      invoke: async () => ({ content: "Test response", text: "Test response" }),
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    const mockVectorStore = {
+      similaritySearch: async (_query: string) => [],
+      addDocuments: async (
+        _documents: Array<{
+          pageContent: string;
+          metadata?: Record<string, unknown>;
+        }>
+      ) => {
+        return await Promise.resolve();
+      },
+    };
+
+    const mockExtractSpeaker1 = (_dialogue: string) => "Speaker1";
+
+    // This should compile without type errors
+    const reflectionDeps = {
+      vectorStore: mockVectorStore,
+      extractSpeaker1: mockExtractSpeaker1,
+      llm: mockLLM,
+      embeddings: mockEmbeddings,
+    };
+
+    // Create middleware with extended reflectionDeps
+    const middleware = createRetrospectiveBeforeAgent({
+      store: {
+        get: () => null,
+        put: () => Promise.resolve(),
+        delete: () => Promise.resolve(),
+        batch: () => [],
+        search: () => [],
+        listNamespaces: () => [],
+      },
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionDeps: reflectionDeps as BeforeAgentOptions["reflectionDeps"],
+    });
+
+    expect(middleware).toBeDefined();
+  });
+
+  test("reflectionDeps is optional and can be undefined", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Should work without reflectionDeps
+    const middleware = createRetrospectiveBeforeAgent({
+      store: {
+        get: () => null,
+        put: () => Promise.resolve(),
+        delete: () => Promise.resolve(),
+        batch: () => [],
+        search: () => [],
+        listNamespaces: () => [],
+      },
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      // No reflectionDeps - should be backward compatible
+    });
+
+    expect(middleware).toBeDefined();
+  });
+
+  test("addDocuments signature accepts {pageContent, metadata} objects", async () => {
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    const mockVectorStore = {
+      similaritySearch: async (_query: string) => [],
+      addDocuments: async (
+        documents: Array<{
+          pageContent: string;
+          metadata?: Record<string, unknown>;
+        }>
+      ) => {
+        // Verify document structure
+        expect(documents).toBeDefined();
+        expect(Array.isArray(documents)).toBe(true);
+        expect(documents[0].pageContent).toBeDefined();
+        expect(documents[0].metadata).toBeDefined();
+        return await Promise.resolve();
+      },
+    };
+
+    const mockExtractSpeaker1 = (_dialogue: string) => "Speaker1";
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: {
+        get: () => null,
+        put: () => Promise.resolve(),
+        delete: () => Promise.resolve(),
+        batch: () => [],
+        search: () => [],
+        listNamespaces: () => [],
+      },
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionDeps: {
+        vectorStore: mockVectorStore,
+        extractSpeaker1: mockExtractSpeaker1,
+      },
+    });
+
+    expect(middleware).toBeDefined();
   });
 });

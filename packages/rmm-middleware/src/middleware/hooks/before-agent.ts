@@ -8,9 +8,15 @@
  * 4. Clears buffer after reflection
  */
 
+import type { Embeddings } from "@langchain/core/embeddings";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import {
+  type BaseMessage,
+  mapStoredMessagesToChatMessages,
+} from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import { extractMemories } from "@/algorithms/memory-extraction";
 import type {
-  BaseMessage,
   CitationRecord,
   MessageBuffer,
   ReflectionConfig,
@@ -67,11 +73,31 @@ export interface BeforeAgentOptions {
    */
   reflectionDeps?: {
     vectorStore: {
-      similaritySearch: (query: string) => Promise<RetrievedMemory[]>;
-      addDocuments: (documents: string[]) => Promise<void>;
+      similaritySearch: (query: string) => Promise<
+        Array<{
+          pageContent: string;
+          metadata: Record<string, unknown>;
+        }>
+      >;
+      addDocuments: (
+        documents: Array<{
+          pageContent: string;
+          metadata?: Record<string, unknown>;
+        }>
+      ) => Promise<void>;
     };
     extractSpeaker1: (dialogue: string) => string;
     updateMemory?: (history: string[], newSummary: string) => string;
+    /**
+     * LLM for memory extraction (Prospective Reflection)
+     * Required for LLM-based memory extraction via extractMemories
+     */
+    llm: BaseChatModel;
+    /**
+     * Embeddings for encoding extracted memories
+     * Required for generating memory vectors in VectorStore
+     */
+    embeddings: Embeddings;
   };
 
   /**
@@ -155,19 +181,30 @@ export function checkReflectionTriggers(
 }
 
 /**
- * Processes reflection on buffered messages.
- * Extracts memories and updates the memory bank.
+ * Processes reflection on buffered messages using LLM-based memory extraction.
+ * Extracts memories and stores them in the memory bank with rich metadata.
  *
  * Reads from staging buffer to ensure atomic reflection processing.
  * Implements retry logic with exponential backoff.
  *
- * TODO: Complete implementation with proper memory extraction using LLM.
- * This is a placeholder that adds raw dialogue markers to the vector store.
+ * This function:
+ * 1. Converts StoredMessage[] to BaseMessage[] using LangChain's mapStoredMessagesToChatMessages
+ * 2. Calls extractMemories with LLM to extract topic-based memories
+ * 3. Creates VectorStore documents with rich metadata (id, sessionId, timestamp, turnReferences, rawDialogue)
+ * 4. Implements graceful degradation: clears staging on null/empty extraction
+ * 5. Handles errors with retry logic and exponential backoff
+ * 6. On storage failure during retry: manually increments retry count to prevent infinite loop
  *
  * @param userId - User identifier for buffer isolation
  * @param bufferStorage - Storage adapter for buffer operations
  * @param config - Reflection configuration with retry settings
- * @param deps - Dependencies for memory extraction
+ * @param deps - Dependencies for memory extraction (LLM, embeddings, vectorStore, prompt handlers)
+ *
+ * Note: When re-staging fails due to storage issues, the function manually increments the retry
+ * count in the existing staging buffer to prevent an infinite loop. If max retries are exceeded,
+ * the staging buffer is cleared to allow normal operation to continue.
+ *
+ * @see Issue #48 - [RMM-5] Prospective Reflection implementation (original incomplete work)
  */
 async function processReflection(
   userId: string,
@@ -210,33 +247,47 @@ async function processReflection(
   }
 
   try {
-    // Format dialogue for extraction
-    const dialogue = stagedBuffer.messages
-      .map((msg) => {
-        // Handle both formats: StoredMessage (nested data.content) and flattened (top-level content)
-        const msgAny = msg as unknown as {
-          data?: { content?: string };
-          content?: string;
-        };
-        const content = msgAny.data?.content ?? msgAny.content ?? "";
-        const type = msg.type ?? "unknown";
-        return `${type}: ${content}`;
-      })
-      .join("\n");
-
-    // For now, just add the raw dialogue as a "memory" placeholder
-    // In full implementation, this would use extractMemories with LLM
-    console.debug(
-      `[before-agent] Processing reflection on ${stagedBuffer.humanMessageCount} human messages`
+    // FORMAT: Convert StoredMessage[] to BaseMessage[] for extractMemories
+    const sessionHistory: BaseMessage[] = mapStoredMessagesToChatMessages(
+      stagedBuffer.messages
     );
 
-    // Simulate memory extraction - in production this would call extractMemories
-    // For testing, we just mark that reflection was attempted
-    if (deps.vectorStore.addDocuments) {
-      await deps.vectorStore.addDocuments([
-        `Reflection marker: ${dialogue.substring(0, 100)}...`,
-      ]);
+    // EXTRACT: Use LLM to extract memories from dialogue
+    const memories = await extractMemories(
+      sessionHistory,
+      deps.llm,
+      deps.embeddings,
+      deps.extractSpeaker1,
+      userId
+    );
+
+    // HANDLE EMPTY OR FAILED EXTRACTION: Graceful degradation (Option A)
+    if (!memories || memories.length === 0) {
+      console.debug(
+        `[before-agent] No memories extracted from ${stagedBuffer.humanMessageCount} human messages`
+      );
+      // Clear staging buffer even with empty extraction
+      await bufferStorage.clearStaging(userId);
+      return;
     }
+
+    // STORE: Convert MemoryEntry[] to VectorStore documents with rich metadata
+    const documents = memories.map((memory) => ({
+      pageContent: memory.topicSummary,
+      metadata: {
+        id: memory.id,
+        sessionId: memory.sessionId,
+        timestamp: memory.timestamp,
+        turnReferences: JSON.stringify(memory.turnReferences),
+        rawDialogue: memory.rawDialogue,
+      },
+    }));
+
+    await deps.vectorStore.addDocuments(documents);
+
+    console.debug(
+      `[before-agent] Extracted and stored ${memories.length} memories`
+    );
   } catch (error) {
     logger.warn(
       `Reflection attempt ${retryCount + 1} failed:`,
@@ -251,15 +302,79 @@ async function processReflection(
 
     const reStaged = await bufferStorage.stageBuffer(userId, retryBuffer);
     if (!reStaged) {
-      logger.warn(
-        `Failed to re-stage buffer for retry (storage issue), ${stagedBuffer.messages.length} messages preserved in existing staging`
+      await handleRetryStagingFailure(
+        userId,
+        bufferStorage,
+        config,
+        retryCount
       );
-      // Don't throw - staging is preserved, reflection will retry on next trigger
       return;
     }
 
     // Re-throw to trigger retry in caller
     throw error;
+  }
+}
+
+/**
+ * Handle storage failure when re-staging buffer for retry.
+ * Attempts to increment retry count manually to prevent infinite loop.
+ * Clears staging if max retries exceeded.
+ *
+ * @param userId - User identifier
+ * @param bufferStorage - Storage adapter
+ * @param config - Reflection configuration
+ * @param retryCount - Current retry count
+ * @param error - Original error that triggered retry
+ */
+async function handleRetryStagingFailure(
+  userId: string,
+  bufferStorage: MessageBufferStorage,
+  config: ReflectionConfig,
+  retryCount: number
+): Promise<void> {
+  // Attempt to increment retry count manually in existing staging buffer
+  // This prevents infinite loop when storage issues persist
+  try {
+    // Use exposed interface values for consistency
+    const stagingNamespace = bufferStorage.buildNamespace(userId, "staging");
+    const NAMESPACE_KEY = bufferStorage.NAMESPACE_KEY;
+
+    // Get current staging to preserve state
+    const currentStaging = await bufferStorage.store.get(
+      stagingNamespace,
+      NAMESPACE_KEY
+    );
+
+    if (currentStaging) {
+      // Increment retry count
+      const updatedStaging = {
+        ...currentStaging.value,
+        retryCount: retryCount + 1,
+      };
+      await bufferStorage.store.put(
+        stagingNamespace,
+        NAMESPACE_KEY,
+        updatedStaging
+      );
+
+      // Check if max retries exceeded
+      if (retryCount + 1 >= config.maxRetries) {
+        logger.warn(
+          "Max retries exceeded, clearing staging to prevent infinite loop"
+        );
+        await bufferStorage.clearStaging(userId);
+        return;
+      }
+
+      logger.warn(
+        `Failed to re-stage buffer for retry (storage issue), manually incremented retry count to ${retryCount + 1}`
+      );
+    }
+  } catch (updateError) {
+    logger.warn(
+      `Failed to update staging buffer retry count: ${updateError instanceof Error ? updateError.message : String(updateError)}`
+    );
   }
 }
 

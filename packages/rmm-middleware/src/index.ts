@@ -7,6 +7,8 @@
  * - REINFORCE Learning: Updates reranker weights based on citations
  */
 
+import type { Embeddings } from "@langchain/core/embeddings";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { createMiddleware } from "langchain";
 import {
   type AfterAgentDependencies,
@@ -25,6 +27,8 @@ import {
   type BeforeModelOptions,
   createRetrospectiveBeforeModel,
 } from "@/middleware/hooks/before-model.js";
+import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
+import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 import type { Runtime } from "@/schemas/index.js";
 
@@ -147,6 +151,24 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     namespace: parsedConfig.sessionId
       ? ["rmm", parsedConfig.sessionId]
       : undefined,
+    // NEW: Populate reflectionDeps only when LLM and embeddings are provided
+    reflectionDeps:
+      parsedConfig.llm && parsedConfig.embeddings
+        ? {
+            vectorStore: {
+              similaritySearch: (query) =>
+                parsedConfig.vectorStore?.similaritySearch?.(query as string) ??
+                Promise.resolve([]),
+              addDocuments: (documents) =>
+                parsedConfig.vectorStore?.addDocuments?.(documents) ??
+                Promise.resolve(),
+            },
+            extractSpeaker1,
+            updateMemory,
+            llm: parsedConfig.llm as BaseChatModel,
+            embeddings: parsedConfig.embeddings as Embeddings,
+          }
+        : undefined,
   };
 
   // Build beforeModel hook options
