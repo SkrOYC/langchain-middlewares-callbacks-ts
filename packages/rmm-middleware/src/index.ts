@@ -34,6 +34,7 @@ import {
 import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
+import { getLogger } from "@/utils/logger";
 
 export type { RmmConfig } from "@/schemas/config.js";
 
@@ -48,33 +49,6 @@ function extractHook<T extends Record<string, unknown>, K extends keyof T>(
 }
 
 /**
- * Type guard for extracting sessionId from runtime.configurable
- */
-function getSessionIdFromConfigurable(
-  runtime: Record<string, unknown>
-): { sessionId?: string } | undefined {
-  return (runtime as { configurable?: { sessionId?: string } }).configurable;
-}
-
-/**
- * Type guard for extracting sessionId from runtime.context
- */
-function getSessionIdFromContext(
-  runtime: Record<string, unknown>
-): { sessionId?: string } | undefined {
-  return (runtime as { context?: { sessionId?: string } }).context;
-}
-
-/**
- * Type guard for extracting store from runtime.context
- */
-function getStoreFromContext(
-  runtime: Record<string, unknown>
-): { store?: unknown } | undefined {
-  return (runtime as { context?: { store?: unknown } }).context;
-}
-
-/**
  * Default reflection configuration
  */
 const DEFAULT_REFLECTION_CONFIG = {
@@ -86,6 +60,8 @@ const DEFAULT_REFLECTION_CONFIG = {
   retryDelayMs: 1000,
   maxRetries: 3,
 } as const;
+
+const logger = getLogger("rmm-middleware");
 
 /**
  * Creates RMM middleware for LangChain createAgent
@@ -145,6 +121,15 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     });
   }
 
+  // Validate topM <= topK (cap topM at topK if exceeds)
+  const effectiveTopM = Math.min(parsedConfig.topM, parsedConfig.topK);
+  if (effectiveTopM < parsedConfig.topM) {
+    logger.warn(
+      `RMM configuration: topM (${parsedConfig.topM}) exceeds topK (${parsedConfig.topK}), ` +
+        `capping to ${effectiveTopM}.`
+    );
+  }
+
   // Build beforeAgent hook options
   const beforeAgentOptions: BeforeAgentOptions = {
     store: parsedConfig.vectorStore as BeforeAgentOptions["store"],
@@ -163,7 +148,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     },
     rerankerConfig: {
       topK: parsedConfig.topK,
-      topM: parsedConfig.topM,
+      topM: effectiveTopM,
       temperature: parsedConfig.temperature,
       learningRate: parsedConfig.learningRate,
       baseline: parsedConfig.baseline,
@@ -173,7 +158,6 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     namespace: parsedConfig.sessionId
       ? ["rmm", parsedConfig.sessionId]
       : undefined,
-    // NEW: Populate reflectionDeps only when LLM and embeddings are provided
     reflectionDeps:
       parsedConfig.llm && parsedConfig.embeddings
         ? {
@@ -218,16 +202,19 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   const afterModelMiddleware = createRetrospectiveAfterModel(afterModelOptions);
   const afterModelHook = extractHook(afterModelMiddleware, "afterModel");
 
-  // Create wrapModelCall hook (required for retrospective reflection)
-  const wrapModelCallOptions: WrapModelCallOptions = {
-    embeddings: parsedConfig.embeddings as Embeddings,
-  };
-  const wrapModelCallMiddleware =
-    createRetrospectiveWrapModelCall(wrapModelCallOptions);
-  const wrapModelCallHook = extractHook(
-    wrapModelCallMiddleware,
-    "wrapModelCall"
-  );
+  // Create wrapModelCall hook only if embeddings is present (optional for retrospective reflection)
+  let wrapModelCallHook = undefined;
+  if (parsedConfig.embeddings) {
+    const wrapModelCallOptions: WrapModelCallOptions = {
+      embeddings: parsedConfig.embeddings as Embeddings,
+    };
+    const wrapModelCallMiddleware =
+      createRetrospectiveWrapModelCall(wrapModelCallOptions);
+    wrapModelCallHook = extractHook(
+      wrapModelCallMiddleware,
+      "wrapModelCall"
+    );
+  }
 
   // Create the combined middleware
   return createMiddleware({
