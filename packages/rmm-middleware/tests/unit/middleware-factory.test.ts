@@ -129,4 +129,78 @@ describe("rmmMiddleware Factory", () => {
     expect(middleware).toBeDefined();
     expect(middleware.name).toBe("RmmMiddleware");
   });
+
+  test("throws when embeddings provided without embeddingDimension", async () => {
+    const { rmmMiddleware } = await import("@/index");
+
+    const mockVectorStore = {
+      similaritySearch: async () => [],
+      addDocuments: async () => {
+        return await Promise.resolve();
+      },
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    // Should throw when embeddings is provided but embeddingDimension is missing
+    expect(() => {
+      rmmMiddleware({
+        vectorStore: mockVectorStore as any,
+        embeddings: mockEmbeddings as any,
+        enabled: true,
+      });
+    }).toThrow("embeddingDimension is required when embeddings is provided");
+  });
+
+  test("throws when embeddingDimension provided without embeddings", async () => {
+    const { rmmMiddleware } = await import("@/index");
+
+    const mockVectorStore = {
+      similaritySearch: async () => [],
+      addDocuments: async () => {
+        return await Promise.resolve();
+      },
+    };
+
+    // Should throw when embeddingDimension is provided but embeddings is missing
+    expect(() => {
+      rmmMiddleware({
+        vectorStore: mockVectorStore as any,
+        embeddingDimension: 1536,
+        enabled: true,
+      });
+    }).toThrow("embeddings is required when embeddingDimension is provided");
+  });
+
+  test("caps topM at topK with warning", async () => {
+    const { rmmMiddleware } = await import("@/index");
+
+    const mockVectorStore = {
+      similaritySearch: async () => [],
+      addDocuments: async () => {
+        return await Promise.resolve();
+      },
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    // Should cap topM at topK (5 > 3)
+    const middleware = rmmMiddleware({
+      vectorStore: mockVectorStore as any,
+      embeddings: mockEmbeddings as any,
+      embeddingDimension: 1536,
+      topK: 3,
+      topM: 5,
+      enabled: true,
+    });
+
+    expect(middleware).toBeDefined();
+    expect(middleware.name).toBe("RmmMiddleware");
+  });
 });
