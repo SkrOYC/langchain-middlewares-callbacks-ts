@@ -14,6 +14,25 @@ const logger = getLogger("message-buffer-storage");
  */
 export interface MessageBufferStorage {
   /**
+   * The underlying BaseStore instance.
+   * Exposed for direct access in retry logic.
+   */
+  store: BaseStore;
+
+  /**
+   * The namespace key for buffer storage.
+   */
+  NAMESPACE_KEY: string;
+
+  /**
+   * Build namespace for a user and buffer type.
+   * @param userId - The user identifier
+   * @param type - Buffer type ("main" or "staging")
+   * @returns Namespace array
+   */
+  buildNamespace: (userId: string, type: "main" | "staging") => string[];
+
+  /**
    * Load message buffer for a user from BaseStore.
    * Returns empty buffer if none exists or on error.
    * @param userId - The user identifier
@@ -95,6 +114,9 @@ export function createMessageBufferStorage(
   };
 
   return {
+    store,
+    NAMESPACE_KEY,
+    buildNamespace,
     async loadBuffer(userId: string): Promise<MessageBuffer> {
       try {
         const namespace = buildNamespace(userId);
