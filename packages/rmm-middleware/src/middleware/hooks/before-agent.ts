@@ -331,7 +331,9 @@ async function checkAndStageReflection(
 
   // Calculate time since last buffer update
   const now = Date.now();
-  const timeSinceLastUpdate = now - item.updatedAt.getTime();
+  const timeSinceLastUpdate = item.updatedAt
+    ? now - item.updatedAt.getTime()
+    : Number.POSITIVE_INFINITY;
 
   // Check if reflection should trigger
   if (

@@ -33,19 +33,59 @@ export type { RmmConfig } from "@/schemas/config.js";
 /**
  * Extracts the hook function from a middleware factory result
  */
-function extractHook<
-  T extends { name: string; [key: string]: unknown },
-  K extends string,
->(factory: T, hookKey: K): T extends Record<K, infer R> ? R : never {
-  return factory[hookKey] as T extends Record<K, infer R> ? R : never;
+function extractHook<T extends Record<string, unknown>, K extends keyof T>(
+  factory: T,
+  hookKey: K
+): T[K] {
+  return factory[hookKey];
 }
+
+/**
+ * Type guard for extracting sessionId from runtime.configurable
+ */
+function getSessionIdFromConfigurable(
+  runtime: Record<string, unknown>
+): { sessionId?: string } | undefined {
+  return (runtime as { configurable?: { sessionId?: string } }).configurable;
+}
+
+/**
+ * Type guard for extracting sessionId from runtime.context
+ */
+function getSessionIdFromContext(
+  runtime: Record<string, unknown>
+): { sessionId?: string } | undefined {
+  return (runtime as { context?: { sessionId?: string } }).context;
+}
+
+/**
+ * Type guard for extracting store from runtime.context
+ */
+function getStoreFromContext(
+  runtime: Record<string, unknown>
+): { store?: unknown } | undefined {
+  return (runtime as { context?: { store?: unknown } }).context;
+}
+
+/**
+ * Default reflection configuration
+ */
+const DEFAULT_REFLECTION_CONFIG = {
+  minTurns: 3,
+  maxTurns: 50,
+  minInactivityMs: 300_000,
+  maxInactivityMs: 1_800_000,
+  mode: "strict" as const,
+  retryDelayMs: 1000,
+  maxRetries: 3,
+} as const;
 
 /**
  * Creates RMM middleware for LangChain createAgent
  *
  * @param config - Configuration options for RMM
- * @param config.vectorStore - Vector store for memory retrieval (required for retrospective reflection)
- * @param config.embeddings - Embeddings instance for reranking (required)
+ * @param config.vectorStore - Vector store for memory retrieval (optional, needed for retrospective reflection)
+ * @param config.embeddings - Embeddings instance for reranking (optional, needed for reranking computations)
  * @param config.llm - LLM for memory extraction (optional - enables prospective reflection)
  * @param config.topK - Number of memories to retrieve (default: 20)
  * @param config.topM - Number of memories to include in context (default: 5)
@@ -95,27 +135,15 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     store: parsedConfig.vectorStore as BeforeAgentOptions["store"],
     userIdExtractor: (runtime: Runtime) => {
       // Try configurable first (from createAgent config)
-      const configurable = (
-        runtime as { configurable?: { sessionId?: string } }
-      ).configurable;
+      const configurable = getSessionIdFromConfigurable(runtime);
       if (configurable?.sessionId) {
         return configurable.sessionId;
       }
       // Fall back to context
-      const context = (runtime as { context?: { sessionId?: string } }).context;
+      const context = getSessionIdFromContext(runtime);
       return context?.sessionId ?? "";
     },
-    reflectionConfig: parsedConfig.llm
-      ? {
-          minTurns: 3,
-          maxTurns: 50,
-          minInactivityMs: 300_000,
-          maxInactivityMs: 1_800_000,
-          mode: "strict" as const,
-          retryDelayMs: 1000,
-          maxRetries: 3,
-        }
-      : undefined,
+    reflectionConfig: parsedConfig.llm ? DEFAULT_REFLECTION_CONFIG : undefined,
     namespace: parsedConfig.sessionId
       ? ["rmm", parsedConfig.sessionId]
       : undefined,
@@ -156,18 +184,10 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     afterAgent: (state, runtime) => {
       // Extract dependencies from runtime for afterAgent
       const deps: AfterAgentDependencies = {
-        store: (runtime.context as { store?: unknown })
+        store: getStoreFromContext(runtime)
           ?.store as AfterAgentDependencies["store"],
         reflectionConfig: parsedConfig.llm
-          ? {
-              minTurns: 3,
-              maxTurns: 50,
-              minInactivityMs: 300_000,
-              maxInactivityMs: 1_800_000,
-              mode: "strict" as const,
-              retryDelayMs: 1000,
-              maxRetries: 3,
-            }
+          ? DEFAULT_REFLECTION_CONFIG
           : undefined,
       };
       return afterAgent(state, { context: runtime.context }, deps);

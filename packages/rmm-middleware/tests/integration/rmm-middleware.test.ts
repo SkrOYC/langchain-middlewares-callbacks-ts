@@ -6,21 +6,29 @@ import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { RerankerState, RetrievedMemory } from "@/schemas/index";
 
 /**
+ * Mock store interface for testing
+ */
+interface MockStore extends BaseStore {
+  storedData: Map<string, unknown>;
+}
+
+/**
  * Creates an async mock BaseStore for testing
  */
-function createAsyncMockStore(initialData?: Map<string, unknown>): BaseStore {
+function createAsyncMockStore(initialData?: Map<string, unknown>): MockStore {
   const storedData = initialData ?? new Map<string, unknown>();
 
   return {
+    storedData,
     async get(namespace, key) {
-      const namespaceKey = [...(namespace as string[]), key].join("|");
+      const namespaceKey = [...namespace, key].join("|");
       const item = storedData.get(namespaceKey);
       return await Promise.resolve(
         item
           ? {
               value: item,
               key,
-              namespace: namespace as string[],
+              namespace,
               createdAt: new Date(),
               updatedAt: new Date(),
             }
@@ -28,7 +36,7 @@ function createAsyncMockStore(initialData?: Map<string, unknown>): BaseStore {
       );
     },
     async put(namespace, key, value) {
-      const namespaceKey = [...(namespace as string[]), key].join("|");
+      const namespaceKey = [...namespace, key].join("|");
       storedData.set(namespaceKey, value);
       return await Promise.resolve();
     },
