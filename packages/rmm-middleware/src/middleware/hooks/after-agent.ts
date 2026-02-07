@@ -11,7 +11,11 @@
  * original state before any new messages are appended.
  */
 
-import type { BaseMessage, StoredMessage } from "@langchain/core/messages";
+import type { StoredMessage } from "@langchain/core/messages";
+import {
+  type BaseMessage,
+  mapChatMessagesToStoredMessages,
+} from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { MessageBuffer, ReflectionConfig } from "@/schemas";
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
@@ -52,22 +56,21 @@ interface AfterAgentState {
 // ============================================================================
 
 /**
- * Converts a message to StoredMessage format.
- * Handles both BaseMessage instances and plain objects (already serialized).
+ * Converts a BaseMessage to StoredMessage format using LangChain's built-in mapper.
+ * This is the proper way to serialize messages for storage.
  */
 function toStoredMessage(message: BaseMessage | StoredMessage): StoredMessage {
-  // If it's a BaseMessage with toDict method, use it
-  if (
-    typeof message === "object" &&
-    message !== null &&
-    "toDict" in message &&
-    typeof message.toDict === "function"
-  ) {
-    return message.toDict() as StoredMessage;
+  // If it's already a StoredMessage (plain object), return as-is
+  if (!("toDict" in message)) {
+    return message;
   }
 
-  // Otherwise, assume it's already in StoredMessage format
-  return message as StoredMessage;
+  // Use LangChain's built-in mapper for proper serialization
+  const result = mapChatMessagesToStoredMessages([message]);
+  if (result.length === 0) {
+    throw new Error("Failed to serialize message to StoredMessage format");
+  }
+  return result[0] as StoredMessage;
 }
 
 /**
