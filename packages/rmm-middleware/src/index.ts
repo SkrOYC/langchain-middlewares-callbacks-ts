@@ -7,10 +7,38 @@
  * - REINFORCE Learning: Updates reranker weights based on citations
  */
 
-import { createMiddleware } from "langchain/agents";
+import { createMiddleware } from "langchain";
+import {
+  type AfterAgentDependencies,
+  afterAgent,
+} from "@/middleware/hooks/after-agent.js";
+import {
+  type AfterModelOptions,
+  createRetrospectiveAfterModel,
+} from "@/middleware/hooks/after-model.js";
+// Import existing hook factories
+import {
+  type BeforeAgentOptions,
+  createRetrospectiveBeforeAgent,
+} from "@/middleware/hooks/before-agent.js";
+import {
+  type BeforeModelOptions,
+  createRetrospectiveBeforeModel,
+} from "@/middleware/hooks/before-model.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
+import type { Runtime } from "@/schemas/index.js";
 
 export type { RmmConfig } from "@/schemas/config.js";
+
+/**
+ * Extracts the hook function from a middleware factory result
+ */
+function extractHook<
+  T extends { name: string; [key: string]: unknown },
+  K extends string,
+>(factory: T, hookKey: K): T extends Record<K, infer R> ? R : never {
+  return factory[hookKey] as T extends Record<K, infer R> ? R : never;
+}
 
 /**
  * Creates RMM middleware for LangChain createAgent
@@ -62,33 +90,87 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     });
   }
 
-  // TODO: Implement full RMM middleware with:
-  // - beforeAgent: Load reranker weights, check reflection triggers
-  // - beforeModel: Retrieve and rerank memories for context
-  // - afterModel: Process citations for REINFORCE updates
-  // - afterAgent: Trigger prospective reflection asynchronously
+  // Build beforeAgent hook options
+  const beforeAgentOptions: BeforeAgentOptions = {
+    store: parsedConfig.vectorStore as BeforeAgentOptions["store"],
+    userIdExtractor: (runtime: Runtime) => {
+      // Try configurable first (from createAgent config)
+      const configurable = (
+        runtime as { configurable?: { sessionId?: string } }
+      ).configurable;
+      if (configurable?.sessionId) {
+        return configurable.sessionId;
+      }
+      // Fall back to context
+      const context = (runtime as { context?: { sessionId?: string } }).context;
+      return context?.sessionId ?? "";
+    },
+    reflectionConfig: parsedConfig.llm
+      ? {
+          minTurns: 3,
+          maxTurns: 50,
+          minInactivityMs: 300_000,
+          maxInactivityMs: 1_800_000,
+          mode: "strict" as const,
+          retryDelayMs: 1000,
+          maxRetries: 3,
+        }
+      : undefined,
+    namespace: parsedConfig.sessionId
+      ? ["rmm", parsedConfig.sessionId]
+      : undefined,
+  };
 
-  // Placeholder for now - returns minimal middleware structure
+  // Build beforeModel hook options
+  const beforeModelOptions: BeforeModelOptions = {
+    vectorStore: parsedConfig.vectorStore as BeforeModelOptions["vectorStore"],
+    embeddings: parsedConfig.embeddings as BeforeModelOptions["embeddings"],
+    topK: parsedConfig.topK,
+  };
+
+  // Build afterModel hook options
+  const afterModelOptions: AfterModelOptions = {
+    batchSize: 4,
+    clipThreshold: 100,
+  };
+
+  // Create hook factories and extract hooks
+  const beforeAgentMiddleware =
+    createRetrospectiveBeforeAgent(beforeAgentOptions);
+  const beforeAgentHook = extractHook(beforeAgentMiddleware, "beforeAgent");
+
+  const beforeModelMiddleware =
+    createRetrospectiveBeforeModel(beforeModelOptions);
+  const beforeModelHook = extractHook(beforeModelMiddleware, "beforeModel");
+
+  const afterModelMiddleware = createRetrospectiveAfterModel(afterModelOptions);
+  const afterModelHook = extractHook(afterModelMiddleware, "afterModel");
+
+  // Create the combined middleware
   return createMiddleware({
     name: "RmmMiddleware",
-    beforeAgent: () => {
-      // Load weights from storage or initialize
-      // Check reflection triggers
-      return undefined;
-    },
-    beforeModel: () => {
-      // Retrieve memories from vector store
-      // Apply reranking with learned weights
-      return undefined;
-    },
-    afterModel: (state) => {
-      // Extract citations from response
-      // Update reranker weights via REINFORCE
-      return state;
-    },
-    afterAgent: () => {
-      // Trigger prospective reflection if thresholds met
-      return undefined;
+    beforeAgent: beforeAgentHook,
+    beforeModel: beforeModelHook,
+    wrapModelCall: undefined,
+    afterModel: afterModelHook,
+    afterAgent: (state, runtime) => {
+      // Extract dependencies from runtime for afterAgent
+      const deps: AfterAgentDependencies = {
+        store: (runtime as { context?: { store?: unknown } }).context
+          ?.store as AfterAgentDependencies["store"],
+        reflectionConfig: parsedConfig.llm
+          ? {
+              minTurns: 3,
+              maxTurns: 50,
+              minInactivityMs: 300_000,
+              maxInactivityMs: 1_800_000,
+              mode: "strict" as const,
+              retryDelayMs: 1000,
+              maxRetries: 3,
+            }
+          : undefined,
+      };
+      return afterAgent(state, runtime as Runtime, deps);
     },
   });
 }
