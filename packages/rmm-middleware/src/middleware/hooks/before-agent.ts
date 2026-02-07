@@ -48,6 +48,12 @@ const DEFAULT_CONFIG = {
 } as const;
 
 /**
+ * Default embedding dimension for reranker matrices
+ * Matches common embedding model outputs (e.g., OpenAI ada-002)
+ */
+const DEFAULT_EMBEDDING_DIMENSION = 1536;
+
+/**
  * Configuration options for the beforeAgent hook
  */
 export interface BeforeAgentOptions {
@@ -61,6 +67,47 @@ export interface BeforeAgentOptions {
    * Used for multi-user isolation of reranker weights
    */
   userIdExtractor: (runtime: BeforeAgentRuntime) => string;
+
+  /**
+   * Reranker configuration parameters
+   */
+  rerankerConfig?: {
+    /**
+     * Number of memories to retrieve from vector store
+     * @default 20
+     */
+    topK?: number;
+
+    /**
+     * Number of memories to include in LLM context
+     * @default 5
+     */
+    topM?: number;
+
+    /**
+     * Temperature for Gumbel-Softmax sampling
+     * @default 0.5
+     */
+    temperature?: number;
+
+    /**
+     * Learning rate for REINFORCE updates
+     * @default 0.001
+     */
+    learningRate?: number;
+
+    /**
+     * Baseline for REINFORCE variance reduction
+     * @default 0.5
+     */
+    baseline?: number;
+
+    /**
+     * Embedding dimension for reranker matrices
+     * @default 1536
+     */
+    embeddingDimension?: number;
+  };
 
   /**
    * Optional reflection configuration
@@ -400,14 +447,16 @@ async function handleRetryStagingFailure(
  *
  * @param userId - User identifier for weight isolation (null for anonymous)
  * @param weightStorage - Storage adapter for weights
+ * @param config - Optional reranker configuration parameters
  * @returns Promise resolving to RerankerState
  */
 async function loadOrInitializeWeights(
   userId: string | null | undefined,
-  weightStorage: ReturnType<typeof createWeightStorage>
+  weightStorage: ReturnType<typeof createWeightStorage>,
+  config?: BeforeAgentOptions["rerankerConfig"]
 ): Promise<RerankerState> {
   if (!userId) {
-    return initializeRerankerState();
+    return initializeRerankerState(config);
   }
 
   const existingWeights = await weightStorage.loadWeights(userId);
@@ -416,7 +465,7 @@ async function loadOrInitializeWeights(
     return existingWeights;
   }
 
-  return initializeRerankerState();
+  return initializeRerankerState(config);
 }
 
 /**
@@ -587,14 +636,17 @@ function createInitialStateUpdate(
 /**
  * Creates error state update with initialized reranker
  */
-function createErrorStateUpdate(error: unknown): BeforeAgentStateUpdate {
+function createErrorStateUpdate(
+  error: unknown,
+  config?: BeforeAgentOptions["rerankerConfig"]
+): BeforeAgentStateUpdate {
   logger.warn(
     "Error loading weights, using initialized state:",
     error instanceof Error ? error.message : String(error)
   );
 
   return {
-    _rerankerWeights: initializeRerankerState(),
+    _rerankerWeights: initializeRerankerState(config),
     _retrievedMemories: [],
     _citations: [],
     _turnCountInSession: 0,
@@ -607,32 +659,41 @@ function createErrorStateUpdate(error: unknown): BeforeAgentStateUpdate {
  * Per paper recommendation: W_q[i][j] ~ N(0, 0.01), W_m[i][j] ~ N(0, 0.01)
  * This initialization prevents gradient vanishing during early training.
  *
- * @returns New RerankerState with zero-config weights
+ * @param config - Optional reranker configuration parameters
+ * @returns New RerankerState with configured weights
  */
-function initializeRerankerState(): RerankerState {
-  const EMBEDDING_DIMENSION = 1536;
+function initializeRerankerState(
+  config?: BeforeAgentOptions["rerankerConfig"]
+): RerankerState {
+  const embeddingDimension =
+    config?.embeddingDimension ?? DEFAULT_EMBEDDING_DIMENSION;
+  const topK = config?.topK ?? DEFAULT_CONFIG.topK;
+  const topM = config?.topM ?? DEFAULT_CONFIG.topM;
+  const temperature = config?.temperature ?? DEFAULT_CONFIG.temperature;
+  const learningRate = config?.learningRate ?? DEFAULT_CONFIG.learningRate;
+  const baseline = config?.baseline ?? DEFAULT_CONFIG.baseline;
 
   return {
     weights: {
       queryTransform: initializeMatrix(
-        EMBEDDING_DIMENSION,
-        EMBEDDING_DIMENSION,
+        embeddingDimension,
+        embeddingDimension,
         0,
         0.01
       ),
       memoryTransform: initializeMatrix(
-        EMBEDDING_DIMENSION,
-        EMBEDDING_DIMENSION,
+        embeddingDimension,
+        embeddingDimension,
         0,
         0.01
       ),
     },
     config: {
-      topK: DEFAULT_CONFIG.topK,
-      topM: DEFAULT_CONFIG.topM,
-      temperature: DEFAULT_CONFIG.temperature,
-      learningRate: DEFAULT_CONFIG.learningRate,
-      baseline: DEFAULT_CONFIG.baseline,
+      topK,
+      topM,
+      temperature,
+      learningRate,
+      baseline,
     },
   };
 }
@@ -690,7 +751,8 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
 
         const rerankerState = await loadOrInitializeWeights(
           userId,
-          weightStorage
+          weightStorage,
+          options.rerankerConfig
         );
 
         await checkAndStageReflection(
@@ -703,7 +765,7 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
 
         return createInitialStateUpdate(rerankerState);
       } catch (error) {
-        return createErrorStateUpdate(error);
+        return createErrorStateUpdate(error, options.rerankerConfig);
       }
     },
   };

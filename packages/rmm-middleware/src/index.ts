@@ -27,10 +27,13 @@ import {
   type BeforeModelOptions,
   createRetrospectiveBeforeModel,
 } from "@/middleware/hooks/before-model.js";
+import {
+  createRetrospectiveWrapModelCall,
+  type WrapModelCallOptions,
+} from "@/middleware/hooks/wrap-model-call.js";
 import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
-import type { Runtime } from "@/schemas/index.js";
 
 export type { RmmConfig } from "@/schemas/config.js";
 
@@ -93,6 +96,10 @@ const DEFAULT_REFLECTION_CONFIG = {
  * @param config.llm - LLM for memory extraction (optional - enables prospective reflection)
  * @param config.topK - Number of memories to retrieve (default: 20)
  * @param config.topM - Number of memories to include in context (default: 5)
+ * @param config.temperature - Gumbel-Softmax temperature for reranking (default: 0.5)
+ * @param config.learningRate - REINFORCE learning rate for weight updates (default: 0.001)
+ * @param config.baseline - REINFORCE baseline for variance reduction (default: 0.5)
+ * @param config.embeddingDimension - Embedding dimension for reranker matrices (default: 1536)
  * @param config.sessionId - Session identifier for memory isolation
  * @param config.enabled - Whether RMM is enabled (default: true)
  *
@@ -115,6 +122,10 @@ const DEFAULT_REFLECTION_CONFIG = {
  *       embeddings: new OpenAIEmbeddings(),
  *       topK: 20,
  *       topM: 5,
+ *       temperature: 0.5,
+ *       learningRate: 0.001,
+ *       baseline: 0.5,
+ *       embeddingDimension: 1536,
  *     })
  *   ]
  * });
@@ -137,15 +148,26 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   // Build beforeAgent hook options
   const beforeAgentOptions: BeforeAgentOptions = {
     store: parsedConfig.vectorStore as BeforeAgentOptions["store"],
-    userIdExtractor: (runtime: Runtime) => {
+    userIdExtractor: (runtime: {
+      configurable?: { sessionId?: string };
+      context?: { sessionId?: string };
+    }) => {
       // Try configurable first (from createAgent config)
-      const configurable = getSessionIdFromConfigurable(runtime);
+      const configurable = runtime.configurable;
       if (configurable?.sessionId) {
         return configurable.sessionId;
       }
       // Fall back to context
-      const context = getSessionIdFromContext(runtime);
+      const context = runtime.context;
       return context?.sessionId ?? "";
+    },
+    rerankerConfig: {
+      topK: parsedConfig.topK,
+      topM: parsedConfig.topM,
+      temperature: parsedConfig.temperature,
+      learningRate: parsedConfig.learningRate,
+      baseline: parsedConfig.baseline,
+      embeddingDimension: parsedConfig.embeddingDimension,
     },
     reflectionConfig: parsedConfig.llm ? DEFAULT_REFLECTION_CONFIG : undefined,
     namespace: parsedConfig.sessionId
@@ -196,18 +218,28 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   const afterModelMiddleware = createRetrospectiveAfterModel(afterModelOptions);
   const afterModelHook = extractHook(afterModelMiddleware, "afterModel");
 
+  // Create wrapModelCall hook (required for retrospective reflection)
+  const wrapModelCallOptions: WrapModelCallOptions = {
+    embeddings: parsedConfig.embeddings as Embeddings,
+  };
+  const wrapModelCallMiddleware =
+    createRetrospectiveWrapModelCall(wrapModelCallOptions);
+  const wrapModelCallHook = extractHook(
+    wrapModelCallMiddleware,
+    "wrapModelCall"
+  );
+
   // Create the combined middleware
   return createMiddleware({
     name: "RmmMiddleware",
     beforeAgent: beforeAgentHook,
     beforeModel: beforeModelHook,
-    wrapModelCall: undefined,
+    wrapModelCall: wrapModelCallHook,
     afterModel: afterModelHook,
-    afterAgent: (state, runtime) => {
+    afterAgent: (state, runtime: { context?: { store?: unknown } }) => {
       // Extract dependencies from runtime for afterAgent
       const deps: AfterAgentDependencies = {
-        store: getStoreFromContext(runtime)
-          ?.store as AfterAgentDependencies["store"],
+        store: runtime.context?.store as AfterAgentDependencies["store"],
         reflectionConfig: parsedConfig.llm
           ? DEFAULT_REFLECTION_CONFIG
           : undefined,
