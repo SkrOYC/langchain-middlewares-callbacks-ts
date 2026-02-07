@@ -34,7 +34,7 @@ import {
 import { getLogger } from "@/utils/logger";
 import {
   extractLastHumanMessage,
-  formatMemoriesBlock,
+  formatCitationPromptContent,
 } from "@/utils/memory-helpers";
 
 const logger = getLogger("wrap-model-call");
@@ -285,11 +285,12 @@ export function createRetrospectiveWrapModelCall(
         // Store selected indices
         runtime.context._selectedIndices = selectedIndices;
 
-        // Step 5: Create ephemeral HumanMessage with formatted memories
+        // Step 5: Create ephemeral HumanMessage with citation prompt and memories
+        // Per Appendix D.2: Explicit instructions for citing useful memories
         // Per Appendix F.8: Use HumanMessage, NOT system message
-        const memoryBlock = formatMemoriesBlock(selectedMemories);
+        const promptContent = formatCitationPromptContent(query, selectedMemories);
         const ephemeralMessage = new HumanMessage({
-          content: memoryBlock,
+          content: promptContent,
         });
 
         // Step 6: Call handler with augmented messages
