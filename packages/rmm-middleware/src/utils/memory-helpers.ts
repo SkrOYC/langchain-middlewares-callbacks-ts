@@ -158,7 +158,7 @@ Given the user query and the list of memories consisting of personal summaries w
 * If the response relies on multiple memories, list all corresponding indices, e.g., [i, j, k].
 * The citation is evaluated based on whether the response references the original turns, not the summaries.
 
-User Query: ${query}
+User Query: ${escapeXml(query)}
 
 <examples>
 Case 1: Useful Memories Found
@@ -197,7 +197,7 @@ Additional Instructions:
 * Follow the format of the examples provided above.
 
 <memories>
-${memoriesBlock}
+${memories.length > 0 ? memoriesBlock : "<memories></memories>"}
 </memories>
 
 </system-reminder>`;

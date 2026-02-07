@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { formatCitationPromptContent } from "@/utils/memory-helpers";
 
 /**
  * Tests for formatCitationPromptContent utility
@@ -7,130 +8,62 @@ import { describe, expect, test } from "bun:test";
  * to generate responses with proper memory citations.
  */
 
+const testMemory = {
+  id: "test-1",
+  topicSummary: "User enjoys hiking",
+  rawDialogue: "Speaker 1: I love hiking on weekends",
+  timestamp: 1234567890,
+  sessionId: "session-1",
+  embedding: [],
+  relevanceScore: 0.9,
+};
+
 describe("formatCitationPromptContent", () => {
-  test("should export the function", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
+  test("should export the function", () => {
     expect(typeof formatCitationPromptContent).toBe("function");
   });
 
-  test("should return a non-empty string for valid input", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should return a non-empty string for valid input", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [testMemory]
     );
 
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test("should include system-reminder wrapper", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should include system-reminder wrapper", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [testMemory]
     );
 
     expect(result).toContain("<system-reminder>");
     expect(result).toContain("</system-reminder>");
   });
 
-  test("should include citation instructions", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should include citation instructions", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [testMemory]
     );
 
     expect(result).toContain("Cite useful memories using [i]");
     expect(result).toContain("[NO_CITE]");
   });
 
-  test("should include query in the prompt", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should include query in the prompt", () => {
     const query = "What hobbies do I enjoy?";
-    const result = formatCitationPromptContent(query, memories);
+    const result = formatCitationPromptContent(query, [testMemory]);
 
     expect(result).toContain(query);
   });
 
-  test("should include memories block", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should include memories block", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [testMemory]
     );
 
     expect(result).toContain("<memories>");
@@ -140,37 +73,20 @@ describe("formatCitationPromptContent", () => {
     expect(result).toContain("</memories>");
   });
 
-  test("should format multiple memories with correct indices", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
+  test("should format multiple memories with correct indices", () => {
     const memories = [
+      testMemory,
       {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-      {
+        ...testMemory,
         id: "test-2",
         topicSummary: "User plays guitar",
         rawDialogue: "Speaker 1: I've been playing guitar for years",
-        timestamp: 1234567891,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.8,
       },
       {
+        ...testMemory,
         id: "test-3",
         topicSummary: "User likes astronomy",
         rawDialogue: "Speaker 1: I love stargazing",
-        timestamp: 1234567892,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.7,
       },
     ];
 
@@ -184,25 +100,10 @@ describe("formatCitationPromptContent", () => {
     expect(result).toContain("Memory [2]:");
   });
 
-  test("should include examples section", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should include examples section", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [testMemory]
     );
 
     expect(result).toContain("<examples>");
@@ -211,36 +112,17 @@ describe("formatCitationPromptContent", () => {
     expect(result).toContain("Output:");
   });
 
-  test("should include additional instructions", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "Speaker 1: I love hiking on weekends",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should include additional instructions", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [testMemory]
     );
 
     expect(result).toContain("Additional Instructions:");
     expect(result).toContain("fluent and directly answers the user's query");
   });
 
-  test("should handle empty memories array", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-
+  test("should handle empty memories array", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
       []
@@ -252,44 +134,22 @@ describe("formatCitationPromptContent", () => {
     expect(result).toContain("</memories>");
   });
 
-  test("should handle memories without raw dialogue", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
-    const memories = [
-      {
-        id: "test-1",
-        topicSummary: "User enjoys hiking",
-        rawDialogue: "",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
-      },
-    ];
-
+  test("should handle memories without raw dialogue", () => {
     const result = formatCitationPromptContent(
       "What hobbies do I enjoy?",
-      memories
+      [{ ...testMemory, rawDialogue: "" }]
     );
 
     expect(result).toContain("Memory [0]:");
     expect(result).toContain("User enjoys hiking");
   });
 
-  test("should escape XML special characters in memories", async () => {
-    const { formatCitationPromptContent } = await import(
-      "@/utils/memory-helpers"
-    );
+  test("should escape XML special characters in memories", () => {
     const memories = [
       {
-        id: "test-1",
+        ...testMemory,
         topicSummary: "User likes <tags> and & symbols",
-        rawDialogue: "Speaker 1: I said \"hello\" and 'world'",
-        timestamp: 1234567890,
-        sessionId: "session-1",
-        embedding: [],
-        relevanceScore: 0.9,
+        rawDialogue: 'Speaker 1: I said "hello" and \'world\'',
       },
     ];
 
@@ -302,5 +162,13 @@ describe("formatCitationPromptContent", () => {
     expect(result).toContain("&amp;");
     expect(result).toContain("&quot;hello&quot;");
     expect(result).toContain("&#39;world&#39;");
+  });
+
+  test("should escape XML special characters in query", () => {
+    const query = "What about <brackets> & stuff?";
+    const result = formatCitationPromptContent(query, [testMemory]);
+
+    expect(result).toContain("&lt;brackets&gt;");
+    expect(result).toContain("&amp; stuff?");
   });
 });
