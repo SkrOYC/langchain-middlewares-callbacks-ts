@@ -218,9 +218,10 @@ export function rmmMiddleware(config: RmmConfig = {}) {
 
   // Create wrapModelCall hook only if embeddings is present (optional for retrospective reflection)
   let wrapModelCallHook: ReturnType<typeof extractHook> | undefined;
-  if (parsedConfig.embeddings) {
+  if (parsedConfig.embeddings && parsedConfig.embeddingDimension) {
     const wrapModelCallOptions: WrapModelCallOptions = {
       embeddings: parsedConfig.embeddings as Embeddings,
+      embeddingDimension: parsedConfig.embeddingDimension,
     };
     const wrapModelCallMiddleware =
       createRetrospectiveWrapModelCall(wrapModelCallOptions);
