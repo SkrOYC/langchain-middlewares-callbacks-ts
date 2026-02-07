@@ -27,7 +27,6 @@ import {
   type ScoredMemory,
 } from "@/algorithms/reranking";
 import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
-import { EMBEDDING_DIMENSION } from "@/schemas";
 import {
   type CitationResult,
   extractCitations,
@@ -52,6 +51,11 @@ export interface WrapModelCallOptions {
    * Embeddings instance for query encoding
    */
   embeddings: Embeddings;
+
+  /**
+   * Embedding dimension for reranker matrices
+   */
+  embeddingDimension: number;
 }
 
 /**
@@ -134,6 +138,7 @@ export function createRetrospectiveWrapModelCall(
 ) {
   // Create lazy validator for embedding dimension
   const embeddings = options.embeddings;
+  const embeddingDimension = options.embeddingDimension;
 
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
@@ -260,7 +265,7 @@ export function createRetrospectiveWrapModelCall(
             logger.warn(
               `Memory ${memory.id} missing embedding, using zero vector.`
             );
-            const zeroEmbedding = new Array(EMBEDDING_DIMENSION).fill(0);
+            const zeroEmbedding = new Array(embeddingDimension).fill(0);
             originalMemEmbeddings.push(zeroEmbedding);
 
             const adapted = applyEmbeddingAdaptation(

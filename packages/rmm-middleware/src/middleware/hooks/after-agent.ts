@@ -38,7 +38,7 @@ interface AfterAgentRuntimeContext {
 /**
  * Interface for the afterAgent dependencies (injected for testing)
  */
-interface AfterAgentDependencies {
+export interface AfterAgentDependencies {
   userId?: string;
   store?: BaseStore;
   reflectionConfig?: ReflectionConfig;

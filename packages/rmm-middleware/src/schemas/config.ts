@@ -63,7 +63,35 @@ export const rmmConfigSchema = z.object({
    * Number of memories to include in LLM context.
    * @default 5
    */
-  topM: z.number().int().positive().max(20).default(5),
+  topM: z.number().int().positive().max(10).default(5),
+
+  /**
+   * Temperature parameter for Gumbel-Softmax sampling.
+   * Lower values produce more deterministic reranking.
+   * Higher values encourage exploration.
+   * @default 0.5
+   */
+  temperature: z.number().positive().default(0.5),
+
+  /**
+   * Learning rate for REINFORCE weight updates.
+   * Controls how fast the reranker adapts to user patterns.
+   * @default 1e-3
+   */
+  learningRate: z.number().positive().default(0.001),
+
+  /**
+   * Baseline value for REINFORCE variance reduction.
+   * @default 0.5
+   */
+  baseline: z.number().min(0).max(1).default(0.5),
+
+  /**
+   * Embedding dimension for the reranker matrices.
+   * Required when using retrospective reflection (when embeddings is provided).
+   * Must match the output dimension of your embeddings model.
+   */
+  embeddingDimension: z.number().int().positive().optional(),
 
   /**
    * Session identifier for memory isolation.
