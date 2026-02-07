@@ -156,7 +156,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     afterAgent: (state, runtime) => {
       // Extract dependencies from runtime for afterAgent
       const deps: AfterAgentDependencies = {
-        store: (runtime as { context?: { store?: unknown } }).context
+        store: (runtime.context as { store?: unknown })
           ?.store as AfterAgentDependencies["store"],
         reflectionConfig: parsedConfig.llm
           ? {
@@ -170,7 +170,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
             }
           : undefined,
       };
-      return afterAgent(state, runtime as Runtime, deps);
+      return afterAgent(state, { context: runtime.context }, deps);
     },
   });
 }
