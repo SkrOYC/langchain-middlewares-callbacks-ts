@@ -352,4 +352,208 @@ describe("processMemoryUpdate", () => {
     // (only the merge result should be added)
     expect(addedDocs.length).toBe(1);
   });
+
+  test("dedupes merge actions with same index - only first executes", async () => {
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
+
+    const addedDocs: Array<{ pageContent: string }> = [];
+    const deletedIds: string[] = [];
+
+    const mockMemory: MemoryEntry = {
+      id: "550e8400-e29b-41d4-a716-446655440005",
+      topicSummary: "User exercises every Monday and Thursday",
+      rawDialogue: "I exercise every Monday and Thursday",
+      timestamp: Date.now(),
+      sessionId: "session-1",
+      embedding: new Array(1536).fill(0.1),
+      turnReferences: [0],
+    };
+
+    const existingMemory = {
+      id: "existing-mem-1",
+      topicSummary: "User works out although he doesn't particularly enjoy it.",
+      rawDialogue: "I work out but don't enjoy it",
+      timestamp: Date.now() - 100_000,
+      sessionId: "session-0",
+      turnReferences: [0],
+      relevanceScore: 0.9,
+    };
+
+    const mockVectorStore = {
+      similaritySearch: async () => [
+        {
+          pageContent: existingMemory.topicSummary,
+          metadata: {
+            id: existingMemory.id,
+            sessionId: existingMemory.sessionId,
+            timestamp: existingMemory.timestamp,
+            turnReferences: existingMemory.turnReferences,
+            rawDialogue: existingMemory.rawDialogue,
+          },
+        },
+      ],
+      addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        await Promise.resolve();
+        addedDocs.push(...docs);
+      },
+      delete: async (opts: { ids: string[] }) => {
+        await Promise.resolve();
+        deletedIds.push(...opts.ids);
+      },
+    };
+
+    // Mock LLM that returns duplicate Merge actions with same index
+    const mockLlm = {
+      invoke: async () => ({
+        text: "Merge(0, User exercises every Monday and Thursday.)\nMerge(0, User exercises every Monday and Thursday, although he doesn't enjoy it.)",
+      }),
+    };
+
+    const mockUpdatePrompt = (history: string[], newSummary: string) =>
+      `Update: ${newSummary} vs ${history.join(", ")}`;
+
+    await processMemoryUpdate(
+      mockMemory,
+      mockVectorStore as any,
+      mockLlm as any,
+      mockUpdatePrompt
+    );
+
+    // Should have deleted only once (not twice for duplicate index)
+    expect(deletedIds).toEqual([existingMemory.id]);
+    // Should have added only once (not twice for duplicate index)
+    expect(addedDocs.length).toBe(1);
+    // Should use the FIRST merged summary (first-wins strategy)
+    expect(addedDocs[0]?.pageContent).toBe(
+      "User exercises every Monday and Thursday."
+    );
+  });
+
+  test("executes all merge actions with different indices", async () => {
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
+
+    const addedDocs: Array<{ pageContent: string }> = [];
+    const deletedIds: string[] = [];
+
+    const mockMemory: MemoryEntry = {
+      id: "550e8400-e29b-41d4-a716-446655440006",
+      topicSummary: "User is active and enjoys various sports",
+      rawDialogue: "I'm active and enjoy sports",
+      timestamp: Date.now(),
+      sessionId: "session-1",
+      embedding: new Array(1536).fill(0.1),
+      turnReferences: [0],
+    };
+
+    const existingMemory1 = {
+      id: "existing-mem-1",
+      topicSummary: "User likes running",
+      rawDialogue: "I like running",
+      timestamp: Date.now() - 100_000,
+      sessionId: "session-0",
+      turnReferences: [0],
+      relevanceScore: 0.9,
+    };
+
+    const existingMemory2 = {
+      id: "existing-mem-2",
+      topicSummary: "User plays tennis",
+      rawDialogue: "I play tennis",
+      timestamp: Date.now() - 200_000,
+      sessionId: "session-0",
+      turnReferences: [1],
+      relevanceScore: 0.85,
+    };
+
+    const existingMemory3 = {
+      id: "existing-mem-3",
+      topicSummary: "User swims regularly",
+      rawDialogue: "I swim regularly",
+      timestamp: Date.now() - 300_000,
+      sessionId: "session-0",
+      turnReferences: [2],
+      relevanceScore: 0.8,
+    };
+
+    const mockVectorStore = {
+      similaritySearch: async () => [
+        {
+          pageContent: existingMemory1.topicSummary,
+          metadata: {
+            id: existingMemory1.id,
+            sessionId: existingMemory1.sessionId,
+            timestamp: existingMemory1.timestamp,
+            turnReferences: existingMemory1.turnReferences,
+            rawDialogue: existingMemory1.rawDialogue,
+          },
+        },
+        {
+          pageContent: existingMemory2.topicSummary,
+          metadata: {
+            id: existingMemory2.id,
+            sessionId: existingMemory2.sessionId,
+            timestamp: existingMemory2.timestamp,
+            turnReferences: existingMemory2.turnReferences,
+            rawDialogue: existingMemory2.rawDialogue,
+          },
+        },
+        {
+          pageContent: existingMemory3.topicSummary,
+          metadata: {
+            id: existingMemory3.id,
+            sessionId: existingMemory3.sessionId,
+            timestamp: existingMemory3.timestamp,
+            turnReferences: existingMemory3.turnReferences,
+            rawDialogue: existingMemory3.rawDialogue,
+          },
+        },
+      ],
+      addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        await Promise.resolve();
+        addedDocs.push(...docs);
+      },
+      delete: async (opts: { ids: string[] }) => {
+        await Promise.resolve();
+        deletedIds.push(...opts.ids);
+      },
+    };
+
+    // Mock LLM that returns Merge actions for different indices
+    const mockLlm = {
+      invoke: async () => ({
+        text: "Merge(0, User likes running and is active.)\nMerge(1, User plays tennis and enjoys sports.)\nMerge(2, User swims regularly and is active.)",
+      }),
+    };
+
+    const mockUpdatePrompt = (history: string[], newSummary: string) =>
+      `Update: ${newSummary} vs ${history.join(", ")}`;
+
+    await processMemoryUpdate(
+      mockMemory,
+      mockVectorStore as any,
+      mockLlm as any,
+      mockUpdatePrompt
+    );
+
+    // Should have deleted three different memories
+    expect(deletedIds).toHaveLength(3);
+    expect(deletedIds).toContain(existingMemory1.id);
+    expect(deletedIds).toContain(existingMemory2.id);
+    expect(deletedIds).toContain(existingMemory3.id);
+
+    // Should have added three merged documents
+    expect(addedDocs.length).toBe(3);
+
+    // Verify all three merged summaries are present
+    const summaries = addedDocs.map((d) => d.pageContent);
+    expect(
+      summaries.some((s) => s.includes("likes running and is active"))
+    ).toBe(true);
+    expect(
+      summaries.some((s) => s.includes("plays tennis and enjoys sports"))
+    ).toBe(true);
+    expect(
+      summaries.some((s) => s.includes("swims regularly and is active"))
+    ).toBe(true);
+  });
 });
