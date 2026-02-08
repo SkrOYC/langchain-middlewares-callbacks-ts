@@ -178,11 +178,10 @@ export function gumbelSoftmaxSample(
 
   const probabilities = expScores.map((e) => e / sumExp);
 
-  // Sample without replacement based on probabilities
-  const selectedIndices = sampleWithoutReplacementFromProbabilities(
-    probabilities,
-    topM
-  );
+  // Gumbel-Top-K trick: select the Top-M memories with highest perturbed scores.
+  // This is equivalent to sampling without replacement from the categorical
+  // distribution defined by the softmax probabilities (Kool et al., 2019).
+  const selectedIndices = selectTopMByPerturbedScore(perturbedScores, topM);
 
   // Return selected memories with shallow copies to prevent mutation
   const validSelectedMemories: RetrievedMemory[] = [];
@@ -201,69 +200,30 @@ export function gumbelSoftmaxSample(
 }
 
 /**
- * Helper function to sample indices without replacement based on probabilities
+ * Selects the Top-M indices by highest perturbed score (Gumbel-Top-K trick).
  *
- * Uses cumulative distribution for efficient sampling.
+ * Per the paper and Kool et al. (2019), selecting the items with the
+ * highest Gumbel-perturbed log-probabilities is equivalent to sampling
+ * without replacement from the categorical distribution.
  *
- * @param probabilities - Normalized probability distribution
- * @param topM - Number of samples to draw
- * @returns Array of selected indices
+ * @param perturbedScores - Array of Gumbel-perturbed scores (s̃_i = s_i + g_i)
+ * @param topM - Number of items to select
+ * @returns Array of selected indices (sorted by descending perturbed score)
  */
-function sampleWithoutReplacementFromProbabilities(
-  probabilities: number[],
+function selectTopMByPerturbedScore(
+  perturbedScores: number[],
   topM: number
 ): number[] {
-  if (topM >= probabilities.length) {
-    return probabilities.map((_, i) => i);
+  if (topM >= perturbedScores.length) {
+    return perturbedScores.map((_, i) => i);
   }
 
-  const selectedIndices: number[] = [];
-  const availableProbabilities = [...probabilities];
-  const availableIndices = probabilities.map((_, i) => i);
+  // Create index-score pairs and sort by descending perturbed score
+  const indexed = perturbedScores.map((score, i) => ({ index: i, score }));
+  indexed.sort((a, b) => b.score - a.score);
 
-  for (let i = 0; i < topM && availableProbabilities.length > 0; i++) {
-    // Sample from the current distribution
-    const total = availableProbabilities.reduce((a, b) => a + b, 0);
-    if (total <= 0) {
-      break;
-    }
-
-    const random = Math.random() * total;
-    let cumulative = 0;
-    let selectedIndex = -1;
-
-    for (let j = 0; j < availableProbabilities.length; j++) {
-      const prob = availableProbabilities[j] ?? 0;
-      cumulative += prob;
-
-      // Use fixed epsilon comparison to handle floating-point precision
-      // Using fixed 1e-12 avoids issues with Number.EPSILON which:
-      // - Is too small when total is large (~2.22e-16 × total)
-      // - Can exceed bin spacing when total is small
-      // This ensures robust sampling across different probability distributions
-      if (random <= cumulative + 1e-12) {
-        selectedIndex = j;
-        break;
-      }
-    }
-
-    // Fallback: if no index selected due to precision issues, select last
-    if (selectedIndex === -1 || selectedIndex >= availableIndices.length) {
-      selectedIndex = availableIndices.length - 1;
-    }
-
-    // Store the original index
-    const originalIdx = availableIndices[selectedIndex];
-    if (originalIdx !== undefined) {
-      selectedIndices.push(originalIdx);
-    }
-
-    // Remove the selected item from both arrays
-    availableProbabilities.splice(selectedIndex, 1);
-    availableIndices.splice(selectedIndex, 1);
-  }
-
-  return selectedIndices;
+  // Take the top-M indices
+  return indexed.slice(0, topM).map((entry) => entry.index);
 }
 
 /**

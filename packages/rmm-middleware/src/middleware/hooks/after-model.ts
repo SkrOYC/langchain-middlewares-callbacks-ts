@@ -25,7 +25,6 @@ import type {
   RerankerState,
   RetrievedMemory,
 } from "@/schemas";
-import { EMBEDDING_DIMENSION } from "@/schemas";
 import { createGradientStorage } from "@/storage/gradient-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { getLogger } from "@/utils/logger";
@@ -41,6 +40,15 @@ const logger = getLogger("after-model");
  * Floating point comparison threshold for gradient computation
  */
 const EPSILON = 1e-9;
+
+/**
+ * Derives the embedding dimension from the reranker weight matrices.
+ * This avoids hardcoding EMBEDDING_DIMENSION and supports arbitrary
+ * embedding models (e.g., 768 for Contriever, 1536 for OpenAI).
+ */
+function getEmbeddingDimension(reranker: RerankerState): number {
+  return reranker.weights.queryTransform.length;
+}
 
 // ============================================================================
 // Configuration
@@ -158,6 +166,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
       }
 
       try {
+        const embDim = getEmbeddingDimension(state._rerankerWeights);
+
         // Step 2: Build GradientSample from runtime context
         const gradientSample = buildGradientSample(
           state._rerankerWeights,
@@ -169,7 +179,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
             adaptedMemoryEmbeddings: runtime.context._adaptedMemoryEmbeddings,
             samplingProbabilities: runtime.context._samplingProbabilities,
             selectedIndices: runtime.context._selectedIndices,
-          }
+          },
+          embDim
         );
 
         // Step 3: Load gradient accumulator from BaseStore
@@ -180,14 +191,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
           // Create new accumulator
           accumulator = {
             samples: [],
-            accumulatedGradWq: createZeroMatrix(
-              EMBEDDING_DIMENSION,
-              EMBEDDING_DIMENSION
-            ),
-            accumulatedGradWm: createZeroMatrix(
-              EMBEDDING_DIMENSION,
-              EMBEDDING_DIMENSION
-            ),
+            accumulatedGradWq: createZeroMatrix(embDim, embDim),
+            accumulatedGradWm: createZeroMatrix(embDim, embDim),
             lastBatchIndex: 0,
             lastUpdated: Date.now(),
           };
@@ -200,7 +205,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
         // Step 4: Compute exact REINFORCE gradients for this sample
         const sampleGradients = computeExactGradients(
           gradientSample,
-          state._rerankerWeights
+          state._rerankerWeights,
+          embDim
         );
 
         // Accumulate gradients
@@ -236,14 +242,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
           // Clear accumulator after applying
           accumulator = {
             samples: [],
-            accumulatedGradWq: createZeroMatrix(
-              EMBEDDING_DIMENSION,
-              EMBEDDING_DIMENSION
-            ),
-            accumulatedGradWm: createZeroMatrix(
-              EMBEDDING_DIMENSION,
-              EMBEDDING_DIMENSION
-            ),
+            accumulatedGradWq: createZeroMatrix(embDim, embDim),
+            accumulatedGradWm: createZeroMatrix(embDim, embDim),
             lastBatchIndex: accumulator.lastBatchIndex + 1,
             lastUpdated: Date.now(),
           };
@@ -300,21 +300,14 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
  */
 function validateOriginalQuery(
   originalQuery: number[] | undefined,
-  _contextData: {
-    originalQuery?: number[];
-    adaptedQuery?: number[];
-    originalMemoryEmbeddings?: number[][];
-    adaptedMemoryEmbeddings?: number[][];
-    samplingProbabilities?: number[];
-    selectedIndices?: number[];
-  }
+  embDim: number
 ): number[] {
   if (!originalQuery || originalQuery.length === 0) {
     throw new Error("Missing original query embedding");
   }
-  if (originalQuery.length !== EMBEDDING_DIMENSION) {
+  if (originalQuery.length !== embDim) {
     throw new Error(
-      `Invalid query embedding dimension: expected ${EMBEDDING_DIMENSION}, got ${originalQuery.length}`
+      `Invalid query embedding dimension: expected ${embDim}, got ${originalQuery.length}`
     );
   }
   return originalQuery;
@@ -325,21 +318,14 @@ function validateOriginalQuery(
  */
 function validateAdaptedQuery(
   adaptedQuery: number[] | undefined,
-  _contextData: {
-    originalQuery?: number[];
-    adaptedQuery?: number[];
-    originalMemoryEmbeddings?: number[][];
-    adaptedMemoryEmbeddings?: number[][];
-    samplingProbabilities?: number[];
-    selectedIndices?: number[];
-  }
+  embDim: number
 ): number[] {
   if (!adaptedQuery || adaptedQuery.length === 0) {
     throw new Error("Missing adapted query embedding");
   }
-  if (adaptedQuery.length !== EMBEDDING_DIMENSION) {
+  if (adaptedQuery.length !== embDim) {
     throw new Error(
-      `Invalid adapted query dimension: expected ${EMBEDDING_DIMENSION}, got ${adaptedQuery.length}`
+      `Invalid adapted query dimension: expected ${embDim}, got ${adaptedQuery.length}`
     );
   }
   return adaptedQuery;
@@ -350,7 +336,8 @@ function validateAdaptedQuery(
  */
 function validateMemoryEmbeddings(
   embeddings: number[][] | undefined,
-  embeddingName: string
+  embeddingName: string,
+  embDim: number
 ): number[][] {
   if (!embeddings || embeddings.length === 0) {
     throw new Error(`Missing ${embeddingName}`);
@@ -358,9 +345,9 @@ function validateMemoryEmbeddings(
 
   for (let i = 0; i < embeddings.length; i++) {
     const emb = embeddings[i];
-    if (!emb || emb.length !== EMBEDDING_DIMENSION) {
+    if (!emb || emb.length !== embDim) {
       throw new Error(
-        `Invalid memory embedding at index ${i}: expected ${EMBEDDING_DIMENSION} dimensions`
+        `Invalid memory embedding at index ${i}: expected ${embDim} dimensions`
       );
     }
   }
@@ -448,23 +435,26 @@ function buildGradientSample(
     adaptedMemoryEmbeddings?: number[][];
     samplingProbabilities?: number[];
     selectedIndices?: number[];
-  }
+  },
+  embDim: number
 ): GradientSample {
   const originalQuery = validateOriginalQuery(
     contextData.originalQuery,
-    contextData
+    embDim
   );
   const adaptedQuery = validateAdaptedQuery(
     contextData.adaptedQuery,
-    contextData
+    embDim
   );
   const originalMemEmbeddings = validateMemoryEmbeddings(
     contextData.originalMemoryEmbeddings,
-    "original memory embeddings"
+    "original memory embeddings",
+    embDim
   );
   const adaptedMemEmbeddings = validateMemoryEmbeddings(
     contextData.adaptedMemoryEmbeddings,
-    "adapted memory embeddings"
+    "adapted memory embeddings",
+    embDim
   );
 
   const k = originalMemEmbeddings.length;
@@ -513,10 +503,11 @@ function buildGradientSample(
 function computeExpectedMemories(
   sample: GradientSample,
   k: number,
-  P: number[]
+  P: number[],
+  embDim: number
 ): { expectedMemOriginal: number[]; expectedMemAdapted: number[] } {
-  const expectedMemOriginal: number[] = new Array(EMBEDDING_DIMENSION).fill(0);
-  const expectedMemAdapted: number[] = new Array(EMBEDDING_DIMENSION).fill(0);
+  const expectedMemOriginal: number[] = new Array(embDim).fill(0);
+  const expectedMemAdapted: number[] = new Array(embDim).fill(0);
 
   for (let j = 0; j < k; j++) {
     const m_j = sample.memoryEmbeddings[j];
@@ -524,7 +515,7 @@ function computeExpectedMemories(
     const P_j = P[j];
 
     if (m_j && m_j_prime && P_j !== undefined) {
-      for (let d = 0; d < EMBEDDING_DIMENSION; d++) {
+      for (let d = 0; d < embDim; d++) {
         const origVal = expectedMemOriginal[d];
         const adaptedVal = expectedMemAdapted[d];
         const m_j_d = m_j[d];
@@ -547,20 +538,29 @@ function computeExpectedMemories(
 }
 
 /**
- * Computes gradient contributions for a single row of memory embedding
+ * Computes gradient contributions for a single row of memory embedding.
+ *
+ * Per Equation 3 and the chain rule for the linear transformation:
+ * - ∂s_i/∂W_q[row][col] = m'_{i,row} * q_{col}  (ORIGINAL query q)
+ * - ∂s_i/∂W_m[row][col] = q'_{row} * m_{i,col}   (ADAPTED query q')
+ *
+ * The 1/τ factor comes from the softmax derivative in ∇ log P.
  */
 function computeGradientRow(
   row: number,
   advantage: number,
   coef: number,
   η: number,
+  invTemperature: number,
   expectedMemAdapted: number[],
   expectedMemOriginal: number[],
   gradWq: number[][],
   gradWm: number[][],
+  q: number[],
   q_prime: number[],
   m_i_prime: number[],
-  m_i: number[]
+  m_i: number[],
+  embDim: number
 ): void {
   const gradWqRow = gradWq[row];
   const gradWmRow = gradWm[row];
@@ -587,22 +587,27 @@ function computeGradientRow(
   const diffAdapted = m_i_prime_row - expectedAdaptedVal;
   const diffOriginal = m_i_row - expectedOriginalVal;
 
-  for (let col = 0; col < EMBEDDING_DIMENSION; col++) {
+  for (let col = 0; col < embDim; col++) {
+    const q_col = q[col];
     const q_prime_col = q_prime[col];
     const m_i_col = m_i[col];
 
-    if (q_prime_col === undefined || m_i_col === undefined) {
+    if (q_col === undefined || q_prime_col === undefined || m_i_col === undefined) {
       continue;
     }
 
+    // W_q gradient: ∂s_i/∂W_q uses m'_i ⊗ q (original query)
+    // Includes 1/τ from softmax derivative
     gradWqRow[col] =
-      (gradWqRow[col] ?? 0) + η * advantage * coef * diffAdapted * q_prime_col;
+      (gradWqRow[col] ?? 0) + η * invTemperature * advantage * coef * diffAdapted * q_col;
 
+    // W_m gradient: ∂s_i/∂W_m uses q' ⊗ m_i (adapted query)
+    // Includes 1/τ from softmax derivative
     const gradWmCol = gradWm[col];
     if (gradWmCol !== undefined) {
       gradWmCol[row] =
         (gradWmCol[row] ?? 0) +
-        η * advantage * coef * q_prime_col * diffOriginal;
+        η * invTemperature * advantage * coef * q_prime_col * diffOriginal;
     }
   }
 }
@@ -615,11 +620,13 @@ function computeMemoryGradient(
   sample: GradientSample,
   learningRate: number,
   baseline: number,
+  invTemperature: number,
   expectedMemOriginal: number[],
   expectedMemAdapted: number[],
   gradWq: number[][],
   gradWm: number[][],
-  selectedIndices: Set<number>
+  selectedIndices: Set<number>,
+  embDim: number
 ): void {
   const R = sample.citationRewards[i];
   if (R === undefined) {
@@ -631,19 +638,21 @@ function computeMemoryGradient(
     return;
   }
 
+  const q = sample.queryEmbedding;
   const q_prime = sample.adaptedQuery;
   const m_i_prime = sample.adaptedMemories[i];
   const m_i = sample.memoryEmbeddings[i];
   const P_i = sample.samplingProbabilities[i];
 
-  if (!(q_prime && m_i_prime && m_i && P_i !== undefined)) {
+  if (!(q && q_prime && m_i_prime && m_i && P_i !== undefined)) {
     return;
   }
 
   if (
-    q_prime.length !== EMBEDDING_DIMENSION ||
-    m_i_prime.length !== EMBEDDING_DIMENSION ||
-    m_i.length !== EMBEDDING_DIMENSION
+    q.length !== embDim ||
+    q_prime.length !== embDim ||
+    m_i_prime.length !== embDim ||
+    m_i.length !== embDim
   ) {
     return;
   }
@@ -652,19 +661,22 @@ function computeMemoryGradient(
   const indicator = isSelected ? 1 : 0;
   const coef = indicator - P_i;
 
-  for (let row = 0; row < EMBEDDING_DIMENSION; row++) {
+  for (let row = 0; row < embDim; row++) {
     computeGradientRow(
       row,
       advantage,
       coef,
       learningRate,
+      invTemperature,
       expectedMemAdapted,
       expectedMemOriginal,
       gradWq,
       gradWm,
+      q,
       q_prime,
       m_i_prime,
-      m_i
+      m_i,
+      embDim
     );
   }
 }
@@ -676,12 +688,15 @@ interface SampleGradients {
 
 function computeExactGradients(
   sample: GradientSample,
-  reranker: RerankerState
+  reranker: RerankerState,
+  embDim: number
 ): SampleGradients {
   const learningRate = reranker.config.learningRate;
   const baseline = reranker.config.baseline;
-  const gradWq = createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION);
-  const gradWm = createZeroMatrix(EMBEDDING_DIMENSION, EMBEDDING_DIMENSION);
+  const temperature = reranker.config.temperature;
+  const invTemperature = 1.0 / temperature;
+  const gradWq = createZeroMatrix(embDim, embDim);
+  const gradWm = createZeroMatrix(embDim, embDim);
 
   const k = sample.samplingProbabilities.length;
   const P = sample.samplingProbabilities;
@@ -691,7 +706,8 @@ function computeExactGradients(
   const { expectedMemOriginal, expectedMemAdapted } = computeExpectedMemories(
     sample,
     k,
-    P
+    P,
+    embDim
   );
 
   // For each memory i in Top-K
@@ -701,11 +717,13 @@ function computeExactGradients(
       sample,
       learningRate,
       baseline,
+      invTemperature,
       expectedMemOriginal,
       expectedMemAdapted,
       gradWq,
       gradWm,
-      selectedIndices
+      selectedIndices,
+      embDim
     );
   }
 

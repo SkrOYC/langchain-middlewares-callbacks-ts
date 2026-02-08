@@ -63,7 +63,7 @@ export const rmmConfigSchema = z.object({
    * Number of memories to include in LLM context.
    * @default 5
    */
-  topM: z.number().int().positive().max(10).default(5),
+  topM: z.number().int().positive().default(5),
 
   /**
    * Temperature parameter for Gumbel-Softmax sampling.

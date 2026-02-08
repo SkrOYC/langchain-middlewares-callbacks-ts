@@ -21,6 +21,7 @@ import {
   RMMStateSchema,
   validateEmbeddingDimension,
 } from "@/schemas";
+import { rmmConfigSchema } from "@/schemas/config";
 
 // ============================================================================
 // Test Helpers
@@ -249,6 +250,43 @@ describe("RerankerStateSchema", () => {
       expect(result.data.config.temperature).toBe(0.5);
       expect(result.data.config.learningRate).toBe(0.001);
       expect(result.data.config.baseline).toBe(0.5);
+    }
+  });
+});
+
+// ============================================================================
+// RmmConfig Schema Tests
+// ============================================================================
+
+describe("rmmConfigSchema", () => {
+  test("accepts topM values greater than 10 (paper Table 5)", () => {
+    const result = rmmConfigSchema.safeParse({ topM: 15 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.topM).toBe(15);
+    }
+  });
+
+  test("accepts topM of 20 matching topK default", () => {
+    const result = rmmConfigSchema.safeParse({ topM: 20 });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects topM of 0", () => {
+    const result = rmmConfigSchema.safeParse({ topM: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects negative topM", () => {
+    const result = rmmConfigSchema.safeParse({ topM: -1 });
+    expect(result.success).toBe(false);
+  });
+
+  test("defaults topM to 5", () => {
+    const result = rmmConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.topM).toBe(5);
     }
   });
 });

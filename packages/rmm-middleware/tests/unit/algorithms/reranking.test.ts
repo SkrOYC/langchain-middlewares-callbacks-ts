@@ -307,6 +307,50 @@ describe("Reranking Algorithms", () => {
       }
     });
 
+    test("selects Top-M by highest perturbed score (Gumbel-Top-K argmax)", async () => {
+      // The Gumbel-Top-K trick: items with the highest perturbed
+      // log-probabilities should be selected. With a wide enough score gap
+      // and low temperature, the top-scoring items should almost always win.
+      const { gumbelSoftmaxSample } = await import("@/algorithms/reranking");
+
+      // Create memories with a clear gap: two high scores, two low scores
+      const gapMemories: ScoredMemory[] = [
+        {
+          ...sampleMemories[0]!,
+          id: "high-0",
+          rerankScore: 100,
+        },
+        {
+          ...sampleMemories[1]!,
+          id: "low-0",
+          rerankScore: -100,
+        },
+        {
+          ...sampleMemories[2]!,
+          id: "high-1",
+          rerankScore: 99,
+        },
+        {
+          ...sampleMemories[3]!,
+          id: "low-1",
+          rerankScore: -99,
+        },
+      ];
+
+      const topM = 2;
+      const lowTemp = 0.1;
+
+      // With such a wide score gap, the Gumbel noise can't overcome it.
+      // Top-M should always be the two "high" memories.
+      const iterations = 50;
+      for (let i = 0; i < iterations; i++) {
+        const result = gumbelSoftmaxSample(gapMemories, topM, lowTemp);
+        const ids = new Set(result.selectedMemories.map((m) => m.id));
+        expect(ids.has("high-0")).toBe(true);
+        expect(ids.has("high-1")).toBe(true);
+      }
+    });
+
     test("SamplingResult selectedIndices match selectedMemories", async () => {
       const { gumbelSoftmaxSample } = await import("@/algorithms/reranking");
 

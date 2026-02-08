@@ -1346,4 +1346,137 @@ describe("reflectionDeps Interface Extensions", () => {
 
     expect(middleware).toBeDefined();
   });
+
+  test("extracts memories from both SPEAKER_1 and SPEAKER_2 when extractSpeaker2 provided", async () => {
+    const sampleState = {
+      messages: [
+        {
+          lc_serialized: { type: "human" },
+          lc_kwargs: { content: "Hello" },
+          lc_id: ["human"],
+          content: "Hello",
+          additional_kwargs: {},
+        },
+      ],
+    };
+    const { createRetrospectiveBeforeAgent } = await import(
+      "@/middleware/hooks/before-agent"
+    );
+
+    // Initial buffer with a dialogue
+    const initialBuffer = {
+      messages: [
+        {
+          type: "human",
+          data: { content: "I love hiking" },
+        },
+        {
+          type: "ai",
+          data: { content: "I enjoy recommending trails!" },
+        },
+      ],
+      humanMessageCount: 1,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const storedBuffers = new Map<string, unknown>();
+    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
+
+    const capturedDocuments: Array<{
+      pageContent: string;
+      metadata?: Record<string, unknown>;
+    }> = [];
+
+    const mockStore = createAsyncMockStore(storedBuffers);
+
+    // Track which speaker prompts were invoked
+    const invokedPrompts: string[] = [];
+
+    // LLM that returns different memories depending on which prompt is used
+    const mockLLM = {
+      invoke: (promptText: string) => {
+        let content: string;
+        if (promptText.includes("SPEAKER_2_PROMPT")) {
+          invokedPrompts.push("speaker2");
+          content = JSON.stringify({
+            extracted_memories: [
+              { summary: "Agent enjoys recommending trails", reference: [0] },
+            ],
+          });
+        } else {
+          invokedPrompts.push("speaker1");
+          content = JSON.stringify({
+            extracted_memories: [
+              { summary: "User loves hiking", reference: [0] },
+            ],
+          });
+        }
+        return { content, text: content };
+      },
+    };
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    const mockDeps = {
+      vectorStore: {
+        similaritySearch: async () => [],
+        addDocuments: async (
+          docs: Array<{
+            pageContent: string;
+            metadata?: Record<string, unknown>;
+          }>
+        ) => {
+          capturedDocuments.push(...docs);
+        },
+      },
+      extractSpeaker1: (dialogue: string) => `SPEAKER_1_PROMPT: ${dialogue}`,
+      extractSpeaker2: (dialogue: string) => `SPEAKER_2_PROMPT: ${dialogue}`,
+      llm: mockLLM as any,
+      embeddings: mockEmbeddings as any,
+    };
+
+    const middleware = createRetrospectiveBeforeAgent({
+      store: mockStore as any,
+      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
+      reflectionConfig: {
+        ...DEFAULT_REFLECTION_CONFIG,
+        minTurns: 1,
+        maxTurns: 10,
+        minInactivityMs: 0,
+        maxInactivityMs: 60_000,
+        mode: "strict",
+      },
+      reflectionDeps: mockDeps,
+    });
+
+    const mockRuntime: BeforeAgentRuntime = {
+      context: {
+        userId: "test-user",
+        store: mockStore as any,
+      },
+    };
+
+    await middleware.beforeAgent(sampleState, mockRuntime);
+
+    // Wait for async reflection
+    let attempts = 0;
+    while (capturedDocuments.length < 2 && attempts < 100) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      attempts++;
+    }
+
+    // Both speaker prompts should have been invoked
+    expect(invokedPrompts).toContain("speaker1");
+    expect(invokedPrompts).toContain("speaker2");
+
+    // Should have stored memories from both speakers
+    expect(capturedDocuments.length).toBe(2);
+    const summaries = capturedDocuments.map((d) => d.pageContent);
+    expect(summaries).toContain("User loves hiking");
+    expect(summaries).toContain("Agent enjoys recommending trails");
+  });
 });
