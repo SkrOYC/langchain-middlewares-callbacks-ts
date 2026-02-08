@@ -34,7 +34,11 @@ import {
 import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
 import { extractSpeaker2 } from "@/middleware/prompts/extract-speaker2.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
-import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
+import {
+  type RmmConfig,
+  type RmmVectorStore,
+  rmmConfigSchema,
+} from "@/schemas/config.js";
 import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
@@ -98,6 +102,21 @@ const logger = getLogger("rmm-middleware");
  */
 export function rmmMiddleware(config: RmmConfig = {}) {
   const parsedConfig = rmmConfigSchema.parse(config);
+
+  /**
+   * Validates that vectorStore's internal embeddings matches the configured embeddings.
+   * Mismatched embeddings cause silent incorrect reranking results.
+   */
+  if (parsedConfig.vectorStore && parsedConfig.embeddings) {
+    const vsEmbeddings = (parsedConfig.vectorStore as RmmVectorStore)
+      ?.embeddings;
+    if (vsEmbeddings && vsEmbeddings !== parsedConfig.embeddings) {
+      logger.warn(
+        "RMM middleware embeddings instance differs from vectorStore's internal embeddings. " +
+          "This may cause incorrect reranking results. Ensure both use the same embedding model."
+      );
+    }
+  }
 
   // If RMM is disabled, return a no-op middleware
   if (!parsedConfig.enabled) {

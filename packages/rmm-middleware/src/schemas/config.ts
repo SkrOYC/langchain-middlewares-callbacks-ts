@@ -14,6 +14,12 @@ import { z } from "zod";
  * Vector store interface for memory retrieval
  */
 export interface RmmVectorStore {
+  /**
+   * Optional embeddings instance used internally by the vector store.
+   * Used for compatibility validation with the middleware's embeddings config.
+   */
+  embeddings?: Embeddings;
+
   similaritySearch: (
     query: string,
     k?: number
