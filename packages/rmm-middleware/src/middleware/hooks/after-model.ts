@@ -28,7 +28,7 @@ import type {
 import { createGradientStorage } from "@/storage/gradient-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { getLogger } from "@/utils/logger";
-import { addMatrix, clipMatrix, createZeroMatrix } from "@/utils/matrix";
+import { addMatrix, clipMatrix, createZeroMatrix, scaleMatrix } from "@/utils/matrix";
 
 const logger = getLogger("after-model");
 
@@ -72,14 +72,18 @@ function accumulateGradients(
     embDim
   );
 
-  // Accumulate gradients
+  // Accumulate gradients (averaged over batch per Equation 3)
+  // Gradients are averaged (divided by batchSize) to ensure effective learning
+  // rate is independent of batch size
+  const averagedGradWq = scaleMatrix(sampleGradients.gradWq, 1 / batchSize);
+  const averagedGradWm = scaleMatrix(sampleGradients.gradWm, 1 / batchSize);
   accumulator.accumulatedGradWq = addMatrix(
     accumulator.accumulatedGradWq,
-    sampleGradients.gradWq
+    averagedGradWq
   );
   accumulator.accumulatedGradWm = addMatrix(
     accumulator.accumulatedGradWm,
-    sampleGradients.gradWm
+    averagedGradWm
   );
 
   // Check if batch is full or session is ending
@@ -594,11 +598,19 @@ function computeExpectedMemories(
  * - ∂s_i/∂W_m[row][col] = q'_{row} * m_{i,col}   (ADAPTED query q')
  *
  * The 1/τ factor comes from the softmax derivative in ∇ log P.
+ *
+ * IMPORTANT: We use the baseline form (m'_i - E[m'_i]) for the softmax gradient,
+ * NOT the score function form (δ_ij - P_j). These are mathematically equivalent
+ * for the softmax derivative, but using both simultaneously would create a
+ * "squared" gradient that doesn't correspond to any valid policy gradient.
+ *
+ * Correct gradient per Equation 3:
+ * ∂ log P_i / ∂ W_q[r][c] = (1/τ) * (m'_i[r] - E[m'[r]]) * q[c]
+ * ∂ log P_i / ∂ W_m[a][b] = (1/τ) * q'[a] * (m_i[b] - E[m[b]])
  */
 function computeGradientRow(
   row: number,
   advantage: number,
-  coef: number,
   η: number,
   invTemperature: number,
   expectedMemAdapted: number[],
@@ -651,17 +663,19 @@ function computeGradientRow(
 
     // W_q gradient: ∂s_i/∂W_q uses m'_i ⊗ q (original query)
     // Includes 1/τ from softmax derivative
+    // Uses baseline form: (m'_i[r] - E[m'[r]]) NOT (δ_ij - P_j) * (m'_i - E[m'_i])
     gradWqRow[col] =
       (gradWqRow[col] ?? 0) +
-      η * invTemperature * advantage * coef * diffAdapted * q_col;
+      η * invTemperature * advantage * diffAdapted * q_col;
 
     // W_m gradient: ∂s_i/∂W_m uses q' ⊗ m_i (adapted query)
     // Includes 1/τ from softmax derivative
+    // Uses baseline form: q'[a] * (m_i[b] - E[m[b]]) NOT q' * (δ_ij - P_j) * (m_i - E[m])
     const gradWmCol = gradWm[col];
     if (gradWmCol !== undefined) {
       gradWmCol[row] =
         (gradWmCol[row] ?? 0) +
-        η * invTemperature * advantage * coef * q_prime_col * diffOriginal;
+        η * invTemperature * advantage * q_prime_col * diffOriginal;
     }
   }
 }
@@ -696,9 +710,8 @@ function computeMemoryGradient(
   const q_prime = sample.adaptedQuery;
   const m_i_prime = sample.adaptedMemories[i];
   const m_i = sample.memoryEmbeddings[i];
-  const P_i = sample.samplingProbabilities[i];
 
-  if (!(q && q_prime && m_i_prime && m_i && P_i !== undefined)) {
+  if (!(q && q_prime && m_i_prime && m_i)) {
     return;
   }
 
@@ -711,15 +724,10 @@ function computeMemoryGradient(
     return;
   }
 
-  const isSelected = selectedIndices.has(i);
-  const indicator = isSelected ? 1 : 0;
-  const coef = indicator - P_i;
-
   for (let row = 0; row < embDim; row++) {
     computeGradientRow(
       row,
       advantage,
-      coef,
       learningRate,
       invTemperature,
       expectedMemAdapted,
