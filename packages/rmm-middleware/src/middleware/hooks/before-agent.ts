@@ -10,7 +10,6 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import {
   type BaseMessage,
   mapStoredMessagesToChatMessages,
@@ -135,6 +134,8 @@ export interface BeforeAgentOptions {
           metadata?: Record<string, unknown>;
         }>
       ) => Promise<void>;
+      /** Optional delete for merge operations (delete+add pattern) */
+      delete?: (params: { ids: string[] }) => Promise<void>;
     };
     extractSpeaker1: (dialogue: string) => string;
     /**
@@ -350,7 +351,7 @@ async function processReflection(
       for (const memory of memories) {
         await processMemoryUpdate(
           memory,
-          deps.vectorStore as unknown as VectorStoreInterface,
+          deps.vectorStore,
           deps.llm,
           deps.updateMemory
         );

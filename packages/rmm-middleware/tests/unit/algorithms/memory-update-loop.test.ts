@@ -211,4 +211,126 @@ describe("processMemoryUpdate", () => {
     expect(addedDocs.length).toBe(1);
     expect(addedDocs[0]?.pageContent).toBe("User likes pizza");
   });
+
+  test("does not duplicate memory when multiple Add actions returned", async () => {
+    const { processMemoryUpdate } = await import(
+      "@/algorithms/memory-update"
+    );
+
+    const addedDocs: Array<{ pageContent: string }> = [];
+
+    const mockMemory: MemoryEntry = {
+      id: "550e8400-e29b-41d4-a716-446655440003",
+      topicSummary: "User likes tea",
+      rawDialogue: "I drink tea daily",
+      timestamp: Date.now(),
+      sessionId: "session-1",
+      embedding: new Array(1536).fill(0.1),
+      turnReferences: [0],
+    };
+
+    const mockVectorStore = {
+      similaritySearch: async () => [
+        {
+          pageContent: "User drinks coffee",
+          metadata: {
+            id: "existing-1",
+            sessionId: "s-0",
+            timestamp: Date.now() - 100_000,
+            turnReferences: [0],
+            rawDialogue: "I drink coffee",
+          },
+        },
+      ],
+      addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        addedDocs.push(...docs);
+      },
+      delete: async () => {},
+    };
+
+    // LLM returns a response that parses to multiple Add actions
+    const mockLlm = {
+      invoke: async () => ({ text: "Add()\nAdd()" }),
+    };
+
+    const mockUpdatePrompt = (history: string[], newSummary: string) =>
+      `Update: ${newSummary} vs ${history.join(", ")}`;
+
+    await processMemoryUpdate(
+      mockMemory,
+      mockVectorStore as any,
+      mockLlm as any,
+      mockUpdatePrompt
+    );
+
+    // The paper describes an exclusive add-or-merge decision.
+    // Even if the parser returns multiple Add actions, we should only add once.
+    expect(addedDocs.length).toBe(1);
+    expect(addedDocs[0]?.pageContent).toBe("User likes tea");
+  });
+
+  test("prioritizes Merge over Add when both action types returned", async () => {
+    const { processMemoryUpdate } = await import(
+      "@/algorithms/memory-update"
+    );
+
+    const addedDocs: Array<{ pageContent: string }> = [];
+    const deletedIds: string[] = [];
+
+    const mockMemory: MemoryEntry = {
+      id: "550e8400-e29b-41d4-a716-446655440004",
+      topicSummary: "User runs marathons",
+      rawDialogue: "I run marathons",
+      timestamp: Date.now(),
+      sessionId: "session-1",
+      embedding: new Array(1536).fill(0.1),
+      turnReferences: [0],
+    };
+
+    const mockVectorStore = {
+      similaritySearch: async () => [
+        {
+          pageContent: "User exercises regularly",
+          metadata: {
+            id: "existing-2",
+            sessionId: "s-0",
+            timestamp: Date.now() - 100_000,
+            turnReferences: [0],
+            rawDialogue: "I exercise a lot",
+          },
+        },
+      ],
+      addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        addedDocs.push(...docs);
+      },
+      delete: async (opts: { ids: string[] }) => {
+        deletedIds.push(...opts.ids);
+      },
+    };
+
+    // LLM returns both a Merge and an Add
+    const mockLlm = {
+      invoke: async () => ({
+        text: "Merge(0, User exercises regularly and runs marathons.)\nAdd()",
+      }),
+    };
+
+    const mockUpdatePrompt = (history: string[], newSummary: string) =>
+      `Update: ${newSummary} vs ${history.join(", ")}`;
+
+    await processMemoryUpdate(
+      mockMemory,
+      mockVectorStore as any,
+      mockLlm as any,
+      mockUpdatePrompt
+    );
+
+    // Merge should take priority - the old memory is deleted and replaced
+    expect(deletedIds).toContain("existing-2");
+    expect(addedDocs.some((d) => d.pageContent.includes("runs marathons"))).toBe(true);
+
+    // Should NOT have also added the raw memory as a separate entry
+    // (only the merge result should be added)
+    expect(addedDocs.length).toBe(1);
+  });
 });
