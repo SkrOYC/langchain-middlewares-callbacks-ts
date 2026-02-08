@@ -35,6 +35,7 @@ import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
 import { extractSpeaker2 } from "@/middleware/prompts/extract-speaker2.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
+import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
 export type { RmmConfig } from "@/schemas/config.js";
@@ -48,19 +49,6 @@ function extractHook<T extends Record<string, unknown>, K extends keyof T>(
 ): T[K] {
   return factory[hookKey];
 }
-
-/**
- * Default reflection configuration
- */
-const DEFAULT_REFLECTION_CONFIG = {
-  minTurns: 3,
-  maxTurns: 50,
-  minInactivityMs: 300_000,
-  maxInactivityMs: 1_800_000,
-  mode: "strict" as const,
-  retryDelayMs: 1000,
-  maxRetries: 3,
-} as const;
 
 const logger = getLogger("rmm-middleware");
 
@@ -147,7 +135,6 @@ export function rmmMiddleware(config: RmmConfig = {}) {
 
   // Build beforeAgent hook options
   const beforeAgentOptions: BeforeAgentOptions = {
-    store: parsedConfig.vectorStore as BeforeAgentOptions["store"],
     userIdExtractor: (runtime: {
       configurable?: { sessionId?: string };
       context?: { sessionId?: string };
@@ -237,9 +224,17 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     beforeModel: beforeModelHook,
     wrapModelCall: wrapModelCallHook,
     afterModel: afterModelHook,
-    afterAgent: (state, runtime: { context?: { store?: unknown } }) => {
+    afterAgent: (state, runtime: {
+      configurable?: { sessionId?: string };
+      context?: { sessionId?: string; store?: unknown };
+    }) => {
+      // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
+      const userId =
+        runtime.configurable?.sessionId ?? runtime.context?.sessionId ?? "";
+
       // Extract dependencies from runtime for afterAgent
       const deps: AfterAgentDependencies = {
+        userId,
         store: runtime.context?.store as AfterAgentDependencies["store"],
         reflectionConfig: parsedConfig.llm
           ? DEFAULT_REFLECTION_CONFIG
