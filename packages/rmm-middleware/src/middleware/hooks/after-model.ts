@@ -724,8 +724,6 @@ function computeMemoryGradient(
     return;
   }
 
-  const isSelected = selectedIndices.has(i);
-
   for (let row = 0; row < embDim; row++) {
     computeGradientRow(
       row,
