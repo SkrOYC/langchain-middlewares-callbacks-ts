@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
+import { type BaseStore, type Item } from "@langchain/langgraph-checkpoint";
 import {
-  EMBEDDING_DIMENSION,
+  DEFAULT_EMBEDDING_DIMENSION,
   type RerankerState,
   type SessionMetadata,
 } from "@/schemas";
@@ -16,9 +16,9 @@ import { createWeightStorage } from "@/storage/weight-storage";
 // ============================================================================
 
 const createValidMatrix = (): number[][] =>
-  Array.from({ length: EMBEDDING_DIMENSION }, () =>
+  Array.from({ length: DEFAULT_EMBEDDING_DIMENSION }, () =>
     Array.from(
-      { length: EMBEDDING_DIMENSION },
+      { length: DEFAULT_EMBEDDING_DIMENSION },
       () => Math.random() * 0.02 - 0.01
     )
   );
