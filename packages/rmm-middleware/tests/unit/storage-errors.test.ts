@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type BaseStore, type Item } from "@langchain/langgraph-checkpoint";
+import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
 import {
   DEFAULT_EMBEDDING_DIMENSION,
   type RerankerState,

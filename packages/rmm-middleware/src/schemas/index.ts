@@ -57,20 +57,23 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 // ============================================================================
 
 /**
+ * Base schema for retrieved memory (without embedding)
+ */
+const RetrievedMemoryBaseSchema = z.object({
+  id: z.string().min(1),
+  topicSummary: z.string().min(1),
+  rawDialogue: z.string().min(1),
+  timestamp: z.number().int().positive(),
+  sessionId: z.string().min(1),
+  turnReferences: z.array(z.number().int().nonnegative()),
+});
+
+/**
  * Creates a RetrievedMemorySchema with configurable embedding dimension
  */
 export function createRetrievedMemorySchema(
   embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
 ) {
-  const RetrievedMemoryBaseSchema = z.object({
-    id: z.string().min(1),
-    topicSummary: z.string().min(1),
-    rawDialogue: z.string().min(1),
-    timestamp: z.number().int().positive(),
-    sessionId: z.string().min(1),
-    turnReferences: z.array(z.number().int().nonnegative()),
-  });
-
   return RetrievedMemoryBaseSchema.extend({
     embedding: z.array(z.number()).length(embeddingDimension).optional(),
     relevanceScore: z.number(),
@@ -284,7 +287,7 @@ export type GradientAccumulatorState = z.infer<
  */
 export function createEmptyGradientAccumulatorState(
   embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
-): z.infer<ReturnType<typeof createGradientAccumulatorStateSchema>> {
+) {
   return {
     samples: [],
     accumulatedGradWq: createZeroMatrix(embeddingDimension, embeddingDimension),
@@ -631,15 +634,10 @@ export function validateEmbeddingDimension(
 export function createDefaultRerankerState(
   embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
 ): RerankerState {
-  const createZeroMatrix = (): number[][] =>
-    Array.from({ length: embeddingDimension }, () =>
-      Array.from({ length: embeddingDimension }, () => 0)
-    );
-
   return {
     weights: {
-      queryTransform: createZeroMatrix(),
-      memoryTransform: createZeroMatrix(),
+      queryTransform: createZeroMatrix(embeddingDimension, embeddingDimension),
+      memoryTransform: createZeroMatrix(embeddingDimension, embeddingDimension),
     },
     config: {
       topK: RERANKER_CONFIG_DEFAULTS.topK,

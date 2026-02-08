@@ -8,8 +8,9 @@ import {
   createGradientAccumulatorStateSchema,
   createGradientSampleSchema,
   createMemoryEntrySchema,
-  createRetrievedMemorySchema,
   createRerankerStateSchema,
+  createRetrievedMemorySchema,
+  DEFAULT_EMBEDDING_DIMENSION,
   type MemoryEntry,
   MemoryEntrySchema,
   MemoryExtractionOutputSchema,
@@ -25,7 +26,6 @@ import {
   type RMMState,
   RMMStateSchema,
   validateEmbeddingDimension,
-  DEFAULT_EMBEDDING_DIMENSION,
 } from "@/schemas";
 import { rmmConfigSchema } from "@/schemas/config";
 
@@ -607,11 +607,15 @@ describe("Utility Functions", () => {
   describe("createDefaultRerankerState", () => {
     test("creates state with correct matrix dimensions", () => {
       const state = createDefaultRerankerState();
-      expect(state.weights.queryTransform.length).toBe(DEFAULT_EMBEDDING_DIMENSION);
+      expect(state.weights.queryTransform.length).toBe(
+        DEFAULT_EMBEDDING_DIMENSION
+      );
       const queryFirstRow = state.weights.queryTransform[0];
       expect(queryFirstRow).toBeDefined();
       expect(queryFirstRow?.length).toBe(DEFAULT_EMBEDDING_DIMENSION);
-      expect(state.weights.memoryTransform.length).toBe(DEFAULT_EMBEDDING_DIMENSION);
+      expect(state.weights.memoryTransform.length).toBe(
+        DEFAULT_EMBEDDING_DIMENSION
+      );
       const memoryFirstRow = state.weights.memoryTransform[0];
       expect(memoryFirstRow).toBeDefined();
       expect(memoryFirstRow?.length).toBe(DEFAULT_EMBEDDING_DIMENSION);
@@ -900,12 +904,8 @@ describe("Dynamic Embedding Dimensions", () => {
       const invalidSample = {
         queryEmbedding: Array.from({ length: 1536 }, () => Math.random()),
         adaptedQuery: Array.from({ length: 768 }, () => Math.random()),
-        memoryEmbeddings: [
-          Array.from({ length: 768 }, () => Math.random()),
-        ],
-        adaptedMemories: [
-          Array.from({ length: 768 }, () => Math.random()),
-        ],
+        memoryEmbeddings: [Array.from({ length: 768 }, () => Math.random())],
+        adaptedMemories: [Array.from({ length: 768 }, () => Math.random())],
         samplingProbabilities: [1.0],
         selectedIndices: [0],
         citationRewards: [1],
