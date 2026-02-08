@@ -23,13 +23,15 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
     const originalGet = mockStore.get.bind(mockStore);
     mockStore.get = async (namespace, key) => {
       getCalled = true;
-      return originalGet(namespace, key);
+      return await originalGet(namespace, key);
     };
 
     const middleware = rmmMiddleware({
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
       embeddings: {
         embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
@@ -40,15 +42,12 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
     });
 
     // Call beforeAgent with runtime containing store
-    await middleware.beforeAgent(
-      { messages: [] },
-      {
-        context: {
-          store: mockStore,
-          sessionId: "test-user",
-        },
-      } as any
-    );
+    await middleware.beforeAgent({ messages: [] }, {
+      context: {
+        store: mockStore,
+        sessionId: "test-user",
+      },
+    } as any);
 
     // Verify store was accessed
     expect(getCalled).toBe(true);
@@ -60,7 +59,9 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
     const middleware = rmmMiddleware({
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
       embeddings: {
         embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
@@ -71,10 +72,9 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
     });
 
     // Call beforeAgent without store in runtime
-    const result = await middleware.beforeAgent(
-      { messages: [] },
-      { context: {} } as any
-    );
+    const result = await middleware.beforeAgent({ messages: [] }, {
+      context: {},
+    } as any);
 
     // Should return initialized weights (not crash)
     expect(result._rerankerWeights).toBeDefined();
@@ -88,7 +88,9 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
     const middleware = rmmMiddleware({
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
       embeddings: {
         embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
@@ -99,15 +101,12 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
     });
 
     // Call beforeAgent with store but no userId
-    const result = await middleware.beforeAgent(
-      { messages: [] },
-      {
-        context: {
-          store: mockStore,
-          // No sessionId
-        },
-      } as any
-    );
+    const result = await middleware.beforeAgent({ messages: [] }, {
+      context: {
+        store: mockStore,
+        // No sessionId
+      },
+    } as any);
 
     // Should return initialized weights (can't save without userId)
     expect(result._rerankerWeights).toBeDefined();

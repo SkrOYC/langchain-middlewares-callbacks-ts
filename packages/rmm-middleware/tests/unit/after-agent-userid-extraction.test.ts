@@ -20,7 +20,9 @@ describe("afterAgent - UserId Extraction", () => {
     const middleware = rmmMiddleware({
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
       enabled: true,
     });
@@ -64,7 +66,9 @@ describe("afterAgent - UserId Extraction", () => {
     const middleware = rmmMiddleware({
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
       enabled: true,
     });
@@ -107,7 +111,9 @@ describe("afterAgent - UserId Extraction", () => {
     const middleware = rmmMiddleware({
       vectorStore: {
         similaritySearch: async () => [],
-        addDocuments: async () => {},
+        addDocuments: async () => {
+          return await Promise.resolve();
+        },
       },
       enabled: true,
     });

@@ -224,10 +224,13 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     beforeModel: beforeModelHook,
     wrapModelCall: wrapModelCallHook,
     afterModel: afterModelHook,
-    afterAgent: (state, runtime: {
-      configurable?: { sessionId?: string };
-      context?: { sessionId?: string; store?: unknown };
-    }) => {
+    afterAgent: (
+      state,
+      runtime: {
+        configurable?: { sessionId?: string };
+        context?: { sessionId?: string; store?: unknown };
+      }
+    ) => {
       // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
       const userId =
         runtime.configurable?.sessionId ?? runtime.context?.sessionId ?? "";
