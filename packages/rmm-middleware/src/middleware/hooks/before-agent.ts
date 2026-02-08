@@ -59,11 +59,6 @@ const DEFAULT_CONFIG_EMBEDDING_DIMENSION = 1536;
  */
 export interface BeforeAgentOptions {
   /**
-   * BaseStore instance for persisting reranker weights
-   */
-  store: BaseStore;
-
-  /**
    * Function to extract userId from runtime context
    * Used for multi-user isolation of reranker weights
    */
@@ -752,9 +747,6 @@ function initializeRerankerState(
  * ```
  */
 export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
-  // Create weight storage adapter
-  const weightStorage = createWeightStorage(options.store);
-
   // Get reflection config or use default
   const reflectionConfig =
     options.reflectionConfig ?? DEFAULT_REFLECTION_CONFIG;
@@ -768,6 +760,18 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
     ): Promise<BeforeAgentStateUpdate> => {
       try {
         const userId = options.userIdExtractor(runtime);
+
+        // Get store from runtime context (BaseStore provided by LangGraph)
+        const store = runtime.context?.store;
+
+        if (!store) {
+          logger.debug("No store available, using initialized weights");
+          const rerankerState = initializeRerankerState(options.rerankerConfig);
+          return createInitialStateUpdate(rerankerState);
+        }
+
+        // Create weight storage adapter per invocation
+        const weightStorage = createWeightStorage(store);
 
         if (!userId) {
           logger.warn("No userId provided, cannot load or save weights");
