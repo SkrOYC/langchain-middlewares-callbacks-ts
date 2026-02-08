@@ -18,7 +18,7 @@
     },
     "packages/acp-middleware-callbacks": {
       "name": "@skroyc/acp-middleware-callbacks",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.14.0",
         "@langchain/mcp-adapters": "^1.1.2",
@@ -31,7 +31,7 @@
     },
     "packages/ag-ui-middleware-callbacks": {
       "name": "@skroyc/ag-ui-middleware-callbacks",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "dependencies": {
         "@ag-ui/core": "^0.0.43",
         "@langchain/core": "^1.0.0",
@@ -46,6 +46,9 @@
     "packages/rmm-middleware": {
       "name": "@skroyc/rmm-middleware",
       "version": "0.1.0",
+      "devDependencies": {
+        "typescript": "^5.0.0",
+      },
       "peerDependencies": {
         "@langchain/core": "^1.0.0",
         "@langchain/langgraph": "^1.1.3",
