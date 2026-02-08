@@ -41,6 +41,85 @@ const logger = getLogger("after-model");
  */
 const EPSILON = 1e-9;
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Accumulates gradients and applies update if batch is full
+ */
+function accumulateGradients(
+  accumulator: NonNullable<AfterModelState["_gradientAccumulator"]>,
+  gradientSample: GradientSample,
+  rerankerWeights: RerankerState,
+  embDim: number,
+  batchSize: number,
+  isSessionEnd: boolean,
+  clipThreshold: number
+): {
+  accumulator: NonNullable<AfterModelState["_gradientAccumulator"]>;
+  updatedWeights: RerankerState;
+  batchApplied: boolean;
+} {
+  // Add new sample to accumulator
+  accumulator.samples.push(gradientSample);
+  accumulator.lastUpdated = Date.now();
+
+  // Compute exact REINFORCE gradients for this sample
+  const sampleGradients = computeExactGradients(
+    gradientSample,
+    rerankerWeights,
+    embDim
+  );
+
+  // Accumulate gradients
+  accumulator.accumulatedGradWq = addMatrix(
+    accumulator.accumulatedGradWq,
+    sampleGradients.gradWq
+  );
+  accumulator.accumulatedGradWm = addMatrix(
+    accumulator.accumulatedGradWm,
+    sampleGradients.gradWm
+  );
+
+  // Check if batch is full or session is ending
+  const shouldApplyUpdate =
+    accumulator.samples.length >= batchSize || isSessionEnd;
+
+  let updatedWeights = rerankerWeights;
+  let batchApplied = false;
+
+  let resultAccumulator = accumulator;
+
+  if (shouldApplyUpdate) {
+    // Apply gradient update to weights
+    updatedWeights = applyGradientUpdate(
+      rerankerWeights,
+      accumulator.accumulatedGradWq,
+      accumulator.accumulatedGradWm,
+      clipThreshold
+    );
+
+    logger.info(
+      `Applied gradient update (batch size: ${accumulator.samples.length})`
+    );
+
+    // Clear accumulator after applying
+    // Note: version is incremented by caller (afterModel) before saving
+    resultAccumulator = {
+      samples: [],
+      accumulatedGradWq: createZeroMatrix(embDim, embDim),
+      accumulatedGradWm: createZeroMatrix(embDim, embDim),
+      lastBatchIndex: accumulator.lastBatchIndex + 1,
+      lastUpdated: Date.now(),
+      version: accumulator.version,
+    };
+    batchApplied = true;
+  }
+
+  return { accumulator: resultAccumulator, updatedWeights, batchApplied };
+}
+
 /**
  * Derives the embedding dimension from the reranker weight matrices.
  * This avoids hardcoding EMBEDDING_DIMENSION and supports arbitrary
@@ -185,6 +264,9 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
 
         // Step 3: Load gradient accumulator from BaseStore
         const gradientStorage = createGradientStorage(store);
+        const weightStorage = createWeightStorage(store);
+
+        // Load current accumulator state (graceful degradation: null on failure)
         let accumulator = await gradientStorage.load(userId);
 
         if (!accumulator) {
@@ -195,70 +277,40 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
             accumulatedGradWm: createZeroMatrix(embDim, embDim),
             lastBatchIndex: 0,
             lastUpdated: Date.now(),
+            version: 0,
           };
         }
 
-        // Add new sample to accumulator
-        accumulator.samples.push(gradientSample);
-        accumulator.lastUpdated = Date.now();
-
-        // Step 4: Compute exact REINFORCE gradients for this sample
-        const sampleGradients = computeExactGradients(
-          gradientSample,
-          state._rerankerWeights,
-          embDim
-        );
-
-        // Accumulate gradients
-        accumulator.accumulatedGradWq = addMatrix(
-          accumulator.accumulatedGradWq,
-          sampleGradients.gradWq
-        );
-        accumulator.accumulatedGradWm = addMatrix(
-          accumulator.accumulatedGradWm,
-          sampleGradients.gradWm
-        );
-
-        // Step 5: Check if batch is full or session is ending
+        // Step 4-6: Accumulate gradients and apply update if batch is full
         const isSessionEnd = runtime.context.isSessionEnd ?? false;
-        const shouldApplyUpdate =
-          accumulator.samples.length >= batchSize || isSessionEnd;
-
-        let updatedWeights = state._rerankerWeights;
-
-        if (shouldApplyUpdate) {
-          // Step 6: Apply gradient update to weights
-          updatedWeights = applyGradientUpdate(
+        const { accumulator: updatedAccumulator, updatedWeights } =
+          accumulateGradients(
+            accumulator,
+            gradientSample,
             state._rerankerWeights,
-            accumulator.accumulatedGradWq,
-            accumulator.accumulatedGradWm,
+            embDim,
+            batchSize,
+            isSessionEnd,
             clipThreshold
           );
 
-          logger.info(
-            `Applied gradient update (batch size: ${accumulator.samples.length})`
-          );
-
-          // Clear accumulator after applying
-          accumulator = {
-            samples: [],
-            accumulatedGradWq: createZeroMatrix(embDim, embDim),
-            accumulatedGradWm: createZeroMatrix(embDim, embDim),
-            lastBatchIndex: accumulator.lastBatchIndex + 1,
-            lastUpdated: Date.now(),
-          };
-        }
-
         // Step 7: Persist updated weights to BaseStore
-        const weightStorage = createWeightStorage(store);
         const saved = await weightStorage.saveWeights(userId, updatedWeights);
 
         if (!saved) {
           logger.warn("Failed to persist updated weights");
         }
 
-        // Persist accumulator state
-        await gradientStorage.save(userId, accumulator);
+        // Persist accumulator state (with version increment for optimistic locking)
+        updatedAccumulator.version += 1;
+        const saveSuccess = await gradientStorage.save(
+          userId,
+          updatedAccumulator
+        );
+
+        if (!saveSuccess) {
+          logger.warn("Failed to save gradient accumulator");
+        }
 
         // Step 8: Clear runtime context embeddings for next turn
         clearRuntimeContext(runtime);
@@ -266,7 +318,7 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
         // Return updated state
         return {
           _rerankerWeights: updatedWeights,
-          _gradientAccumulator: accumulator.samples,
+          _gradientAccumulator: updatedAccumulator.samples,
           _citations: [],
           _turnCountInSession: state._turnCountInSession,
         };

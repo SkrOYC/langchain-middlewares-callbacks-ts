@@ -25,29 +25,22 @@ export async function addMemory(
   memory: MemoryEntry,
   vectorStore: VectorStoreInterface
 ): Promise<void> {
-  try {
-    // Create a LangChain Document from the MemoryEntry
-    // Note: rawDialogue is stored in metadata to preserve original context
-    const document: Document = {
-      pageContent: memory.topicSummary,
-      metadata: {
-        id: memory.id,
-        sessionId: memory.sessionId,
-        timestamp: memory.timestamp,
-        turnReferences: memory.turnReferences,
-        rawDialogue: memory.rawDialogue,
-      },
-    };
+  // Create a LangChain Document from the MemoryEntry
+  // Note: rawDialogue is stored in metadata to preserve original context
+  const document: Document = {
+    pageContent: memory.topicSummary,
+    metadata: {
+      id: memory.id,
+      sessionId: memory.sessionId,
+      timestamp: memory.timestamp,
+      turnReferences: memory.turnReferences,
+      rawDialogue: memory.rawDialogue,
+    },
+  };
 
-    // Add the document to the VectorStore
-    await vectorStore.addDocuments([document]);
-  } catch (error) {
-    // Graceful degradation: log warning but don't throw
-    logger.warn(
-      "Error adding memory, continuing:",
-      error instanceof Error ? error.message : String(error)
-    );
-  }
+  // Add the document to the VectorStore
+  // Errors are propagated to allow retry logic at higher levels
+  await vectorStore.addDocuments([document]);
 }
 
 /**
@@ -76,51 +69,42 @@ export async function mergeMemory(
   mergedSummary: string,
   vectorStore: VectorStoreInterface
 ): Promise<void> {
-  try {
-    const existingId = existingMemory.id;
+  const existingId = existingMemory.id;
 
-    // Reconstruct metadata from the passed-in memory object.
-    // This avoids the unreliable similaritySearch fallback.
-    const updatedMetadata = {
-      id: existingMemory.id,
-      sessionId: existingMemory.sessionId,
-      // rawDialogue should be preserved from the memory object
-      rawDialogue: (existingMemory as MemoryEntry).rawDialogue || mergedSummary,
-      turnReferences: existingMemory.turnReferences,
-      timestamp: Date.now(), // Update timestamp on merge
-    };
+  // Reconstruct metadata from the passed-in memory object.
+  // This avoids the unreliable similaritySearch fallback.
+  const updatedMetadata = {
+    id: existingMemory.id,
+    sessionId: existingMemory.sessionId,
+    // rawDialogue should be preserved from the memory object
+    rawDialogue: (existingMemory as MemoryEntry).rawDialogue || mergedSummary,
+    turnReferences: existingMemory.turnReferences,
+    timestamp: Date.now(), // Update timestamp on merge
+  };
 
-    const updatedDoc: Document = {
-      pageContent: mergedSummary,
-      metadata: updatedMetadata,
-    };
+  const updatedDoc: Document = {
+    pageContent: mergedSummary,
+    metadata: updatedMetadata,
+  };
 
-    // Delete the old document and add the updated one
-    // Note: This delete+add pattern may not work with all VectorStore backends.
-    // Some implementations don't support delete, or require different signatures.
-    if (typeof vectorStore.delete === "function") {
-      try {
-        await vectorStore.delete({ ids: [existingId] });
-      } catch {
-        // If delete fails, we still attempt to add - some backends
-        // handle ID conflicts by upserting (overwriting) automatically
-        logger.warn(
-          `Delete failed for memory: ${existingId}, attempting upsert`
-        );
-      }
-    } else {
-      logger.warn(
-        "VectorStore does not support delete method, merge may create duplicate"
-      );
+  // Delete the old document and add the updated one
+  // Note: This delete+add pattern may not work with all VectorStore backends.
+  // Some implementations don't support delete, or require different signatures.
+  if (typeof vectorStore.delete === "function") {
+    try {
+      await vectorStore.delete({ ids: [existingId] });
+    } catch {
+      // If delete fails, we still attempt to add - some backends
+      // handle ID conflicts by upserting (overwriting) automatically
+      logger.warn(`Delete failed for memory: ${existingId}, attempting upsert`);
     }
-
-    // Add the updated document (upsert behavior for most VectorStores)
-    await vectorStore.addDocuments([updatedDoc]);
-  } catch (error) {
-    // Graceful degradation: log warning but don't throw
+  } else {
     logger.warn(
-      "Error merging memory, continuing:",
-      error instanceof Error ? error.message : String(error)
+      "VectorStore does not support delete method, merge may create duplicate"
     );
   }
+
+  // Add the updated document (upsert behavior for most VectorStores)
+  // Errors are propagated to allow retry logic at higher levels
+  await vectorStore.addDocuments([updatedDoc]);
 }
