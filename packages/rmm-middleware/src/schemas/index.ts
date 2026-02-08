@@ -9,34 +9,46 @@ import { createZeroMatrix } from "@/utils/matrix";
 /**
  * Default embedding dimension for OpenAI ada-002 embeddings (1536 dimensions).
  *
- * Note: This is hardcoded based on the paper and common embedding models.
- * For different embedding models, this should be updated to match the model's
- * output dimension. Making this fully configurable would require:
- * - Adding embeddingDimension option to hook configurations
- * - Validating embeddings at runtime against the configured dimension
- * - Updating matrix initialization to use the configured dimension
- *
- * For production use with custom embedding models, consider making this
- * configurable through BeforeAgentOptions.embeddingDimension.
+ * This constant serves as the default value for embedding dimension validation.
+ * Factory functions accept custom dimensions for different embedding models:
+ * - OpenAI ada-002: 1536 dimensions
+ * - Contriever: 768 dimensions
+ * - Stella: 1536 dimensions
+ * - Cohere: 1024 dimensions
  */
-export const EMBEDDING_DIMENSION = 1536;
+export const DEFAULT_EMBEDDING_DIMENSION = 1536;
+
+/**
+ * Backwards compatibility alias for DEFAULT_EMBEDDING_DIMENSION
+ * @deprecated Use DEFAULT_EMBEDDING_DIMENSION instead
+ */
+export const EMBEDDING_DIMENSION = DEFAULT_EMBEDDING_DIMENSION;
 
 // ============================================================================
 // MemoryEntry Schema
 // ============================================================================
 
 /**
+ * Creates a MemoryEntrySchema with configurable embedding dimension
+ */
+export function createMemoryEntrySchema(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  return z.object({
+    id: z.string().uuid(),
+    topicSummary: z.string().min(1),
+    rawDialogue: z.string().min(1),
+    timestamp: z.number().int().positive(),
+    sessionId: z.string().min(1),
+    embedding: z.array(z.number()).length(embeddingDimension),
+    turnReferences: z.array(z.number().int().nonnegative()),
+  });
+}
+
+/**
  * Core memory unit stored in memory bank
  */
-export const MemoryEntrySchema = z.object({
-  id: z.string().uuid(),
-  topicSummary: z.string().min(1),
-  rawDialogue: z.string().min(1),
-  timestamp: z.number().int().positive(),
-  sessionId: z.string().min(1),
-  embedding: z.array(z.number()).length(EMBEDDING_DIMENSION),
-  turnReferences: z.array(z.number().int().nonnegative()),
-});
+export const MemoryEntrySchema = createMemoryEntrySchema();
 
 export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 
@@ -45,12 +57,10 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 // ============================================================================
 
 /**
- * Retrieved memory with relevance scores.
- * Note: embedding is optional since VectorStore.similaritySearch doesn't return embeddings.
- * We use a separate base to avoid field duplication while making embedding optional.
+ * Base schema for retrieved memory (without embedding)
  */
 const RetrievedMemoryBaseSchema = z.object({
-  id: z.string().min(1), // Can be UUID or generated ID like "memory-{index}"
+  id: z.string().min(1),
   topicSummary: z.string().min(1),
   rawDialogue: z.string().min(1),
   timestamp: z.number().int().positive(),
@@ -58,11 +68,25 @@ const RetrievedMemoryBaseSchema = z.object({
   turnReferences: z.array(z.number().int().nonnegative()),
 });
 
-export const RetrievedMemorySchema = RetrievedMemoryBaseSchema.extend({
-  embedding: z.array(z.number()).length(EMBEDDING_DIMENSION).optional(),
-  relevanceScore: z.number(),
-  rerankScore: z.number().optional(),
-});
+/**
+ * Creates a RetrievedMemorySchema with configurable embedding dimension
+ */
+export function createRetrievedMemorySchema(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  return RetrievedMemoryBaseSchema.extend({
+    embedding: z.array(z.number()).length(embeddingDimension).optional(),
+    relevanceScore: z.number(),
+    rerankScore: z.number().optional(),
+  });
+}
+
+/**
+ * Retrieved memory with relevance scores.
+ * Note: embedding is optional since VectorStore.similaritySearch doesn't return embeddings.
+ * We use a separate base to avoid field duplication while making embedding optional.
+ */
+export const RetrievedMemorySchema = createRetrievedMemorySchema();
 
 export type RetrievedMemory = z.infer<typeof RetrievedMemorySchema>;
 
@@ -82,49 +106,62 @@ export const RERANKER_CONFIG_DEFAULTS = {
 } as const;
 
 /**
- * Validates that a matrix is 1536×1536
+ * Validates that a matrix is square with specified dimension
  */
-const validateMatrix1536x1536 = (matrix: number[][]): boolean => {
-  if (matrix.length !== EMBEDDING_DIMENSION) {
-    return false;
-  }
-  return matrix.every((row) => row.length === EMBEDDING_DIMENSION);
-};
+const validateMatrixDimensions =
+  (dimension: number) =>
+  (matrix: number[][]): boolean => {
+    if (matrix.length !== dimension) {
+      return false;
+    }
+    return matrix.every((row) => row.length === dimension);
+  };
+
+/**
+ * Creates a RerankerStateSchema with configurable embedding dimension
+ */
+export function createRerankerStateSchema(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  const validateMatrix = validateMatrixDimensions(embeddingDimension);
+
+  return z.object({
+    weights: z.object({
+      queryTransform: z
+        .array(z.array(z.number()).length(embeddingDimension))
+        .length(embeddingDimension)
+        .refine(validateMatrix, {
+          message: `queryTransform must be a ${embeddingDimension}×${embeddingDimension} matrix`,
+        }),
+      memoryTransform: z
+        .array(z.array(z.number()).length(embeddingDimension))
+        .length(embeddingDimension)
+        .refine(validateMatrix, {
+          message: `memoryTransform must be a ${embeddingDimension}×${embeddingDimension} matrix`,
+        }),
+    }),
+    config: z.object({
+      topK: z.number().int().positive().default(RERANKER_CONFIG_DEFAULTS.topK),
+      topM: z.number().int().positive().default(RERANKER_CONFIG_DEFAULTS.topM),
+      temperature: z
+        .number()
+        .positive()
+        .default(RERANKER_CONFIG_DEFAULTS.temperature),
+      learningRate: z
+        .number()
+        .positive()
+        .default(RERANKER_CONFIG_DEFAULTS.learningRate),
+      baseline: z.number().default(RERANKER_CONFIG_DEFAULTS.baseline),
+    }),
+  });
+}
 
 /**
  * Learnable reranker state with transformation matrices
  * Architecture: Two linear matrices (1536×1536) for query and memory transformation
  * Memory: 2 × (1536 × 1536) floats ≈ 18MB total
  */
-export const RerankerStateSchema = z.object({
-  weights: z.object({
-    queryTransform: z
-      .array(z.array(z.number()).length(EMBEDDING_DIMENSION))
-      .length(EMBEDDING_DIMENSION)
-      .refine(validateMatrix1536x1536, {
-        message: `queryTransform must be a ${EMBEDDING_DIMENSION}×${EMBEDDING_DIMENSION} matrix`,
-      }),
-    memoryTransform: z
-      .array(z.array(z.number()).length(EMBEDDING_DIMENSION))
-      .length(EMBEDDING_DIMENSION)
-      .refine(validateMatrix1536x1536, {
-        message: `memoryTransform must be a ${EMBEDDING_DIMENSION}×${EMBEDDING_DIMENSION} matrix`,
-      }),
-  }),
-  config: z.object({
-    topK: z.number().int().positive().default(RERANKER_CONFIG_DEFAULTS.topK),
-    topM: z.number().int().positive().default(RERANKER_CONFIG_DEFAULTS.topM),
-    temperature: z
-      .number()
-      .positive()
-      .default(RERANKER_CONFIG_DEFAULTS.temperature),
-    learningRate: z
-      .number()
-      .positive()
-      .default(RERANKER_CONFIG_DEFAULTS.learningRate),
-    baseline: z.number().default(RERANKER_CONFIG_DEFAULTS.baseline),
-  }),
-});
+export const RerankerStateSchema = createRerankerStateSchema();
 
 export type RerankerState = z.infer<typeof RerankerStateSchema>;
 
@@ -150,6 +187,37 @@ export type CitationRecord = z.infer<typeof CitationRecordSchema>;
 // ============================================================================
 
 /**
+ * Creates a GradientSampleSchema with configurable embedding dimension
+ */
+export function createGradientSampleSchema(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  return z.object({
+    // Query embeddings
+    queryEmbedding: z.array(z.number()).length(embeddingDimension),
+    adaptedQuery: z.array(z.number()).length(embeddingDimension),
+
+    // Memory embeddings for all K retrieved memories (K × dim where K = topK)
+    memoryEmbeddings: z.array(z.array(z.number()).length(embeddingDimension)),
+
+    // Adapted memories (K × dim)
+    adaptedMemories: z.array(z.array(z.number()).length(embeddingDimension)),
+
+    // Gumbel-Softmax sampling probabilities for all K memories (K probabilities)
+    samplingProbabilities: z.array(z.number().min(0).max(1)),
+
+    // Indices of Top-M memories selected for LLM context
+    selectedIndices: z.array(z.number().int().nonnegative()),
+
+    // Citation rewards (+1 or -1) for all K memories
+    citationRewards: z.array(z.union([z.literal(1), z.literal(-1)])),
+
+    // Timestamp for this gradient sample
+    timestamp: z.number().int().positive(),
+  });
+}
+
+/**
  * Stores computation state for exact REINFORCE gradient computation.
  * Contains all embeddings and probabilities needed to compute gradients
  * for one turn's reranking decision.
@@ -157,30 +225,7 @@ export type CitationRecord = z.infer<typeof CitationRecordSchema>;
  * For Equation 3: Δφ = η·(R-b)·∇_φ log P(M_M|q, M_K; φ)
  * We need: q, q', m_i, m'_i, P_i, selected indices, R_i
  */
-export const GradientSampleSchema = z.object({
-  // Query embeddings (1536-dim)
-  queryEmbedding: z.array(z.number()).length(EMBEDDING_DIMENSION),
-  adaptedQuery: z.array(z.number()).length(EMBEDDING_DIMENSION),
-
-  // Memory embeddings for all K retrieved memories (K × 1536 where K = topK)
-  memoryEmbeddings: z.array(z.array(z.number()).length(EMBEDDING_DIMENSION)), // Array of K embeddings, each 1536-dim
-
-  // Adapted memories (K × 1536)
-  adaptedMemories: z.array(z.array(z.number()).length(EMBEDDING_DIMENSION)), // Array of K embeddings, each 1536-dim
-
-  // Gumbel-Softmax sampling probabilities for all K memories (K probabilities)
-  samplingProbabilities: z.array(z.number().min(0).max(1)), // Array of K probabilities
-
-  // Indices of Top-M memories selected for LLM context
-  selectedIndices: z.array(z.number().int().nonnegative()),
-
-  // Citation rewards (+1 or -1) for all K memories
-  // Matches indices in memoryEmbeddings
-  citationRewards: z.array(z.union([z.literal(1), z.literal(-1)])), // Array of K rewards
-
-  // Timestamp for this gradient sample
-  timestamp: z.number().int().positive(),
-});
+export const GradientSampleSchema = createGradientSampleSchema();
 
 export type GradientSample = z.infer<typeof GradientSampleSchema>;
 
@@ -189,32 +234,44 @@ export type GradientSample = z.infer<typeof GradientSampleSchema>;
 // ============================================================================
 
 /**
+ * Creates a GradientAccumulatorStateSchema with configurable embedding dimension
+ */
+export function createGradientAccumulatorStateSchema(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  const gradientSampleSchema = createGradientSampleSchema(embeddingDimension);
+
+  return z.object({
+    // Accumulated gradient samples (max 4 per batch)
+    samples: z.array(gradientSampleSchema).max(4),
+
+    // Accumulated gradients for W_q (dim×dim)
+    accumulatedGradWq: z
+      .array(z.array(z.number()).length(embeddingDimension))
+      .length(embeddingDimension),
+
+    // Accumulated gradients for W_m (dim×dim)
+    accumulatedGradWm: z
+      .array(z.array(z.number()).length(embeddingDimension))
+      .length(embeddingDimension),
+
+    // Whether a batch update was applied (for tracking)
+    lastBatchIndex: z.number().int().nonnegative(),
+
+    // Timestamp of last update
+    lastUpdated: z.number().int().positive(),
+
+    // Version number for optimistic locking (incremented on each save)
+    version: z.number().int().nonnegative().default(0),
+  });
+}
+
+/**
  * State for accumulating gradients across multiple turns (batch size = 4).
  * Persisted to BaseStore for recovery across sessions.
  */
-export const GradientAccumulatorStateSchema = z.object({
-  // Accumulated gradient samples (max 4 per batch)
-  samples: z.array(GradientSampleSchema).max(4),
-
-  // Accumulated gradients for W_q (1536×1536)
-  accumulatedGradWq: z
-    .array(z.array(z.number()).length(EMBEDDING_DIMENSION))
-    .length(EMBEDDING_DIMENSION),
-
-  // Accumulated gradients for W_m (1536×1536)
-  accumulatedGradWm: z
-    .array(z.array(z.number()).length(EMBEDDING_DIMENSION))
-    .length(EMBEDDING_DIMENSION),
-
-  // Whether a batch update was applied (for tracking)
-  lastBatchIndex: z.number().int().nonnegative(),
-
-  // Timestamp of last update
-  lastUpdated: z.number().int().positive(),
-
-  // Version number for optimistic locking (incremented on each save)
-  version: z.number().int().nonnegative().default(0),
-});
+export const GradientAccumulatorStateSchema =
+  createGradientAccumulatorStateSchema();
 
 export type GradientAccumulatorState = z.infer<
   typeof GradientAccumulatorStateSchema
@@ -228,17 +285,13 @@ export type GradientAccumulatorState = z.infer<
  * Creates an empty gradient accumulator state for a new batch.
  * Initializes with zero matrices and empty samples array.
  */
-export function createEmptyGradientAccumulatorState(): GradientAccumulatorState {
+export function createEmptyGradientAccumulatorState(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
   return {
     samples: [],
-    accumulatedGradWq: createZeroMatrix(
-      EMBEDDING_DIMENSION,
-      EMBEDDING_DIMENSION
-    ),
-    accumulatedGradWm: createZeroMatrix(
-      EMBEDDING_DIMENSION,
-      EMBEDDING_DIMENSION
-    ),
+    accumulatedGradWq: createZeroMatrix(embeddingDimension, embeddingDimension),
+    accumulatedGradWm: createZeroMatrix(embeddingDimension, embeddingDimension),
     lastBatchIndex: 0,
     lastUpdated: Date.now(),
     version: 0,
@@ -560,8 +613,11 @@ export function createEmptyMessageBuffer(): MessageBuffer {
 /**
  * Validates that an embedding vector has the correct dimension
  */
-export function validateEmbeddingDimension(embedding: number[]): boolean {
-  return embedding.length === EMBEDDING_DIMENSION;
+export function validateEmbeddingDimension(
+  embedding: number[],
+  expectedDimension = DEFAULT_EMBEDDING_DIMENSION
+): boolean {
+  return embedding.length === expectedDimension;
 }
 
 /**
@@ -575,16 +631,13 @@ export function validateEmbeddingDimension(embedding: number[]): boolean {
  * - Gradient vanishing during initial training phases
  * - Symmetry problems in learned representations
  */
-export function createDefaultRerankerState(): RerankerState {
-  const createZeroMatrix = (): number[][] =>
-    Array.from({ length: EMBEDDING_DIMENSION }, () =>
-      Array.from({ length: EMBEDDING_DIMENSION }, () => 0)
-    );
-
+export function createDefaultRerankerState(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+): RerankerState {
   return {
     weights: {
-      queryTransform: createZeroMatrix(),
-      memoryTransform: createZeroMatrix(),
+      queryTransform: createZeroMatrix(embeddingDimension, embeddingDimension),
+      memoryTransform: createZeroMatrix(embeddingDimension, embeddingDimension),
     },
     config: {
       topK: RERANKER_CONFIG_DEFAULTS.topK,

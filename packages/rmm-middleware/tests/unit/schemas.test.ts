@@ -5,6 +5,12 @@ import {
   type Context,
   ContextSchema,
   createDefaultRerankerState,
+  createGradientAccumulatorStateSchema,
+  createGradientSampleSchema,
+  createMemoryEntrySchema,
+  createRerankerStateSchema,
+  createRetrievedMemorySchema,
+  DEFAULT_EMBEDDING_DIMENSION,
   type MemoryEntry,
   MemoryEntrySchema,
   MemoryExtractionOutputSchema,
@@ -27,15 +33,13 @@ import { rmmConfigSchema } from "@/schemas/config";
 // Test Helpers
 // ============================================================================
 
-const EMBEDDING_DIMENSION = 1536;
-
 const createValidEmbedding = (): number[] =>
-  Array.from({ length: EMBEDDING_DIMENSION }, () => Math.random());
+  Array.from({ length: DEFAULT_EMBEDDING_DIMENSION }, () => Math.random());
 
 const createValidMatrix = (): number[][] =>
-  Array.from({ length: EMBEDDING_DIMENSION }, () =>
+  Array.from({ length: DEFAULT_EMBEDDING_DIMENSION }, () =>
     Array.from(
-      { length: EMBEDDING_DIMENSION },
+      { length: DEFAULT_EMBEDDING_DIMENSION },
       () => Math.random() * 0.02 - 0.01
     )
   );
@@ -603,14 +607,18 @@ describe("Utility Functions", () => {
   describe("createDefaultRerankerState", () => {
     test("creates state with correct matrix dimensions", () => {
       const state = createDefaultRerankerState();
-      expect(state.weights.queryTransform.length).toBe(EMBEDDING_DIMENSION);
+      expect(state.weights.queryTransform.length).toBe(
+        DEFAULT_EMBEDDING_DIMENSION
+      );
       const queryFirstRow = state.weights.queryTransform[0];
       expect(queryFirstRow).toBeDefined();
-      expect(queryFirstRow?.length).toBe(EMBEDDING_DIMENSION);
-      expect(state.weights.memoryTransform.length).toBe(EMBEDDING_DIMENSION);
+      expect(queryFirstRow?.length).toBe(DEFAULT_EMBEDDING_DIMENSION);
+      expect(state.weights.memoryTransform.length).toBe(
+        DEFAULT_EMBEDDING_DIMENSION
+      );
       const memoryFirstRow = state.weights.memoryTransform[0];
       expect(memoryFirstRow).toBeDefined();
-      expect(memoryFirstRow?.length).toBe(EMBEDDING_DIMENSION);
+      expect(memoryFirstRow?.length).toBe(DEFAULT_EMBEDDING_DIMENSION);
     });
 
     test("creates state with zero-initialized matrices", () => {
@@ -711,5 +719,282 @@ describe("ReflectionConfigSchema", () => {
       expect(result.data.maxTurns).toBe(50);
       expect(result.data.mode).toBe("strict");
     }
+  });
+});
+
+// ============================================================================
+// Dynamic Embedding Dimension Tests
+// ============================================================================
+
+describe("Dynamic Embedding Dimensions", () => {
+  describe("createMemoryEntrySchema", () => {
+    test("validates 768-dimension embeddings correctly", () => {
+      const schema = createMemoryEntrySchema(768);
+      const validEntry = {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        topicSummary: "Test memory",
+        rawDialogue: "Test dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: Array.from({ length: 768 }, () => Math.random()),
+        turnReferences: [0, 1, 2],
+      };
+      const result = schema.safeParse(validEntry);
+      expect(result.success).toBe(true);
+    });
+
+    test("rejects 1536-dimension embeddings when 768 is expected", () => {
+      const schema = createMemoryEntrySchema(768);
+      const invalidEntry = {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        topicSummary: "Test memory",
+        rawDialogue: "Test dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: Array.from({ length: 1536 }, () => Math.random()),
+        turnReferences: [0, 1, 2],
+      };
+      const result = schema.safeParse(invalidEntry);
+      expect(result.success).toBe(false);
+    });
+
+    test("rejects 1024-dimension embeddings when 768 is expected", () => {
+      const schema = createMemoryEntrySchema(768);
+      const invalidEntry = {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        topicSummary: "Test memory",
+        rawDialogue: "Test dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: Array.from({ length: 1024 }, () => Math.random()),
+        turnReferences: [0, 1, 2],
+      };
+      const result = schema.safeParse(invalidEntry);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("createRetrievedMemorySchema", () => {
+    test("validates 1024-dimension embeddings correctly", () => {
+      const schema = createRetrievedMemorySchema(1024);
+      const validMemory = {
+        id: "memory-1",
+        topicSummary: "Test memory",
+        rawDialogue: "Test dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: Array.from({ length: 1024 }, () => Math.random()),
+        turnReferences: [0, 1],
+        relevanceScore: 0.85,
+      };
+      const result = schema.safeParse(validMemory);
+      expect(result.success).toBe(true);
+    });
+
+    test("accepts optional embedding when dimension matches", () => {
+      const schema = createRetrievedMemorySchema(1024);
+      const validMemory = {
+        id: "memory-1",
+        topicSummary: "Test memory",
+        rawDialogue: "Test dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        turnReferences: [0, 1],
+        relevanceScore: 0.85,
+      };
+      const result = schema.safeParse(validMemory);
+      expect(result.success).toBe(true);
+    });
+
+    test("rejects 1536-dimension embeddings when 1024 is expected", () => {
+      const schema = createRetrievedMemorySchema(1024);
+      const invalidMemory = {
+        id: "memory-1",
+        topicSummary: "Test memory",
+        rawDialogue: "Test dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: Array.from({ length: 1536 }, () => Math.random()),
+        turnReferences: [0, 1],
+        relevanceScore: 0.85,
+      };
+      const result = schema.safeParse(invalidMemory);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("createRerankerStateSchema", () => {
+    test("validates 768x768 weight matrices correctly", () => {
+      const schema = createRerankerStateSchema(768);
+      const validState = {
+        weights: {
+          queryTransform: Array.from({ length: 768 }, () =>
+            Array.from({ length: 768 }, () => Math.random() * 0.02 - 0.01)
+          ),
+          memoryTransform: Array.from({ length: 768 }, () =>
+            Array.from({ length: 768 }, () => Math.random() * 0.02 - 0.01)
+          ),
+        },
+        config: {},
+      };
+      const result = schema.safeParse(validState);
+      expect(result.success).toBe(true);
+    });
+
+    test("rejects 1536x1536 matrices when 768 is expected", () => {
+      const schema = createRerankerStateSchema(768);
+      const invalidState = {
+        weights: {
+          queryTransform: Array.from({ length: 1536 }, () =>
+            Array.from({ length: 1536 }, () => Math.random() * 0.02 - 0.01)
+          ),
+          memoryTransform: Array.from({ length: 768 }, () =>
+            Array.from({ length: 768 }, () => Math.random() * 0.02 - 0.01)
+          ),
+        },
+        config: {},
+      };
+      const result = schema.safeParse(invalidState);
+      expect(result.success).toBe(false);
+    });
+
+    test("rejects non-square matrices", () => {
+      const schema = createRerankerStateSchema(768);
+      const invalidState = {
+        weights: {
+          queryTransform: Array.from({ length: 768 }, () =>
+            Array.from({ length: 1024 }, () => Math.random() * 0.02 - 0.01)
+          ),
+          memoryTransform: Array.from({ length: 768 }, () =>
+            Array.from({ length: 768 }, () => Math.random() * 0.02 - 0.01)
+          ),
+        },
+        config: {},
+      };
+      const result = schema.safeParse(invalidState);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("createGradientSampleSchema", () => {
+    test("validates 768-dimension embeddings correctly", () => {
+      const schema = createGradientSampleSchema(768);
+      const validSample = {
+        queryEmbedding: Array.from({ length: 768 }, () => Math.random()),
+        adaptedQuery: Array.from({ length: 768 }, () => Math.random()),
+        memoryEmbeddings: [
+          Array.from({ length: 768 }, () => Math.random()),
+          Array.from({ length: 768 }, () => Math.random()),
+        ],
+        adaptedMemories: [
+          Array.from({ length: 768 }, () => Math.random()),
+          Array.from({ length: 768 }, () => Math.random()),
+        ],
+        samplingProbabilities: [0.6, 0.4],
+        selectedIndices: [0],
+        citationRewards: [1],
+        timestamp: Date.now(),
+      };
+      const result = schema.safeParse(validSample);
+      expect(result.success).toBe(true);
+    });
+
+    test("rejects wrong dimension embeddings", () => {
+      const schema = createGradientSampleSchema(768);
+      const invalidSample = {
+        queryEmbedding: Array.from({ length: 1536 }, () => Math.random()),
+        adaptedQuery: Array.from({ length: 768 }, () => Math.random()),
+        memoryEmbeddings: [Array.from({ length: 768 }, () => Math.random())],
+        adaptedMemories: [Array.from({ length: 768 }, () => Math.random())],
+        samplingProbabilities: [1.0],
+        selectedIndices: [0],
+        citationRewards: [1],
+        timestamp: Date.now(),
+      };
+      const result = schema.safeParse(invalidSample);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("createGradientAccumulatorStateSchema", () => {
+    test("validates 1024-dimension gradient matrices correctly", () => {
+      const schema = createGradientAccumulatorStateSchema(1024);
+      const validState = {
+        samples: [],
+        accumulatedGradWq: Array.from({ length: 1024 }, () =>
+          Array.from({ length: 1024 }, () => 0)
+        ),
+        accumulatedGradWm: Array.from({ length: 1024 }, () =>
+          Array.from({ length: 1024 }, () => 0)
+        ),
+        lastBatchIndex: 0,
+        lastUpdated: Date.now(),
+        version: 0,
+      };
+      const result = schema.safeParse(validState);
+      expect(result.success).toBe(true);
+    });
+
+    test("rejects wrong dimension gradient matrices", () => {
+      const schema = createGradientAccumulatorStateSchema(1024);
+      const invalidState = {
+        samples: [],
+        accumulatedGradWq: Array.from({ length: 1536 }, () =>
+          Array.from({ length: 1536 }, () => 0)
+        ),
+        accumulatedGradWm: Array.from({ length: 1024 }, () =>
+          Array.from({ length: 1024 }, () => 0)
+        ),
+        lastBatchIndex: 0,
+        lastUpdated: Date.now(),
+        version: 0,
+      };
+      const result = schema.safeParse(invalidState);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("validateEmbeddingDimension", () => {
+    test("validates 768-dimension embedding with custom expected dimension", () => {
+      const embedding = Array.from({ length: 768 }, () => Math.random());
+      expect(validateEmbeddingDimension(embedding, 768)).toBe(true);
+      expect(validateEmbeddingDimension(embedding, 1536)).toBe(false);
+    });
+
+    test("validates 1024-dimension embedding with custom expected dimension", () => {
+      const embedding = Array.from({ length: 1024 }, () => Math.random());
+      expect(validateEmbeddingDimension(embedding, 1024)).toBe(true);
+      expect(validateEmbeddingDimension(embedding, 1536)).toBe(false);
+    });
+
+    test("returns false for empty array with custom dimension", () => {
+      expect(validateEmbeddingDimension([], 768)).toBe(false);
+      expect(validateEmbeddingDimension([], 1536)).toBe(false);
+    });
+  });
+
+  describe("createDefaultRerankerState with custom dimension", () => {
+    test("creates state with 768x768 matrices", () => {
+      const state = createDefaultRerankerState(768);
+      expect(state.weights.queryTransform.length).toBe(768);
+      expect(state.weights.queryTransform[0].length).toBe(768);
+      expect(state.weights.memoryTransform.length).toBe(768);
+      expect(state.weights.memoryTransform[0].length).toBe(768);
+    });
+
+    test("creates state with 1024x1024 matrices", () => {
+      const state = createDefaultRerankerState(1024);
+      expect(state.weights.queryTransform.length).toBe(1024);
+      expect(state.weights.queryTransform[0].length).toBe(1024);
+      expect(state.weights.memoryTransform.length).toBe(1024);
+      expect(state.weights.memoryTransform[0].length).toBe(1024);
+    });
+
+    test("created state passes schema validation with custom dimension", () => {
+      const state = createDefaultRerankerState(768);
+      const schema = createRerankerStateSchema(768);
+      const result = schema.safeParse(state);
+      expect(result.success).toBe(true);
+    });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EMBEDDING_DIMENSION, type RerankerState } from "@/schemas";
+import { DEFAULT_EMBEDDING_DIMENSION, type RerankerState } from "@/schemas";
 import { createWeightStorage } from "@/storage/weight-storage";
 import {
   createFailingMockBaseStore,
@@ -11,9 +11,9 @@ import {
 // ============================================================================
 
 const createValidMatrix = (): number[][] =>
-  Array.from({ length: EMBEDDING_DIMENSION }, () =>
+  Array.from({ length: DEFAULT_EMBEDDING_DIMENSION }, () =>
     Array.from(
-      { length: EMBEDDING_DIMENSION },
+      { length: DEFAULT_EMBEDDING_DIMENSION },
       () => Math.random() * 0.02 - 0.01
     )
   );
