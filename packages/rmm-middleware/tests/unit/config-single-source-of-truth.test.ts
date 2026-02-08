@@ -33,11 +33,10 @@ describe("DEFAULT_REFLECTION_CONFIG - Single Source of Truth", () => {
     // This test verifies that src/index.ts imports DEFAULT_REFLECTION_CONFIG
     // from schemas rather than defining its own duplicate
     // We check by looking for the import statement
-    const fs = await import("fs");
-    const indexContent = fs.readFileSync(
-      "/home/oscar/GitHub/langchain-middlewares-callbacks-ts/packages/rmm-middleware/src/index.ts",
-      "utf-8"
-    );
+    // Use Bun's import.meta.dir for portable file paths
+    const indexContent = await Bun.file(
+      `${import.meta.dir}/../../src/index.ts`
+    ).text();
 
     // The factory should import from schemas, not define locally
     // This regex checks that there's no local definition of DEFAULT_REFLECTION_CONFIG
