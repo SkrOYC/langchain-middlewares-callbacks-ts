@@ -99,6 +99,20 @@ const logger = getLogger("rmm-middleware");
 export function rmmMiddleware(config: RmmConfig = {}) {
   const parsedConfig = rmmConfigSchema.parse(config);
 
+  /**
+   * Validates that vectorStore's internal embeddings matches the configured embeddings.
+   * Mismatched embeddings cause silent incorrect reranking results.
+   */
+  if (parsedConfig.vectorStore && parsedConfig.embeddings) {
+    const vsEmbeddings = (parsedConfig.vectorStore as any)?.embeddings;
+    if (vsEmbeddings && vsEmbeddings !== parsedConfig.embeddings) {
+      logger.warn(
+        "RMM middleware embeddings instance differs from vectorStore's internal embeddings. " +
+          "This may cause incorrect reranking results. Ensure both use the same embedding model."
+      );
+    }
+  }
+
   // If RMM is disabled, return a no-op middleware
   if (!parsedConfig.enabled) {
     return createMiddleware({

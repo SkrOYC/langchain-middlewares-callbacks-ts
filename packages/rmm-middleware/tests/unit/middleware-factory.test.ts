@@ -203,4 +203,147 @@ describe("rmmMiddleware Factory", () => {
     expect(middleware).toBeDefined();
     expect(middleware.name).toBe("RmmMiddleware");
   });
+
+  test("emits warning when vectorStore embeddings differs from config embeddings", async () => {
+    const { rmmMiddleware } = await import("@/index");
+
+    // Create two different embeddings instances
+    const embeddingsA = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    const embeddingsB = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.3),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.3)],
+    };
+
+    // Mock vectorStore with embeddingsA internally
+    const mockVectorStore = {
+      embeddings: embeddingsA, // Different from config embeddingsB
+      similaritySearch: async () => [],
+      addDocuments: async () => {
+        return await Promise.resolve();
+      },
+    };
+
+    // Capture console.warn calls
+    const warnCalls: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message: string, ...args: unknown[]) => {
+      warnCalls.push(message);
+      originalWarn(message, ...args);
+    };
+
+    try {
+      const middleware = rmmMiddleware({
+        vectorStore: mockVectorStore as any,
+        embeddings: embeddingsB as any, // Different from vectorStore's embeddings
+        embeddingDimension: 1536,
+        enabled: true,
+      });
+
+      expect(middleware).toBeDefined();
+      expect(
+        warnCalls.some((call) =>
+          call.includes(
+            "RMM middleware embeddings instance differs from vectorStore's internal embeddings"
+          )
+        )
+      ).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test("does not emit warning when vectorStore and config use same embeddings instance", async () => {
+    const { rmmMiddleware } = await import("@/index");
+
+    const sharedEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    // Mock vectorStore using the same embeddings instance
+    const mockVectorStore = {
+      embeddings: sharedEmbeddings, // Same instance as config
+      similaritySearch: async () => [],
+      addDocuments: async () => {
+        return await Promise.resolve();
+      },
+    };
+
+    // Capture console.warn calls
+    const warnCalls: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message: string, ...args: unknown[]) => {
+      warnCalls.push(message);
+      originalWarn(message, ...args);
+    };
+
+    try {
+      const middleware = rmmMiddleware({
+        vectorStore: mockVectorStore as any,
+        embeddings: sharedEmbeddings as any, // Same instance
+        embeddingDimension: 1536,
+        enabled: true,
+      });
+
+      expect(middleware).toBeDefined();
+      expect(
+        warnCalls.some((call) =>
+          call.includes(
+            "RMM middleware embeddings instance differs from vectorStore's internal embeddings"
+          )
+        )
+      ).toBe(false);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test("does not emit warning when vectorStore does not expose embeddings property", async () => {
+    const { rmmMiddleware } = await import("@/index");
+
+    const mockEmbeddings = {
+      embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
+      embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
+    };
+
+    // Mock vectorStore without .embeddings property
+    const mockVectorStore = {
+      similaritySearch: async () => [],
+      addDocuments: async () => {
+        return await Promise.resolve();
+      },
+    };
+
+    // Capture console.warn calls
+    const warnCalls: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (message: string, ...args: unknown[]) => {
+      warnCalls.push(message);
+      originalWarn(message, ...args);
+    };
+
+    try {
+      const middleware = rmmMiddleware({
+        vectorStore: mockVectorStore as any,
+        embeddings: mockEmbeddings as any,
+        embeddingDimension: 1536,
+        enabled: true,
+      });
+
+      expect(middleware).toBeDefined();
+      expect(
+        warnCalls.some((call) =>
+          call.includes(
+            "RMM middleware embeddings instance differs from vectorStore's internal embeddings"
+          )
+        )
+      ).toBe(false);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
 });
