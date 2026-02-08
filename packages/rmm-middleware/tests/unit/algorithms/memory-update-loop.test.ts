@@ -546,14 +546,8 @@ describe("processMemoryUpdate", () => {
 
     // Verify all three merged summaries are present
     const summaries = addedDocs.map((d) => d.pageContent);
-    expect(
-      summaries.some((s) => s.includes("likes running and is active"))
-    ).toBe(true);
-    expect(
-      summaries.some((s) => s.includes("plays tennis and enjoys sports"))
-    ).toBe(true);
-    expect(
-      summaries.some((s) => s.includes("swims regularly and is active"))
-    ).toBe(true);
+    expect(summaries).toContain("User likes running and is active.");
+    expect(summaries).toContain("User plays tennis and enjoys sports.");
+    expect(summaries).toContain("User swims regularly and is active.");
   });
 });

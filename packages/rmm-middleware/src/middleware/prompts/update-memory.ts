@@ -40,16 +40,14 @@ function parseMergeAction(
   const indexStr = match[1];
   const merged_summary = match[2];
 
-  if (indexStr !== undefined && merged_summary !== undefined) {
-    const index = Number.parseInt(indexStr, 10);
-    // Validate index is within bounds
-    if (index >= 0 && index < historyLength) {
-      return { action: "Merge", index, merged_summary };
-    }
-    logger.debug(
-      `Merge index ${index} is out of bounds (history length: ${historyLength}), skipping`
-    );
+  const index = Number.parseInt(indexStr, 10);
+  // Validate index is within bounds
+  if (index >= 0 && index < historyLength) {
+    return { action: "Merge", index, merged_summary };
   }
+  logger.debug(
+    `Merge index ${index} is out of bounds (history length: ${historyLength}), skipping`
+  );
 
   return null;
 }
