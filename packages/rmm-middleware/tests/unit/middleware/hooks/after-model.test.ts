@@ -699,3 +699,425 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
     }
   });
 });
+
+describe("REINFORCE Gradient Fixes (RMM-11)", () => {
+  test("zero advantage (R = baseline) produces zero gradient", async () => {
+    // When R = baseline, the advantage is zero, so gradient should be zero
+    const dim = 2;
+    const q = [1.0, 0.0];
+    const q_prime = [1.0, 0.0]; // Same since W_q = 0
+    const m0 = [1.0, 0.0];
+    const m1 = [0.0, 1.0];
+
+    const reranker: RerankerState = {
+      config: {
+        learningRate: 0.1,
+        baseline: 0.5, // Same as reward
+        topK: 2,
+        topM: 1,
+        temperature: 1.0,
+      },
+      weights: {
+        queryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+        memoryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+      },
+    };
+
+    const store = createMockStore();
+    const afterModel = createRetrospectiveAfterModel({ batchSize: 1 });
+
+    const state = {
+      messages: createTestMessages(),
+      _rerankerWeights: reranker,
+      _retrievedMemories: [
+        {
+          id: "m0",
+          topicSummary: "t0",
+          rawDialogue: "r0",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [0],
+          relevanceScore: 0.9,
+        },
+        {
+          id: "m1",
+          topicSummary: "t1",
+          rawDialogue: "r1",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [1],
+          relevanceScore: 0.1,
+        },
+      ],
+      _citations: [
+        { memoryId: "m0", cited: true, reward: 0.5 as const, turnIndex: 0 }, // R = baseline
+        { memoryId: "m1", cited: false, reward: 0.5 as const, turnIndex: 1 }, // R = baseline
+      ],
+      _turnCountInSession: 0,
+    };
+
+    const runtime = {
+      context: {
+        _citations: state._citations,
+        _originalQuery: q,
+        _adaptedQuery: q_prime,
+        _originalMemoryEmbeddings: [m0, m1],
+        _adaptedMemoryEmbeddings: [m0, m1],
+        _samplingProbabilities: [0.5, 0.5],
+        _selectedIndices: [0],
+        userId: "test-zero-advantage",
+        store,
+        isSessionEnd: false,
+      },
+    };
+
+    const result = await afterModel.afterModel(state, runtime);
+    const updatedWeights = result._rerankerWeights as RerankerState;
+
+    // All weight updates should be zero when advantage is zero
+    for (let i = 0; i < dim; i++) {
+      for (let j = 0; j < dim; j++) {
+        expect(updatedWeights.weights.queryTransform[i]?.[j]).toBe(0);
+        expect(updatedWeights.weights.memoryTransform[i]?.[j]).toBe(0);
+      }
+    }
+  });
+
+  test("single memory with uniform probability - gradient uses baseline form", async () => {
+    // With single memory, the expected value E[m'] = P_i * m'_i = 1.0 * m'_i = m'_i
+    // So m'_i - E[m'_i] = 0, and the gradient should be zero.
+    // This verifies we're using the baseline form (m'_i - E[m'_i]),
+    // not the score function form (δ_i - P_i).
+    const dim = 2;
+    const q = [1.0, 0.5];
+    const Wq = [
+      [0.0, 0.0],
+      [0.0, 0.0],
+    ];
+    const Wm = [
+      [0.0, 0.0],
+      [0.0, 0.0],
+    ];
+    const q_prime = [1.0, 0.5]; // Same since W_q = 0
+    const m0 = [0.5, 0.5];
+
+    const reranker: RerankerState = {
+      config: {
+        learningRate: 0.1,
+        baseline: 0.0,
+        topK: 1,
+        topM: 1,
+        temperature: 1.0,
+      },
+      weights: { queryTransform: Wq, memoryTransform: Wm },
+    };
+
+    const store = createMockStore();
+    const afterModel = createRetrospectiveAfterModel({ batchSize: 1 });
+
+    const state = {
+      messages: createTestMessages(),
+      _rerankerWeights: reranker,
+      _retrievedMemories: [
+        {
+          id: "m0",
+          topicSummary: "t0",
+          rawDialogue: "r0",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [0],
+          relevanceScore: 0.9,
+        },
+      ],
+      _citations: [
+        { memoryId: "m0", cited: true, reward: 1 as const, turnIndex: 0 },
+      ],
+      _turnCountInSession: 0,
+    };
+
+    const runtime = {
+      context: {
+        _citations: state._citations,
+        _originalQuery: q,
+        _adaptedQuery: q_prime,
+        _originalMemoryEmbeddings: [m0],
+        _adaptedMemoryEmbeddings: [m0],
+        _samplingProbabilities: [1.0], // Single memory, P=1.0
+        _selectedIndices: [0],
+        userId: "test-single-memory",
+        store,
+        isSessionEnd: false,
+      },
+    };
+
+    const result = await afterModel.afterModel(state, runtime);
+    const updatedWeights = result._rerankerWeights as RerankerState;
+
+    // With single memory and P_i = 1.0:
+    // E[m'_i] = 1.0 * m'_i = m'_i
+    // So m'_i - E[m'_i] = 0
+    // This means the gradient should be zero because there's no deviation from expected
+    // This verifies we're using the baseline form correctly
+    expect(updatedWeights.weights.queryTransform[0]?.[0]).toBeCloseTo(0, 10);
+    expect(updatedWeights.weights.queryTransform[0]?.[1]).toBeCloseTo(0, 10);
+    expect(updatedWeights.weights.queryTransform[1]?.[0]).toBeCloseTo(0, 10);
+    expect(updatedWeights.weights.queryTransform[1]?.[1]).toBeCloseTo(0, 10);
+  });
+
+  test("batch averaging divides gradient by batch size", async () => {
+    // The fix averages gradients over the batch (divides by batchSize).
+    // With batchSize = 1: gradient = raw_sample_gradient
+    // With batchSize = 2: gradient = (sample1 + sample2) / 2 = raw_sample_gradient
+    // This means batchSize=2 produces HALF the gradient per sample compared to batchSize=1
+    // The key invariant: total gradient across N samples should be the same
+    const dim = 2;
+    const q = [1.0, 0.0];
+    const q_prime = [1.0, 0.0];
+    const m0 = [1.0, 0.0];
+    const m1 = [0.0, 1.0];
+
+    const reranker: RerankerState = {
+      config: {
+        learningRate: 0.1,
+        baseline: 0.0,
+        topK: 2,
+        topM: 1,
+        temperature: 1.0,
+      },
+      weights: {
+        queryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+        memoryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+      },
+    };
+
+    const makeStore = () => createMockStore();
+
+    // Run with batchSize = 1
+    const afterModelBatch1 = createRetrospectiveAfterModel({ batchSize: 1 });
+
+    const state1 = {
+      messages: createTestMessages(),
+      _rerankerWeights: reranker,
+      _retrievedMemories: [
+        {
+          id: "m0",
+          topicSummary: "t0",
+          rawDialogue: "r0",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [0],
+          relevanceScore: 0.9,
+        },
+        {
+          id: "m1",
+          topicSummary: "t1",
+          rawDialogue: "r1",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [1],
+          relevanceScore: 0.1,
+        },
+      ],
+      _citations: [
+        { memoryId: "m0", cited: true, reward: 1 as const, turnIndex: 0 },
+        { memoryId: "m1", cited: false, reward: -1 as const, turnIndex: 1 },
+      ],
+      _turnCountInSession: 0,
+    };
+
+    const runtime1 = {
+      context: {
+        _citations: state1._citations,
+        _originalQuery: q,
+        _adaptedQuery: q_prime,
+        _originalMemoryEmbeddings: [m0, m1],
+        _adaptedMemoryEmbeddings: [m0, m1],
+        _samplingProbabilities: [0.73, 0.27],
+        _selectedIndices: [0],
+        userId: "test-batch-avg",
+        store: makeStore(),
+        isSessionEnd: true,
+      },
+    };
+
+    const resultBatch1 = await afterModelBatch1.afterModel(state1, runtime1);
+    const weightsBatch1 = resultBatch1._rerankerWeights as RerankerState;
+
+    // Run with batchSize = 2
+    const afterModelBatch2 = createRetrospectiveAfterModel({ batchSize: 2 });
+
+    const state2 = {
+      messages: createTestMessages(),
+      _rerankerWeights: reranker,
+      _retrievedMemories: state1._retrievedMemories,
+      _citations: [
+        { memoryId: "m0", cited: true, reward: 1 as const, turnIndex: 0 },
+      ],
+      _turnCountInSession: 0,
+    };
+
+    const runtime2a = {
+      context: {
+        _citations: state2._citations,
+        _originalQuery: q,
+        _adaptedQuery: q_prime,
+        _originalMemoryEmbeddings: [m0, m1],
+        _adaptedMemoryEmbeddings: [m0, m1],
+        _samplingProbabilities: [0.73, 0.27],
+        _selectedIndices: [0],
+        userId: "test-batch-avg",
+        store: makeStore(),
+        isSessionEnd: false,
+      },
+    };
+
+    const runtime2b = {
+      context: {
+        _citations: state2._citations,
+        _originalQuery: q,
+        _adaptedQuery: q_prime,
+        _originalMemoryEmbeddings: [m0, m1],
+        _adaptedMemoryEmbeddings: [m0, m1],
+        _samplingProbabilities: [0.73, 0.27],
+        _selectedIndices: [0],
+        userId: "test-batch-avg",
+        store: makeStore(),
+        isSessionEnd: true,
+      },
+    };
+
+    await afterModelBatch2.afterModel(state2, runtime2a);
+    const resultBatch2 = await afterModelBatch2.afterModel(state2, runtime2b);
+    const weightsBatch2 = resultBatch2._rerankerWeights as RerankerState;
+
+    // Extract gradients
+    const delta1 = weightsBatch1.weights.queryTransform[0]?.[0] ?? 0;
+    const delta2 = weightsBatch2.weights.queryTransform[0]?.[0] ?? 0;
+
+    // Both should be non-zero
+    expect(Math.abs(delta1)).toBeGreaterThan(1e-6);
+    expect(Math.abs(delta2)).toBeGreaterThan(1e-6);
+
+    // Key verification: batchSize=2 should produce HALF the gradient of batchSize=1
+    // This confirms the averaging is working: (sample + sample) / 2 = sample / 2
+    expect(delta2).toBeCloseTo(delta1 / 2, 10);
+  });
+
+  test("gradient does NOT use squared form (δ_i - P_i) × (m'_i - E[m'_i])", async () => {
+    // This test verifies that we use ONLY the baseline form (m'_i - E[m'_i]),
+    // NOT both forms together: (δ_i - P_i) × (m'_i - E[m'_i])
+    // If we incorrectly used both forms together, the gradient would be
+    // smaller than correct by a factor of (δ_i - P_i)
+    const dim = 2;
+    const q = [1.0, 0.0];
+    const q_prime = [1.0, 0.0];
+    const m0 = [1.0, 0.0];
+    const m1 = [0.5, 0.5];
+
+    // Calculate softmax probabilities for [1, 0.5] with τ=1
+    const exp_s0 = Math.exp(1);
+    const exp_s1 = Math.exp(0.5);
+    const P0 = exp_s0 / (exp_s0 + exp_s1); // ≈ 0.62
+    const P1 = exp_s1 / (exp_s0 + exp_s1); // ≈ 0.38
+
+    const reranker: RerankerState = {
+      config: {
+        learningRate: 0.1,
+        baseline: 0.0,
+        topK: 2,
+        topM: 1,
+        temperature: 1.0,
+      },
+      weights: {
+        queryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+        memoryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+      },
+    };
+
+    const store = createMockStore();
+    const afterModel = createRetrospectiveAfterModel({ batchSize: 1 });
+
+    const state = {
+      messages: createTestMessages(),
+      _rerankerWeights: reranker,
+      _retrievedMemories: [
+        {
+          id: "m0",
+          topicSummary: "t0",
+          rawDialogue: "r0",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [0],
+          relevanceScore: 0.9,
+        },
+        {
+          id: "m1",
+          topicSummary: "t1",
+          rawDialogue: "r1",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [1],
+          relevanceScore: 0.1,
+        },
+      ],
+      _citations: [
+        { memoryId: "m0", cited: true, reward: 1 as const, turnIndex: 0 },
+        { memoryId: "m1", cited: false, reward: -1 as const, turnIndex: 1 },
+      ],
+      _turnCountInSession: 0,
+    };
+
+    const runtime = {
+      context: {
+        _citations: state._citations,
+        _originalQuery: q,
+        _adaptedQuery: q_prime,
+        _originalMemoryEmbeddings: [m0, m1],
+        _adaptedMemoryEmbeddings: [m0, m1],
+        _samplingProbabilities: [P0, P1],
+        _selectedIndices: [0],
+        userId: "test-baseline-form",
+        store,
+        isSessionEnd: false,
+      },
+    };
+
+    const result = await afterModel.afterModel(state, runtime);
+    const updatedWeights = result._rerankerWeights as RerankerState;
+
+    // Get the actual gradient
+    const actualGradWq00 = updatedWeights.weights.queryTransform[0]?.[0] ?? 0;
+
+    // Verify the gradient is non-zero and meaningful
+    expect(Math.abs(actualGradWq00)).toBeGreaterThan(0.01);
+
+    // If the code used the squared form (coef × diff), the gradient would be:
+    // buggy_grad = η × (1/τ) × advantage × coef × diff × q
+    // where coef = (indicator - P_i) = (1 - P0) ≈ 0.38
+    // This would make the gradient ~2.6x smaller than correct
+    const coef = 1 - P0;
+    const buggyGradMultiplier = coef;
+
+    // The actual gradient should be significantly larger than what the buggy
+    // squared form would produce (by a factor of 1/coef ≈ 2.6)
+    expect(actualGradWq00).toBeGreaterThan(buggyGradMultiplier * 0.05);
+  });
+});
