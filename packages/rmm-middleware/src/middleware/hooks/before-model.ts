@@ -173,10 +173,6 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         const retrievedDocs = await vs.similaritySearch(query, topK);
 
         // Step 3: Transform to RetrievedMemory format
-        // Note: embedding is not populated because VectorStore.similaritySearch
-        // doesn't return embeddings by default. wrap-model-call handles this
-        // by using relevanceScore as a fallback. For embedding adaptation to
-        // work, embeddings must be stored in VectorStore metadata.
         const retrievedMemories: RetrievedMemory[] = retrievedDocs.map(
           (doc, index) => {
             const metadata = doc.metadata as
@@ -194,10 +190,32 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
                 (metadata?.score as number) ??
                 (doc as { score?: number }).score ??
                 -1,
-              // embedding: not populated (see comment above)
             };
           }
         );
+
+        // Step 4: Populate embeddings for reranking (Equation 1: m'_i = m_i + W_m·m_i)
+        // VectorStore.similaritySearch doesn't return embeddings, so we re-embed
+        // each memory's topicSummary using the embeddings model.
+        try {
+          const texts = retrievedMemories.map((m) => m.topicSummary);
+          if (texts.length > 0) {
+            const memEmbeddings = await embeddings.embedDocuments(texts);
+            for (let i = 0; i < retrievedMemories.length; i++) {
+              const emb = memEmbeddings[i];
+              if (emb) {
+                retrievedMemories[i]!.embedding = emb;
+              }
+            }
+          }
+        } catch (embError) {
+          // Graceful degradation: continue without embeddings
+          // wrap-model-call will fall back to relevanceScore for reranking
+          logger.warn(
+            "Failed to embed memories, reranking will use relevance scores:",
+            embError instanceof Error ? embError.message : String(embError)
+          );
+        }
 
         return {
           _retrievedMemories: retrievedMemories,

@@ -32,6 +32,7 @@ import {
   type WrapModelCallOptions,
 } from "@/middleware/hooks/wrap-model-call.js";
 import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
+import { extractSpeaker2 } from "@/middleware/prompts/extract-speaker2.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 import { getLogger } from "@/utils/logger";
@@ -184,6 +185,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
                 Promise.resolve(),
             },
             extractSpeaker1,
+            extractSpeaker2,
             updateMemory,
             llm: parsedConfig.llm as BaseChatModel,
             embeddings: parsedConfig.embeddings as Embeddings,

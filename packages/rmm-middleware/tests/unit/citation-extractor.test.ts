@@ -73,11 +73,25 @@ describe("extractCitations", () => {
     expect(result.indices).toBeUndefined();
   });
 
-  test("extracts first citation when multiple present", () => {
+  test("extracts all citations when multiple bracket groups present", () => {
     const response = "First [0, 1] and second [2, 3] citation.";
     const result = extractCitations(response);
     expect(result.type).toBe("cited");
-    expect(result.indices).toEqual([0, 1]);
+    expect(result.indices).toEqual([0, 1, 2, 3]);
+  });
+
+  test("extracts inline citations scattered throughout response", () => {
+    const response = "You like hiking [0] and play guitar [1] and enjoy stargazing [2].";
+    const result = extractCitations(response);
+    expect(result.type).toBe("cited");
+    expect(result.indices).toEqual([0, 1, 2]);
+  });
+
+  test("deduplicates citations across multiple groups", () => {
+    const response = "Based on [0, 1] and confirmed by [1, 2].";
+    const result = extractCitations(response);
+    expect(result.type).toBe("cited");
+    expect(result.indices).toEqual([0, 1, 2]);
   });
 
   test("handles citation at end of response", () => {

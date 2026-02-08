@@ -22,13 +22,13 @@ export interface CitationResult {
 /**
  * Regex pattern for citation extraction.
  *
- * Matches any content within square brackets.
+ * Matches any content within square brackets (global flag to find all groups).
  * The parser validates the content (digits/commas or NO_CITE).
  *
  * Security note: Using [^\]]* instead of [\d,\s]+ prevents ReDoS
  * attacks via catastrophic backtracking on malicious input.
  */
-const CITATION_REGEX = /\[([^\]]*)\]/;
+const CITATION_REGEX = /\[([^\]]*)\]/g;
 
 /**
  * Extracts citations from LLM response text.
@@ -48,51 +48,67 @@ export function extractCitations(response: string): CitationResult {
     return { type: "malformed" };
   }
 
-  // Match citation pattern
-  const match = CITATION_REGEX.exec(response);
-  if (!match) {
+  // Find all bracket groups in response
+  const allMatches = [...response.matchAll(CITATION_REGEX)];
+  if (allMatches.length === 0) {
     return { type: "malformed" };
   }
 
-  const captured = match[1];
-  if (!captured) {
-    return { type: "malformed" };
+  // Check for NO_CITE in any group
+  for (const match of allMatches) {
+    if (match[1] === "NO_CITE") {
+      return { type: "no_cite" };
+    }
   }
 
-  // Handle NO_CITE case
-  if (captured === "NO_CITE") {
-    return { type: "no_cite" };
-  }
+  // Parse all bracket groups and collect indices
+  const allIndices: number[] = [];
 
-  // Parse comma-separated integers
-  const parts = captured.split(",");
-  const indices: number[] = [];
-
-  for (const part of parts) {
-    const trimmed = part.trim();
-
-    // Skip empty parts (handle cases like "0,,1" or trailing comma)
-    if (trimmed.length === 0) {
+  for (const match of allMatches) {
+    const captured = match[1];
+    if (!captured) {
       return { type: "malformed" };
     }
 
-    // Parse integer
-    const num = Number(trimmed);
+    // Parse comma-separated integers from this group
+    const parts = captured.split(",");
 
-    // Validate it's a valid non-negative integer
-    if (!(Number.isFinite(num) && Number.isInteger(num)) || num < 0) {
-      return { type: "malformed" };
+    for (const part of parts) {
+      const trimmed = part.trim();
+
+      // Skip empty parts (handle cases like "0,,1" or trailing comma)
+      if (trimmed.length === 0) {
+        return { type: "malformed" };
+      }
+
+      // Parse integer
+      const num = Number(trimmed);
+
+      // Validate it's a valid non-negative integer
+      if (!(Number.isFinite(num) && Number.isInteger(num)) || num < 0) {
+        return { type: "malformed" };
+      }
+
+      allIndices.push(num);
     }
-
-    indices.push(num);
   }
 
   // Validate we got at least one index
-  if (indices.length === 0) {
+  if (allIndices.length === 0) {
     return { type: "malformed" };
   }
 
-  return { type: "cited", indices };
+  // Deduplicate while preserving order
+  const seen = new Set<number>();
+  const deduplicated: number[] = [];
+  for (const idx of allIndices) {
+    if (!seen.has(idx)) {
+      seen.add(idx);
+      deduplicated.push(idx);
+    }
+  }
+
+  return { type: "cited", indices: deduplicated };
 }
 
 /**

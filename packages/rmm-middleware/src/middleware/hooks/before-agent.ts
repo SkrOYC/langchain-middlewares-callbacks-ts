@@ -10,12 +10,14 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import {
   type BaseMessage,
   mapStoredMessagesToChatMessages,
 } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import { extractMemories } from "@/algorithms/memory-extraction";
+import { processMemoryUpdate } from "@/algorithms/memory-update";
 import {
   type CitationRecord,
   DEFAULT_REFLECTION_CONFIG,
@@ -135,6 +137,11 @@ export interface BeforeAgentOptions {
       ) => Promise<void>;
     };
     extractSpeaker1: (dialogue: string) => string;
+    /**
+     * Prompt builder for SPEAKER_2 (assistant) memory extraction (Appendix D.1.1)
+     * When provided, memories are extracted from both speaker perspectives.
+     */
+    extractSpeaker2?: (dialogue: string) => string;
     updateMemory?: (history: string[], newSummary: string) => string;
     /**
      * LLM for memory extraction (Prospective Reflection)
@@ -300,8 +307,9 @@ async function processReflection(
       stagedBuffer.messages
     );
 
-    // EXTRACT: Use LLM to extract memories from dialogue
-    const memories = await extractMemories(
+    // EXTRACT: Use LLM to extract memories from both speaker perspectives
+    // Paper Appendix D.1.1: separate prompts for SPEAKER_1 and SPEAKER_2
+    const speaker1Memories = await extractMemories(
       sessionHistory,
       deps.llm,
       deps.embeddings,
@@ -309,8 +317,25 @@ async function processReflection(
       userId
     );
 
+    let speaker2Memories: Awaited<ReturnType<typeof extractMemories>> = null;
+    if (deps.extractSpeaker2) {
+      speaker2Memories = await extractMemories(
+        sessionHistory,
+        deps.llm,
+        deps.embeddings,
+        deps.extractSpeaker2,
+        userId
+      );
+    }
+
+    // Combine memories from both speakers
+    const memories = [
+      ...(speaker1Memories ?? []),
+      ...(speaker2Memories ?? []),
+    ];
+
     // HANDLE EMPTY OR FAILED EXTRACTION: Graceful degradation (Option A)
-    if (!memories || memories.length === 0) {
+    if (memories.length === 0) {
       console.debug(
         `[before-agent] No memories extracted from ${stagedBuffer.humanMessageCount} human messages`
       );
@@ -319,19 +344,32 @@ async function processReflection(
       return;
     }
 
-    // STORE: Convert MemoryEntry[] to VectorStore documents with rich metadata
-    const documents = memories.map((memory) => ({
-      pageContent: memory.topicSummary,
-      metadata: {
-        id: memory.id,
-        sessionId: memory.sessionId,
-        timestamp: memory.timestamp,
-        turnReferences: JSON.stringify(memory.turnReferences),
-        rawDialogue: memory.rawDialogue,
-      },
-    }));
+    // STORE: Process each memory through the merge/add decision pipeline
+    // (Algorithm 1 lines 9-11: similarity search → LLM decides Add/Merge → execute)
+    if (deps.updateMemory) {
+      for (const memory of memories) {
+        await processMemoryUpdate(
+          memory,
+          deps.vectorStore as unknown as VectorStoreInterface,
+          deps.llm,
+          deps.updateMemory
+        );
+      }
+    } else {
+      // Fallback: add directly if no updateMemory prompt configured
+      const documents = memories.map((memory) => ({
+        pageContent: memory.topicSummary,
+        metadata: {
+          id: memory.id,
+          sessionId: memory.sessionId,
+          timestamp: memory.timestamp,
+          turnReferences: JSON.stringify(memory.turnReferences),
+          rawDialogue: memory.rawDialogue,
+        },
+      }));
 
-    await deps.vectorStore.addDocuments(documents);
+      await deps.vectorStore.addDocuments(documents);
+    }
 
     console.debug(
       `[before-agent] Extracted and stored ${memories.length} memories`

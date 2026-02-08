@@ -1,4 +1,7 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
+import { addMemory, mergeMemory } from "@/algorithms/memory-actions";
+import { findSimilarMemories } from "@/algorithms/similarity-search";
 import { parseUpdateActions } from "@/middleware/prompts/update-memory";
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 import { getLogger } from "@/utils/logger";
@@ -67,5 +70,63 @@ export async function decideUpdateAction(
       error instanceof Error ? error.message : String(error)
     );
     return [];
+  }
+}
+
+/**
+ * Processes a single memory through the merge/add decision pipeline.
+ *
+ * Implements Algorithm 1 lines 9-11 of the RMM paper:
+ * 1. Find similar existing memories via similarity search
+ * 2. Use LLM to decide Add (new entry) or Merge (with existing)
+ * 3. Execute the decided action against the VectorStore
+ *
+ * If no similar memories are found, the memory is added directly.
+ * If the LLM decision fails, falls back to adding the memory.
+ *
+ * @param memory - The newly extracted MemoryEntry to process
+ * @param vectorStore - VectorStore for similarity search and storage
+ * @param summarizationModel - LLM for making add/merge decisions
+ * @param updatePrompt - Prompt template for update decisions
+ */
+export async function processMemoryUpdate(
+  memory: MemoryEntry,
+  vectorStore: VectorStoreInterface,
+  summarizationModel: BaseChatModel,
+  updatePrompt: (historySummaries: string[], newSummary: string) => string
+): Promise<void> {
+  // Step 1: Find similar memories in the memory bank
+  const similarMemories = await findSimilarMemories(memory, vectorStore);
+
+  // Step 2: If no similar memories, directly add
+  if (similarMemories.length === 0) {
+    await addMemory(memory, vectorStore);
+    return;
+  }
+
+  // Step 3: Decide update action (Add or Merge)
+  const actions = await decideUpdateAction(
+    memory,
+    similarMemories,
+    summarizationModel,
+    updatePrompt
+  );
+
+  // Step 4: Execute actions
+  // If no actions returned (e.g., parse error), fall back to add
+  if (actions.length === 0) {
+    await addMemory(memory, vectorStore);
+    return;
+  }
+
+  for (const action of actions) {
+    if (action.action === "Add") {
+      await addMemory(memory, vectorStore);
+    } else if (action.action === "Merge") {
+      const targetMemory = similarMemories[action.index];
+      if (targetMemory) {
+        await mergeMemory(targetMemory, action.merged_summary, vectorStore);
+      }
+    }
   }
 }

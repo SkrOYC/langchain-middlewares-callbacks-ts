@@ -307,6 +307,78 @@ describe("beforeModel Hook", () => {
     expect(result._turnCountInSession).toBe(1);
   });
 
+  test("populates embedding field on retrieved memories for reranking (Equation 1)", async () => {
+    const { createRetrospectiveBeforeModel } = await import(
+      "@/middleware/hooks/before-model"
+    );
+
+    const dim = 1536;
+    const mockEmbedding = new Array(dim).fill(0.01);
+
+    const mockVectorStore: VectorStoreInterface = {
+      similaritySearch(_query, _k) {
+        return [
+          {
+            pageContent: "User enjoys hiking",
+            metadata: {
+              id: "mem-1",
+              sessionId: "s-1",
+              timestamp: Date.now(),
+              turnReferences: [0],
+              rawDialogue: "I love hiking",
+              score: 0.9,
+            },
+          },
+          {
+            pageContent: "User likes cooking",
+            metadata: {
+              id: "mem-2",
+              sessionId: "s-1",
+              timestamp: Date.now(),
+              turnReferences: [1],
+              rawDialogue: "I cook often",
+              score: 0.7,
+            },
+          },
+        ];
+      },
+      addDocuments() {},
+      delete() {},
+    };
+
+    // Mock embeddings that returns predictable vectors
+    const mockEmbeddings = {
+      embedQuery: async (_text: string) => mockEmbedding,
+      embedDocuments: async (texts: string[]) =>
+        texts.map(() => [...mockEmbedding]),
+    } as unknown as Embeddings;
+
+    const middleware = createRetrospectiveBeforeModel({
+      vectorStore: mockVectorStore,
+      embeddings: mockEmbeddings,
+      topK: 10,
+    });
+
+    const mockRuntime: BeforeModelRuntime = {
+      context: {
+        vectorStore: mockVectorStore,
+        embeddings: mockEmbeddings,
+      },
+    };
+
+    const result = await middleware.beforeModel(sampleState, mockRuntime);
+
+    expect(result._retrievedMemories).toBeDefined();
+    expect(result._retrievedMemories?.length).toBe(2);
+
+    // Each retrieved memory must have its embedding populated
+    // so Equation 1 (m'_i = m_i + W_m·m_i) can be applied in wrap-model-call
+    for (const mem of result._retrievedMemories ?? []) {
+      expect(mem.embedding).toBeDefined();
+      expect(mem.embedding?.length).toBe(dim);
+    }
+  });
+
   test("handles VectorStore failure gracefully", async () => {
     const { createRetrospectiveBeforeModel } = await import(
       "@/middleware/hooks/before-model"
