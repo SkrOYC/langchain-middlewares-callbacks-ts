@@ -149,8 +149,16 @@ export async function processMemoryUpdate(
   const hasMergeAction = actions.some((a) => a.action === "Merge");
 
   if (hasMergeAction) {
+    const processedIndices = new Set<number>();
     for (const action of actions) {
       if (action.action === "Merge") {
+        if (processedIndices.has(action.index)) {
+          logger.warn(
+            `Duplicate merge index ${action.index} skipped (first-wins)`
+          );
+          continue;
+        }
+        processedIndices.add(action.index);
         const targetMemory = similarMemories[action.index];
         if (targetMemory) {
           await mergeMemory(targetMemory, action.merged_summary, vs);

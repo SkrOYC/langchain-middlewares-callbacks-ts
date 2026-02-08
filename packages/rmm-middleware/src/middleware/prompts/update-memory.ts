@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("update-memory");
+
 /**
  * Memory update prompt for Add/Merge decisions (Appendix D.1.2)
  *
@@ -19,6 +23,34 @@ export type UpdateAction =
  * Uses [^)]+ to require at least one character in summary and avoid greedy matching
  */
 const MERGE_ACTION_REGEX = /^Merge\((\d+),\s*([^)]+)\)$/;
+
+/**
+ * Parse a Merge action from a line
+ * @returns Merge action or null if invalid or out of bounds
+ */
+function parseMergeAction(
+  line: string,
+  historyLength: number
+): UpdateAction | null {
+  const match = line.match(MERGE_ACTION_REGEX);
+  if (!match) {
+    return null;
+  }
+
+  const indexStr = match[1];
+  const merged_summary = match[2];
+
+  const index = Number.parseInt(indexStr, 10);
+  // Validate index is within bounds
+  if (index >= 0 && index < historyLength) {
+    return { action: "Merge", index, merged_summary };
+  }
+  logger.debug(
+    `Merge index ${index} is out of bounds (history length: ${historyLength}), skipping`
+  );
+
+  return null;
+}
 
 /**
  * Output schema for update action (Appendix D.1.2)
@@ -69,18 +101,9 @@ export function parseUpdateActions(
     if (trimmedLine === "Add()") {
       actions.push({ action: "Add" });
     } else if (trimmedLine.startsWith("Merge(")) {
-      // Parse Merge(index, merged_summary)
-      const match = trimmedLine.match(MERGE_ACTION_REGEX);
-      if (match) {
-        const indexStr = match[1];
-        const merged_summary = match[2];
-        if (indexStr !== undefined && merged_summary !== undefined) {
-          const index = Number.parseInt(indexStr, 10);
-          // Validate index is within bounds
-          if (index >= 0 && index < historyLength) {
-            actions.push({ action: "Merge", index, merged_summary });
-          }
-        }
+      const action = parseMergeAction(trimmedLine, historyLength);
+      if (action) {
+        actions.push(action);
       }
     }
     // Note: Invalid lines are silently ignored. This is intentional - if the LLM
