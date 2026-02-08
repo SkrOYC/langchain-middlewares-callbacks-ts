@@ -151,7 +151,7 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
 
       // No citations extracted (malformed or error) → skip RL update
       if (citations.length === 0) {
-        console.debug("[after-model] No citations found, skipping RL update");
+        logger.debug("No citations found, skipping RL update");
         return {
           _turnCountInSession: state._turnCountInSession,
         };
@@ -235,8 +235,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
             clipThreshold
           );
 
-          console.info(
-            `[after-model] Applied gradient update (batch size: ${accumulator.samples.length})`
+          logger.info(
+            `Applied gradient update (batch size: ${accumulator.samples.length})`
           );
 
           // Clear accumulator after applying
@@ -442,10 +442,7 @@ function buildGradientSample(
     contextData.originalQuery,
     embDim
   );
-  const adaptedQuery = validateAdaptedQuery(
-    contextData.adaptedQuery,
-    embDim
-  );
+  const adaptedQuery = validateAdaptedQuery(contextData.adaptedQuery, embDim);
   const originalMemEmbeddings = validateMemoryEmbeddings(
     contextData.originalMemoryEmbeddings,
     "original memory embeddings",
@@ -592,14 +589,19 @@ function computeGradientRow(
     const q_prime_col = q_prime[col];
     const m_i_col = m_i[col];
 
-    if (q_col === undefined || q_prime_col === undefined || m_i_col === undefined) {
+    if (
+      q_col === undefined ||
+      q_prime_col === undefined ||
+      m_i_col === undefined
+    ) {
       continue;
     }
 
     // W_q gradient: ∂s_i/∂W_q uses m'_i ⊗ q (original query)
     // Includes 1/τ from softmax derivative
     gradWqRow[col] =
-      (gradWqRow[col] ?? 0) + η * invTemperature * advantage * coef * diffAdapted * q_col;
+      (gradWqRow[col] ?? 0) +
+      η * invTemperature * advantage * coef * diffAdapted * q_col;
 
     // W_m gradient: ∂s_i/∂W_m uses q' ⊗ m_i (adapted query)
     // Includes 1/τ from softmax derivative

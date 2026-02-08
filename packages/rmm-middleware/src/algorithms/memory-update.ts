@@ -15,15 +15,13 @@ export interface MemoryVectorStore {
   similaritySearch(
     query: string,
     k?: number
-  ): Promise<
-    Array<{ pageContent: string; metadata: Record<string, unknown> }>
-  >;
+  ): Promise<Array<{ pageContent: string; metadata: Record<string, unknown> }>>;
   addDocuments(
     documents: Array<{
       pageContent: string;
       metadata?: Record<string, unknown>;
     }>
-  ): Promise<void | string[]>;
+  ): Promise<undefined | string[]>;
   /** Optional delete for merge operations (delete+add pattern) */
   delete?: (params: { ids: string[] }) => Promise<void>;
 }

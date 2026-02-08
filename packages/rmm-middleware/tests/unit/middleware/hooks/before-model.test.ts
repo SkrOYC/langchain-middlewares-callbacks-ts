@@ -342,8 +342,12 @@ describe("beforeModel Hook", () => {
           },
         ];
       },
-      addDocuments() {},
-      delete() {},
+      addDocuments() {
+        // No-op for this test - documents are tracked via capturedDocuments
+      },
+      delete() {
+        // No-op for this test - deletions are tracked via capturedDocuments
+      },
     };
 
     // Mock embeddings that returns predictable vectors

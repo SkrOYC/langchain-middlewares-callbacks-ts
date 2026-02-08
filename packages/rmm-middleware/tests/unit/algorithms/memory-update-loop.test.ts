@@ -15,9 +15,7 @@ import type { MemoryEntry, RetrievedMemory } from "@/schemas";
  */
 describe("processMemoryUpdate", () => {
   test("calls findSimilarMemories then decideUpdateAction for each extracted memory", async () => {
-    const { processMemoryUpdate } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
 
     const callLog: string[] = [];
 
@@ -45,7 +43,7 @@ describe("processMemoryUpdate", () => {
     const mockVectorStore = {
       similaritySearch: async (_query: string, _k?: number) => {
         callLog.push("similaritySearch");
-        return [
+        return await Promise.resolve([
           {
             pageContent: existingMemory.topicSummary,
             metadata: {
@@ -56,12 +54,14 @@ describe("processMemoryUpdate", () => {
               rawDialogue: existingMemory.rawDialogue,
             },
           },
-        ];
+        ]);
       },
       addDocuments: async () => {
+        await Promise.resolve();
         callLog.push("addDocuments");
       },
       delete: async () => {
+        await Promise.resolve();
         callLog.push("delete");
       },
     };
@@ -69,6 +69,7 @@ describe("processMemoryUpdate", () => {
     // Mock LLM that returns Add() decision
     const mockLlm = {
       invoke: async () => {
+        await Promise.resolve();
         callLog.push("llm-invoke");
         return { text: "Add()" };
       },
@@ -98,9 +99,7 @@ describe("processMemoryUpdate", () => {
   });
 
   test("performs merge when LLM decides Merge", async () => {
-    const { processMemoryUpdate } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
 
     const addedDocs: Array<{ pageContent: string }> = [];
     const deletedIds: string[] = [];
@@ -139,18 +138,23 @@ describe("processMemoryUpdate", () => {
         },
       ],
       addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        await Promise.resolve();
         addedDocs.push(...docs);
       },
       delete: async (opts: { ids: string[] }) => {
+        await Promise.resolve();
         deletedIds.push(...opts.ids);
       },
     };
 
     // Mock LLM that returns Merge decision
     const mockLlm = {
-      invoke: async () => ({
-        text: "Merge(0, User exercises every Monday and works out regularly.)",
-      }),
+      invoke: async () => {
+        await Promise.resolve();
+        return {
+          text: "Merge(0, User exercises every Monday and works out regularly.)",
+        };
+      },
     };
 
     const mockUpdatePrompt = (history: string[], newSummary: string) =>
@@ -170,9 +174,7 @@ describe("processMemoryUpdate", () => {
   });
 
   test("falls back to add when no similar memories found", async () => {
-    const { processMemoryUpdate } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
 
     const addedDocs: Array<{ pageContent: string }> = [];
 
@@ -187,14 +189,20 @@ describe("processMemoryUpdate", () => {
     };
 
     const mockVectorStore = {
-      similaritySearch: async () => [],
+      similaritySearch: async () => {
+        return await Promise.resolve([]);
+      },
       addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        await Promise.resolve();
         addedDocs.push(...docs);
       },
     };
 
     const mockLlm = {
-      invoke: async () => ({ text: "Add()" }),
+      invoke: async () => {
+        await Promise.resolve();
+        return { text: "Add()" };
+      },
     };
 
     const mockUpdatePrompt = (history: string[], newSummary: string) =>
@@ -213,9 +221,7 @@ describe("processMemoryUpdate", () => {
   });
 
   test("does not duplicate memory when multiple Add actions returned", async () => {
-    const { processMemoryUpdate } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
 
     const addedDocs: Array<{ pageContent: string }> = [];
 
@@ -230,27 +236,36 @@ describe("processMemoryUpdate", () => {
     };
 
     const mockVectorStore = {
-      similaritySearch: async () => [
-        {
-          pageContent: "User drinks coffee",
-          metadata: {
-            id: "existing-1",
-            sessionId: "s-0",
-            timestamp: Date.now() - 100_000,
-            turnReferences: [0],
-            rawDialogue: "I drink coffee",
+      similaritySearch: async () => {
+        return await Promise.resolve([
+          {
+            pageContent: "User drinks coffee",
+            metadata: {
+              id: "existing-1",
+              sessionId: "s-0",
+              timestamp: Date.now() - 100_000,
+              turnReferences: [0],
+              rawDialogue: "I drink coffee",
+            },
           },
-        },
-      ],
+        ]);
+      },
       addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        await Promise.resolve();
         addedDocs.push(...docs);
       },
-      delete: async () => {},
+      delete: async () => {
+        // No documents to delete in this test case
+        await Promise.resolve();
+      },
     };
 
     // LLM returns a response that parses to multiple Add actions
     const mockLlm = {
-      invoke: async () => ({ text: "Add()\nAdd()" }),
+      invoke: async () => {
+        await Promise.resolve();
+        return { text: "Add()\nAdd()" };
+      },
     };
 
     const mockUpdatePrompt = (history: string[], newSummary: string) =>
@@ -270,9 +285,7 @@ describe("processMemoryUpdate", () => {
   });
 
   test("prioritizes Merge over Add when both action types returned", async () => {
-    const { processMemoryUpdate } = await import(
-      "@/algorithms/memory-update"
-    );
+    const { processMemoryUpdate } = await import("@/algorithms/memory-update");
 
     const addedDocs: Array<{ pageContent: string }> = [];
     const deletedIds: string[] = [];
@@ -288,22 +301,26 @@ describe("processMemoryUpdate", () => {
     };
 
     const mockVectorStore = {
-      similaritySearch: async () => [
-        {
-          pageContent: "User exercises regularly",
-          metadata: {
-            id: "existing-2",
-            sessionId: "s-0",
-            timestamp: Date.now() - 100_000,
-            turnReferences: [0],
-            rawDialogue: "I exercise a lot",
+      similaritySearch: async () => {
+        return await Promise.resolve([
+          {
+            pageContent: "User exercises regularly",
+            metadata: {
+              id: "existing-2",
+              sessionId: "s-0",
+              timestamp: Date.now() - 100_000,
+              turnReferences: [0],
+              rawDialogue: "I exercise a lot",
+            },
           },
-        },
-      ],
+        ]);
+      },
       addDocuments: async (docs: Array<{ pageContent: string }>) => {
+        await Promise.resolve();
         addedDocs.push(...docs);
       },
       delete: async (opts: { ids: string[] }) => {
+        await Promise.resolve();
         deletedIds.push(...opts.ids);
       },
     };
@@ -327,7 +344,9 @@ describe("processMemoryUpdate", () => {
 
     // Merge should take priority - the old memory is deleted and replaced
     expect(deletedIds).toContain("existing-2");
-    expect(addedDocs.some((d) => d.pageContent.includes("runs marathons"))).toBe(true);
+    expect(
+      addedDocs.some((d) => d.pageContent.includes("runs marathons"))
+    ).toBe(true);
 
     // Should NOT have also added the raw memory as a separate entry
     // (only the merge result should be added)

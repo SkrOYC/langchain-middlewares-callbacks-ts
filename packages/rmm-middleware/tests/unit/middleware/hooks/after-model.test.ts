@@ -401,7 +401,12 @@ describe("afterModel Hook Integration", () => {
       _retrievedMemories: memories,
       _citations: [
         { memoryId: "memory-0", cited: true, reward: 1 as const, turnIndex: 0 },
-        { memoryId: "memory-1", cited: false, reward: -1 as const, turnIndex: 1 },
+        {
+          memoryId: "memory-1",
+          cited: false,
+          reward: -1 as const,
+          turnIndex: 1,
+        },
       ],
       _turnCountInSession: 1,
     };
@@ -411,12 +416,8 @@ describe("afterModel Hook Integration", () => {
         _citations: state._citations,
         _originalQuery: new Array(dim).fill(0.1),
         _adaptedQuery: new Array(dim).fill(0.11),
-        _originalMemoryEmbeddings: memories.map(() =>
-          new Array(dim).fill(0.1)
-        ),
-        _adaptedMemoryEmbeddings: memories.map(() =>
-          new Array(dim).fill(0.11)
-        ),
+        _originalMemoryEmbeddings: memories.map(() => new Array(dim).fill(0.1)),
+        _adaptedMemoryEmbeddings: memories.map(() => new Array(dim).fill(0.11)),
         _samplingProbabilities: memories.map(() => 1 / memories.length),
         _selectedIndices: [0, 1, 2, 3],
         userId: "user-1",
@@ -492,11 +493,17 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
     // Setup: q=[1, 0.5], W_q=diag(1, 0) → q'=[2, 0.5]
     // Correct ratio: ΔW_q[r][0]/ΔW_q[r][1] = q_0/q_1 = 1/0.5 = 2
     // Buggy ratio:  ΔW_q[r][0]/ΔW_q[r][1] = q'_0/q'_1 = 2/0.5 = 4
-    const dim = 2;
+    const _dim = 2;
     const q = [1.0, 0.5];
     // W_q = [[1, 0], [0, 0]] → q' = q + W_q·q = [1+1, 0.5+0] = [2, 0.5]
-    const Wq = [[1.0, 0.0], [0.0, 0.0]];
-    const Wm = [[0.0, 0.0], [0.0, 0.0]];
+    const Wq = [
+      [1.0, 0.0],
+      [0.0, 0.0],
+    ];
+    const Wm = [
+      [0.0, 0.0],
+      [0.0, 0.0],
+    ];
     const q_prime = [2.0, 0.5];
 
     // Two memories: m_0 = [1, 0], m_1 = [0, 0]
@@ -505,7 +512,13 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
     const m1 = [0.0, 0.0];
 
     const reranker: RerankerState = {
-      config: { learningRate: 0.1, baseline: 0, topK: 2, topM: 1, temperature: 1.0 },
+      config: {
+        learningRate: 0.1,
+        baseline: 0,
+        topK: 2,
+        topM: 1,
+        temperature: 1.0,
+      },
       weights: { queryTransform: Wq, memoryTransform: Wm },
     };
 
@@ -516,8 +529,24 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
       messages: createTestMessages(),
       _rerankerWeights: reranker,
       _retrievedMemories: [
-        { id: "m0", topicSummary: "t0", rawDialogue: "r0", timestamp: Date.now(), sessionId: "s", turnReferences: [0], relevanceScore: 0.9 },
-        { id: "m1", topicSummary: "t1", rawDialogue: "r1", timestamp: Date.now(), sessionId: "s", turnReferences: [1], relevanceScore: 0.1 },
+        {
+          id: "m0",
+          topicSummary: "t0",
+          rawDialogue: "r0",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [0],
+          relevanceScore: 0.9,
+        },
+        {
+          id: "m1",
+          topicSummary: "t1",
+          rawDialogue: "r1",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [1],
+          relevanceScore: 0.1,
+        },
       ],
       _citations: [
         { memoryId: "m0", cited: true, reward: 1 as const, turnIndex: 0 },
@@ -547,8 +576,10 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
     expect(updatedWeights).toBeDefined();
 
     // ΔW_q = newW_q - oldW_q
-    const deltaWq_0_0 = updatedWeights.weights.queryTransform[0]![0]! - Wq[0]![0]!;
-    const deltaWq_0_1 = updatedWeights.weights.queryTransform[0]![1]! - Wq[0]![1]!;
+    const deltaWq_0_0 =
+      (updatedWeights.weights.queryTransform[0]?.[0] ?? 0) - (Wq[0]?.[0] ?? 0);
+    const deltaWq_0_1 =
+      (updatedWeights.weights.queryTransform[0]?.[1] ?? 0) - (Wq[0]?.[1] ?? 0);
 
     // Skip if both are near-zero (degenerate case)
     if (Math.abs(deltaWq_0_0) > 1e-12 && Math.abs(deltaWq_0_1) > 1e-12) {
@@ -562,12 +593,27 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
   test("gradient magnitude scales with 1/temperature (softmax derivative)", async () => {
     // Paper: gradient includes 1/τ from softmax derivative.
     // With τ=0.5, gradient should be ~2x that of τ=1.0 (all else equal).
-    const dim = 2;
+    const _dim = 2;
     const q = [1.0, 0.0];
 
     const makeReranker = (temp: number): RerankerState => ({
-      config: { learningRate: 0.1, baseline: 0, topK: 2, topM: 1, temperature: temp },
-      weights: { queryTransform: [[0, 0], [0, 0]], memoryTransform: [[0, 0], [0, 0]] },
+      config: {
+        learningRate: 0.1,
+        baseline: 0,
+        topK: 2,
+        topM: 1,
+        temperature: temp,
+      },
+      weights: {
+        queryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+        memoryTransform: [
+          [0, 0],
+          [0, 0],
+        ],
+      },
     });
 
     const m0 = [1.0, 0.0];
@@ -599,8 +645,24 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
       messages: createTestMessages(),
       _rerankerWeights: reranker,
       _retrievedMemories: [
-        { id: "m0", topicSummary: "t0", rawDialogue: "r0", timestamp: Date.now(), sessionId: "s", turnReferences: [0], relevanceScore: 0.9 },
-        { id: "m1", topicSummary: "t1", rawDialogue: "r1", timestamp: Date.now(), sessionId: "s", turnReferences: [1], relevanceScore: 0.1 },
+        {
+          id: "m0",
+          topicSummary: "t0",
+          rawDialogue: "r0",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [0],
+          relevanceScore: 0.9,
+        },
+        {
+          id: "m1",
+          topicSummary: "t1",
+          rawDialogue: "r1",
+          timestamp: Date.now(),
+          sessionId: "s",
+          turnReferences: [1],
+          relevanceScore: 0.1,
+        },
       ],
       _citations: makeContext(P_t1)._citations,
       _turnCountInSession: 0,
@@ -610,25 +672,23 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
 
     // Run with τ=1.0
     const reranker_t1 = makeReranker(1.0);
-    const result_t1 = await afterModel.afterModel(
-      makeState(reranker_t1),
-      { context: makeContext(P_t1) }
-    );
+    const result_t1 = await afterModel.afterModel(makeState(reranker_t1), {
+      context: makeContext(P_t1),
+    });
 
     // Run with τ=0.5
     const reranker_t05 = makeReranker(0.5);
-    const result_t05 = await afterModel.afterModel(
-      makeState(reranker_t05),
-      { context: makeContext(P_t05) }
-    );
+    const result_t05 = await afterModel.afterModel(makeState(reranker_t05), {
+      context: makeContext(P_t05),
+    });
 
-    const w_t1 = (result_t1._rerankerWeights as RerankerState);
-    const w_t05 = (result_t05._rerankerWeights as RerankerState);
+    const w_t1 = result_t1._rerankerWeights as RerankerState;
+    const w_t05 = result_t05._rerankerWeights as RerankerState;
 
     // ΔW_q with τ=0.5 should be roughly 2x ΔW_q with τ=1.0
     // because the gradient includes 1/τ from the softmax derivative
-    const delta_t1 = w_t1.weights.queryTransform[0]![0]!; // W_q was zero
-    const delta_t05 = w_t05.weights.queryTransform[0]![0]!;
+    const delta_t1 = w_t1.weights.queryTransform[0]?.[0] ?? 0; // W_q was zero
+    const delta_t05 = w_t05.weights.queryTransform[0]?.[0] ?? 0;
 
     // Both should be non-zero
     if (Math.abs(delta_t1) > 1e-15) {

@@ -74,6 +74,87 @@ interface BeforeModelState {
 // Helper Functions
 // ============================================================================
 
+/**
+ * Validates that reranker weights have all required properties
+ */
+function hasValidRerankerWeights(
+  weights: RerankerState | null | undefined
+): weights is RerankerState & {
+  weights: { queryTransform: number[][]; memoryTransform: number[][] };
+  config: unknown;
+} {
+  return !!(
+    weights?.weights?.queryTransform &&
+    weights.weights.memoryTransform &&
+    weights.config
+  );
+}
+
+/**
+ * Transforms VectorStore documents to RetrievedMemory format
+ */
+function transformDocsToMemories(
+  docs: Array<{
+    pageContent: string;
+    metadata?: Record<string, unknown>;
+    score?: number;
+  }>,
+  existingMemories: RetrievedMemory[]
+): RetrievedMemory[] {
+  return docs.map((doc, index) => {
+    const metadata = doc.metadata as Record<string, unknown> | undefined;
+
+    // Try to preserve existing memory ID if this is an update
+    const existingMemory = existingMemories.find(
+      (m) => m.topicSummary === doc.pageContent
+    );
+
+    return {
+      id: (metadata?.id as string) ?? existingMemory?.id ?? `memory-${index}`,
+      topicSummary: doc.pageContent,
+      rawDialogue: (metadata?.rawDialogue as string) ?? "",
+      timestamp:
+        (metadata?.timestamp as number) ??
+        existingMemory?.timestamp ??
+        Date.now(),
+      sessionId: (metadata?.sessionId as string) ?? "unknown",
+      turnReferences: (metadata?.turnReferences as number[]) ?? [],
+      relevanceScore:
+        (metadata?.score as number) ?? (doc as { score?: number }).score ?? -1,
+    };
+  });
+}
+
+/**
+ * Populates embeddings for retrieved memories
+ * Returns true on success, false on error (graceful degradation)
+ */
+async function populateMemoryEmbeddings(
+  memories: RetrievedMemory[],
+  embeddings: Embeddings
+): Promise<boolean> {
+  const texts = memories.map((m) => m.topicSummary);
+
+  if (texts.length === 0) {
+    return true;
+  }
+
+  try {
+    const memEmbeddings = await embeddings.embedDocuments(texts);
+
+    for (let i = 0; i < memories.length; i++) {
+      const emb = memEmbeddings[i];
+      if (emb) {
+        memories[i].embedding = emb;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ============================================================================
 // Hook Factory
 // ============================================================================
@@ -132,13 +213,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
 
       // Validate reranker weights have required properties
       const weights = state._rerankerWeights;
-      if (
-        !(
-          weights?.weights?.queryTransform &&
-          weights.weights.memoryTransform &&
-          weights.config
-        )
-      ) {
+      if (!hasValidRerankerWeights(weights)) {
         logger.warn("Invalid reranker weights, skipping retrieval");
         // Preserve existing state
         return {
@@ -173,47 +248,22 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
         const retrievedDocs = await vs.similaritySearch(query, topK);
 
         // Step 3: Transform to RetrievedMemory format
-        const retrievedMemories: RetrievedMemory[] = retrievedDocs.map(
-          (doc, index) => {
-            const metadata = doc.metadata as
-              | Record<string, unknown>
-              | undefined;
-
-            return {
-              id: (metadata?.id as string) ?? `memory-${index}`,
-              topicSummary: doc.pageContent,
-              rawDialogue: (metadata?.rawDialogue as string) ?? "",
-              timestamp: (metadata?.timestamp as number) ?? Date.now(),
-              sessionId: (metadata?.sessionId as string) ?? "unknown",
-              turnReferences: (metadata?.turnReferences as number[]) ?? [],
-              relevanceScore:
-                (metadata?.score as number) ??
-                (doc as { score?: number }).score ??
-                -1,
-            };
-          }
+        const retrievedMemories = transformDocsToMemories(
+          retrievedDocs,
+          existingMemories
         );
 
         // Step 4: Populate embeddings for reranking (Equation 1: m'_i = m_i + W_m·m_i)
         // VectorStore.similaritySearch doesn't return embeddings, so we re-embed
         // each memory's topicSummary using the embeddings model.
-        try {
-          const texts = retrievedMemories.map((m) => m.topicSummary);
-          if (texts.length > 0) {
-            const memEmbeddings = await embeddings.embedDocuments(texts);
-            for (let i = 0; i < retrievedMemories.length; i++) {
-              const emb = memEmbeddings[i];
-              if (emb) {
-                retrievedMemories[i]!.embedding = emb;
-              }
-            }
-          }
-        } catch (embError) {
-          // Graceful degradation: continue without embeddings
-          // wrap-model-call will fall back to relevanceScore for reranking
+        const embeddingsSuccess = await populateMemoryEmbeddings(
+          retrievedMemories,
+          embeddings
+        );
+
+        if (!embeddingsSuccess) {
           logger.warn(
-            "Failed to embed memories, reranking will use relevance scores:",
-            embError instanceof Error ? embError.message : String(embError)
+            "Failed to embed memories, reranking will use relevance scores"
           );
         }
 

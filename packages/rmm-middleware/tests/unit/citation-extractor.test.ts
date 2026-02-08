@@ -81,7 +81,8 @@ describe("extractCitations", () => {
   });
 
   test("extracts inline citations scattered throughout response", () => {
-    const response = "You like hiking [0] and play guitar [1] and enjoy stargazing [2].";
+    const response =
+      "You like hiking [0] and play guitar [1] and enjoy stargazing [2].";
     const result = extractCitations(response);
     expect(result.type).toBe("cited");
     expect(result.indices).toEqual([0, 1, 2]);

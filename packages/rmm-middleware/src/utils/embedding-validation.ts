@@ -30,8 +30,8 @@ export async function validateEmbeddingDimension(
 ): Promise<void> {
   // Skip validation if embedQuery is not implemented (e.g., mock)
   if (typeof embeddings.embedQuery !== "function") {
-    console.debug(
-      "[embedding-validation] Skipping validation - embedQuery not implemented (likely mock)"
+    logger.debug(
+      "Skipping validation - embedQuery not implemented (likely mock)"
     );
     return;
   }

@@ -30,6 +30,82 @@ export interface CitationResult {
  */
 const CITATION_REGEX = /\[([^\]]*)\]/g;
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Checks if response is empty or whitespace only
+ */
+function isEmptyResponse(response: string): boolean {
+  return !response || response.trim().length === 0;
+}
+
+/**
+ * Finds all bracket groups in response
+ */
+function findBracketGroups(response: string): RegExpMatchArray[] {
+  return [...response.matchAll(CITATION_REGEX)];
+}
+
+/**
+ * Checks if any group contains NO_CITE marker
+ */
+function hasNoCiteMarker(matches: RegExpMatchArray[]): boolean {
+  return matches.some((match) => match[1] === "NO_CITE");
+}
+
+/**
+ * Parses a single bracket group and returns indices or null if malformed
+ */
+function parseIndicesFromGroup(captured: string): number[] | null {
+  const parts = captured.split(",");
+
+  const indices: number[] = [];
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+
+    // Skip empty parts (handle cases like "0,,1" or trailing comma)
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    // Parse integer
+    const num = Number(trimmed);
+
+    // Validate it's a valid non-negative integer
+    if (!(Number.isFinite(num) && Number.isInteger(num)) || num < 0) {
+      return null;
+    }
+
+    indices.push(num);
+  }
+
+  return indices;
+}
+
+/**
+ * Deduplicates indices while preserving order
+ */
+function deduplicateIndices(indices: number[]): number[] {
+  const seen = new Set<number>();
+  const result: number[] = [];
+
+  for (const idx of indices) {
+    if (!seen.has(idx)) {
+      seen.add(idx);
+      result.push(idx);
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// Main Export Functions
+// ============================================================================
+
 /**
  * Extracts citations from LLM response text.
  *
@@ -44,21 +120,19 @@ const CITATION_REGEX = /\[([^\]]*)\]/g;
  */
 export function extractCitations(response: string): CitationResult {
   // Handle empty input
-  if (!response || response.trim().length === 0) {
+  if (isEmptyResponse(response)) {
     return { type: "malformed" };
   }
 
   // Find all bracket groups in response
-  const allMatches = [...response.matchAll(CITATION_REGEX)];
+  const allMatches = findBracketGroups(response);
   if (allMatches.length === 0) {
     return { type: "malformed" };
   }
 
   // Check for NO_CITE in any group
-  for (const match of allMatches) {
-    if (match[1] === "NO_CITE") {
-      return { type: "no_cite" };
-    }
+  if (hasNoCiteMarker(allMatches)) {
+    return { type: "no_cite" };
   }
 
   // Parse all bracket groups and collect indices
@@ -70,27 +144,12 @@ export function extractCitations(response: string): CitationResult {
       return { type: "malformed" };
     }
 
-    // Parse comma-separated integers from this group
-    const parts = captured.split(",");
-
-    for (const part of parts) {
-      const trimmed = part.trim();
-
-      // Skip empty parts (handle cases like "0,,1" or trailing comma)
-      if (trimmed.length === 0) {
-        return { type: "malformed" };
-      }
-
-      // Parse integer
-      const num = Number(trimmed);
-
-      // Validate it's a valid non-negative integer
-      if (!(Number.isFinite(num) && Number.isInteger(num)) || num < 0) {
-        return { type: "malformed" };
-      }
-
-      allIndices.push(num);
+    const parsed = parseIndicesFromGroup(captured);
+    if (parsed === null) {
+      return { type: "malformed" };
     }
+
+    allIndices.push(...parsed);
   }
 
   // Validate we got at least one index
@@ -99,14 +158,7 @@ export function extractCitations(response: string): CitationResult {
   }
 
   // Deduplicate while preserving order
-  const seen = new Set<number>();
-  const deduplicated: number[] = [];
-  for (const idx of allIndices) {
-    if (!seen.has(idx)) {
-      seen.add(idx);
-      deduplicated.push(idx);
-    }
-  }
+  const deduplicated = deduplicateIndices(allIndices);
 
   return { type: "cited", indices: deduplicated };
 }

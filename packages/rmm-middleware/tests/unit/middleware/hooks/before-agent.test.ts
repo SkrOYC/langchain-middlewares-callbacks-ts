@@ -1423,13 +1423,16 @@ describe("reflectionDeps Interface Extensions", () => {
 
     const mockDeps = {
       vectorStore: {
-        similaritySearch: async () => [],
+        similaritySearch: async () => {
+          return await Promise.resolve([]);
+        },
         addDocuments: async (
           docs: Array<{
             pageContent: string;
             metadata?: Record<string, unknown>;
           }>
         ) => {
+          await Promise.resolve();
           capturedDocuments.push(...docs);
         },
       },

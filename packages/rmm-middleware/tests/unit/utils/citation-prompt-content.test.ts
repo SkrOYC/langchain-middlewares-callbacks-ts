@@ -12,7 +12,7 @@ const testMemory = {
   id: "test-1",
   topicSummary: "User enjoys hiking",
   rawDialogue: "Speaker 1: I love hiking on weekends",
-  timestamp: 1234567890,
+  timestamp: 1_234_567_890,
   sessionId: "session-1",
   embedding: [],
   relevanceScore: 0.9,
@@ -24,30 +24,27 @@ describe("formatCitationPromptContent", () => {
   });
 
   test("should return a non-empty string for valid input", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [testMemory]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      testMemory,
+    ]);
 
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
   test("should include system-reminder wrapper", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [testMemory]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      testMemory,
+    ]);
 
     expect(result).toContain("<system-reminder>");
     expect(result).toContain("</system-reminder>");
   });
 
   test("should include citation instructions", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [testMemory]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      testMemory,
+    ]);
 
     expect(result).toContain("Cite useful memories using [i]");
     expect(result).toContain("[NO_CITE]");
@@ -61,10 +58,9 @@ describe("formatCitationPromptContent", () => {
   });
 
   test("should include memories block", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [testMemory]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      testMemory,
+    ]);
 
     expect(result).toContain("<memories>");
     expect(result).toContain("Memory [0]:");
@@ -101,10 +97,9 @@ describe("formatCitationPromptContent", () => {
   });
 
   test("should include examples section", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [testMemory]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      testMemory,
+    ]);
 
     expect(result).toContain("<examples>");
     expect(result).toContain("Case 1: Useful Memories Found");
@@ -113,20 +108,16 @@ describe("formatCitationPromptContent", () => {
   });
 
   test("should include additional instructions", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [testMemory]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      testMemory,
+    ]);
 
     expect(result).toContain("Additional Instructions:");
     expect(result).toContain("fluent and directly answers the user's query");
   });
 
   test("should handle empty memories array", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      []
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", []);
 
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
@@ -135,10 +126,9 @@ describe("formatCitationPromptContent", () => {
   });
 
   test("should handle memories without raw dialogue", () => {
-    const result = formatCitationPromptContent(
-      "What hobbies do I enjoy?",
-      [{ ...testMemory, rawDialogue: "" }]
-    );
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      { ...testMemory, rawDialogue: "" },
+    ]);
 
     expect(result).toContain("Memory [0]:");
     expect(result).toContain("User enjoys hiking");
@@ -149,7 +139,7 @@ describe("formatCitationPromptContent", () => {
       {
         ...testMemory,
         topicSummary: "User likes <tags> and & symbols",
-        rawDialogue: 'Speaker 1: I said "hello" and \'world\'',
+        rawDialogue: "Speaker 1: I said \"hello\" and 'world'",
       },
     ];
 

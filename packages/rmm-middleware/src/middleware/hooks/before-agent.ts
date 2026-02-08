@@ -272,7 +272,7 @@ async function processReflection(
   const stagedBuffer = await bufferStorage.loadStagingBuffer(userId);
 
   if (!stagedBuffer || stagedBuffer.messages.length === 0) {
-    console.debug("[before-agent] No staged buffer to reflect on");
+    logger.debug("No staged buffer to reflect on");
     return;
   }
 
@@ -292,8 +292,8 @@ async function processReflection(
 
   // Calculate exponential backoff delay
   const delayMs = config.retryDelayMs * 2 ** retryCount;
-  console.debug(
-    `[before-agent] Reflection attempt ${retryCount + 1}/${config.maxRetries + 1}, ` +
+  logger.debug(
+    `Reflection attempt ${retryCount + 1}/${config.maxRetries + 1}, ` +
       `delay ${delayMs}ms`
   );
 
@@ -330,15 +330,12 @@ async function processReflection(
     }
 
     // Combine memories from both speakers
-    const memories = [
-      ...(speaker1Memories ?? []),
-      ...(speaker2Memories ?? []),
-    ];
+    const memories = [...(speaker1Memories ?? []), ...(speaker2Memories ?? [])];
 
     // HANDLE EMPTY OR FAILED EXTRACTION: Graceful degradation (Option A)
     if (memories.length === 0) {
-      console.debug(
-        `[before-agent] No memories extracted from ${stagedBuffer.humanMessageCount} human messages`
+      logger.debug(
+        `No memories extracted from ${stagedBuffer.humanMessageCount} human messages`
       );
       // Clear staging buffer even with empty extraction
       await bufferStorage.clearStaging(userId);
@@ -372,9 +369,7 @@ async function processReflection(
       await deps.vectorStore.addDocuments(documents);
     }
 
-    console.debug(
-      `[before-agent] Extracted and stored ${memories.length} memories`
-    );
+    logger.debug(`Extracted and stored ${memories.length} memories`);
   } catch (error) {
     logger.warn(
       `Reflection attempt ${retryCount + 1} failed:`,

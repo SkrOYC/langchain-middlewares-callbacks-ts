@@ -316,22 +316,22 @@ describe("Reranking Algorithms", () => {
       // Create memories with a clear gap: two high scores, two low scores
       const gapMemories: ScoredMemory[] = [
         {
-          ...sampleMemories[0]!,
+          ...(sampleMemories[0] ?? { id: "fallback-0" }),
           id: "high-0",
           rerankScore: 100,
         },
         {
-          ...sampleMemories[1]!,
+          ...(sampleMemories[1] ?? { id: "fallback-1" }),
           id: "low-0",
           rerankScore: -100,
         },
         {
-          ...sampleMemories[2]!,
+          ...(sampleMemories[2] ?? { id: "fallback-2" }),
           id: "high-1",
           rerankScore: 99,
         },
         {
-          ...sampleMemories[3]!,
+          ...(sampleMemories[3] ?? { id: "fallback-3" }),
           id: "low-1",
           rerankScore: -99,
         },

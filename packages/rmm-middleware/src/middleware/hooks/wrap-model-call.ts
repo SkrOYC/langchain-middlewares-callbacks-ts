@@ -288,7 +288,10 @@ export function createRetrospectiveWrapModelCall(
         // Step 5: Create ephemeral HumanMessage with citation prompt and memories
         // Per Appendix D.2: Explicit instructions for citing useful memories
         // Per Appendix F.8: Use HumanMessage, NOT system message
-        const promptContent = formatCitationPromptContent(query, selectedMemories);
+        const promptContent = formatCitationPromptContent(
+          query,
+          selectedMemories
+        );
         const ephemeralMessage = new HumanMessage({
           content: promptContent,
         });
