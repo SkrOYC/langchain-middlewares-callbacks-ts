@@ -9,19 +9,6 @@ import { describe, expect, test } from "bun:test";
  */
 
 describe("Memory Actions", () => {
-  // Helper to suppress console.warn during error-handling tests
-  const suppressWarnings = async (fn: () => Promise<void>) => {
-    const originalWarn = console.warn;
-    console.warn = () => {
-      // intentionally empty - suppresses console.warn during error-handling tests
-    };
-    try {
-      await fn();
-    } finally {
-      console.warn = originalWarn;
-    }
-  };
-
   // Sample memory entry for testing
   const sampleMemory = {
     id: "test-memory-123",
@@ -94,26 +81,20 @@ describe("Memory Actions", () => {
       expect(metadata.turnReferences).toEqual(sampleMemory.turnReferences);
     });
 
-    test("handles VectorStore errors gracefully", async () => {
-      await suppressWarnings(async () => {
-        const { addMemory } = await import("@/algorithms/memory-actions");
+    test("propagates VectorStore errors for retry handling", async () => {
+      const { addMemory } = await import("@/algorithms/memory-actions");
 
-        // Mock VectorStore that throws error
-        const mockVectorStoreError = {
-          addDocuments: () => {
-            throw new Error("VectorStore connection failed");
-          },
-        };
+      // Mock VectorStore that throws error
+      const mockVectorStoreError = {
+        addDocuments: () => {
+          throw new Error("VectorStore connection failed");
+        },
+      };
 
-        // Should not throw, errors are caught internally
-        let errorThrown = false;
-        try {
-          await addMemory(sampleMemory as any, mockVectorStoreError as any);
-        } catch {
-          errorThrown = true;
-        }
-        expect(errorThrown).toBe(false);
-      });
+      // Errors should propagate to allow retry logic at higher levels
+      await expect(
+        addMemory(sampleMemory as any, mockVectorStoreError as any)
+      ).rejects.toThrow("VectorStore connection failed");
     });
 
     test("creates document with topicSummary as pageContent", async () => {
@@ -262,44 +243,38 @@ describe("Memory Actions", () => {
       );
     });
 
-    test("handles VectorStore errors gracefully", async () => {
-      await suppressWarnings(async () => {
-        const { mergeMemory } = await import("@/algorithms/memory-actions");
+    test("propagates VectorStore errors for retry handling", async () => {
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
 
-        // Create a memory object
-        const existingMemory = {
-          id: "existing-id",
-          topicSummary: "Old content",
-          rawDialogue: "Test raw dialogue",
-          timestamp: Date.now(),
-          sessionId: "session-123",
-          embedding: [],
-          turnReferences: [0],
-        };
+      // Create a memory object
+      const existingMemory = {
+        id: "existing-id",
+        topicSummary: "Old content",
+        rawDialogue: "Test raw dialogue",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0],
+      };
 
-        // Mock VectorStore that throws error on addDocuments
-        const mockVectorStoreError = {
-          addDocuments: () => {
-            throw new Error("VectorStore connection failed");
-          },
-          delete: () => {
-            // intentionally empty mock
-          },
-        };
+      // Mock VectorStore that throws error on addDocuments
+      const mockVectorStoreError = {
+        addDocuments: () => {
+          throw new Error("VectorStore connection failed");
+        },
+        delete: () => {
+          // intentionally empty mock
+        },
+      };
 
-        // Should not throw, errors are caught internally
-        let errorThrown = false;
-        try {
-          await mergeMemory(
-            existingMemory,
-            "merged summary",
-            mockVectorStoreError as any
-          );
-        } catch {
-          errorThrown = true;
-        }
-        expect(errorThrown).toBe(false);
-      });
+      // Errors should propagate to allow retry logic at higher levels
+      await expect(
+        mergeMemory(
+          existingMemory,
+          "merged summary",
+          mockVectorStoreError as any
+        )
+      ).rejects.toThrow("VectorStore connection failed");
     });
 
     test("uses provided existingId in update", async () => {

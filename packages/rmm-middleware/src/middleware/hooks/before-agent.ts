@@ -143,7 +143,11 @@ export interface BeforeAgentOptions {
      * When provided, memories are extracted from both speaker perspectives.
      */
     extractSpeaker2?: (dialogue: string) => string;
-    updateMemory?: (history: string[], newSummary: string) => string;
+    /**
+     * Prompt builder for memory update decisions (Add vs Merge)
+     * Required for Prospective Reflection memory organization
+     */
+    updateMemory: (history: string[], newSummary: string) => string;
     /**
      * LLM for memory extraction (Prospective Reflection)
      * Required for LLM-based memory extraction via extractMemories
@@ -344,29 +348,13 @@ async function processReflection(
 
     // STORE: Process each memory through the merge/add decision pipeline
     // (Algorithm 1 lines 9-11: similarity search → LLM decides Add/Merge → execute)
-    if (deps.updateMemory) {
-      for (const memory of memories) {
-        await processMemoryUpdate(
-          memory,
-          deps.vectorStore,
-          deps.llm,
-          deps.updateMemory
-        );
-      }
-    } else {
-      // Fallback: add directly if no updateMemory prompt configured
-      const documents = memories.map((memory) => ({
-        pageContent: memory.topicSummary,
-        metadata: {
-          id: memory.id,
-          sessionId: memory.sessionId,
-          timestamp: memory.timestamp,
-          turnReferences: JSON.stringify(memory.turnReferences),
-          rawDialogue: memory.rawDialogue,
-        },
-      }));
-
-      await deps.vectorStore.addDocuments(documents);
+    for (const memory of memories) {
+      await processMemoryUpdate(
+        memory,
+        deps.vectorStore,
+        deps.llm,
+        deps.updateMemory
+      );
     }
 
     logger.debug(`Extracted and stored ${memories.length} memories`);

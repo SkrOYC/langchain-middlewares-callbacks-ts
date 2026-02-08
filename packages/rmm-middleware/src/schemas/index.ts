@@ -211,6 +211,9 @@ export const GradientAccumulatorStateSchema = z.object({
 
   // Timestamp of last update
   lastUpdated: z.number().int().positive(),
+
+  // Version number for optimistic locking (incremented on each save)
+  version: z.number().int().nonnegative().default(0),
 });
 
 export type GradientAccumulatorState = z.infer<
@@ -238,6 +241,7 @@ export function createEmptyGradientAccumulatorState(): GradientAccumulatorState 
     ),
     lastBatchIndex: 0,
     lastUpdated: Date.now(),
+    version: 0,
   };
 }
 
