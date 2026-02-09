@@ -1,12 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { clipMatrixByNorm, createZeroMatrix } from "@/utils/matrix";
+import {
+  addMatrix,
+  clipMatrixByNorm,
+  createZeroMatrix,
+  scaleMatrix,
+} from "@/utils/matrix";
 
 /**
- * Helper to compute L2 norm of a matrix
+ * Helper to compute L2 norm of a matrix using nested loops
+ * (avoids flat() allocation for better performance)
  */
 function _computeMatrixNorm(matrix: number[][]): number {
-  const flat = matrix.flat();
-  return Math.sqrt(flat.reduce((sum, v) => sum + v * v, 0));
+  let sumSquares = 0;
+  for (const row of matrix) {
+    for (const val of row) {
+      sumSquares += val * val;
+    }
+  }
+  return Math.sqrt(sumSquares);
 }
 
 describe("after-model gradient clipping integration", () => {
@@ -22,46 +33,45 @@ describe("after-model gradient clipping integration", () => {
     expect(afterModelSource).toContain("clipMatrixByNorm");
   });
 
-  test("gradients clipped before accumulation when norm > threshold", async () => {
-    const { createRetrospectiveAfterModel } = await import(
-      "@/middleware/hooks/after-model"
+  test("gradients clipped before accumulation when norm > threshold", () => {
+    // Test that clipMatrixByNorm actually clips gradients that exceed the threshold
+    const clipThreshold = 50;
+    const embDim = 10;
+
+    // Create a gradient with norm > threshold
+    const largeGrad = Array.from({ length: embDim }, () =>
+      Array.from({ length: embDim }, () => 10)
     );
 
-    // The test verifies that the middleware function exists
-    // and can be imported successfully, which means after
-    // our implementation, the clipping logic will be in place
-    expect(createRetrospectiveAfterModel).toBeDefined();
+    const originalNorm = _computeMatrixNorm(largeGrad);
+    expect(originalNorm).toBeGreaterThan(clipThreshold);
 
-    // Create middleware instance
-    const middleware = createRetrospectiveAfterModel({
-      batchSize: 4,
-      clipThreshold: 100,
-    });
+    // Clip should reduce the norm
+    const clippedGrad = clipMatrixByNorm(largeGrad, clipThreshold);
+    const clippedNorm = _computeMatrixNorm(clippedGrad);
 
-    // Verify the afterModel hook exists
-    expect(middleware.afterModel).toBeDefined();
-    expect(typeof middleware.afterModel).toBe("function");
+    expect(clippedNorm).toBeLessThanOrEqual(clipThreshold);
+    expect(clippedNorm).toBeLessThan(originalNorm);
   });
 
-  test("clipThreshold parameter is respected", async () => {
-    const { createRetrospectiveAfterModel } = await import(
-      "@/middleware/hooks/after-model"
+  test("clipThreshold parameter affects clipping behavior", () => {
+    // Test that different thresholds produce different clipping results
+    const embDim = 10;
+    const largeGrad = Array.from({ length: embDim }, () =>
+      Array.from({ length: embDim }, () => 10)
     );
 
-    // Create middleware with different clipThreshold values
-    const middleware1 = createRetrospectiveAfterModel({
-      batchSize: 4,
-      clipThreshold: 50,
-    });
+    // Clip with different thresholds
+    const clipped50 = clipMatrixByNorm(largeGrad, 50);
+    const clipped100 = clipMatrixByNorm(largeGrad, 100);
 
-    const middleware2 = createRetrospectiveAfterModel({
-      batchSize: 4,
-      clipThreshold: 200,
-    });
+    const norm50 = _computeMatrixNorm(clipped50);
+    const norm100 = _computeMatrixNorm(clipped100);
 
-    // Both should work with different thresholds
-    expect(middleware1.afterModel).toBeDefined();
-    expect(middleware2.afterModel).toBeDefined();
+    // Tighter threshold should result in smaller or equal norm
+    expect(norm50).toBeLessThanOrEqual(50);
+    expect(norm100).toBeLessThanOrEqual(100);
+    expect(norm50).toBeLessThanOrEqual(norm100);
   });
 
   test("gradient accumulation respects clipping bounds after multiple samples", () => {
@@ -88,20 +98,11 @@ describe("after-model gradient clipping integration", () => {
       // Clip BEFORE averaging (as per implementation)
       const clippedGrad = clipMatrixByNorm(largeGrad, clipThreshold);
 
-      // Average over batch
-      const averagedGrad = clippedGrad.map((row) =>
-        row.map((val) => val / batchSize)
-      );
+      // Average over batch using utility function
+      const averagedGrad = scaleMatrix(clippedGrad, 1 / batchSize);
 
-      // Accumulate
-      const newAccumulator = accumulator.map((row, rowIndex) =>
-        row.map((val, colIndex) => {
-          const _accumulatorRow = accumulator[rowIndex] ?? [];
-          const averagedGradRow = averagedGrad[rowIndex] ?? [];
-          return val + (averagedGradRow[colIndex] ?? 0);
-        })
-      );
-      accumulator = newAccumulator;
+      // Accumulate using utility function
+      accumulator = addMatrix(accumulator, averagedGrad);
     }
 
     // Verify the accumulated gradient norm respects bounds
@@ -160,19 +161,10 @@ describe("after-model gradient clipping integration", () => {
     let accumulator = createZeroMatrix(embDim, embDim);
     for (let batch = 0; batch < 100; batch++) {
       for (let sample = 0; sample < batchSize; sample++) {
-        // Clip BEFORE averaging
+        // Clip BEFORE averaging using utility functions
         const clippedGrad = clipMatrixByNorm(hugeGrad, clipThreshold);
-        const averagedGrad = clippedGrad.map((row) =>
-          row.map((val) => val / batchSize)
-        );
-
-        accumulator = accumulator.map((row, rowIndex) =>
-          row.map((val, colIndex) => {
-            const _accumulatorRow = accumulator[rowIndex] ?? [];
-            const averagedGradRow = averagedGrad[rowIndex] ?? [];
-            return val + (averagedGradRow[colIndex] ?? 0);
-          })
-        );
+        const averagedGrad = scaleMatrix(clippedGrad, 1 / batchSize);
+        accumulator = addMatrix(accumulator, averagedGrad);
       }
     }
 
