@@ -11,12 +11,6 @@
           }
         }
       }
-    },
-    {
-      "includes": ["tests/unit/config-single-source-of-truth.test.ts"],
-      "javascript": {
-        "globals": ["Bun"]
-      }
     }
   ]
 }

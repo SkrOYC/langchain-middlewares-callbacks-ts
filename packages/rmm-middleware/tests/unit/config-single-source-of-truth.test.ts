@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
+// Bun is a global in Bun runtime, declare it for TypeScript
+declare const Bun: typeof import("bun");
+
 /**
  * Tests for DEFAULT_REFLECTION_CONFIG single source of truth
  *
