@@ -15,6 +15,11 @@ import { describe, expect, test } from "bun:test";
  * - minInactivityMs: 300_000 (5 minutes)
  */
 
+// Top-level regex constants for performance
+const LOCAL_DEFINITION_REGEX = /const\s+DEFAULT_REFLECTION_CONFIG\s*=\s*\{/;
+const IMPORT_FROM_SCHEMAS_REGEX =
+  /import\s*\{[^}]*DEFAULT_REFLECTION_CONFIG[^}]*\}\s*from\s*["']@\/schemas/;
+
 describe("DEFAULT_REFLECTION_CONFIG - Single Source of Truth", () => {
   test("canonical config from schemas has expected values", async () => {
     const { DEFAULT_REFLECTION_CONFIG } = await import("@/schemas");
@@ -40,8 +45,8 @@ describe("DEFAULT_REFLECTION_CONFIG - Single Source of Truth", () => {
 
     // The factory should import from schemas, not define locally
     // This regex checks that there's no local definition of DEFAULT_REFLECTION_CONFIG
-    const hasLocalDefinition = /const\s+DEFAULT_REFLECTION_CONFIG\s*=\s*\{/.test(indexContent);
-    const hasImportFromSchemas = /import\s*\{[^}]*DEFAULT_REFLECTION_CONFIG[^}]*\}\s*from\s*["']@\/schemas/.test(indexContent);
+    const hasLocalDefinition = LOCAL_DEFINITION_REGEX.test(indexContent);
+    const hasImportFromSchemas = IMPORT_FROM_SCHEMAS_REGEX.test(indexContent);
 
     // The test FAILS if factory has local definition
     expect(hasLocalDefinition).toBe(false);

@@ -794,7 +794,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
     // So m'_i - E[m'_i] = 0, and the gradient should be zero.
     // This verifies we're using the baseline form (m'_i - E[m'_i]),
     // not the score function form (δ_i - P_i).
-    const dim = 2;
+    const _dim = 2;
     const q = [1.0, 0.5];
     const Wq = [
       [0.0, 0.0],
@@ -875,7 +875,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
     // The key insight: with batchSize=1, the gradient is not averaged.
     // With batchSize=2, each sample's gradient would be divided by 2 before accumulation.
     // We verify the implementation by checking the gradient is computed correctly.
-    const dim = 2;
+    const _dim = 2;
     const q = [1.0, 0.0];
     const q_prime = [1.0, 0.0];
     const m0 = [1.0, 0.0];
@@ -976,7 +976,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
     // NOT both forms together: (δ_i - P_i) × (m'_i - E[m'_i])
     // If we incorrectly used both forms together, the gradient would be
     // smaller than correct by a factor of (δ_i - P_i)
-    const dim = 2;
+    const _dim = 2;
     const q = [1.0, 0.0];
     const q_prime = [1.0, 0.0];
     const m0 = [1.0, 0.0];

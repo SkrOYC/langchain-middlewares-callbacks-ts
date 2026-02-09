@@ -525,3 +525,54 @@ export function clipMatrix(
     row.map((val) => Math.max(minVal, Math.min(maxVal, val)))
   );
 }
+
+/**
+ * Clips a matrix by its L2 norm to prevent gradient explosion.
+ * Preserves gradient direction while controlling magnitude.
+ *
+ * If the matrix norm is less than or equal to maxNorm, returns the matrix unchanged.
+ * Otherwise, scales the matrix so that its norm equals maxNorm.
+ *
+ * Note: When the matrix norm is already within bounds, this function returns the
+ * original matrix reference (not a copy). Callers should not modify the returned
+ * matrix if they expect a copy, as it may be the same object as the input.
+ *
+ * @param matrix - Matrix to clip (non-empty)
+ * @param maxNorm - Maximum allowed L2 norm (must be non-negative)
+ * @returns Clipped matrix, or original matrix if no clipping needed
+ * @throws Error if maxNorm is negative or matrix is empty
+ */
+export function clipMatrixByNorm(
+  matrix: number[][],
+  maxNorm: number
+): number[][] {
+  // Validate inputs
+  if (maxNorm < 0) {
+    throw new Error(`maxNorm must be non-negative, got ${maxNorm}`);
+  }
+  if (matrix.length === 0) {
+    throw new Error("Matrix cannot be empty");
+  }
+
+  // Compute L2 norm without flattening to avoid allocation
+  let sumSquares = 0;
+  for (const row of matrix) {
+    if (!row) {
+      continue;
+    }
+    for (const val of row) {
+      if (val !== undefined) {
+        sumSquares += val * val;
+      }
+    }
+  }
+  const norm = Math.sqrt(sumSquares);
+
+  if (norm <= maxNorm) {
+    // No clipping needed - return matrix as-is (no copy needed)
+    return matrix;
+  }
+
+  const scale = maxNorm / norm;
+  return matrix.map((row) => row.map((val) => val * scale));
+}

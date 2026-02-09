@@ -28,7 +28,13 @@ import type {
 import { createGradientStorage } from "@/storage/gradient-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { getLogger } from "@/utils/logger";
-import { addMatrix, clipMatrix, createZeroMatrix, scaleMatrix } from "@/utils/matrix";
+import {
+  addMatrix,
+  clipMatrix,
+  clipMatrixByNorm,
+  createZeroMatrix,
+  scaleMatrix,
+} from "@/utils/matrix";
 
 const logger = getLogger("after-model");
 
@@ -75,8 +81,16 @@ function accumulateGradients(
   // Accumulate gradients (averaged over batch per Equation 3)
   // Gradients are averaged (divided by batchSize) to ensure effective learning
   // rate is independent of batch size
-  const averagedGradWq = scaleMatrix(sampleGradients.gradWq, 1 / batchSize);
-  const averagedGradWm = scaleMatrix(sampleGradients.gradWm, 1 / batchSize);
+  //
+  // IMPORTANT: Clip BEFORE averaging to ensure per-sample gradients don't exceed
+  // the threshold. If we clip after averaging, the effective threshold becomes
+  // clipThreshold / batchSize, which is incorrect.
+  const clippedGradWq = clipMatrixByNorm(sampleGradients.gradWq, clipThreshold);
+  const clippedGradWm = clipMatrixByNorm(sampleGradients.gradWm, clipThreshold);
+
+  const averagedGradWq = scaleMatrix(clippedGradWq, 1 / batchSize);
+  const averagedGradWm = scaleMatrix(clippedGradWm, 1 / batchSize);
+
   accumulator.accumulatedGradWq = addMatrix(
     accumulator.accumulatedGradWq,
     averagedGradWq
@@ -693,7 +707,7 @@ function computeMemoryGradient(
   expectedMemAdapted: number[],
   gradWq: number[][],
   gradWm: number[][],
-  selectedIndices: Set<number>,
+  _selectedIndices: Set<number>,
   embDim: number
 ): void {
   const R = sample.citationRewards[i];
