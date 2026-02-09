@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  clipMatrixByNorm,
   initializeMatrix,
   matmul,
   matmulVector,
@@ -504,5 +505,105 @@ describe("initializeMatrix", () => {
         expect(val).toBeLessThan(0.1);
       }
     }
+  });
+});
+
+// ============================================================================
+// Norm-Based Matrix Clipping Tests
+// ============================================================================
+
+describe("clipMatrixByNorm", () => {
+  test("returns identity when norm <= threshold", () => {
+    const matrix = [
+      [3, 4],
+      [6, 8],
+    ];
+    // Norm = sqrt(3² + 4² + 6² + 8²) = sqrt(9 + 16 + 36 + 64) = sqrt(125) ≈ 11.18
+    const maxNorm = 12; // Greater than matrix norm
+    const result = clipMatrixByNorm(matrix, maxNorm);
+
+    // Should return unchanged matrix
+    expect(result).toEqual(matrix);
+  });
+
+  test("scales matrix when norm > threshold", () => {
+    const matrix = [
+      [3, 4],
+      [6, 8],
+    ];
+    // Norm = sqrt(125) ≈ 11.18
+    const maxNorm = 5; // Less than matrix norm
+    const result = clipMatrixByNorm(matrix, maxNorm);
+
+    // Calculate expected result
+    const originalNorm = matrix.flat().reduce((sum, v) => sum + v * v, 0);
+    const norm = Math.sqrt(originalNorm);
+    const scale = maxNorm / norm;
+    expect(result[0]?.[0]).toBeCloseTo(3 * scale, 5);
+    expect(result[0]?.[1]).toBeCloseTo(4 * scale, 5);
+    expect(result[1]?.[0]).toBeCloseTo(6 * scale, 5);
+    expect(result[1]?.[1]).toBeCloseTo(8 * scale, 5);
+
+    // Verify resulting norm equals maxNorm
+    const flat = result.flat();
+    const resultNorm = Math.sqrt(flat.reduce((sum, v) => sum + v * v, 0));
+    expect(resultNorm).toBeCloseTo(maxNorm, 5);
+  });
+
+  test("preserves gradient direction when clipping", () => {
+    const matrix = [
+      [1, 2],
+      [3, 4],
+    ];
+    const maxNorm = 3; // Less than current norm
+    const result = clipMatrixByNorm(matrix, maxNorm);
+
+    // Direction preservation: all elements should be scaled by same factor
+    const scale0 = (result[0]?.[0] ?? 0) / matrix[0][0];
+    const scale1 = (result[0]?.[1] ?? 0) / matrix[0][1];
+    const scale2 = (result[1]?.[0] ?? 0) / matrix[1][0];
+    const scale3 = (result[1]?.[1] ?? 0) / matrix[1][1];
+
+    // All scales should be equal (within floating point precision)
+    expect(scale0).toBeCloseTo(scale1, 10);
+    expect(scale0).toBeCloseTo(scale2, 10);
+    expect(scale0).toBeCloseTo(scale3, 10);
+  });
+
+  test("handles zero matrix", () => {
+    const matrix = [
+      [0, 0],
+      [0, 0],
+    ];
+    const maxNorm = 10;
+    const result = clipMatrixByNorm(matrix, maxNorm);
+
+    // Should return unchanged zero matrix
+    expect(result).toEqual(matrix);
+  });
+
+  test("handles high-dimensional matrix (1536x1536)", () => {
+    const dim = 1536;
+    // Create a matrix with large values that will exceed any reasonable threshold
+    const matrix = Array.from({ length: dim }, () =>
+      Array.from({ length: dim }, () => 100)
+    );
+
+    const maxNorm = 100; // Set threshold
+    const start = performance.now();
+    const result = clipMatrixByNorm(matrix, maxNorm);
+    const end = performance.now();
+
+    // Verify result has correct dimensions
+    expect(result.length).toBe(dim);
+    expect(result[0]?.length).toBe(dim);
+
+    // Verify resulting norm equals maxNorm (within tolerance)
+    const flat = result.flat();
+    const resultNorm = Math.sqrt(flat.reduce((sum, v) => sum + v * v, 0));
+    expect(resultNorm).toBeCloseTo(maxNorm, 5);
+
+    // Verify performance completes in reasonable time (<5 seconds for 1536x1536)
+    expect(end - start).toBeLessThan(5000);
   });
 });
