@@ -353,7 +353,7 @@ export class OfflinePretrainer {
    * 3. Apply gradient descent to W_q and W_m matrices
    *
    * @param pairs - Array of (query, positive, negatives) triples
- options - Training options   * @param (storeHistory defaults to false)
+   * @param options - Training options (storeHistory defaults to false)
    * @returns Training history with loss per epoch
    */
   async train(

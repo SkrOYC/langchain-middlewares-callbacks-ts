@@ -35,7 +35,7 @@ export interface RmmVectorStore {
       pageContent: string;
       metadata?: Record<string, unknown>;
     }>
-  ) => Promise<undefined | string[]>;
+  ) => Promise<void | string[]>;
 }
 
 // OracleConfig is defined in @/retrievers/oracle-retriever to avoid duplication
