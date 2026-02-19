@@ -19,7 +19,7 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
-import { HumanMessage } from "@langchain/core/messages";
+import { type AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
   applyEmbeddingAdaptation,
   computeRelevanceScore,
@@ -148,10 +148,8 @@ export function createRetrospectiveWrapModelCall(
 
     wrapModelCall: async (
       request: ModelRequest,
-      handler: (
-        request: ModelRequest
-      ) => Promise<{ content: string; text: string }>
-    ): Promise<{ content: string; text: string }> => {
+      handler: (request: ModelRequest) => Promise<AIMessage>
+    ): Promise<AIMessage> => {
       const { state, runtime } = request;
 
       // Lazy validate embedding dimension on first call
@@ -306,8 +304,21 @@ export function createRetrospectiveWrapModelCall(
         // Step 7: Extract citations from response
         // Per Appendix D.2: [0, 2] or [NO_CITE] format
         // Extended to all K memories for exact REINFORCE
+        // Handle both string and array content types from AIMessage
+        const responseContent = (() => {
+          if (typeof response.content === "string") {
+            return response.content;
+          }
+          if (Array.isArray(response.content)) {
+            return response.content
+              .filter((c) => c.type === "text")
+              .map((c) => (c as { text: string }).text)
+              .join("");
+          }
+          return "";
+        })();
         const citations = extractCitationsFromResponse(
-          response.content,
+          responseContent,
           selectedMemories,
           memories,
           selectedIndices
