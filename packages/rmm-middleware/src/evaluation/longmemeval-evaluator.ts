@@ -97,7 +97,7 @@ export class LongMemEvalEvaluator {
 
       // Extract retrieved session IDs
       const retrievedSessionIds = retrieved
-        .map((r) => r.metadata?.sessionId as string)
+        .map((r) => r.metadata?.sessionId)
         .filter((id): id is string => id !== undefined);
 
       // Compute Recall@5
