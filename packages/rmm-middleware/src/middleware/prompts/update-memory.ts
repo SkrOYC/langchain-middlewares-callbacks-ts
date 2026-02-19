@@ -37,8 +37,8 @@ function parseMergeAction(
     return null;
   }
 
-  const indexStr = match[1];
-  const merged_summary = match[2];
+  const indexStr = match[1]!;
+  const merged_summary = match[2]!;
 
   const index = Number.parseInt(indexStr, 10);
   // Validate index is within bounds

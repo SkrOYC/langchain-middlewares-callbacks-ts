@@ -49,7 +49,23 @@ export interface PretrainingConfig {
 export interface TrainingResult {
   epoch: number;
   loss: number;
-  rerankerState: RerankerState;
+  /**
+   * Reranker state at this epoch. Only populated when storeHistory is true.
+   * Set to undefined to reduce memory usage in production.
+   */
+  rerankerState?: RerankerState;
+}
+
+/**
+ * Options for training
+ */
+export interface TrainOptions {
+  /**
+   * Whether to store full reranker state at each epoch.
+   * When false (default), only epoch and loss are stored to minimize memory usage.
+   * Set to true for debugging or analysis.
+   */
+  storeHistory?: boolean;
 }
 
 /**
@@ -183,7 +199,7 @@ export function InfoNCE(
  */
 export function SupervisedContrastiveLoss(
   features: number[][],
-  labels: number[],
+  labels: string[] | number[],
   temperature = 0.07
 ): number {
   if (features.length === 0) {
@@ -337,9 +353,15 @@ export class OfflinePretrainer {
    * 3. Apply gradient descent to W_q and W_m matrices
    *
    * @param pairs - Array of (query, positive, negatives) triples
+ options - Training options   * @param (storeHistory defaults to false)
    * @returns Training history with loss per epoch
    */
-  async train(pairs: ContrastivePair[]): Promise<TrainingResult[]> {
+  async train(
+    pairs: ContrastivePair[],
+    options?: TrainOptions
+  ): Promise<TrainingResult[]> {
+    const storeHistory = options?.storeHistory ?? false;
+
     if (pairs.length === 0) {
       throw new Error("Training pairs cannot be empty");
     }
@@ -391,7 +413,7 @@ export class OfflinePretrainer {
       history.push({
         epoch,
         loss: avgLoss,
-        rerankerState: this.deepCloneRerankerState(),
+        ...(storeHistory && { rerankerState: this.deepCloneRerankerState() }),
       });
     }
 
@@ -520,7 +542,7 @@ export class OfflinePretrainer {
         const xVal = x[j];
         const rowVal = row[j];
         if (xVal !== undefined && rowVal !== undefined) {
-          wx[i] += rowVal * xVal;
+          wx[i] = (wx[i] ?? 0) + rowVal * xVal;
         }
       }
     }
@@ -685,7 +707,10 @@ export class OfflinePretrainer {
         this.rerankerState.weights.memoryTransform
       );
       const negsAdapted = pair.negatives.map((neg) =>
-        this.applyTransformation(neg, this.rerankerState.weights.memoryTransform)
+        this.applyTransformation(
+          neg,
+          this.rerankerState.weights.memoryTransform
+        )
       );
 
       // Compute similarities

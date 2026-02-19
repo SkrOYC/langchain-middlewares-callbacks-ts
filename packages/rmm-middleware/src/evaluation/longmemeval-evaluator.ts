@@ -11,8 +11,8 @@ import {
   computeSessionAccuracy,
 } from "@/evaluation/metrics";
 import {
-  parseSessionIndex,
   type LongMemEvalInstance,
+  parseSessionIndex,
 } from "@/retrievers/oracle-retriever";
 import type { RmmVectorStore } from "@/schemas/config";
 
@@ -27,6 +27,10 @@ export interface EvaluationResult {
   mrr: number;
   totalQuestions: number;
   abstentionCount: number;
+  /** Number of instances that were actually evaluated (non-abstention) */
+  evaluatedInstances: number;
+  /** Number of instances that were skipped (abstention questions) */
+  skippedInstances: number;
 }
 
 /**
@@ -141,6 +145,8 @@ export class LongMemEvalEvaluator {
       mrr: questionCount > 0 ? totalMRR / questionCount : 0,
       totalQuestions: questionCount,
       abstentionCount,
+      evaluatedInstances: questionCount,
+      skippedInstances: abstentionCount,
     };
 
     return this.lastResults;

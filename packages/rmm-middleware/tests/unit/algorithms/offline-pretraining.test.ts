@@ -322,7 +322,7 @@ describe("OfflinePretrainer integration", () => {
         },
       ];
 
-      const history = await trainer.train(pairs);
+      const history = await trainer.train(pairs, { storeHistory: true });
 
       expect(Array.isArray(history)).toBe(true);
       expect(history.length).toBe(3);

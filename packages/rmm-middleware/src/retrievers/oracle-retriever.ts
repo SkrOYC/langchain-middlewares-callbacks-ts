@@ -123,6 +123,16 @@ export class OracleVectorStore implements RmmVectorStore {
   ): Promise<
     Array<{ pageContent: string; metadata: Record<string, unknown> }>
   > {
+    // Validate k parameter - k <= 0 means return empty results
+    if (k !== undefined && k <= 0) {
+      return [];
+    }
+    // Normalize non-integer k to nearest integer
+    let normalizedK = k;
+    if (k !== undefined && !Number.isInteger(k)) {
+      normalizedK = Math.ceil(k);
+    }
+
     // Find matching instance by question content
     const instance = this.annotations.find((ann) => ann.question === query);
 
@@ -136,7 +146,7 @@ export class OracleVectorStore implements RmmVectorStore {
     }
 
     // Return ground-truth sessions
-    const maxResults = k ?? instance.answer_session_ids.length;
+    const maxResults = normalizedK ?? instance.answer_session_ids.length;
     const results: Array<{
       pageContent: string;
       metadata: Record<string, unknown>;
@@ -150,12 +160,18 @@ export class OracleVectorStore implements RmmVectorStore {
         sessionIndex < 0 ||
         sessionIndex >= instance.haystack_sessions.length
       ) {
-        // Session not found - skip with warning in production
+        // Session not found - log warning
+        console.warn(
+          `OracleRetriever: Session "${sessionId}" not found in haystack`
+        );
         continue;
       }
 
       const session = instance.haystack_sessions[sessionIndex];
       if (session === undefined) {
+        console.warn(
+          `OracleRetriever: Session at index ${sessionIndex} is undefined`
+        );
         continue;
       }
       const pageContent = session
