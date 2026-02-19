@@ -506,9 +506,8 @@ export class OfflinePretrainer {
       for (let j = 0; j < dim; j++) {
         const xVal = x[j];
         const rowVal = row[j];
-        const wxVal = wx[i];
-        if (xVal !== undefined && rowVal !== undefined && wxVal !== undefined) {
-          wx[i] = wxVal + rowVal * xVal;
+        if (xVal !== undefined && rowVal !== undefined) {
+          wx[i] += rowVal * xVal;
         }
       }
     }

@@ -161,30 +161,50 @@ export function computeSessionAccuracy(
 /**
  * Computes turn-level accuracy for LongMemEval
  *
- * Turn Accuracy = Turns with has_answer=true in retrieved sessions
+ * Turn Accuracy = (retrieved turns with has_answer) / (total turns with has_answer)
  *
  * Measures fine-grained recall at the turn level within sessions.
+ * Only counts turns that are present in both the retrieved set and have answers.
  *
- * @param turns - Array of turns in the session
+ * @param retrievedTurns - Array of turns that were retrieved
+ * @param allTurns - Array of all turns in the ground truth with has_answer flags
  * @param hasAnswer - Boolean array indicating which turns contain the answer
  * @returns Accuracy value in range [0, 1]
  */
 export function computeTurnAccuracy(
-  turns: Array<{ role: string; content: string }>,
+  retrievedTurns: Array<{ role: string; content: string }>,
+  allTurns: Array<{ role: string; content: string }>,
   hasAnswer: boolean[]
 ): number {
-  if (turns.length === 0 || hasAnswer.length === 0) {
+  if (allTurns.length === 0 || hasAnswer.length === 0) {
     return 0;
   }
 
-  let correct = 0;
-  for (let i = 0; i < Math.min(turns.length, hasAnswer.length); i++) {
+  // Count total turns with has_answer in ground truth
+  const totalAnswerTurns = hasAnswer.filter((has) => has).length;
+  if (totalAnswerTurns === 0) {
+    return 0;
+  }
+
+  // Count how many retrieved turns have answers
+  // We match by content since we don't have turn IDs
+  let retrievedAnswerTurns = 0;
+  for (let i = 0; i < Math.min(allTurns.length, hasAnswer.length); i++) {
     if (hasAnswer[i]) {
-      correct++;
+      const groundTruthTurn = allTurns[i];
+      // Check if this turn is in the retrieved set
+      const wasRetrieved = retrievedTurns.some(
+        (turn) =>
+          turn.role === groundTruthTurn.role &&
+          turn.content === groundTruthTurn.content
+      );
+      if (wasRetrieved) {
+        retrievedAnswerTurns++;
+      }
     }
   }
 
-  return correct / hasAnswer.length;
+  return retrievedAnswerTurns / totalAnswerTurns;
 }
 
 /**
@@ -199,7 +219,8 @@ export function computeAllMetrics(
     relevant: string[];
     retrievedSessions?: string[];
     answerSessions?: string[];
-    turns?: Array<{ role: string; content: string }>;
+    retrievedTurns?: Array<{ role: string; content: string }>;
+    allTurns?: Array<{ role: string; content: string }>;
     hasAnswer?: boolean[];
   }>
 ): EvaluationMetrics {
@@ -222,8 +243,12 @@ export function computeAllMetrics(
       sessionCount++;
     }
 
-    if (result.turns && result.hasAnswer) {
-      totalTurnAccuracy += computeTurnAccuracy(result.turns, result.hasAnswer);
+    if (result.retrievedTurns && result.allTurns && result.hasAnswer) {
+      totalTurnAccuracy += computeTurnAccuracy(
+        result.retrievedTurns,
+        result.allTurns,
+        result.hasAnswer
+      );
       turnCount++;
     }
   }

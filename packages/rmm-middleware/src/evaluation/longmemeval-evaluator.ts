@@ -10,7 +10,10 @@ import {
   computeRecallAtK,
   computeSessionAccuracy,
 } from "@/evaluation/metrics";
-import type { LongMemEvalInstance } from "@/retrievers/oracle-retriever";
+import {
+  parseSessionIndex,
+  type LongMemEvalInstance,
+} from "@/retrievers/oracle-retriever";
 import type { RmmVectorStore } from "@/schemas/config";
 
 /**
@@ -225,7 +228,7 @@ function computeTurnAccuracyForInstance(
   // Count total has_answer turns in ground truth
   let totalHasAnswerTurns = 0;
   for (const sessionId of instance.answer_session_ids) {
-    const sessionIndex = Number.parseInt(sessionId.replace("session-", ""), 10);
+    const sessionIndex = parseSessionIndex(sessionId);
 
     if (sessionIndex >= 0 && sessionIndex < instance.haystack_sessions.length) {
       const session = instance.haystack_sessions[sessionIndex];
@@ -251,7 +254,7 @@ function computeTurnAccuracyForInstance(
       continue;
     }
 
-    const sessionIndex = Number.parseInt(sessionId.replace("session-", ""), 10);
+    const sessionIndex = parseSessionIndex(sessionId);
 
     if (sessionIndex >= 0 && sessionIndex < instance.haystack_sessions.length) {
       const session = instance.haystack_sessions[sessionIndex];

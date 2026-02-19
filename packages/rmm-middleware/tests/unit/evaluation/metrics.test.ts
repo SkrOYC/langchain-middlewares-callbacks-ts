@@ -279,27 +279,33 @@ describe("Evaluation Metrics", () => {
     test("returns accuracy based on has_answer labels", async () => {
       const { computeTurnAccuracy } = await import("@/evaluation/metrics");
 
-      const turns = [
+      const allTurns = [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi" },
       ];
+      const retrievedTurns = [{ role: "user", content: "Hello" }];
       const hasAnswer = [true, false];
 
-      const accuracy = computeTurnAccuracy(turns, hasAnswer);
+      const accuracy = computeTurnAccuracy(retrievedTurns, allTurns, hasAnswer);
 
-      expect(accuracy).toBe(0.5);
+      // 1 retrieved turn with answer out of 1 total turn with answer = 1.0
+      expect(accuracy).toBe(1.0);
     });
 
-    test("returns 1.0 when all turns have answer", async () => {
+    test("returns 1.0 when all turns with answers are retrieved", async () => {
       const { computeTurnAccuracy } = await import("@/evaluation/metrics");
 
-      const turns = [
+      const allTurns = [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi" },
+      ];
+      const retrievedTurns = [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi" },
       ];
       const hasAnswer = [true, true];
 
-      const accuracy = computeTurnAccuracy(turns, hasAnswer);
+      const accuracy = computeTurnAccuracy(retrievedTurns, allTurns, hasAnswer);
 
       expect(accuracy).toBe(1.0);
     });
@@ -307,12 +313,28 @@ describe("Evaluation Metrics", () => {
     test("handles empty arrays", async () => {
       const { computeTurnAccuracy } = await import("@/evaluation/metrics");
 
-      const turns: Array<{ role: string; content: string }> = [];
+      const allTurns: Array<{ role: string; content: string }> = [];
+      const retrievedTurns: Array<{ role: string; content: string }> = [];
       const hasAnswer: boolean[] = [];
 
-      const accuracy = computeTurnAccuracy(turns, hasAnswer);
+      const accuracy = computeTurnAccuracy(retrievedTurns, allTurns, hasAnswer);
 
       expect(accuracy).toBe(0);
+    });
+
+    test("returns 0.0 when no turns with answers are retrieved", async () => {
+      const { computeTurnAccuracy } = await import("@/evaluation/metrics");
+
+      const allTurns = [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi" },
+      ];
+      const retrievedTurns: Array<{ role: string; content: string }> = [];
+      const hasAnswer = [true, true];
+
+      const accuracy = computeTurnAccuracy(retrievedTurns, allTurns, hasAnswer);
+
+      expect(accuracy).toBe(0.0);
     });
   });
 });

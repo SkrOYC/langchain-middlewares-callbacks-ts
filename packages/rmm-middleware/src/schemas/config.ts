@@ -9,7 +9,10 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { z } from "zod";
-import type { OracleConfig } from "@/retrievers/oracle-retriever";
+import type {
+  LongMemEvalInstance,
+  OracleConfig,
+} from "@/retrievers/oracle-retriever";
 
 /**
  * Vector store interface for memory retrieval
@@ -50,14 +53,7 @@ export interface EvaluationConfig {
   /**
    * Dataset for evaluation (LongMemEval format)
    */
-  dataset?: Array<{
-    question_id: string;
-    question_type: string;
-    question: string;
-    answer: string;
-    answer_session_ids: string[];
-    haystack_sessions: Array<Array<{ role: string; content: string }>>;
-  }>;
+  dataset?: LongMemEvalInstance[];
 
   /**
    * Recall@K values to compute

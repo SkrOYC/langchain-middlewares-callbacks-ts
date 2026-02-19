@@ -16,6 +16,45 @@ const SESSION_REGEX = /(?:session|sess)[-_]?(\d+)/i;
 const DIGIT_REGEX = /(\d+)/;
 
 /**
+ * Parses a session ID to extract the numeric index
+ *
+ * Supports multiple formats:
+ * - "session-0", "session-1", ... (LongMemEval standard format)
+ * - "0", "1", ... (numeric format)
+ * - "sess-0", "sess-1", ... (alternative prefix)
+ *
+ * @param sessionId - Session identifier from annotations
+ * @returns Numeric index or -1 if parsing fails
+ */
+export function parseSessionIndex(sessionId: string): number {
+  // Try direct numeric parse first
+  const numeric = Number.parseInt(sessionId, 10);
+  if (!Number.isNaN(numeric) && numeric >= 0) {
+    return numeric;
+  }
+
+  // Try extracting number from "session-X" or "sess-X" format
+  const match = SESSION_REGEX.exec(sessionId);
+  if (match) {
+    const num = match[1];
+    if (num !== undefined) {
+      return Number.parseInt(num, 10);
+    }
+  }
+
+  // Try extracting first number found in string
+  const extractMatch = DIGIT_REGEX.exec(sessionId);
+  if (extractMatch) {
+    const num = extractMatch[1];
+    if (num !== undefined) {
+      return Number.parseInt(num, 10);
+    }
+  }
+
+  return -1;
+}
+
+/**
  * Session turn format from LongMemEval dataset
  *
  * Note: Turns that contain the required evidence have an
@@ -68,44 +107,7 @@ export class OracleVectorStore implements RmmVectorStore {
     this.annotations = config.annotations;
   }
 
-  /**
-   * Parses a session ID to extract the numeric index
-   *
-   * Supports multiple formats:
-   * - "session-0", "session-1", ... (LongMemEval standard format)
-   * - "0", "1", ... (numeric format)
-   * - "sess-0", "sess-1", ... (alternative prefix)
-   *
-   * @param sessionId - Session identifier from annotations
-   * @returns Numeric index or -1 if parsing fails
-   */
-  private parseSessionIndex(sessionId: string): number {
-    // Try direct numeric parse first
-    const numeric = Number.parseInt(sessionId, 10);
-    if (!Number.isNaN(numeric) && numeric >= 0) {
-      return numeric;
-    }
 
-    // Try extracting number from "session-X" or "sess-X" format
-    const match = SESSION_REGEX.exec(sessionId);
-    if (match) {
-      const num = match[1];
-      if (num !== undefined) {
-        return Number.parseInt(num, 10);
-      }
-    }
-
-    // Try extracting first number found in string
-    const extractMatch = DIGIT_REGEX.exec(sessionId);
-    if (extractMatch) {
-      const num = extractMatch[1];
-      if (num !== undefined) {
-        return Number.parseInt(num, 10);
-      }
-    }
-
-    return -1;
-  }
 
   /**
    * Retrieves ground-truth sessions for a query
@@ -144,7 +146,7 @@ export class OracleVectorStore implements RmmVectorStore {
 
     for (const sessionId of instance.answer_session_ids.slice(0, maxResults)) {
       // Parse session ID to get numeric index
-      const sessionIndex = this.parseSessionIndex(sessionId);
+      const sessionIndex = parseSessionIndex(sessionId);
 
       if (
         sessionIndex < 0 ||
