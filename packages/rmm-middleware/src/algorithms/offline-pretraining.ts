@@ -485,6 +485,10 @@ export class OfflinePretrainer {
       return { loss, gradWQ: zeroMatrix, gradWM: zeroMatrix };
     }
 
+    // Check if all negative norms are zero (would cause all-zero gradients for negatives)
+    const allNegsZero = negNorms.every((n) => n === 0);
+    // If all negatives have zero norm, skip negative gradient contributions
+
     // Compute gradients
     const gradQuery = this.computeQueryGradient(
       queryAdapted,

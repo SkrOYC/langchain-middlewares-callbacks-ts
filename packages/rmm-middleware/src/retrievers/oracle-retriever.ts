@@ -10,6 +10,9 @@
  */
 
 import type { RmmVectorStore } from "@/schemas/config";
+import { getLogger } from "@/utils/logger";
+
+const logger = getLogger("oracle-retriever");
 
 // Regex patterns for session ID parsing (top-level for performance)
 const SESSION_REGEX = /(?:session|sess)[-_]?(\d+)/i;
@@ -161,16 +164,16 @@ export class OracleVectorStore implements RmmVectorStore {
         sessionIndex >= instance.haystack_sessions.length
       ) {
         // Session not found - log warning
-        console.warn(
-          `OracleRetriever: Session "${sessionId}" not found in haystack`
+        logger.warn(
+          `Session "${sessionId}" not found in haystack`
         );
         continue;
       }
 
       const session = instance.haystack_sessions[sessionIndex];
       if (session === undefined) {
-        console.warn(
-          `OracleRetriever: Session at index ${sessionIndex} is undefined`
+        logger.warn(
+          `Session at index ${sessionIndex} is undefined`
         );
         continue;
       }
