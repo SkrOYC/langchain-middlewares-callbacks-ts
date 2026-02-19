@@ -463,20 +463,35 @@ export class OfflinePretrainer {
     // ∂L/∂sim = p_pos - 1
     const gradPosSim = posProb - 1;
 
-    // Compute gradient vectors
-    // ∂L/∂q ≈ gradPosSim * m' / ||m'||
-    const posNorm = this.vectorNorm(posAdapted);
-    const gradQuery = this.scaleVector(
-      posAdapted,
-      gradPosSim / (posNorm * posNorm || 1)
-    );
-
-    // ∂L/∂m ≈ gradPosSim * q' / ||q'||
+    // Compute gradient vectors using the full derivative of cosine similarity.
+    // The derivative of cos(u,v) w.r.t u is (v/|v| - cos(u,v)*u/|u|) / |u|.
     const queryNorm = this.vectorNorm(queryAdapted);
-    const gradPosMemory = this.scaleVector(
-      queryAdapted,
-      gradPosSim / (queryNorm * queryNorm || 1)
-    );
+    const posNorm = this.vectorNorm(posAdapted);
+
+    // Handle zero norm vectors to prevent division by zero.
+    if (queryNorm === 0 || posNorm === 0) {
+      const dim = pair.query.length;
+      const zeroMatrix = this.createZeroMatrix(dim, dim);
+      return { loss, gradWQ: zeroMatrix, gradWM: zeroMatrix };
+    }
+
+    const sim = posSim;
+
+    // ∂L/∂q' = (∂L/∂sim) * (∂sim/∂q')
+    // ∂sim/∂q = (p/|p| - sim*q/|q|) / |q|
+    // Optimized: (p*|q| - sim*q*|p|) / (|q|^2 * |p|)
+    const gradQuery = queryAdapted.map((q_i, i) => {
+      const p_i = posAdapted[i] ?? 0;
+      const gradSim = (p_i / posNorm - (sim * q_i) / queryNorm) / queryNorm;
+      return gradPosSim * gradSim;
+    });
+
+    // ∂L/∂p' = (∂L/∂sim) * (∂sim/∂p')
+    const gradPosMemory = posAdapted.map((p_i, i) => {
+      const q_i = queryAdapted[i] ?? 0;
+      const gradSim = (q_i / queryNorm - (sim * p_i) / posNorm) / posNorm;
+      return gradPosSim * gradSim;
+    });
 
     // Weight gradients using outer product approximation
     // ∂L/∂W_q ≈ ∂L/∂q * q^T

@@ -29,10 +29,7 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
       const pair: typeof module.ContrastivePair = {
         query: [0.1, 0.2, 0.3],
         positive: [0.8, 0.7, 0.6],
-        negatives: [
-          [0.1, 0.2, 0.4],
-          [0.1, 0.2, 0.5],
-        ],
+        negatives: [[0.1, 0.2, 0.4], [0.1, 0.2, 0.5]],
       };
       expect(pair.negatives.length).toBe(2);
     });
@@ -54,10 +51,7 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
 
       const query = [0.1, 0.2, 0.3];
       const positive = [0.8, 0.7, 0.6];
-      const negatives = [
-        [0.1, 0.2, 0.4],
-        [0.1, 0.2, 0.5],
-      ];
+      const negatives = [[0.1, 0.2, 0.4], [0.1, 0.2, 0.5]];
 
       const loss = InfoNCE(query, positive, negatives, 0.07);
 
@@ -86,10 +80,7 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
       const query = [0.1, 0.2, 0.3, 0.4];
       const positive = [0.12, 0.22, 0.32, 0.42];
       // Negatives are almost as close as positive
-      const negatives = [
-        [0.13, 0.23, 0.33, 0.43],
-        [0.11, 0.21, 0.31, 0.41],
-      ];
+      const negatives = [[0.13, 0.23, 0.33, 0.43], [0.11, 0.21, 0.31, 0.41]];
 
       const loss = InfoNCE(query, positive, negatives, 0.07);
 
@@ -104,10 +95,7 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
 
       const query = [0.1, 0.2, 0.3];
       const positive = [0.5, 0.5, 0.5];
-      const negatives = [
-        [0.4, 0.4, 0.4],
-        [0.6, 0.6, 0.6],
-      ];
+      const negatives = [[0.4, 0.4, 0.4], [0.6, 0.6, 0.6]];
 
       const lossLowTemp = InfoNCE(query, positive, negatives, 0.01);
       const lossHighTemp = InfoNCE(query, positive, negatives, 1.0);
@@ -205,12 +193,7 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
       const query = [0.1, 0.2, 0.3];
       const positive = [0.5, 0.5, 0.5];
 
-      const lossFewNegatives = InfoNCE(
-        query,
-        positive,
-        [[0.4, 0.4, 0.4]],
-        0.07
-      );
+      const lossFewNegatives = InfoNCE(query, positive, [[0.4, 0.4, 0.4]], 0.07);
       const lossManyNegatives = InfoNCE(
         query,
         positive,
@@ -306,7 +289,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 10,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 
@@ -329,7 +311,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 3,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 
@@ -359,7 +340,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 1,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 
@@ -391,7 +371,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 10,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 
@@ -409,7 +388,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 10,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 
@@ -438,7 +416,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 10,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 
@@ -446,10 +423,7 @@ describe("OfflinePretrainer integration", () => {
         {
           query: [0.1, 0.2, 0.3],
           positive: [0.8, 0.7, 0.6],
-          negatives: [
-            [0.1, 0.2, 0.4],
-            [0.1, 0.2, 0.5],
-          ],
+          negatives: [[0.1, 0.2, 0.4], [0.1, 0.2, 0.5]],
         },
       ];
 
@@ -470,7 +444,6 @@ describe("OfflinePretrainer integration", () => {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 5,
-        batchSize: 32,
         embeddingDimension: 3,
       });
 

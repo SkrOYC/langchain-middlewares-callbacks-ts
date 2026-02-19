@@ -189,16 +189,18 @@ export function computeTurnAccuracy(
   // Count how many retrieved turns have answers
   // We match by content since we don't have turn IDs
   let retrievedAnswerTurns = 0;
+
+  // Create a Set of retrieved turns for efficient O(1) lookups.
+  // We stringify the turn object to use it as a key in the Set.
+  const retrievedTurnsSet = new Set(
+    retrievedTurns.map((turn) => JSON.stringify(turn))
+  );
+
   for (let i = 0; i < Math.min(allTurns.length, hasAnswer.length); i++) {
     if (hasAnswer[i]) {
       const groundTruthTurn = allTurns[i];
       // Check if this turn is in the retrieved set
-      const wasRetrieved = retrievedTurns.some(
-        (turn) =>
-          turn.role === groundTruthTurn.role &&
-          turn.content === groundTruthTurn.content
-      );
-      if (wasRetrieved) {
+      if (retrievedTurnsSet.has(JSON.stringify(groundTruthTurn))) {
         retrievedAnswerTurns++;
       }
     }
