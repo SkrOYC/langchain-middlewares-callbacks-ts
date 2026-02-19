@@ -9,7 +9,14 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { createMiddleware } from "langchain";
+import {
+  type AfterModelHook,
+  type BeforeAgentHook,
+  type BeforeModelHook,
+  createMiddleware,
+  type Runtime,
+  type WrapModelCallHook,
+} from "langchain";
 import {
   type AfterAgentDependencies,
   afterAgent,
@@ -39,7 +46,10 @@ import {
   type RmmVectorStore,
   rmmConfigSchema,
 } from "@/schemas/config.js";
-import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index.js";
+import {
+  DEFAULT_REFLECTION_CONFIG,
+  type RmmRuntimeContext,
+} from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
 // Offline Pretraining exports - types only
@@ -89,6 +99,7 @@ export type {
   EvaluationConfig,
   RmmConfig,
 } from "@/schemas/config.js";
+export type { RmmMiddlewareState, RmmRuntimeContext } from "@/schemas/index.js";
 
 /**
  * Extracts the hook function from a middleware factory result
@@ -200,18 +211,16 @@ export function rmmMiddleware(config: RmmConfig = {}) {
 
   // Build beforeAgent hook options
   const beforeAgentOptions: BeforeAgentOptions = {
-    userIdExtractor: (runtime: {
-      configurable?: { sessionId?: string };
-      context?: { sessionId?: string };
-    }) => {
+    userIdExtractor: (runtime) => {
       // Try configurable first (from createAgent config)
-      const configurable = runtime.configurable;
+      const configurable = runtime.configurable as
+        | { sessionId?: string }
+        | undefined;
       if (configurable?.sessionId) {
         return configurable.sessionId;
       }
       // Fall back to context
-      const context = runtime.context;
-      return context?.sessionId ?? "";
+      return runtime.context?.sessionId ?? "";
     },
     rerankerConfig: {
       topK: parsedConfig.topK,
@@ -285,30 +294,29 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   // Create the combined middleware
   return createMiddleware({
     name: "RmmMiddleware",
-    beforeAgent: beforeAgentHook,
-    beforeModel: beforeModelHook,
-    wrapModelCall: wrapModelCallHook,
-    afterModel: afterModelHook,
-    afterAgent: (
-      state,
-      runtime: {
-        configurable?: { sessionId?: string };
-        context?: { sessionId?: string; store?: unknown };
-      }
-    ) => {
+    beforeAgent: beforeAgentHook as BeforeAgentHook<undefined, unknown>,
+    beforeModel: beforeModelHook as BeforeModelHook<undefined, unknown>,
+    wrapModelCall: wrapModelCallHook as WrapModelCallHook<undefined, unknown>,
+    afterModel: afterModelHook as AfterModelHook<undefined, unknown>,
+    afterAgent: (state, runtime) => {
       // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
+      const configurable = runtime.configurable as
+        | { sessionId?: string }
+        | undefined;
       const userId =
-        runtime.configurable?.sessionId ?? runtime.context?.sessionId ?? "";
+        configurable?.sessionId ?? runtime.context?.sessionId ?? "";
 
       // Extract dependencies from runtime for afterAgent
+      // Check both runtime.store (LangGraph) and context.store (user-provided)
+      const store = runtime.store ?? runtime.context?.store;
       const deps: AfterAgentDependencies = {
         userId,
-        store: runtime.context?.store as AfterAgentDependencies["store"],
+        store,
         reflectionConfig: parsedConfig.llm
           ? DEFAULT_REFLECTION_CONFIG
           : undefined,
       };
-      return afterAgent(state, { context: runtime.context }, deps);
+      return afterAgent(state, runtime as Runtime<RmmRuntimeContext>, deps);
     },
   });
 }

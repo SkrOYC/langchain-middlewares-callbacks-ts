@@ -1,4 +1,5 @@
 import type { StoredMessage } from "@langchain/core/messages";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import { z } from "zod";
 import { createZeroMatrix } from "@/utils/matrix";
 
@@ -647,4 +648,70 @@ export function createDefaultRerankerState(
       baseline: RERANKER_CONFIG_DEFAULTS.baseline,
     },
   };
+}
+
+// ============================================================================
+// RmmMiddlewareState - Extended State for Hooks
+// ============================================================================
+
+/**
+ * Runtime context for RMM middleware hooks.
+ *
+ * This interface defines all properties that can be present in the runtime
+ * context when accessing via runtime.context in middleware hooks.
+ *
+ * Properties can come from:
+ * - User-provided context (passed via agent.invoke({ context: {...} }))
+ * - Internal RMM context set by other hooks (e.g., _citations set by beforeModel)
+ */
+export interface RmmRuntimeContext {
+  /** User ID for memory and weight persistence */
+  userId?: string;
+  /** Session ID for tracking conversation sessions */
+  sessionId?: string;
+  /** BaseStore instance for long-term memory */
+  store?: BaseStore;
+  /** Whether this is the end of a session */
+  isSessionEnd?: boolean;
+
+  // Internal RMM context set by hooks
+  /** Citation records extracted from LLM response (set by beforeModel) */
+  _citations?: CitationRecord[];
+  /** Original query embedding before reranking */
+  _originalQuery?: number[];
+  /** Adapted query embedding after reranking */
+  _adaptedQuery?: number[];
+  /** Memory embeddings before reranking */
+  _originalMemoryEmbeddings?: number[][];
+  /** Memory embeddings after reranking */
+  _adaptedMemoryEmbeddings?: number[][];
+  /** Gumbel-Softmax sampling probabilities */
+  _samplingProbabilities?: number[];
+  /** Indices of selected memories */
+  _selectedIndices?: number[];
+}
+
+/**
+ * RMM-specific middleware state properties.
+ *
+ * This interface defines RMM-specific fields that are added to the base
+ * LangChain state (messages). Use it combined with { messages: BaseMessage[] }
+ * in middleware hooks: `RmmMiddlewareState & { messages: BaseMessage[] }`
+ *
+ * Note: This type is used in middleware hooks to provide proper type inference
+ * for state parameters.
+ */
+export interface RmmMiddlewareState {
+  /** Learned reranker weights (W_q, W_m transformation matrices) */
+  _rerankerWeights: RerankerState;
+  /** Memories retrieved from vector store for current query */
+  _retrievedMemories?: RetrievedMemory[];
+  /** Citation records for REINFORCE gradient computation */
+  _citations?: CitationRecord[];
+  /** Number of turns in current session (for reflection triggers) */
+  _turnCountInSession?: number;
+  /** Persisted message buffer for prospective reflection */
+  _messageBuffer?: MessageBuffer;
+  /** Gradient accumulator for batched REINFORCE updates */
+  _gradientAccumulator?: GradientAccumulatorState;
 }

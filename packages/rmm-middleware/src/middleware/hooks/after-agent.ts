@@ -17,7 +17,13 @@ import {
   mapChatMessagesToStoredMessages,
 } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { MessageBuffer, ReflectionConfig } from "@/schemas";
+import type { Runtime } from "langchain";
+import type {
+  MessageBuffer,
+  ReflectionConfig,
+  RmmMiddlewareState,
+  RmmRuntimeContext,
+} from "@/schemas";
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
 import { getLogger } from "@/utils/logger";
 import { countHumanMessages } from "@/utils/message-helpers";
@@ -29,26 +35,12 @@ const logger = getLogger("after-agent");
 // ============================================================================
 
 /**
- * Interface for the afterAgent runtime context
- */
-interface AfterAgentRuntimeContext {
-  [key: string]: unknown;
-}
-
-/**
  * Interface for the afterAgent dependencies (injected for testing)
  */
 export interface AfterAgentDependencies {
   userId?: string;
   store?: BaseStore;
   reflectionConfig?: ReflectionConfig;
-}
-
-/**
- * State interface for the afterAgent hook
- */
-interface AfterAgentState {
-  messages: BaseMessage[];
 }
 
 // ============================================================================
@@ -122,8 +114,8 @@ function appendMessagesToBuffer(
  * @returns Empty object (no state changes)
  */
 export async function afterAgent(
-  state: AfterAgentState,
-  _runtime: { context: AfterAgentRuntimeContext },
+  state: RmmMiddlewareState & { messages: BaseMessage[] },
+  _runtime: Runtime<RmmRuntimeContext>,
   deps?: AfterAgentDependencies
 ): Promise<Record<string, unknown>> {
   try {

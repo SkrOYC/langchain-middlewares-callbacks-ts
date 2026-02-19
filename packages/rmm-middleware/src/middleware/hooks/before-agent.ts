@@ -14,7 +14,7 @@ import {
   type BaseMessage,
   mapStoredMessagesToChatMessages,
 } from "@langchain/core/messages";
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import type { Runtime } from "langchain";
 import { extractMemories } from "@/algorithms/memory-extraction";
 import { processMemoryUpdate } from "@/algorithms/memory-update";
 import {
@@ -25,6 +25,8 @@ import {
   type ReflectionConfig,
   type RerankerState,
   type RetrievedMemory,
+  type RmmMiddlewareState,
+  type RmmRuntimeContext,
 } from "@/schemas";
 import {
   createMessageBufferStorage,
@@ -175,23 +177,15 @@ export interface BeforeAgentOptions {
 }
 
 /**
- * Runtime interface for beforeAgent hook
- * Documents expected context properties from LangChain runtime
+ * Runtime type for beforeAgent hook
+ * Uses LangChain's Runtime with RMM-specific context
  */
-interface BeforeAgentRuntime {
-  context: {
-    userId?: string;
-    store?: BaseStore;
-    sessionId?: string;
-  };
-}
+type BeforeAgentRuntime = Runtime<RmmRuntimeContext>;
 
 /**
- * State interface for beforeAgent hook
+ * State type for beforeAgent hook
  */
-interface BeforeAgentState {
-  messages: BaseMessage[];
-}
+type BeforeAgentState = RmmMiddlewareState & { messages: BaseMessage[] };
 
 // ============================================================================
 // Trigger Logic

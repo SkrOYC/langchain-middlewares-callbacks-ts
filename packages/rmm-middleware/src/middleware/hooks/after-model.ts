@@ -18,14 +18,16 @@
  */
 
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import type { Runtime } from "langchain";
 import type {
   BaseMessage,
   CitationRecord,
-  GradientAccumulatorState,
   GradientSample,
   RerankerState,
-  RetrievedMemory,
+  RmmMiddlewareState,
+  RmmRuntimeContext,
 } from "@/schemas";
+
 import { createGradientStorage } from "@/storage/gradient-storage";
 import { createWeightStorage } from "@/storage/weight-storage";
 import { getLogger } from "@/utils/logger";
@@ -56,7 +58,7 @@ const EPSILON = 1e-9;
  * Accumulates gradients and applies update if batch is full
  */
 function accumulateGradients(
-  accumulator: NonNullable<AfterModelState["_gradientAccumulator"]>,
+  accumulator: NonNullable<RmmMiddlewareState["_gradientAccumulator"]>,
   gradientSample: GradientSample,
   rerankerWeights: RerankerState,
   embDim: number,
@@ -64,7 +66,7 @@ function accumulateGradients(
   isSessionEnd: boolean,
   clipThreshold: number
 ): {
-  accumulator: NonNullable<AfterModelState["_gradientAccumulator"]>;
+  accumulator: NonNullable<RmmMiddlewareState["_gradientAccumulator"]>;
   updatedWeights: RerankerState;
   batchApplied: boolean;
 } {
@@ -169,38 +171,6 @@ export interface AfterModelOptions {
   clipThreshold?: number;
 }
 
-/**
- * Runtime interface for afterModel hook
- */
-interface AfterModelRuntime {
-  context: {
-    _citations?: CitationRecord[];
-    _originalQuery?: number[];
-    _adaptedQuery?: number[];
-    _originalMemoryEmbeddings?: number[][];
-    _adaptedMemoryEmbeddings?: number[][];
-    _samplingProbabilities?: number[];
-    _selectedIndices?: number[];
-    userId?: string;
-    store?: BaseStore;
-    isSessionEnd?: boolean;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-/**
- * State interface for afterModel hook
- */
-interface AfterModelState {
-  messages: BaseMessage[];
-  _rerankerWeights: RerankerState;
-  _retrievedMemories: RetrievedMemory[];
-  _citations: CitationRecord[];
-  _gradientAccumulator?: GradientAccumulatorState;
-  _turnCountInSession: number;
-}
-
 // ============================================================================
 // Hook Factory
 // ============================================================================
@@ -239,13 +209,14 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
     name: "rmm-after-model",
 
     afterModel: async (
-      state: AfterModelState,
-      runtime: AfterModelRuntime
+      state: RmmMiddlewareState & { messages: BaseMessage[] },
+      runtime: Runtime<RmmRuntimeContext>
     ): Promise<Record<string, unknown>> => {
       // Step 1: Check for citations
-      const citations = runtime.context._citations ?? [];
-      const userId = runtime.context.userId;
-      const store = runtime.context.store;
+      const ctx = runtime.context;
+      const citations = ctx._citations ?? [];
+      const userId = ctx.userId;
+      const store = runtime.store ?? (ctx.store as BaseStore | undefined);
 
       // No citations extracted (malformed or error) → skip RL update
       if (citations.length === 0) {
@@ -271,12 +242,12 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
           state._rerankerWeights,
           citations,
           {
-            originalQuery: runtime.context._originalQuery,
-            adaptedQuery: runtime.context._adaptedQuery,
-            originalMemoryEmbeddings: runtime.context._originalMemoryEmbeddings,
-            adaptedMemoryEmbeddings: runtime.context._adaptedMemoryEmbeddings,
-            samplingProbabilities: runtime.context._samplingProbabilities,
-            selectedIndices: runtime.context._selectedIndices,
+            originalQuery: ctx._originalQuery,
+            adaptedQuery: ctx._adaptedQuery,
+            originalMemoryEmbeddings: ctx._originalMemoryEmbeddings,
+            adaptedMemoryEmbeddings: ctx._adaptedMemoryEmbeddings,
+            samplingProbabilities: ctx._samplingProbabilities,
+            selectedIndices: ctx._selectedIndices,
           },
           embDim
         );
@@ -301,7 +272,7 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
         }
 
         // Step 4-6: Accumulate gradients and apply update if batch is full
-        const isSessionEnd = runtime.context.isSessionEnd ?? false;
+        const isSessionEnd = ctx.isSessionEnd ?? false;
         const { accumulator: updatedAccumulator, updatedWeights } =
           accumulateGradients(
             accumulator,
@@ -836,12 +807,13 @@ function applyGradientUpdate(
 /**
  * Clears runtime context embeddings after processing
  */
-function clearRuntimeContext(runtime: AfterModelRuntime): void {
-  runtime.context._citations = [];
-  runtime.context._originalQuery = undefined;
-  runtime.context._adaptedQuery = undefined;
-  runtime.context._originalMemoryEmbeddings = undefined;
-  runtime.context._adaptedMemoryEmbeddings = undefined;
-  runtime.context._samplingProbabilities = undefined;
-  runtime.context._selectedIndices = undefined;
+function clearRuntimeContext(runtime: Runtime<RmmRuntimeContext>): void {
+  const ctx = runtime.context;
+  ctx._citations = [];
+  ctx._originalQuery = undefined;
+  ctx._adaptedQuery = undefined;
+  ctx._originalMemoryEmbeddings = undefined;
+  ctx._adaptedMemoryEmbeddings = undefined;
+  ctx._samplingProbabilities = undefined;
+  ctx._selectedIndices = undefined;
 }

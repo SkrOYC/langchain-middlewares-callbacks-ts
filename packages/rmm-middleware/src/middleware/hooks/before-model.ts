@@ -13,7 +13,13 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
+import type { Runtime } from "langchain";
+import type {
+  RerankerState,
+  RetrievedMemory,
+  RmmMiddlewareState,
+  RmmRuntimeContext,
+} from "@/schemas";
 import { getLogger } from "@/utils/logger";
 import { extractLastHumanMessage } from "@/utils/memory-helpers";
 
@@ -43,31 +49,6 @@ export interface BeforeModelOptions {
    * @default 20
    */
   topK?: number;
-}
-
-/**
- * Runtime interface for beforeModel hook
- *
- * Note: vectorStore and embeddings are passed via options, not runtime.context.
- * This interface exists for type compatibility with the middleware pattern.
- */
-interface BeforeModelRuntime {
-  context: {
-    // Placeholder for future runtime-injected context
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-/**
- * State interface for beforeModel hook
- */
-interface BeforeModelState {
-  messages: BaseMessage[];
-  _rerankerWeights: RerankerState;
-  _retrievedMemories: RetrievedMemory[];
-  _citations: CitationRecord[];
-  _turnCountInSession: number;
 }
 
 // ============================================================================
@@ -202,8 +183,8 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
     name: "rmm-before-model",
 
     beforeModel: async (
-      state: BeforeModelState,
-      _runtime: BeforeModelRuntime
+      state: RmmMiddlewareState & { messages: BaseMessage[] },
+      _runtime: Runtime<RmmRuntimeContext>
     ): Promise<BeforeModelStateUpdate> => {
       // Lazy validate embedding dimension on first call
       if (!validateOnce) {
