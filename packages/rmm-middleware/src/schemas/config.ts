@@ -35,7 +35,7 @@ export interface RmmVectorStore {
       pageContent: string;
       metadata?: Record<string, unknown>;
     }>
-  ) => Promise<void>;
+  ) => Promise<undefined | string[]>;
 }
 
 // OracleConfig is defined in @/retrievers/oracle-retriever to avoid duplication
@@ -161,5 +161,5 @@ export const rmmConfigSchema = z.object({
 });
 
 export type RmmConfig = z.input<typeof rmmConfigSchema>;
-export type { EvaluationConfig };
+
 // OracleConfig is re-exported from @/retrievers/oracle-retriever

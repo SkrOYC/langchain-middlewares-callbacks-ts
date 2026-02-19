@@ -128,7 +128,7 @@ export interface BeforeAgentOptions {
           pageContent: string;
           metadata?: Record<string, unknown>;
         }>
-      ) => Promise<void>;
+      ) => Promise<undefined | string[]>;
       /** Optional delete for merge operations (delete+add pattern) */
       delete?: (params: { ids: string[] }) => Promise<void>;
     };

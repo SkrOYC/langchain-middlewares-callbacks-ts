@@ -428,9 +428,12 @@ export class OfflinePretrainer {
    * Gradient w.r.t. positive similarity:
    * ∂L/∂sim(q,p) = softmax(sim(q,p)/τ) - 1
    *
+   * Gradient w.r.t. negative similarity:
+   * ∂L/∂sim(q,n_i) = softmax(sim(q,n_i)/τ)
+   *
    * Using chain rule and embedding adaptation:
-   * ∂L/∂q = (∂L/∂sim) * ∂sim/∂q ≈ (∂L/∂sim) * m'
-   * ∂L/∂m = (∂L/∂sim) * ∂sim/∂m ≈ (∂L/∂sim) * q'
+   * ∂L/∂q = Σ (∂L/∂sim_i) * ∂sim_i/∂q
+   * ∂L/∂m = Σ (∂L/∂sim_i) * ∂sim_i/∂m
    *
    * Weight gradients (outer product approximation):
    * ∂L/∂W_q ≈ ∂L/∂q * q^T
@@ -461,18 +464,7 @@ export class OfflinePretrainer {
     );
 
     // Compute softmax probabilities
-    const scaledPos = posSim / this.config.temperature;
-    const scaledNegs = negSims.map((s) => s / this.config.temperature);
-    const allScaled = [scaledPos, ...scaledNegs];
-
-    // Softmax: p_i = exp(s_i/τ) / Σ exp(s_j/τ)
-    const maxScaled = Math.max(...allScaled);
-    const negExpSum = scaledNegs.map((s) => Math.exp(s - maxScaled));
-    const sumExp =
-      Math.exp(scaledPos - maxScaled) + negExpSum.reduce((a, b) => a + b, 0);
-
-    const probs = allScaled.map((s) => Math.exp(s - maxScaled) / sumExp);
-    const posProb = probs[0] ?? 0;
+    const { probs, posProb } = this.computeSoftmaxProbs(posSim, negSims);
 
     if (posProb <= 0) {
       throw new Error("Invalid probability distribution in InfoNCE");
@@ -481,14 +473,10 @@ export class OfflinePretrainer {
     // InfoNCE loss
     const loss = -Math.log(posProb);
 
-    // Gradient w.r.t. positive similarity
-    // ∂L/∂sim = p_pos - 1
-    const gradPosSim = posProb - 1;
-
-    // Compute gradient vectors using the full derivative of cosine similarity.
-    // The derivative of cos(u,v) w.r.t u is (v/|v| - cos(u,v)*u/|u|) / |u|.
+    // Compute norms for gradient computation
     const queryNorm = this.vectorNorm(queryAdapted);
     const posNorm = this.vectorNorm(posAdapted);
+    const negNorms = negsAdapted.map((neg) => this.vectorNorm(neg));
 
     // Handle zero norm vectors to prevent division by zero.
     if (queryNorm === 0 || posNorm === 0) {
@@ -497,23 +485,27 @@ export class OfflinePretrainer {
       return { loss, gradWQ: zeroMatrix, gradWM: zeroMatrix };
     }
 
-    const sim = posSim;
+    // Compute gradients
+    const gradQuery = this.computeQueryGradient(
+      queryAdapted,
+      posAdapted,
+      negsAdapted,
+      posSim,
+      negSims,
+      probs,
+      queryNorm,
+      posNorm,
+      negNorms
+    );
 
-    // ∂L/∂q' = (∂L/∂sim) * (∂sim/∂q')
-    // ∂sim/∂q = (p/|p| - sim*q/|q|) / |q|
-    // Optimized: (p*|q| - sim*q*|p|) / (|q|^2 * |p|)
-    const gradQuery = queryAdapted.map((q_i, i) => {
-      const p_i = posAdapted[i] ?? 0;
-      const gradSim = (p_i / posNorm - (sim * q_i) / queryNorm) / queryNorm;
-      return gradPosSim * gradSim;
-    });
-
-    // ∂L/∂p' = (∂L/∂sim) * (∂sim/∂p')
-    const gradPosMemory = posAdapted.map((p_i, i) => {
-      const q_i = queryAdapted[i] ?? 0;
-      const gradSim = (q_i / queryNorm - (sim * p_i) / posNorm) / posNorm;
-      return gradPosSim * gradSim;
-    });
+    const gradPosMemory = this.computeMemoryGradient(
+      queryAdapted,
+      posAdapted,
+      posSim,
+      probs[0] ?? 0,
+      queryNorm,
+      posNorm
+    );
 
     // Weight gradients using outer product approximation
     // ∂L/∂W_q ≈ ∂L/∂q * q^T
@@ -523,6 +515,93 @@ export class OfflinePretrainer {
     const gradWM = this.outerProduct(gradPosMemory, pair.positive);
 
     return { loss, gradWQ, gradWM };
+  }
+
+  /**
+   * Computes softmax probabilities for InfoNCE
+   */
+  private computeSoftmaxProbs(
+    posSim: number,
+    negSims: number[]
+  ): { probs: number[]; posProb: number } {
+    const scaledPos = posSim / this.config.temperature;
+    const scaledNegs = negSims.map((s) => s / this.config.temperature);
+    const allScaled = [scaledPos, ...scaledNegs];
+
+    const maxScaled = Math.max(...allScaled);
+    const negExpSum = scaledNegs.map((s) => Math.exp(s - maxScaled));
+    const sumExp =
+      Math.exp(scaledPos - maxScaled) + negExpSum.reduce((a, b) => a + b, 0);
+
+    const probs = allScaled.map((s) => Math.exp(s - maxScaled) / sumExp);
+    const posProb = probs[0] ?? 0;
+
+    return { probs, posProb };
+  }
+
+  /**
+   * Computes gradient w.r.t. query embedding including both positive and negative contributions
+   */
+  private computeQueryGradient(
+    queryAdapted: number[],
+    posAdapted: number[],
+    negsAdapted: number[][],
+    posSim: number,
+    negSims: number[],
+    probs: number[],
+    queryNorm: number,
+    posNorm: number,
+    negNorms: number[]
+  ): number[] {
+    const gradQuery: number[] = new Array(queryAdapted.length).fill(0);
+
+    // Positive gradient contribution: ∂L/∂s_pos * ∂s_pos/∂q
+    const gradPosSim = (probs[0] ?? 0) - 1;
+    for (let i = 0; i < queryAdapted.length; i++) {
+      const p_i = posAdapted[i] ?? 0;
+      const q_i = queryAdapted[i] ?? 0;
+      const gradSim = (p_i / posNorm - (posSim * q_i) / queryNorm) / queryNorm;
+      gradQuery[i] = (gradQuery[i] ?? 0) + gradPosSim * gradSim;
+    }
+
+    // Negative gradient contributions: Σ ∂L/∂s_neg_i * ∂s_neg_i/∂q
+    for (let negIdx = 0; negIdx < negsAdapted.length; negIdx++) {
+      const gradNegSim = probs[negIdx + 1] ?? 0;
+      const negEmbedding = negsAdapted[negIdx];
+      const negNorm = negNorms[negIdx] ?? 1;
+      const negSim = negSims[negIdx] ?? 0;
+
+      if (negEmbedding && negNorm > 0) {
+        for (let i = 0; i < queryAdapted.length; i++) {
+          const neg_i = negEmbedding[i] ?? 0;
+          const q_i = queryAdapted[i] ?? 0;
+          const gradSim =
+            (neg_i / negNorm - (negSim * q_i) / queryNorm) /
+            queryNorm;
+          gradQuery[i] = (gradQuery[i] ?? 0) + gradNegSim * gradSim;
+        }
+      }
+    }
+
+    return gradQuery;
+  }
+
+  /**
+   * Computes gradient w.r.t. positive memory embedding
+   */
+  private computeMemoryGradient(
+    queryAdapted: number[],
+    posAdapted: number[],
+    posSim: number,
+    gradPosSim: number,
+    queryNorm: number,
+    posNorm: number
+  ): number[] {
+    return posAdapted.map((p_i, i) => {
+      const q_i = queryAdapted[i] ?? 0;
+      const gradSim = (q_i / queryNorm - (posSim * p_i) / posNorm) / posNorm;
+      return gradPosSim * gradSim;
+    });
   }
 
   /**

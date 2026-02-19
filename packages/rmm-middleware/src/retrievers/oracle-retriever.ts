@@ -201,8 +201,8 @@ export class OracleVectorStore implements RmmVectorStore {
       pageContent: string;
       metadata?: Record<string, unknown>;
     }>
-  ): Promise<void> {
+  ): Promise<undefined | string[]> {
     // Oracle retriever uses pre-annotated data, no dynamic additions
-    return Promise.resolve();
+    return undefined;
   }
 }

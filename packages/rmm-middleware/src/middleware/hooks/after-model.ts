@@ -22,6 +22,7 @@ import type {
   BaseMessage,
   CitationRecord,
   GradientSample,
+  GradientAccumulatorState,
   RerankerState,
   RetrievedMemory,
 } from "@/schemas";
@@ -196,7 +197,7 @@ interface AfterModelState {
   _rerankerWeights: RerankerState;
   _retrievedMemories: RetrievedMemory[];
   _citations: CitationRecord[];
-  _gradientAccumulator?: GradientSample[];
+  _gradientAccumulator?: GradientAccumulatorState;
   _turnCountInSession: number;
 }
 
