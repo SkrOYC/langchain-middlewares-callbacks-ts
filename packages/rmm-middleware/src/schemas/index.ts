@@ -323,7 +323,7 @@ export const RMMStateSchema = z.object({
   _citations: z.array(CitationRecordSchema),
   _retrievedMemories: z.array(RetrievedMemorySchema),
   _rerankerWeights: RerankerStateSchema,
-  _gradientAccumulator: z.array(GradientSampleSchema).optional(),
+  _gradientAccumulator: GradientAccumulatorStateSchema.optional(),
 
   // Standard LangChain state
   messages: z.array(BaseMessageSchema),

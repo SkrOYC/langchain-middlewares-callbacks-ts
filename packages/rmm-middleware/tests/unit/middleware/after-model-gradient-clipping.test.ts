@@ -21,11 +21,14 @@ function _computeMatrixNorm(matrix: number[][]): number {
 }
 
 describe("after-model gradient clipping integration", () => {
+  // Get the package directory (where package.json is located)
+  const packageDir = import.meta.dir.replace("/tests/unit/middleware", "");
+
   test("clipping exists in implementation", async () => {
     // Read the source code to verify clipping is present
     const { readFile } = await import("node:fs/promises");
     const afterModelSource = await readFile(
-      `${process.cwd()}/src/middleware/hooks/after-model.ts`,
+      `${packageDir}/src/middleware/hooks/after-model.ts`,
       "utf-8"
     );
 

@@ -21,6 +21,7 @@ import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type {
   BaseMessage,
   CitationRecord,
+  GradientAccumulatorState,
   GradientSample,
   RerankerState,
   RetrievedMemory,
@@ -196,7 +197,7 @@ interface AfterModelState {
   _rerankerWeights: RerankerState;
   _retrievedMemories: RetrievedMemory[];
   _citations: CitationRecord[];
-  _gradientAccumulator?: GradientSample[];
+  _gradientAccumulator?: GradientAccumulatorState;
   _turnCountInSession: number;
 }
 

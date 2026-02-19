@@ -145,7 +145,10 @@ async function populateMemoryEmbeddings(
     for (let i = 0; i < memories.length; i++) {
       const emb = memEmbeddings[i];
       if (emb) {
-        memories[i].embedding = emb;
+        const mem = memories[i];
+        if (mem) {
+          mem.embedding = emb;
+        }
       }
     }
 

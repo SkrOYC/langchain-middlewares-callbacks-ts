@@ -42,7 +42,53 @@ import {
 import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
-export type { RmmConfig } from "@/schemas/config.js";
+// Offline Pretraining exports - types only
+export type {
+  ContrastivePair,
+  PretrainingConfig,
+  TrainingResult,
+} from "@/algorithms/offline-pretraining.js";
+// Offline Pretraining exports - values
+export {
+  InfoNCE,
+  OfflinePretrainer,
+  SupervisedContrastiveLoss,
+} from "@/algorithms/offline-pretraining.js";
+// Evaluation exports - types only
+export type {
+  EvaluationResult,
+  LongMemEvalEvaluatorConfig,
+  Table1Metrics,
+} from "@/evaluation/longmemeval-evaluator.js";
+// Evaluation exports - values
+export { LongMemEvalEvaluator } from "@/evaluation/longmemeval-evaluator.js";
+// Metrics exports - types only
+export type {
+  EvaluationMetrics,
+  MRRResult,
+  RecallResult,
+} from "@/evaluation/metrics.js";
+// Metrics exports - values
+export {
+  computeAllMetrics,
+  computeMeanReciprocalRank,
+  computeRecallAtK,
+  computeSessionAccuracy,
+  computeTurnAccuracy,
+} from "@/evaluation/metrics.js";
+// Oracle Retriever exports - types only
+export type {
+  LongMemEvalInstance,
+  LongMemEvalTurn,
+  OracleConfig as OracleRetrieverConfig,
+} from "@/retrievers/oracle-retriever.js";
+// Oracle Retriever exports - values
+export { OracleVectorStore } from "@/retrievers/oracle-retriever.js";
+// Schema exports - types only
+export type {
+  EvaluationConfig,
+  RmmConfig,
+} from "@/schemas/config.js";
 
 /**
  * Extracts the hook function from a middleware factory result

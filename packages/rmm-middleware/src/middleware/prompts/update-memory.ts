@@ -40,6 +40,11 @@ function parseMergeAction(
   const indexStr = match[1];
   const merged_summary = match[2];
 
+  // Validate that capture groups exist
+  if (indexStr === undefined || merged_summary === undefined) {
+    return null;
+  }
+
   const index = Number.parseInt(indexStr, 10);
   // Validate index is within bounds
   if (index >= 0 && index < historyLength) {
