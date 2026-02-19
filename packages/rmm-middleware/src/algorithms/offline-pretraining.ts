@@ -197,6 +197,60 @@ export function InfoNCE(
  * @param temperature - Temperature scaling parameter
  * @returns Supervised contrastive loss
  */
+/**
+ * Extracts positive and negative similarities for an anchor sample
+ */
+function extractPosNegSimilarities(
+  anchor: number[],
+  anchorLabel: string | number,
+  features: number[][],
+  labels: string[] | number[]
+): { positives: number[]; negatives: number[] } {
+  const positives: number[] = [];
+  const negatives: number[] = [];
+
+  for (let j = 0; j < features.length; j++) {
+    const feature = features[j];
+    if (feature === undefined) {
+      continue;
+    }
+
+    const sim = cosineSimilarity(anchor, feature);
+    const label = labels[j];
+
+    if (label === anchorLabel) {
+      positives.push(sim);
+    } else {
+      negatives.push(sim);
+    }
+  }
+
+  return { positives, negatives };
+}
+
+/**
+ * Computes InfoNCE loss for a single positive against all negatives
+ */
+function computeInfoNCELoss(
+  posSim: number,
+  negatives: number[],
+  temperature: number
+): number {
+  const scaledPos = posSim / temperature;
+  const scaledNegs = negatives.map((s) => s / temperature);
+
+  // Numerically stable softmax computation
+  const maxScaled = Math.max(scaledPos, ...scaledNegs);
+  const posExp = Math.exp(scaledPos - maxScaled);
+  const negExpSum = scaledNegs.reduce(
+    (sum, s) => sum + Math.exp(s - maxScaled),
+    0
+  );
+
+  // Loss = -log(p_pos) = log(Σ exp) - log(exp(pos))
+  return Math.log(posExp + negExpSum) - Math.log(posExp);
+}
+
 export function SupervisedContrastiveLoss(
   features: number[][],
   labels: string[] | number[],
@@ -227,30 +281,17 @@ export function SupervisedContrastiveLoss(
       continue;
     }
     const anchorLabel = labels[i];
+    if (anchorLabel === undefined) {
+      continue;
+    }
 
     // Find positives (other samples with same label)
-    const positives: number[] = [];
-    const negatives: number[] = [];
-
-    for (let j = 0; j < batchSize; j++) {
-      if (i === j) {
-        continue;
-      }
-
-      const feature = features[j];
-      if (feature === undefined) {
-        continue;
-      }
-
-      const sim = cosineSimilarity(anchor, feature);
-      const label = labels[j];
-
-      if (label === anchorLabel) {
-        positives.push(sim);
-      } else {
-        negatives.push(sim);
-      }
-    }
+    const { positives, negatives } = extractPosNegSimilarities(
+      anchor,
+      anchorLabel,
+      features,
+      labels
+    );
 
     // Skip if no positives or no negatives in batch
     if (positives.length === 0 || negatives.length === 0) {
@@ -260,20 +301,7 @@ export function SupervisedContrastiveLoss(
     // Compute supervised contrastive loss for this anchor
     // For each positive, compute InfoNCE loss against all negatives
     for (const posSim of positives) {
-      // InfoNCE: -log(exp(pos/τ) / (exp(pos/τ) + Σ exp(neg/τ)))
-      const scaledPos = posSim / temperature;
-      const scaledNegs = negatives.map((s) => s / temperature);
-
-      // Numerically stable softmax computation
-      const maxScaled = Math.max(scaledPos, ...scaledNegs);
-      const posExp = Math.exp(scaledPos - maxScaled);
-      const negExpSum = scaledNegs.reduce(
-        (sum, s) => sum + Math.exp(s - maxScaled),
-        0
-      );
-
-      // Loss = -log(p_pos) = log(Σ exp) - log(exp(pos))
-      const loss = Math.log(posExp + negExpSum) - Math.log(posExp);
+      const loss = computeInfoNCELoss(posSim, negatives, temperature);
       totalLoss += loss;
       numPairs++;
     }
@@ -356,22 +384,24 @@ export class OfflinePretrainer {
    * @param options - Training options (storeHistory defaults to false)
    * @returns Training history with loss per epoch
    */
-  async train(
+  train(
     pairs: ContrastivePair[],
     options?: TrainOptions
   ): Promise<TrainingResult[]> {
     const storeHistory = options?.storeHistory ?? false;
 
     if (pairs.length === 0) {
-      throw new Error("Training pairs cannot be empty");
+      return Promise.reject(new Error("Training pairs cannot be empty"));
     }
 
     // Validate embedding dimensions
     const dim = this.rerankerState.weights.queryTransform.length;
     for (const pair of pairs) {
       if (pair.query.length !== dim) {
-        throw new Error(
-          `Embedding dimension mismatch: expected ${dim}, got query=${pair.query.length}`
+        return Promise.reject(
+          new Error(
+            `Embedding dimension mismatch: expected ${dim}, got query=${pair.query.length}`
+          )
         );
       }
     }
@@ -417,7 +447,7 @@ export class OfflinePretrainer {
       });
     }
 
-    return history;
+    return Promise.resolve(history);
   }
 
   /**
@@ -484,10 +514,6 @@ export class OfflinePretrainer {
       const zeroMatrix = this.createZeroMatrix(dim, dim);
       return { loss, gradWQ: zeroMatrix, gradWM: zeroMatrix };
     }
-
-    // Check if all negative norms are zero (would cause all-zero gradients for negatives)
-    const allNegsZero = negNorms.every((n) => n === 0);
-    // If all negatives have zero norm, skip negative gradient contributions
 
     // Compute gradients
     const gradQuery = this.computeQueryGradient(
@@ -580,8 +606,7 @@ export class OfflinePretrainer {
           const neg_i = negEmbedding[i] ?? 0;
           const q_i = queryAdapted[i] ?? 0;
           const gradSim =
-            (neg_i / negNorm - (negSim * q_i) / queryNorm) /
-            queryNorm;
+            (neg_i / negNorm - (negSim * q_i) / queryNorm) / queryNorm;
           gradQuery[i] = (gradQuery[i] ?? 0) + gradNegSim * gradSim;
         }
       }
@@ -639,18 +664,10 @@ export class OfflinePretrainer {
    */
   private vectorNorm(v: number[]): number {
     let sum = 0;
-    for (let i = 0; i < v.length; i++) {
-      const val = v[i] ?? 0;
+    for (const val of v) {
       sum += val * val;
     }
     return Math.sqrt(sum);
-  }
-
-  /**
-   * Scales a vector by a scalar
-   */
-  private scaleVector(v: number[], scalar: number): number[] {
-    return v.map((val) => val * scalar);
   }
 
   /**
@@ -772,7 +789,7 @@ export class OfflinePretrainer {
    * @param pairs - Array of (query, positive, negatives) triples
    * @returns Mean loss and Recall@5 metric
    */
-  async evaluate(pairs: ContrastivePair[]): Promise<{
+  evaluate(pairs: ContrastivePair[]): Promise<{
     meanLoss: number;
     recallAt5: number;
   }> {
@@ -832,9 +849,9 @@ export class OfflinePretrainer {
       }
     }
 
-    return {
+    return Promise.resolve({
       meanLoss: totalLoss / pairs.length,
       recallAt5: pairs.length > 0 ? recallAt5Count / pairs.length : 0,
-    };
+    });
   }
 }

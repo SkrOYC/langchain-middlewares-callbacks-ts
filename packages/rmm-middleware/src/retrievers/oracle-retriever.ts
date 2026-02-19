@@ -120,7 +120,7 @@ export class OracleVectorStore implements RmmVectorStore {
    * @param k - Maximum number of sessions to return
    * @returns Array of RetrievedDocument with ground-truth sessions
    */
-  async similaritySearch(
+  similaritySearch(
     query: string,
     k?: number
   ): Promise<
@@ -128,7 +128,7 @@ export class OracleVectorStore implements RmmVectorStore {
   > {
     // Validate k parameter - k <= 0 means return empty results
     if (k !== undefined && k <= 0) {
-      return [];
+      return Promise.resolve([]);
     }
     // Normalize non-integer k to nearest integer
     let normalizedK = k;
@@ -140,12 +140,12 @@ export class OracleVectorStore implements RmmVectorStore {
     const instance = this.annotations.find((ann) => ann.question === query);
 
     if (!instance) {
-      return [];
+      return Promise.resolve([]);
     }
 
     // Handle abstention questions (empty answer_session_ids)
     if (instance.answer_session_ids.length === 0) {
-      return [];
+      return Promise.resolve([]);
     }
 
     // Return ground-truth sessions
@@ -164,17 +164,13 @@ export class OracleVectorStore implements RmmVectorStore {
         sessionIndex >= instance.haystack_sessions.length
       ) {
         // Session not found - log warning
-        logger.warn(
-          `Session "${sessionId}" not found in haystack`
-        );
+        logger.warn(`Session "${sessionId}" not found in haystack`);
         continue;
       }
 
       const session = instance.haystack_sessions[sessionIndex];
       if (session === undefined) {
-        logger.warn(
-          `Session at index ${sessionIndex} is undefined`
-        );
+        logger.warn(`Session at index ${sessionIndex} is undefined`);
         continue;
       }
       const pageContent = session
@@ -191,7 +187,7 @@ export class OracleVectorStore implements RmmVectorStore {
       });
     }
 
-    return results;
+    return Promise.resolve(results);
   }
 
   /**
@@ -199,13 +195,13 @@ export class OracleVectorStore implements RmmVectorStore {
    *
    * @param _documents - Documents to add (ignored)
    */
-  async addDocuments(
+  addDocuments(
     _documents: Array<{
       pageContent: string;
       metadata?: Record<string, unknown>;
     }>
   ): Promise<undefined | string[]> {
     // Oracle retriever uses pre-annotated data, no dynamic additions
-    return undefined;
+    return Promise.resolve(undefined);
   }
 }

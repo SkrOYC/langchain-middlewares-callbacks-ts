@@ -12,6 +12,7 @@ import {
 } from "@/evaluation/metrics";
 import {
   type LongMemEvalInstance,
+  type LongMemEvalTurn,
   parseSessionIndex,
 } from "@/retrievers/oracle-retriever";
 import type { RmmVectorStore } from "@/schemas/config";
@@ -207,6 +208,71 @@ export class LongMemEvalEvaluator {
 }
 
 /**
+ * Counts has_answer turns in a session
+ */
+function countHasAnswerTurns(session: LongMemEvalTurn[]): number {
+  let count = 0;
+  for (const turn of session) {
+    if (turn.has_answer === true) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Gets session by ID from haystack
+ */
+function getSessionById(
+  sessionId: string,
+  haystack: LongMemEvalTurn[][]
+): LongMemEvalTurn[] | undefined {
+  const sessionIndex = parseSessionIndex(sessionId);
+  if (sessionIndex >= 0 && sessionIndex < haystack.length) {
+    return haystack[sessionIndex];
+  }
+  return undefined;
+}
+
+/**
+ * Counts total has_answer turns in ground truth sessions
+ */
+function countGroundTruthHasAnswerTurns(
+  answerSessionIds: string[],
+  haystack: LongMemEvalTurn[][]
+): number {
+  let count = 0;
+  for (const sessionId of answerSessionIds) {
+    const session = getSessionById(sessionId, haystack);
+    if (session !== undefined) {
+      count += countHasAnswerTurns(session);
+    }
+  }
+  return count;
+}
+
+/**
+ * Counts has_answer turns in retrieved sessions that are in ground truth
+ */
+function countRetrievedHasAnswerTurns(
+  retrievedSessionIds: string[],
+  relevantSessions: Set<string>,
+  haystack: LongMemEvalTurn[][]
+): number {
+  let count = 0;
+  for (const sessionId of retrievedSessionIds) {
+    if (!relevantSessions.has(sessionId)) {
+      continue;
+    }
+    const session = getSessionById(sessionId, haystack);
+    if (session !== undefined) {
+      count += countHasAnswerTurns(session);
+    }
+  }
+  return count;
+}
+
+/**
  * Helper to compute turn accuracy for a single instance
  *
  * Turn accuracy measures the proportion of answer-containing turns
@@ -232,47 +298,21 @@ function computeTurnAccuracyForInstance(
   const relevantSessions = new Set(instance.answer_session_ids);
 
   // Count total has_answer turns in ground truth
-  let totalHasAnswerTurns = 0;
-  for (const sessionId of instance.answer_session_ids) {
-    const sessionIndex = parseSessionIndex(sessionId);
-
-    if (sessionIndex >= 0 && sessionIndex < instance.haystack_sessions.length) {
-      const session = instance.haystack_sessions[sessionIndex];
-      if (session !== undefined) {
-        for (const turn of session) {
-          if (turn.has_answer === true) {
-            totalHasAnswerTurns++;
-          }
-        }
-      }
-    }
-  }
+  const totalHasAnswerTurns = countGroundTruthHasAnswerTurns(
+    instance.answer_session_ids,
+    instance.haystack_sessions
+  );
 
   if (totalHasAnswerTurns === 0) {
     return 0;
   }
 
   // Count has_answer turns in retrieved sessions
-  let retrievedHasAnswerTurns = 0;
-  for (const sessionId of retrievedSessionIds) {
-    // Only count if this session is part of the ground truth
-    if (!relevantSessions.has(sessionId)) {
-      continue;
-    }
-
-    const sessionIndex = parseSessionIndex(sessionId);
-
-    if (sessionIndex >= 0 && sessionIndex < instance.haystack_sessions.length) {
-      const session = instance.haystack_sessions[sessionIndex];
-      if (session !== undefined) {
-        for (const turn of session) {
-          if (turn.has_answer === true) {
-            retrievedHasAnswerTurns++;
-          }
-        }
-      }
-    }
-  }
+  const retrievedHasAnswerTurns = countRetrievedHasAnswerTurns(
+    retrievedSessionIds,
+    relevantSessions,
+    instance.haystack_sessions
+  );
 
   return retrievedHasAnswerTurns / totalHasAnswerTurns;
 }
