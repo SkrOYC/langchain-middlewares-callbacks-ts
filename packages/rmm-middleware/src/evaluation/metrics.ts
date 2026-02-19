@@ -191,16 +191,21 @@ export function computeTurnAccuracy(
   let retrievedAnswerTurns = 0;
 
   // Create a Set of retrieved turns for efficient O(1) lookups.
-  // We stringify the turn object to use it as a key in the Set.
+  // We use role:content as canonical key instead of JSON.stringify for robustness
   const retrievedTurnsSet = new Set(
-    retrievedTurns.map((turn) => JSON.stringify(turn))
+    retrievedTurns.map((turn) => `${turn.role}:${turn.content}`)
   );
 
   for (let i = 0; i < Math.min(allTurns.length, hasAnswer.length); i++) {
     if (hasAnswer[i]) {
       const groundTruthTurn = allTurns[i];
       // Check if this turn is in the retrieved set
-      if (retrievedTurnsSet.has(JSON.stringify(groundTruthTurn))) {
+      if (
+        groundTruthTurn &&
+        retrievedTurnsSet.has(
+          `${groundTruthTurn.role}:${groundTruthTurn.content}`
+        )
+      ) {
         retrievedAnswerTurns++;
       }
     }

@@ -107,8 +107,6 @@ export class OracleVectorStore implements RmmVectorStore {
     this.annotations = config.annotations;
   }
 
-
-
   /**
    * Retrieves ground-truth sessions for a query
    *

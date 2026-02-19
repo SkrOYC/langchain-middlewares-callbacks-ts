@@ -675,15 +675,6 @@ export class OfflinePretrainer {
     let recallAt5Count = 0;
 
     for (const pair of pairs) {
-      // Compute loss
-      totalLoss += InfoNCE(
-        pair.query,
-        pair.positive,
-        pair.negatives,
-        this.config.temperature
-      );
-
-      // Compute Recall@5
       // Apply transformation to query and all memories
       const queryAdapted = this.applyTransformation(
         pair.query,
@@ -703,6 +694,26 @@ export class OfflinePretrainer {
         cosineSimilarity(queryAdapted, neg)
       );
 
+      // Compute InfoNCE loss on adapted embeddings
+      // L = -log(exp(pos/τ) / (exp(pos/τ) + Σ exp(neg/τ)))
+      const scaledPos = posSim / this.config.temperature;
+      const scaledNegs = negSims.map((s) => s / this.config.temperature);
+
+      // Numerically stable softmax computation
+      const maxScaled = Math.max(scaledPos, ...scaledNegs);
+      const posExp = Math.exp(scaledPos - maxScaled);
+      const negExpSum = scaledNegs.reduce(
+        (sum, s) => sum + Math.exp(s - maxScaled),
+        0
+      );
+
+      // Loss = -log(p_pos) = log(Σ exp) - log(exp(pos))
+      // Σ exp includes positive term: posExp + negExpSum
+      const logSumExp = maxScaled + Math.log(posExp + negExpSum);
+      const loss = logSumExp - scaledPos;
+      totalLoss += loss;
+
+      // Compute Recall@5
       // Check if positive is in top-5
       // Count how many negatives have higher similarity than positive
       const higherNegs = negSims.filter((sim) => sim > posSim).length;
