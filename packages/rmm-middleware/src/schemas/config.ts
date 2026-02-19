@@ -9,6 +9,7 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { z } from "zod";
+import type { OracleConfig } from "@/retrievers/oracle-retriever";
 
 /**
  * Vector store interface for memory retrieval
@@ -32,6 +33,46 @@ export interface RmmVectorStore {
       metadata?: Record<string, unknown>;
     }>
   ) => Promise<void>;
+}
+
+// OracleConfig is defined in @/retrievers/oracle-retriever to avoid duplication
+// and ensure consistency with the LongMemEvalInstance type
+
+/**
+ * Evaluation configuration for benchmark testing
+ */
+export interface EvaluationConfig {
+  /**
+   * Whether to enable evaluation mode
+   */
+  enabled: boolean;
+
+  /**
+   * Dataset for evaluation (LongMemEval format)
+   */
+  dataset?: Array<{
+    question_id: string;
+    question_type: string;
+    question: string;
+    answer: string;
+    answer_session_ids: string[];
+    haystack_sessions: Array<Array<{ role: string; content: string }>>;
+  }>;
+
+  /**
+   * Recall@K values to compute
+   */
+  recallAtK?: number[];
+
+  /**
+   * Whether to compute session-level accuracy
+   */
+  computeSessionAccuracy?: boolean;
+
+  /**
+   * Whether to compute turn-level accuracy
+   */
+  computeTurnAccuracy?: boolean;
 }
 
 /**
@@ -110,6 +151,19 @@ export const rmmConfigSchema = z.object({
    * @default true
    */
   enabled: z.boolean().default(true),
+
+  /**
+   * Oracle retriever configuration for evaluation.
+   * When provided, uses ground-truth retrieval instead of semantic search.
+   */
+  oracleConfig: z.custom<OracleConfig>().optional(),
+
+  /**
+   * Evaluation configuration for benchmark testing.
+   */
+  evaluationConfig: z.custom<EvaluationConfig>().optional(),
 });
 
 export type RmmConfig = z.input<typeof rmmConfigSchema>;
+export type { EvaluationConfig };
+// OracleConfig is re-exported from @/retrievers/oracle-retriever
