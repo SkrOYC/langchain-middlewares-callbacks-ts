@@ -191,7 +191,7 @@ describe("Evaluation Metrics", () => {
       const retrieved = [
         ["doc-1", "doc-2"], // rank 1
         ["doc-2", "doc-1"], // rank 2
-        ["doc-3", "doc-1"], // not found
+        ["doc-3", "doc-1"], // rank 2
       ];
       const relevant = [["doc-1"], ["doc-1"], ["doc-1"]];
 

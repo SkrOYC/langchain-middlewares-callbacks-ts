@@ -391,7 +391,7 @@ export class OfflinePretrainer {
       history.push({
         epoch,
         loss: avgLoss,
-        rerankerState: { ...this.rerankerState },
+        rerankerState: this.deepCloneRerankerState(),
       });
     }
 
@@ -419,8 +419,6 @@ export class OfflinePretrainer {
     gradWQ: number[][];
     gradWM: number[][];
   } {
-    const _dim = this.rerankerState.weights.queryTransform.length;
-
     // Apply embedding adaptation: q' = q + W_q·q, m' = m + W_m·m
     const queryAdapted = this.applyTransformation(
       pair.query,
@@ -624,10 +622,28 @@ export class OfflinePretrainer {
   }
 
   /**
+   * Creates a deep clone of the current reranker state
+   * Used to capture state at each epoch for training history
+   */
+  private deepCloneRerankerState(): RerankerState {
+    return {
+      weights: {
+        queryTransform: this.rerankerState.weights.queryTransform.map((row) => [
+          ...row,
+        ]),
+        memoryTransform: this.rerankerState.weights.memoryTransform.map(
+          (row) => [...row]
+        ),
+      },
+      config: { ...this.rerankerState.config },
+    };
+  }
+
+  /**
    * Gets the current reranker state (pretrained weights)
    */
   getRerankerState(): RerankerState {
-    return { ...this.rerankerState };
+    return this.deepCloneRerankerState();
   }
 
   /**
@@ -641,19 +657,50 @@ export class OfflinePretrainer {
     recallAt5: number;
   }> {
     let totalLoss = 0;
+    let recallAt5Count = 0;
 
     for (const pair of pairs) {
+      // Compute loss
       totalLoss += InfoNCE(
         pair.query,
         pair.positive,
         pair.negatives,
         this.config.temperature
       );
+
+      // Compute Recall@5
+      // Apply transformation to query and all memories
+      const queryAdapted = this.applyTransformation(
+        pair.query,
+        this.rerankerState.weights.queryTransform
+      );
+      const posAdapted = this.applyTransformation(
+        pair.positive,
+        this.rerankerState.weights.memoryTransform
+      );
+      const negsAdapted = pair.negatives.map((neg) =>
+        this.applyTransformation(neg, this.rerankerState.weights.memoryTransform)
+      );
+
+      // Compute similarities
+      const posSim = cosineSimilarity(queryAdapted, posAdapted);
+      const negSims = negsAdapted.map((neg) =>
+        cosineSimilarity(queryAdapted, neg)
+      );
+
+      // Check if positive is in top-5
+      // Count how many negatives have higher similarity than positive
+      const higherNegs = negSims.filter((sim) => sim > posSim).length;
+
+      // Positive is in top-5 if fewer than 5 negatives are more similar
+      if (higherNegs < 5) {
+        recallAt5Count++;
+      }
     }
 
     return {
       meanLoss: totalLoss / pairs.length,
-      recallAt5: 0, // Placeholder - would compute actual Recall@5
+      recallAt5: pairs.length > 0 ? recallAt5Count / pairs.length : 0,
     };
   }
 }
