@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Embeddings } from "@langchain/core/embeddings";
+import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type {
   CitationRecord,
   RerankerState,
@@ -153,11 +154,10 @@ describe("wrapModelCall Hook", () => {
     let handlerCalled = false;
     const mockHandler = (_request: ModelRequest) => {
       handlerCalled = true;
-      return {
+      return new AIMessage({
         content:
           "I think you would enjoy hiking since you live in Colorado [0, 2]",
-        text: "I think you would enjoy hiking since you live in Colorado [0, 2]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
@@ -200,10 +200,9 @@ describe("wrapModelCall Hook", () => {
 
     const _capturedCitations: CitationRecord[] = [];
     const mockHandler = (_request: ModelRequest) => {
-      return {
+      return new AIMessage({
         content: "Based on your memories [0, 2, 4]",
-        text: "Based on your memories [0, 2, 4]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
@@ -255,10 +254,9 @@ describe("wrapModelCall Hook", () => {
     let augmentedMessages: BaseMessage[] = [];
     const mockHandler = (request: ModelRequest) => {
       augmentedMessages = request.messages;
-      return {
+      return new AIMessage({
         content: "Based on your memories [0]",
-        text: "Based on your memories [0]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
@@ -309,10 +307,9 @@ describe("wrapModelCall Hook", () => {
 
     const _capturedCitations: CitationRecord[] = [];
     const mockHandler = (_request: ModelRequest) => {
-      return {
+      return new AIMessage({
         content: "Based on your hiking experience [0, 2] and running [1]",
-        text: "Based on your hiking experience [0, 2] and running [1]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
@@ -364,10 +361,9 @@ describe("wrapModelCall Hook", () => {
     };
 
     const mockHandler = (_request: ModelRequest) => {
-      return {
+      return new AIMessage({
         content: "I don't have specific memories about that topic [NO_CITE]",
-        text: "I don't have specific memories about that topic [NO_CITE]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
@@ -415,10 +411,9 @@ describe("wrapModelCall Hook", () => {
 
     const mockHandler = (_request: ModelRequest) => {
       // Only cite memories 0 and 2
-      return {
+      return new AIMessage({
         content: "Based on memories [0, 2]",
-        text: "Based on memories [0, 2]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
@@ -482,10 +477,9 @@ describe("wrapModelCall Hook", () => {
     };
 
     const mockHandler = (_request: ModelRequest) => {
-      return {
+      return new AIMessage({
         content: "Based on memories [invalid, format]",
-        text: "Based on memories [invalid, format]",
-      };
+      });
     };
 
     const middleware = createRetrospectiveWrapModelCall({
