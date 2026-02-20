@@ -119,22 +119,7 @@ export interface BeforeAgentOptions {
    * If not provided, reflection is skipped
    */
   reflectionDeps?: {
-    vectorStore: {
-      similaritySearch: (query: string) => Promise<
-        Array<{
-          pageContent: string;
-          metadata: Record<string, unknown>;
-        }>
-      >;
-      addDocuments: (
-        documents: Array<{
-          pageContent: string;
-          metadata?: Record<string, unknown>;
-        }>
-      ) => Promise<undefined | string[]>;
-      /** Optional delete for merge operations (delete+add pattern) */
-      delete?: (params: { ids: string[] }) => Promise<void>;
-    };
+    vectorStore: VectorStoreInterface;
     extractSpeaker1: (dialogue: string) => string;
     /**
      * Prompt builder for SPEAKER_2 (assistant) memory extraction (Appendix D.1.1)
@@ -749,51 +734,47 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
   const reflectionConfig =
     options.reflectionConfig ?? DEFAULT_REFLECTION_CONFIG;
 
-  return {
-    name: "rmm-before-agent",
+  return async (
+    _state: BeforeAgentState,
+    runtime: BeforeAgentRuntime
+  ): Promise<BeforeAgentStateUpdate> => {
+    try {
+      const userId = options.userIdExtractor(runtime);
 
-    beforeAgent: async (
-      _state: BeforeAgentState,
-      runtime: BeforeAgentRuntime
-    ): Promise<BeforeAgentStateUpdate> => {
-      try {
-        const userId = options.userIdExtractor(runtime);
+      // Get store from runtime context (BaseStore provided by LangGraph)
+      const store = runtime.context?.store;
 
-        // Get store from runtime context (BaseStore provided by LangGraph)
-        const store = runtime.context?.store;
-
-        if (!store) {
-          logger.debug("No store available, using initialized weights");
-          const rerankerState = initializeRerankerState(options.rerankerConfig);
-          return createInitialStateUpdate(rerankerState);
-        }
-
-        // Create weight storage adapter per invocation
-        const weightStorage = createWeightStorage(store);
-
-        if (!userId) {
-          logger.warn("No userId provided, cannot load or save weights");
-        }
-
-        const rerankerState = await loadOrInitializeWeights(
-          userId,
-          weightStorage,
-          options.rerankerConfig
-        );
-
-        await checkAndStageReflection(
-          userId,
-          runtime,
-          reflectionConfig,
-          options,
-          rerankerState
-        );
-
+      if (!store) {
+        logger.debug("No store available, using initialized weights");
+        const rerankerState = initializeRerankerState(options.rerankerConfig);
         return createInitialStateUpdate(rerankerState);
-      } catch (error) {
-        return createErrorStateUpdate(error, options.rerankerConfig);
       }
-    },
+
+      // Create weight storage adapter per invocation
+      const weightStorage = createWeightStorage(store);
+
+      if (!userId) {
+        logger.warn("No userId provided, cannot load or save weights");
+      }
+
+      const rerankerState = await loadOrInitializeWeights(
+        userId,
+        weightStorage,
+        options.rerankerConfig
+      );
+
+      await checkAndStageReflection(
+        userId,
+        runtime,
+        reflectionConfig,
+        options,
+        rerankerState
+      );
+
+      return createInitialStateUpdate(rerankerState);
+    } catch (error) {
+      return createErrorStateUpdate(error, options.rerankerConfig);
+    }
   };
 }
 

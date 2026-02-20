@@ -89,7 +89,7 @@ describe("wrapModelCall Hook Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.wrapModelCall(request, mockHandler);
+    const result = await middleware(request, mockHandler);
 
     // Should call handler normally without memory injection
     expect(handlerCalled).toBe(true);
@@ -129,7 +129,7 @@ describe("wrapModelCall Hook Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.wrapModelCall(request, mockHandler);
+    const result = await middleware(request, mockHandler);
 
     // Should call handler normally without reranking
     expect(handlerCalled).toBe(true);
@@ -169,7 +169,7 @@ describe("wrapModelCall Hook Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.wrapModelCall(request, mockHandler);
+    const result = await middleware(request, mockHandler);
 
     // Should call handler directly when no memories
     expect(handlerCalled).toBe(true);
@@ -209,7 +209,7 @@ describe("wrapModelCall Hook Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.wrapModelCall(request, mockHandler);
+    const result = await middleware(request, mockHandler);
 
     // Should call handler directly when memories missing
     expect(handlerCalled).toBe(true);

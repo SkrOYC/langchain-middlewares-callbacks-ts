@@ -38,7 +38,7 @@ describe("beforeAgent Hook Error Scenarios", () => {
       context: { userId: "user1" },
     };
 
-    const result = await middleware.beforeAgent(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should still return initialized state despite store failure
     expect(result).toBeDefined();
@@ -95,7 +95,7 @@ describe("beforeAgent Hook Error Scenarios", () => {
       context: { userId: undefined },
     };
 
-    const result = await middleware.beforeAgent(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should initialize in-memory state when userId is missing
     expect(result).toBeDefined();
@@ -147,7 +147,7 @@ describe("beforeAgent Hook Error Scenarios", () => {
       context: { userId: "user1" },
     };
 
-    const result = await middleware.beforeAgent(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should initialize in-memory state when userIdExtractor throws
     expect(result).toBeDefined();

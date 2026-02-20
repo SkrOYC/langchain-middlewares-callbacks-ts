@@ -115,204 +115,200 @@ export function createRetrospectiveWrapModelCall(
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
 
-  return {
-    name: "rmm-wrap-model-call",
+  return async (
+    request: ModelRequest,
+    handler: (request: ModelRequest) => Promise<AIMessage>
+  ): Promise<AIMessage> => {
+    const { state, runtime } = request;
 
-    wrapModelCall: async (
-      request: ModelRequest,
-      handler: (request: ModelRequest) => Promise<AIMessage>
-    ): Promise<AIMessage> => {
-      const { state, runtime } = request;
+    // Lazy validate embedding dimension on first call
+    if (!validateOnce) {
+      const { createLazyValidator } = await import(
+        "@/utils/embedding-validation"
+      );
+      validateOnce = createLazyValidator(embeddings);
+    }
+    await validateOnce();
 
-      // Lazy validate embedding dimension on first call
-      if (!validateOnce) {
-        const { createLazyValidator } = await import(
-          "@/utils/embedding-validation"
-        );
-        validateOnce = createLazyValidator(embeddings);
-      }
-      await validateOnce();
+    const memories = state._retrievedMemories;
 
-      const memories = state._retrievedMemories;
+    // If no memories to process, call handler directly
+    if (!memories || memories.length === 0) {
+      return handler(request);
+    }
 
-      // If no memories to process, call handler directly
-      if (!memories || memories.length === 0) {
+    try {
+      const reranker = state._rerankerWeights;
+
+      // Validate reranker weights exist
+      if (
+        !(
+          reranker?.weights?.queryTransform &&
+          reranker.weights?.memoryTransform &&
+          reranker.config
+        )
+      ) {
+        logger.warn("Invalid reranker weights, skipping reranking");
         return handler(request);
       }
 
-      try {
-        const reranker = state._rerankerWeights;
-
-        // Validate reranker weights exist
-        if (
-          !(
-            reranker?.weights?.queryTransform &&
-            reranker.weights?.memoryTransform &&
-            reranker.config
-          )
-        ) {
-          logger.warn("Invalid reranker weights, skipping reranking");
-          return handler(request);
-        }
-
-        // Step 1: Extract query and embed it
-        const query = extractLastHumanMessage(state.messages);
-        if (!query) {
-          // No query, call handler normally
-          return handler(request);
-        }
-
-        const queryEmbedding = await options.embeddings.embedQuery(query);
-
-        // Step 2: Apply embedding adaptation (Equation 1)
-        // q' = q + W_q · q
-        const adaptedQuery = applyEmbeddingAdaptation(
-          queryEmbedding,
-          reranker.weights.queryTransform
-        );
-
-        // Step 3: Score memories via dot product
-        // s_i = q'^T · m'_i
-        const scoredMemories: ScoredMemory[] = memories.map((memory) => {
-          let rerankScore = 0;
-
-          if (memory.embedding && memory.embedding.length > 0) {
-            // Apply adaptation to memory embedding if available
-            const adaptedMemory = applyEmbeddingAdaptation(
-              memory.embedding,
-              reranker.weights.memoryTransform
-            );
-            rerankScore = computeRelevanceScore(adaptedQuery, adaptedMemory);
-          } else {
-            // Fallback to relevance score from retrieval
-            rerankScore = memory.relevanceScore ?? 0;
-          }
-
-          return {
-            ...memory,
-            rerankScore,
-          };
-        });
-
-        // Step 4: Gumbel-Softmax sampling (Equation 2)
-        // Select Top-M memories using stochastic sampling
-        const samplingResult = gumbelSoftmaxSample(
-          scoredMemories,
-          reranker.config.topM,
-          reranker.config.temperature
-        );
-
-        const selectedMemories = samplingResult.selectedMemories;
-        const allProbabilities = samplingResult.allProbabilities;
-        const selectedIndices = samplingResult.selectedIndices;
-
-        // Store embeddings and probabilities for exact REINFORCE in afterModel
-        const ctx = runtime.context;
-
-        // Store original query embedding
-        ctx._originalQuery = queryEmbedding;
-
-        // Store adapted query embedding (q')
-        ctx._adaptedQuery = adaptedQuery;
-
-        // Store all original memory embeddings for K retrieved memories
-        // This requires re-applying adaptation to memories that may not have embeddings
-        const originalMemEmbeddings: number[][] = [];
-        const adaptedMemEmbeddings: number[][] = [];
-
-        for (const memory of memories) {
-          if (memory.embedding && memory.embedding.length > 0) {
-            // Memory has embedding, store original
-            originalMemEmbeddings.push(memory.embedding);
-
-            // Compute adapted embedding
-            const adapted = applyEmbeddingAdaptation(
-              memory.embedding,
-              reranker.weights.memoryTransform
-            );
-            adaptedMemEmbeddings.push(adapted);
-          } else {
-            // Memory doesn't have embedding - this shouldn't happen for exact REINFORCE
-            // Create zero embedding as placeholder
-            logger.warn(
-              `Memory ${memory.id} missing embedding, using zero vector.`
-            );
-            const zeroEmbedding = new Array(embeddingDimension).fill(0);
-            originalMemEmbeddings.push(zeroEmbedding);
-
-            const adapted = applyEmbeddingAdaptation(
-              zeroEmbedding,
-              reranker.weights.memoryTransform
-            );
-            adaptedMemEmbeddings.push(adapted);
-          }
-        }
-
-        ctx._originalMemoryEmbeddings = originalMemEmbeddings;
-        ctx._adaptedMemoryEmbeddings = adaptedMemEmbeddings;
-
-        // Store sampling probabilities for all K memories
-        ctx._samplingProbabilities = allProbabilities;
-
-        // Store selected indices
-        ctx._selectedIndices = selectedIndices;
-
-        // Step 5: Create ephemeral HumanMessage with citation prompt and memories
-        // Per Appendix D.2: Explicit instructions for citing useful memories
-        // Per Appendix F.8: Use HumanMessage, NOT system message
-        const promptContent = formatCitationPromptContent(
-          query,
-          selectedMemories
-        );
-        const ephemeralMessage = new HumanMessage({
-          content: promptContent,
-        });
-
-        // Step 6: Call handler with augmented messages
-        const augmentedMessages = [...state.messages, ephemeralMessage];
-        const response = await handler({
-          ...request,
-          messages: augmentedMessages,
-        });
-
-        // Step 7: Extract citations from response
-        // Per Appendix D.2: [0, 2] or [NO_CITE] format
-        // Extended to all K memories for exact REINFORCE
-        // Handle both string and array content types from AIMessage
-        const responseContent = (() => {
-          if (typeof response.content === "string") {
-            return response.content;
-          }
-          if (Array.isArray(response.content)) {
-            return response.content
-              .filter((c) => c.type === "text")
-              .map((c) => (c as { text: string }).text)
-              .join("");
-          }
-          return "";
-        })();
-        const citations = extractCitationsFromResponse(
-          responseContent,
-          selectedMemories,
-          memories,
-          selectedIndices
-        );
-
-        // Step 8: Store citations in runtime context for afterModel
-        // The afterModel hook will use these for RL weight updates
-        ctx._citations = citations;
-
-        return response;
-      } catch (error) {
-        // Graceful degradation: call handler normally on error
-        logger.warn(
-          "Error during reranking, calling handler normally:",
-          error instanceof Error ? error.message : String(error)
-        );
-
+      // Step 1: Extract query and embed it
+      const query = extractLastHumanMessage(state.messages);
+      if (!query) {
+        // No query, call handler normally
         return handler(request);
       }
-    },
+
+      const queryEmbedding = await options.embeddings.embedQuery(query);
+
+      // Step 2: Apply embedding adaptation (Equation 1)
+      // q' = q + W_q · q
+      const adaptedQuery = applyEmbeddingAdaptation(
+        queryEmbedding,
+        reranker.weights.queryTransform
+      );
+
+      // Step 3: Score memories via dot product
+      // s_i = q'^T · m'_i
+      const scoredMemories: ScoredMemory[] = memories.map((memory) => {
+        let rerankScore = 0;
+
+        if (memory.embedding && memory.embedding.length > 0) {
+          // Apply adaptation to memory embedding if available
+          const adaptedMemory = applyEmbeddingAdaptation(
+            memory.embedding,
+            reranker.weights.memoryTransform
+          );
+          rerankScore = computeRelevanceScore(adaptedQuery, adaptedMemory);
+        } else {
+          // Fallback to relevance score from retrieval
+          rerankScore = memory.relevanceScore ?? 0;
+        }
+
+        return {
+          ...memory,
+          rerankScore,
+        };
+      });
+
+      // Step 4: Gumbel-Softmax sampling (Equation 2)
+      // Select Top-M memories using stochastic sampling
+      const samplingResult = gumbelSoftmaxSample(
+        scoredMemories,
+        reranker.config.topM,
+        reranker.config.temperature
+      );
+
+      const selectedMemories = samplingResult.selectedMemories;
+      const allProbabilities = samplingResult.allProbabilities;
+      const selectedIndices = samplingResult.selectedIndices;
+
+      // Store embeddings and probabilities for exact REINFORCE in afterModel
+      const ctx = runtime.context;
+
+      // Store original query embedding
+      ctx._originalQuery = queryEmbedding;
+
+      // Store adapted query embedding (q')
+      ctx._adaptedQuery = adaptedQuery;
+
+      // Store all original memory embeddings for K retrieved memories
+      // This requires re-applying adaptation to memories that may not have embeddings
+      const originalMemEmbeddings: number[][] = [];
+      const adaptedMemEmbeddings: number[][] = [];
+
+      for (const memory of memories) {
+        if (memory.embedding && memory.embedding.length > 0) {
+          // Memory has embedding, store original
+          originalMemEmbeddings.push(memory.embedding);
+
+          // Compute adapted embedding
+          const adapted = applyEmbeddingAdaptation(
+            memory.embedding,
+            reranker.weights.memoryTransform
+          );
+          adaptedMemEmbeddings.push(adapted);
+        } else {
+          // Memory doesn't have embedding - this shouldn't happen for exact REINFORCE
+          // Create zero embedding as placeholder
+          logger.warn(
+            `Memory ${memory.id} missing embedding, using zero vector.`
+          );
+          const zeroEmbedding = new Array(embeddingDimension).fill(0);
+          originalMemEmbeddings.push(zeroEmbedding);
+
+          const adapted = applyEmbeddingAdaptation(
+            zeroEmbedding,
+            reranker.weights.memoryTransform
+          );
+          adaptedMemEmbeddings.push(adapted);
+        }
+      }
+
+      ctx._originalMemoryEmbeddings = originalMemEmbeddings;
+      ctx._adaptedMemoryEmbeddings = adaptedMemEmbeddings;
+
+      // Store sampling probabilities for all K memories
+      ctx._samplingProbabilities = allProbabilities;
+
+      // Store selected indices
+      ctx._selectedIndices = selectedIndices;
+
+      // Step 5: Create ephemeral HumanMessage with citation prompt and memories
+      // Per Appendix D.2: Explicit instructions for citing useful memories
+      // Per Appendix F.8: Use HumanMessage, NOT system message
+      const promptContent = formatCitationPromptContent(
+        query,
+        selectedMemories
+      );
+      const ephemeralMessage = new HumanMessage({
+        content: promptContent,
+      });
+
+      // Step 6: Call handler with augmented messages
+      const augmentedMessages = [...state.messages, ephemeralMessage];
+      const response = await handler({
+        ...request,
+        messages: augmentedMessages,
+      });
+
+      // Step 7: Extract citations from response
+      // Per Appendix D.2: [0, 2] or [NO_CITE] format
+      // Extended to all K memories for exact REINFORCE
+      // Handle both string and array content types from AIMessage
+      const responseContent = (() => {
+        if (typeof response.content === "string") {
+          return response.content;
+        }
+        if (Array.isArray(response.content)) {
+          return response.content
+            .filter((c) => c.type === "text")
+            .map((c) => (c as { text: string }).text)
+            .join("");
+        }
+        return "";
+      })();
+      const citations = extractCitationsFromResponse(
+        responseContent,
+        selectedMemories,
+        memories,
+        selectedIndices
+      );
+
+      // Step 8: Store citations in runtime context for afterModel
+      // The afterModel hook will use these for RL weight updates
+      ctx._citations = citations;
+
+      return response;
+    } catch (error) {
+      // Graceful degradation: call handler normally on error
+      logger.warn(
+        "Error during reranking, calling handler normally:",
+        error instanceof Error ? error.message : String(error)
+      );
+
+      return handler(request);
+    }
   };
 }
 

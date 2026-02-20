@@ -58,9 +58,9 @@ describe("beforeModel Hook Dimension Validation", () => {
       _turnCountInSession: 0,
     };
 
-    await expect(
-      middleware.beforeModel(state, { context: {} })
-    ).rejects.toThrow("Embedding dimension mismatch");
+    await expect(middleware(state, { context: {} })).rejects.toThrow(
+      "Embedding dimension mismatch"
+    );
   });
 
   test("should throw ConfigurationError when embeddings dimension is too large", async () => {
@@ -109,9 +109,9 @@ describe("beforeModel Hook Dimension Validation", () => {
       _turnCountInSession: 0,
     };
 
-    await expect(
-      middleware.beforeModel(state, { context: {} })
-    ).rejects.toThrow("Embedding dimension mismatch");
+    await expect(middleware(state, { context: {} })).rejects.toThrow(
+      "Embedding dimension mismatch"
+    );
   });
 
   test("should throw ConfigurationError with expected 1536 dimension in error message", async () => {
@@ -160,9 +160,7 @@ describe("beforeModel Hook Dimension Validation", () => {
       _turnCountInSession: 0,
     };
 
-    await expect(
-      middleware.beforeModel(state, { context: {} })
-    ).rejects.toThrow("1536");
+    await expect(middleware(state, { context: {} })).rejects.toThrow("1536");
   });
 
   test("should throw ConfigurationError when actual dimension is included in error message", async () => {
@@ -211,9 +209,7 @@ describe("beforeModel Hook Dimension Validation", () => {
       _turnCountInSession: 0,
     };
 
-    await expect(
-      middleware.beforeModel(state, { context: {} })
-    ).rejects.toThrow("2048");
+    await expect(middleware(state, { context: {} })).rejects.toThrow("2048");
   });
 
   test("should initialize successfully with correct 1536 dimension", async () => {
@@ -260,9 +256,7 @@ describe("beforeModel Hook Dimension Validation", () => {
       _turnCountInSession: 0,
     };
 
-    await expect(
-      middleware.beforeModel(state, { context: {} })
-    ).resolves.toBeDefined();
+    await expect(middleware(state, { context: {} })).resolves.toBeDefined();
   });
 
   test("should validate only once across multiple calls", async () => {
@@ -317,9 +311,10 @@ describe("beforeModel Hook Dimension Validation", () => {
     };
 
     // Call hook multiple times
-    await middleware.beforeModel(state, { context: {} });
-    await middleware.beforeModel(state, { context: {} });
-    await middleware.beforeModel(state, { context: {} });
+    // Call hook multiple times
+    await middleware(state, { context: {} });
+    await middleware(state, { context: {} });
+    await middleware(state, { context: {} });
 
     // Validation should only happen once (on first call)
     expect(validationCount).toBe(1);

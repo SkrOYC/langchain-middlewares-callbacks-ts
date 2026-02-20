@@ -94,7 +94,7 @@ describe("afterModel Hook Storage Error Scenarios", () => {
       store: failingStore,
     });
 
-    const result = await middleware.afterModel(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should still return valid state despite load failure
     expect(result).toBeDefined();
@@ -121,7 +121,7 @@ describe("afterModel Hook Storage Error Scenarios", () => {
     // Set session end to trigger save
     runtime.context.isSessionEnd = true;
 
-    const result = await middleware.afterModel(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should still return valid state despite save failure
     expect(result).toBeDefined();
@@ -148,7 +148,7 @@ describe("afterModel Hook Storage Error Scenarios", () => {
     // Set session end to trigger weight save
     runtime.context.isSessionEnd = true;
 
-    const result = await middleware.afterModel(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should still return valid state despite weight save failure
     expect(result).toBeDefined();
@@ -182,7 +182,7 @@ describe("afterModel Hook Storage Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.afterModel(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should skip update when userId missing
     expect(result).toBeDefined();
@@ -207,7 +207,7 @@ describe("afterModel Hook Storage Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.afterModel(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should skip update when store missing
     expect(result).toBeDefined();
@@ -243,7 +243,7 @@ describe("afterModel Hook Storage Error Scenarios", () => {
       },
     };
 
-    const result = await middleware.afterModel(sampleState, runtime);
+    const result = await middleware(sampleState, runtime);
 
     // Should skip update when no citations
     expect(result).toBeDefined();

@@ -98,7 +98,7 @@ describe("beforeModel Hook", () => {
       },
     };
 
-    const result = await middleware.beforeModel(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result).not.toBeNull();
   });
@@ -155,7 +155,7 @@ describe("beforeModel Hook", () => {
       },
     };
 
-    const result = await middleware.beforeModel(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result._retrievedMemories).toBeDefined();
     expect(result._retrievedMemories?.length).toBe(2);
@@ -207,7 +207,7 @@ describe("beforeModel Hook", () => {
       },
     };
 
-    const result = await middleware.beforeModel(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result._retrievedMemories).toBeDefined();
     expect(result._retrievedMemories?.length).toBe(1);
@@ -248,7 +248,7 @@ describe("beforeModel Hook", () => {
 
     // Initial state has _turnCountInSession = 0
     const stateWithCounter = { ...sampleState, _turnCountInSession: 5 };
-    const result = await middleware.beforeModel(stateWithCounter, mockRuntime);
+    const result = await middleware(stateWithCounter, mockRuntime);
 
     expect(result._turnCountInSession).toBe(6);
   });
@@ -290,7 +290,7 @@ describe("beforeModel Hook", () => {
       messages: createTestMessages([{ type: "ai", content: "Hello!" }]),
     };
 
-    const result = await middleware.beforeModel(emptyQueryState, mockRuntime);
+    const result = await middleware(emptyQueryState, mockRuntime);
 
     expect(vectorStoreCalled).toBe(false);
     // When no query is found, existing memories should be preserved (empty array if none)
@@ -362,7 +362,7 @@ describe("beforeModel Hook", () => {
       },
     };
 
-    const result = await middleware.beforeModel(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result._retrievedMemories).toBeDefined();
     expect(result._retrievedMemories?.length).toBe(2);
@@ -405,7 +405,7 @@ describe("beforeModel Hook", () => {
     };
 
     // Should not throw, should return with empty memories
-    const result = await middleware.beforeModel(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result).not.toBeNull();
     expect(result._turnCountInSession).toBe(1);

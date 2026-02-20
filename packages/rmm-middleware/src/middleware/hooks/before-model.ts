@@ -179,96 +179,92 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
 
-  return {
-    name: "rmm-before-model",
+  return async (
+    state: RmmMiddlewareState & { messages: BaseMessage[] },
+    _runtime: Runtime<RmmRuntimeContext>
+  ): Promise<BeforeModelStateUpdate> => {
+    // Lazy validate embedding dimension on first call
+    if (!validateOnce) {
+      const { createLazyValidator } = await import(
+        "@/utils/embedding-validation"
+      );
+      validateOnce = createLazyValidator(embeddings);
+    }
+    await validateOnce();
 
-    beforeModel: async (
-      state: RmmMiddlewareState & { messages: BaseMessage[] },
-      _runtime: Runtime<RmmRuntimeContext>
-    ): Promise<BeforeModelStateUpdate> => {
-      // Lazy validate embedding dimension on first call
-      if (!validateOnce) {
-        const { createLazyValidator } = await import(
-          "@/utils/embedding-validation"
-        );
-        validateOnce = createLazyValidator(embeddings);
-      }
-      await validateOnce();
+    // Validate reranker weights have required properties
+    const weights = state._rerankerWeights;
+    if (!hasValidRerankerWeights(weights)) {
+      logger.warn("Invalid reranker weights, skipping retrieval");
+      // Preserve existing state
+      return {
+        _retrievedMemories: state._retrievedMemories ?? [],
+        _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
+      };
+    }
 
-      // Validate reranker weights have required properties
-      const weights = state._rerankerWeights;
-      if (!hasValidRerankerWeights(weights)) {
-        logger.warn("Invalid reranker weights, skipping retrieval");
-        // Preserve existing state
-        return {
-          _retrievedMemories: state._retrievedMemories ?? [],
-          _turnCountInSession: (state._turnCountInSession ?? 0) + 1,
-        };
-      }
+    // Preserve existing retrieved memories in case of error
+    // Use shallow clone to prevent mutation of source arrays
+    const existingMemories =
+      state._retrievedMemories?.map((m) => ({ ...m })) ?? [];
 
-      // Preserve existing retrieved memories in case of error
-      // Use shallow clone to prevent mutation of source arrays
-      const existingMemories =
-        state._retrievedMemories?.map((m) => ({ ...m })) ?? [];
+    // Calculate turn counter increment (used in all paths)
+    const newTurnCount = (state._turnCountInSession ?? 0) + 1;
 
-      // Calculate turn counter increment (used in all paths)
-      const newTurnCount = (state._turnCountInSession ?? 0) + 1;
+    try {
+      // Step 1: Extract query from last human message
+      const query = extractLastHumanMessage(state.messages);
 
-      try {
-        // Step 1: Extract query from last human message
-        const query = extractLastHumanMessage(state.messages);
-
-        // If no human message found, skip retrieval
-        // Still increment turn counter and preserve existing memories
-        if (!query) {
-          return {
-            _retrievedMemories: existingMemories,
-            _turnCountInSession: newTurnCount,
-          };
-        }
-
-        // Step 2: Retrieve Top-K memories from VectorStore
-        const vs = options.vectorStore;
-        const retrievedDocs = await vs.similaritySearch(query, topK);
-
-        // Step 3: Transform to RetrievedMemory format
-        const retrievedMemories = transformDocsToMemories(
-          retrievedDocs,
-          existingMemories
-        );
-
-        // Step 4: Populate embeddings for reranking (Equation 1: m'_i = m_i + W_m·m_i)
-        // VectorStore.similaritySearch doesn't return embeddings, so we re-embed
-        // each memory's topicSummary using the embeddings model.
-        const embeddingsSuccess = await populateMemoryEmbeddings(
-          retrievedMemories,
-          embeddings
-        );
-
-        if (!embeddingsSuccess) {
-          logger.warn(
-            "Failed to embed memories, reranking will use relevance scores"
-          );
-        }
-
-        return {
-          _retrievedMemories: retrievedMemories,
-          _turnCountInSession: newTurnCount,
-        };
-      } catch (error) {
-        // Graceful degradation: continue without retrieval on error
-        logger.warn(
-          "Error during memory retrieval, continuing:",
-          error instanceof Error ? error.message : String(error)
-        );
-
-        // Preserve existing memories and increment turn counter
+      // If no human message found, skip retrieval
+      // Still increment turn counter and preserve existing memories
+      if (!query) {
         return {
           _retrievedMemories: existingMemories,
           _turnCountInSession: newTurnCount,
         };
       }
-    },
+
+      // Step 2: Retrieve Top-K memories from VectorStore
+      const vs = options.vectorStore;
+      const retrievedDocs = await vs.similaritySearch(query, topK);
+
+      // Step 3: Transform to RetrievedMemory format
+      const retrievedMemories = transformDocsToMemories(
+        retrievedDocs,
+        existingMemories
+      );
+
+      // Step 4: Populate embeddings for reranking (Equation 1: m'_i = m_i + W_m·m_i)
+      // VectorStore.similaritySearch doesn't return embeddings, so we re-embed
+      // each memory's topicSummary using the embeddings model.
+      const embeddingsSuccess = await populateMemoryEmbeddings(
+        retrievedMemories,
+        embeddings
+      );
+
+      if (!embeddingsSuccess) {
+        logger.warn(
+          "Failed to embed memories, reranking will use relevance scores"
+        );
+      }
+
+      return {
+        _retrievedMemories: retrievedMemories,
+        _turnCountInSession: newTurnCount,
+      };
+    } catch (error) {
+      // Graceful degradation: continue without retrieval on error
+      logger.warn(
+        "Error during memory retrieval, continuing:",
+        error instanceof Error ? error.message : String(error)
+      );
+
+      // Preserve existing memories and increment turn counter
+      return {
+        _retrievedMemories: existingMemories,
+        _turnCountInSession: newTurnCount,
+      };
+    }
   };
 }
 

@@ -176,7 +176,7 @@ describe("wrapModelCall Hook", () => {
       runtime: mockRuntime,
     };
 
-    const result = await middleware.wrapModelCall(request, mockHandler);
+    const result = await middleware(request, mockHandler);
 
     expect(handlerCalled).toBe(true);
     expect(result).toBeDefined();
@@ -224,7 +224,7 @@ describe("wrapModelCall Hook", () => {
 
     // Run multiple times to test stochasticity
     for (let i = 0; i < 10; i++) {
-      await middleware.wrapModelCall(request, mockHandler);
+      await middleware(request, mockHandler);
     }
 
     // Verify citations were captured and stored
@@ -276,7 +276,7 @@ describe("wrapModelCall Hook", () => {
       runtime: mockRuntime,
     };
 
-    await middleware.wrapModelCall(request, mockHandler);
+    await middleware(request, mockHandler);
 
     // Should have added one message (the ephemeral HumanMessage)
     expect(augmentedMessages.length).toBe(initialMessages.length + 1);
@@ -329,7 +329,7 @@ describe("wrapModelCall Hook", () => {
       runtime: mockRuntime,
     };
 
-    await middleware.wrapModelCall(request, mockHandler);
+    await middleware(request, mockHandler);
 
     // Citations should be stored in runtime.context._citations
     expect(mockRuntime.context._citations).toBeDefined();
@@ -383,7 +383,7 @@ describe("wrapModelCall Hook", () => {
       runtime: mockRuntime,
     };
 
-    await middleware.wrapModelCall(request, mockHandler);
+    await middleware(request, mockHandler);
 
     expect(mockRuntime.context._citations).toBeDefined();
     // All memories should get -1 reward when [NO_CITE]
@@ -433,7 +433,7 @@ describe("wrapModelCall Hook", () => {
       runtime: mockRuntime,
     };
 
-    await middleware.wrapModelCall(request, mockHandler);
+    await middleware(request, mockHandler);
 
     expect(mockRuntime.context._citations).toBeDefined();
     expect(mockRuntime.context._citations?.length).toBe(sampleMemories.length);
@@ -500,7 +500,7 @@ describe("wrapModelCall Hook", () => {
     };
 
     // Should not throw on malformed citations
-    await middleware.wrapModelCall(request, mockHandler);
+    await middleware(request, mockHandler);
 
     // Empty citations array for malformed format
     expect(mockRuntime.context._citations).toEqual([]);
