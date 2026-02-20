@@ -1,10 +1,7 @@
 import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
-import {
-  createEmptyMessageBuffer,
-  type MessageBuffer,
-  MessageBufferSchema,
-} from "@/schemas/index";
+import { createEmptyMessageBuffer, type MessageBuffer } from "@/schemas/index";
 import { getLogger } from "@/utils/logger";
+import { parseMessageBuffer } from "@/utils/validation";
 
 const logger = getLogger("message-buffer-storage");
 
@@ -126,14 +123,11 @@ export function createMessageBufferStorage(
           return createEmptyMessageBuffer();
         }
 
-        const parseResult = MessageBufferSchema.safeParse(item.value);
-
-        if (!parseResult.success) {
+        try {
+          return parseMessageBuffer(item.value);
+        } catch {
           return createEmptyMessageBuffer();
         }
-
-        // Messages are already StoredMessage[] - return directly
-        return parseResult.data;
       } catch (error) {
         logger.warn(
           "Error loading buffer, returning empty:",
@@ -165,19 +159,18 @@ export function createMessageBufferStorage(
           return null;
         }
 
-        const parseResult = MessageBufferSchema.safeParse(item.value);
+        try {
+          const buffer = parseMessageBuffer(item.value);
 
-        if (!parseResult.success) {
+          // Return null if buffer is empty (already cleared)
+          if (buffer.messages.length === 0) {
+            return null;
+          }
+
+          return buffer;
+        } catch {
           return null;
         }
-
-        // Return null if buffer is empty (already cleared)
-        if (parseResult.data.messages.length === 0) {
-          return null;
-        }
-
-        // Messages are already StoredMessage[] - return directly
-        return parseResult.data;
       } catch (error) {
         logger.warn(
           "Error loading staging buffer, returning null:",
@@ -191,14 +184,18 @@ export function createMessageBufferStorage(
       try {
         const namespace = buildNamespace(userId, "main");
 
-        // Messages are already StoredMessage[] - validate and save directly
-        const validationResult = MessageBufferSchema.safeParse(buffer);
-        if (!validationResult.success) {
-          logger.warn("Buffer validation failed:", validationResult.error);
+        // Validate the buffer using parseMessageBuffer
+        let validatedBuffer: MessageBuffer;
+        try {
+          validatedBuffer = parseMessageBuffer(buffer);
+        } catch (e) {
+          logger.warn(
+            `Buffer validation failed: ${e instanceof Error ? e.message : String(e)}`
+          );
           return false;
         }
 
-        await store.put(namespace, NAMESPACE_KEY, validationResult.data);
+        await store.put(namespace, NAMESPACE_KEY, validatedBuffer);
         return true;
       } catch (error) {
         logger.warn(
@@ -213,17 +210,19 @@ export function createMessageBufferStorage(
       try {
         const namespace = buildNamespace(userId, "staging");
 
-        // Messages are already StoredMessage[] - validate and save directly
-        const validationResult = MessageBufferSchema.safeParse(buffer);
-        if (!validationResult.success) {
+        // Validate the buffer using parseMessageBuffer
+        let validatedBuffer: MessageBuffer;
+        try {
+          validatedBuffer = parseMessageBuffer(buffer);
+        } catch (e) {
           logger.warn(
             "Staging buffer validation failed:",
-            validationResult.error
+            e instanceof Error ? e.message : String(e)
           );
           return false;
         }
 
-        await store.put(namespace, NAMESPACE_KEY, validationResult.data);
+        await store.put(namespace, NAMESPACE_KEY, validatedBuffer);
         return true;
       } catch (error) {
         logger.warn(

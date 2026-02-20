@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import type { SerializedMessage } from "@/schemas";
+import { createSerializedMessage } from "@/tests/helpers/messages";
 import { createMockEmbeddings } from "@/tests/helpers/mock-embeddings";
 
 /**
@@ -32,14 +34,8 @@ describe("wrapModelCall Hook Dimension Validation", () => {
 
     const request = {
       messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Hello" },
-          lc_id: ["human"],
-          content: "Hello",
-          additional_kwargs: {},
-        },
-      ],
+        createSerializedMessage("human", "Hello"),
+      ] as SerializedMessage[],
       state: {
         _rerankerWeights: {
           weights: {
@@ -103,14 +99,8 @@ describe("wrapModelCall Hook Dimension Validation", () => {
 
     const request = {
       messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Hello" },
-          lc_id: ["human"],
-          content: "Hello",
-          additional_kwargs: {},
-        },
-      ],
+        createSerializedMessage("human", "Hello"),
+      ] as SerializedMessage[],
       state: {
         _rerankerWeights: {
           weights: {
@@ -174,14 +164,8 @@ describe("wrapModelCall Hook Dimension Validation", () => {
 
     const request = {
       messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Hello" },
-          lc_id: ["human"],
-          content: "Hello",
-          additional_kwargs: {},
-        },
-      ],
+        createSerializedMessage("human", "Hello"),
+      ] as SerializedMessage[],
       state: {
         _rerankerWeights: {
           weights: {
@@ -245,14 +229,8 @@ describe("wrapModelCall Hook Dimension Validation", () => {
 
     const request = {
       messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Hello" },
-          lc_id: ["human"],
-          content: "Hello",
-          additional_kwargs: {},
-        },
-      ],
+        createSerializedMessage("human", "Hello"),
+      ] as SerializedMessage[],
       state: {
         _rerankerWeights: {
           weights: {

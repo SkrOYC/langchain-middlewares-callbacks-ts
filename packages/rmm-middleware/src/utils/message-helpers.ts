@@ -2,7 +2,7 @@ import type { StoredMessage } from "@langchain/core/messages";
 
 /**
  * Checks if a message is a human message.
- * Handles both StoredMessage format (nested type) and flattened format (top-level type).
+ * Uses LangChain's StoredMessage format with type property and data.role.
  * @param message - The message to check
  * @returns true if the message is from a human user
  */
@@ -12,21 +12,9 @@ export function isHumanMessage(message: StoredMessage): boolean {
     return true;
   }
 
-  // Check for LangChain internal format (lc_id: ["human"])
-  if (Array.isArray(message.lc_id) && message.lc_id[0] === "human") {
+  // Check data.role for nested format
+  if (message.data?.role === "human") {
     return true;
-  }
-
-  // Check for LangChain serialized format (lc_serialized: { type: "human" })
-  if (
-    message.lc_serialized &&
-    typeof message.lc_serialized === "object" &&
-    message.lc_serialized !== null
-  ) {
-    const serialized = message.lc_serialized as { type: string };
-    if (serialized.type === "human") {
-      return true;
-    }
   }
 
   return false;

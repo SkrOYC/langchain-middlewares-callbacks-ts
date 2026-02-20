@@ -5,6 +5,7 @@
  * reproducing Table 1 results from the paper.
  */
 
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import {
   computeMeanReciprocalRank,
   computeRecallAtK,
@@ -15,7 +16,6 @@ import {
   type LongMemEvalTurn,
   parseSessionIndex,
 } from "@/retrievers/oracle-retriever";
-import type { RmmVectorStore } from "@/schemas/config";
 
 /**
  * Complete evaluation result for a retrieval run
@@ -50,7 +50,7 @@ export interface Table1Metrics {
  */
 export interface LongMemEvalEvaluatorConfig {
   dataset: LongMemEvalInstance[];
-  retriever: RmmVectorStore;
+  retriever: VectorStoreInterface;
 }
 
 /**
@@ -61,7 +61,7 @@ export interface LongMemEvalEvaluatorConfig {
  */
 export class LongMemEvalEvaluator {
   private readonly dataset: LongMemEvalInstance[];
-  private readonly retriever: RmmVectorStore;
+  private readonly retriever: VectorStoreInterface;
   private lastResults?: EvaluationResult;
 
   constructor(config: LongMemEvalEvaluatorConfig) {

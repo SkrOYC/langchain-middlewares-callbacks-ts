@@ -6,26 +6,6 @@ import { parseUpdateActions } from "@/middleware/prompts/update-memory";
 import type { MemoryEntry, RetrievedMemory } from "@/schemas/index";
 import { getLogger } from "@/utils/logger";
 
-/**
- * Minimal vector store interface for memory update operations.
- * Captures only the methods used by processMemoryUpdate, avoiding a
- * hard dependency on the full VectorStoreInterface from LangChain.
- */
-export interface MemoryVectorStore {
-  similaritySearch(
-    query: string,
-    k?: number
-  ): Promise<Array<{ pageContent: string; metadata: Record<string, unknown> }>>;
-  addDocuments(
-    documents: Array<{
-      pageContent: string;
-      metadata?: Record<string, unknown>;
-    }>
-  ): Promise<undefined | string[]>;
-  /** Optional delete for merge operations (delete+add pattern) */
-  delete?: (params: { ids: string[] }) => Promise<void>;
-}
-
 const logger = getLogger("memory-update");
 
 /**
@@ -111,20 +91,16 @@ export async function decideUpdateAction(
  */
 export async function processMemoryUpdate(
   memory: MemoryEntry,
-  vectorStore: MemoryVectorStore,
+  vectorStore: VectorStoreInterface,
   summarizationModel: BaseChatModel,
   updatePrompt: (historySummaries: string[], newSummary: string) => string
 ): Promise<void> {
-  // Cast to VectorStoreInterface for downstream functions that require it.
-  // MemoryVectorStore is structurally compatible with the subset they use.
-  const vs = vectorStore as unknown as VectorStoreInterface;
-
   // Step 1: Find similar memories in the memory bank
-  const similarMemories = await findSimilarMemories(memory, vs);
+  const similarMemories = await findSimilarMemories(memory, vectorStore);
 
   // Step 2: If no similar memories, directly add
   if (similarMemories.length === 0) {
-    await addMemory(memory, vs);
+    await addMemory(memory, vectorStore);
     return;
   }
 
@@ -142,7 +118,7 @@ export async function processMemoryUpdate(
   // Otherwise, we add the new memory exactly once (even if multiple Add
   // actions are returned due to parser quirks).
   if (actions.length === 0) {
-    await addMemory(memory, vs);
+    await addMemory(memory, vectorStore);
     return;
   }
 
@@ -161,12 +137,12 @@ export async function processMemoryUpdate(
         processedIndices.add(action.index);
         const targetMemory = similarMemories[action.index];
         if (targetMemory) {
-          await mergeMemory(targetMemory, action.merged_summary, vs);
+          await mergeMemory(targetMemory, action.merged_summary, vectorStore);
         }
       }
     }
   } else {
     // No Merge actions — add the memory once
-    await addMemory(memory, vs);
+    await addMemory(memory, vectorStore);
   }
 }

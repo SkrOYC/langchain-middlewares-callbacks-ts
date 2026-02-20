@@ -21,7 +21,7 @@ describe("afterAgent - UserId Extraction", () => {
       vectorStore: {
         similaritySearch: async () => [],
         addDocuments: async () => {
-          return await Promise.resolve();
+          return await Promise.resolve(undefined);
         },
       },
       enabled: true,
@@ -39,16 +39,13 @@ describe("afterAgent - UserId Extraction", () => {
     const state = {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Test message" },
-          lc_id: ["human"],
-          content: "Test message",
-          additional_kwargs: {},
+          type: "human",
+          data: { content: "Test message", role: "human", name: "" },
         },
       ],
     };
 
-    await middleware.afterAgent(state as any, runtime as any);
+    await middleware.afterAgent(state as never, runtime as never);
 
     // Should persist to "configurable-user-123" (configurable takes precedence)
     const buffer = await mockStore.get(
@@ -67,7 +64,7 @@ describe("afterAgent - UserId Extraction", () => {
       vectorStore: {
         similaritySearch: async () => [],
         addDocuments: async () => {
-          return await Promise.resolve();
+          return await Promise.resolve(undefined);
         },
       },
       enabled: true,
@@ -84,16 +81,13 @@ describe("afterAgent - UserId Extraction", () => {
     const state = {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Test message" },
-          lc_id: ["human"],
-          content: "Test message",
-          additional_kwargs: {},
+          type: "human",
+          data: { content: "Test message", role: "human", name: "" },
         },
       ],
     };
 
-    await middleware.afterAgent(state as any, runtime as any);
+    await middleware.afterAgent(state as never, runtime as never);
 
     // Should persist to "context-only-user-789"
     const buffer = await mockStore.get(
@@ -112,7 +106,7 @@ describe("afterAgent - UserId Extraction", () => {
       vectorStore: {
         similaritySearch: async () => [],
         addDocuments: async () => {
-          return await Promise.resolve();
+          return await Promise.resolve(undefined);
         },
       },
       enabled: true,
@@ -129,17 +123,17 @@ describe("afterAgent - UserId Extraction", () => {
     const state = {
       messages: [
         {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Test message" },
-          lc_id: ["human"],
-          content: "Test message",
-          additional_kwargs: {},
+          type: "human",
+          data: { content: "Test message", role: "human", name: "" },
         },
       ],
     };
 
     // Should not throw, should return early gracefully
-    const result = await middleware.afterAgent(state as any, runtime as any);
+    const result = await middleware.afterAgent(
+      state as never,
+      runtime as never
+    );
     expect(result).toEqual({});
   });
 });

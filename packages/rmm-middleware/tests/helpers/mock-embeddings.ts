@@ -1,4 +1,5 @@
 import type { Embeddings } from "@langchain/core/embeddings";
+import { AsyncCaller } from "@langchain/core/utils/async_caller";
 
 /**
  * Creates a mock Embeddings instance for testing
@@ -19,7 +20,7 @@ import type { Embeddings } from "@langchain/core/embeddings";
  */
 export function createMockEmbeddings(dimension = 1536): Embeddings {
   return {
-    caller: () => "mock-embeddings",
+    caller: new AsyncCaller({}),
     embedQuery(_text: string): Promise<number[]> {
       return Promise.resolve(new Array(dimension).fill(0));
     },
@@ -49,7 +50,7 @@ export function createMockEmbeddingsWithFailure(
   shouldFail = false
 ): Embeddings {
   return {
-    caller: () => "mock-embeddings-failing",
+    caller: new AsyncCaller({}),
     async embedQuery(_text: string): Promise<number[]> {
       if (shouldFail) {
         const error = new Error("embedQuery failed");

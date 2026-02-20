@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { RerankerState, RetrievedMemory } from "@/schemas/index";
+import type {
+  RerankerState,
+  RetrievedMemory,
+  SerializedMessage,
+} from "@/schemas/index";
 
 /**
  * Mock store interface for testing
@@ -128,17 +131,13 @@ function createMockEmbeddings(): Embeddings {
  * 6. Returns no-op middleware when disabled
  * 7. Creates functional middleware when enabled
  */
+import { createSerializedMessage } from "@/tests/helpers/messages";
+
 describe("rmmMiddleware Integration", () => {
   const sampleState = {
     messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "Hello, I need help with coding" },
-        lc_id: ["human"],
-        content: "Hello, I need help with coding",
-        additional_kwargs: {},
-      },
-    ] as BaseMessage[],
+      createSerializedMessage("human", "Hello, I need help with coding"),
+    ] as SerializedMessage[],
     _rerankerWeights: {
       weights: {
         queryTransform: {

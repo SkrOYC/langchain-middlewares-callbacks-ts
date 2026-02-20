@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { BaseMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import type { SerializedMessage } from "@/schemas";
 import { createFailingMockBaseStore } from "@/tests/fixtures/mock-base-store";
+import { createSerializedMessage } from "@/tests/helpers/messages";
 
 /**
  * Tests for beforeAgent hook error scenarios
@@ -16,14 +17,8 @@ describe("beforeAgent Hook Error Scenarios", () => {
   // Sample state for testing
   const sampleState = {
     messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "Hello" },
-        lc_id: ["human"],
-        content: "Hello",
-        additional_kwargs: {},
-      },
-    ] as BaseMessage[],
+      createSerializedMessage("human", "Hello"),
+    ] as SerializedMessage[],
   };
 
   test("should handle store get failure gracefully", async () => {

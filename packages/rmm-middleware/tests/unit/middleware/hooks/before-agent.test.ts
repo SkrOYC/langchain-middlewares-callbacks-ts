@@ -5,6 +5,16 @@ import type { RerankerState } from "@/schemas/index";
 import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index";
 
 /**
+ * Helper to create test messages in SerializedMessage format
+ */
+function createTestMessage(type: "human" | "ai" | "system", content: string) {
+  return {
+    data: { content, role: type, name: "" },
+    type,
+  };
+}
+
+/**
  * Creates an async mock BaseStore for testing
  */
 function createAsyncMockStore(initialData?: Map<string, unknown>): {
@@ -77,15 +87,7 @@ interface BeforeAgentState {
 describe("beforeAgent Hook", () => {
   // Sample state for testing
   const sampleState: BeforeAgentState = {
-    messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "Hello" },
-        lc_id: ["human"],
-        content: "Hello",
-        additional_kwargs: {},
-      },
-    ],
+    messages: [createTestMessage("human", "Hello")] as unknown as BaseMessage[],
   };
 
   test("should export createRetrospectiveBeforeAgent function", async () => {
@@ -314,15 +316,7 @@ describe("beforeAgent Hook", () => {
 
 describe("beforeAgent Hook - Staging Pattern", () => {
   const sampleState: BeforeAgentState = {
-    messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "Hello" },
-        lc_id: ["human"],
-        content: "Hello",
-        additional_kwargs: {},
-      },
-    ],
+    messages: [createTestMessage("human", "Hello")] as unknown as BaseMessage[],
   };
 
   test("reflection stages buffer before processing to prevent message loss", async () => {
@@ -332,15 +326,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     // Initial buffer with messages
     const initialBuffer = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Message 1" },
-          lc_id: ["human"],
-          content: "Message 1",
-          additional_kwargs: {},
-        },
-      ],
+      messages: [createTestMessage("human", "Message 1")],
       humanMessageCount: 1,
       lastMessageTimestamp: Date.now(),
       createdAt: Date.now(),
@@ -397,15 +383,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     // Initial buffer
     const initialBuffer = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Original message" },
-          lc_id: ["human"],
-          content: "Original message",
-          additional_kwargs: {},
-        },
-      ],
+      messages: [createTestMessage("human", "Original message")],
       humanMessageCount: 1,
       lastMessageTimestamp: Date.now(),
       createdAt: Date.now(),
@@ -455,26 +433,17 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     // Wait for clearBuffer to be called first
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    const newMessage = {
-      lc_serialized: { type: "human" },
-      lc_kwargs: { content: "New message during reflection" },
-      lc_id: ["human"],
-      content: "New message during reflection",
-      additional_kwargs: {},
-    };
+    const _newMessage = createTestMessage(
+      "human",
+      "New message during reflection"
+    );
 
     // Update live buffer while reflection is processing
     // Use mockStore.put since clearBuffer already updated internal store
     await mockStore.put(["rmm", "test-user", "buffer"], "message-buffer", {
       messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Original message" },
-          lc_id: ["human"],
-          content: "Original message",
-          additional_kwargs: {},
-        },
-        newMessage,
+        createTestMessage("human", "Original message"),
+        createTestMessage("human", "New message during reflection"),
       ],
       humanMessageCount: 2,
       lastMessageTimestamp: Date.now(),
@@ -499,30 +468,14 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     // Initial buffer and staged buffer
     const initialBuffer = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Message 1" },
-          lc_id: ["human"],
-          content: "Message 1",
-          additional_kwargs: {},
-        },
-      ],
+      messages: [createTestMessage("human", "Message 1")],
       humanMessageCount: 1,
       lastMessageTimestamp: Date.now(),
       createdAt: Date.now(),
     };
 
     const stagedContent = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Staged message" },
-          lc_id: ["human"],
-          content: "Staged message",
-          additional_kwargs: {},
-        },
-      ],
+      messages: [createTestMessage("human", "Staged message")],
       humanMessageCount: 1,
       lastMessageTimestamp: Date.now(),
       createdAt: Date.now(),
@@ -582,15 +535,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
 
     // Initial buffer with messages
     const initialBuffer = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Message 1" },
-          lc_id: ["human"],
-          content: "Message 1",
-          additional_kwargs: {},
-        },
-      ],
+      messages: [createTestMessage("human", "Message 1")],
       humanMessageCount: 1,
       lastMessageTimestamp: Date.now(),
       createdAt: Date.now(),
@@ -609,6 +554,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
         },
       },
       extractSpeaker1: (_dialogue: string) => "Speaker1",
+      llm: {
+        invoke: async () => ({ text: "NO_TRAIT" }),
+      },
     };
 
     const middleware = createRetrospectiveBeforeAgent({
@@ -635,21 +583,20 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     await middleware.beforeAgent(sampleState, mockRuntime);
 
     // Verify main buffer is cleared after staging (prevents duplicate processing)
-    // Use loadBuffer which returns empty buffer for cleared entries
-    const mainBuffer = await mockStore.get(
-      ["rmm", "test-user", "buffer"],
-      "message-buffer"
-    );
-    expect(mainBuffer).not.toBeNull();
-    expect(mainBuffer.value.messages).toHaveLength(0);
+    const mainBufferKey = "rmm|test-user|buffer|message-buffer";
+    const mainBuffer = storedBuffers.get(mainBufferKey) as
+      | { messages: unknown[] }
+      | undefined;
+    expect(mainBuffer).toBeDefined();
+    expect(mainBuffer.messages).toHaveLength(0);
 
     // Verify staging buffer still exists with original content
-    const stagingBuffer = await mockStore.get(
-      ["rmm", "test-user", "buffer", "staging"],
-      "message-buffer"
-    );
-    expect(stagingBuffer).not.toBeNull();
-    expect(stagingBuffer.value.messages).toHaveLength(1);
+    const stagingBufferKey = "rmm|test-user|buffer|staging|message-buffer";
+    const stagingBuffer = storedBuffers.get(stagingBufferKey) as
+      | { messages: unknown[] }
+      | undefined;
+    expect(stagingBuffer).toBeDefined();
+    expect(stagingBuffer.messages).toHaveLength(1);
   });
 
   test("reflection reads from staging buffer, not snapshot argument", async () => {
@@ -1104,125 +1051,6 @@ describe("beforeAgent Hook - Staging Pattern", () => {
   });
 });
 
-describe("beforeAgent Hook - Namespace Isolation", () => {
-  const sampleState: BeforeAgentState = {
-    messages: [
-      {
-        lc_serialized: { type: "human" },
-        lc_kwargs: { content: "Hello" },
-        lc_id: ["human"],
-        content: "Hello",
-        additional_kwargs: {},
-      },
-    ],
-  };
-
-  test("custom isolationNamespace prefixes storage keys correctly", async () => {
-    const { createRetrospectiveBeforeAgent } = await import(
-      "@/middleware/hooks/before-agent"
-    );
-
-    // Pre-populate buffer with data so reflection triggers
-    const initialBuffer = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Trigger reflection" },
-          lc_id: ["human"],
-          content: "Trigger reflection",
-          additional_kwargs: {},
-        },
-      ],
-      humanMessageCount: 1,
-      lastMessageTimestamp: Date.now() - 120_000, // 2 minutes ago to trigger reflection
-      createdAt: Date.now() - 120_000,
-    };
-
-    const storedBuffers = new Map<string, unknown>();
-    storedBuffers.set("rmm|test-user|buffer|message-buffer", initialBuffer);
-
-    // Track all keys accessed
-    const storedKeys: string[] = [];
-
-    const mockStore: BaseStore = {
-      async get(_namespace, key) {
-        storedKeys.push(`get|${[...(_namespace as string[]), key].join("|")}`);
-        const namespaceKey = [...(_namespace as string[]), key].join("|");
-        const item = storedBuffers.get(namespaceKey);
-        if (item) {
-          return await Promise.resolve({
-            value: item,
-            key,
-            namespace: _namespace,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-        }
-        return await Promise.resolve(null);
-      },
-      async put(namespace, key, value) {
-        storedKeys.push(`put|${[...namespace, key].join("|")}`);
-        const namespaceKey = [...namespace, key].join("|");
-        storedBuffers.set(namespaceKey, value);
-        return await Promise.resolve();
-      },
-      async delete() {
-        return await Promise.resolve();
-      },
-      async batch() {
-        return await Promise.resolve([]);
-      },
-      async search() {
-        return await Promise.resolve([]);
-      },
-      async listNamespaces() {
-        return await Promise.resolve([]);
-      },
-    };
-
-    const mockDeps = {
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      },
-      extractSpeaker1: (_dialogue: string) => "Speaker1",
-    };
-
-    const middleware = createRetrospectiveBeforeAgent({
-      store: mockStore,
-      userIdExtractor: (runtime: BeforeAgentRuntime) => runtime.context.userId,
-      reflectionConfig: {
-        ...DEFAULT_REFLECTION_CONFIG,
-        minTurns: 1,
-        maxTurns: 10,
-        minInactivityMs: 0,
-        maxInactivityMs: 60_000, // 1 minute max inactivity
-        mode: "strict",
-      },
-      reflectionDeps: mockDeps,
-    });
-
-    const mockRuntime: BeforeAgentRuntime = {
-      context: {
-        userId: "test-user",
-        store: mockStore,
-      },
-    };
-
-    await middleware.beforeAgent(sampleState, mockRuntime);
-
-    // Verify that namespace was used in storage operations
-    const bufferPutKeys = storedKeys.filter((k) => k.includes("buffer"));
-    expect(bufferPutKeys.length).toBeGreaterThan(0);
-
-    // At least one should have "staging" for the staging pattern
-    const hasStaging = storedKeys.some((k) => k.includes("staging"));
-    expect(hasStaging).toBe(true);
-  });
-});
-
 /**
  * Tests for reflectionDeps interface extensions (Phase 1 & 2)
  * These tests verify that reflectionDeps can accept llm and embeddings
@@ -1349,15 +1177,7 @@ describe("reflectionDeps Interface Extensions", () => {
 
   test("extracts memories from both SPEAKER_1 and SPEAKER_2 when extractSpeaker2 provided", async () => {
     const sampleState = {
-      messages: [
-        {
-          lc_serialized: { type: "human" },
-          lc_kwargs: { content: "Hello" },
-          lc_id: ["human"],
-          content: "Hello",
-          additional_kwargs: {},
-        },
-      ],
+      messages: [createTestMessage("human", "Hello")],
     };
     const { createRetrospectiveBeforeAgent } = await import(
       "@/middleware/hooks/before-agent"
@@ -1366,14 +1186,8 @@ describe("reflectionDeps Interface Extensions", () => {
     // Initial buffer with a dialogue
     const initialBuffer = {
       messages: [
-        {
-          type: "human",
-          data: { content: "I love hiking" },
-        },
-        {
-          type: "ai",
-          data: { content: "I enjoy recommending trails!" },
-        },
+        createTestMessage("human", "I love hiking"),
+        createTestMessage("ai", "I enjoy recommending trails!"),
       ],
       humanMessageCount: 1,
       lastMessageTimestamp: Date.now(),

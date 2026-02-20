@@ -17,10 +17,10 @@
  * Δφ = η·(R-b)·∇_φ log P(M_M|q, M_K; φ)
  */
 
+import type { BaseMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { Runtime } from "langchain";
 import type {
-  BaseMessage,
   CitationRecord,
   GradientSample,
   RerankerState,

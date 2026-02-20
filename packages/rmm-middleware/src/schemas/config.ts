@@ -8,35 +8,12 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import { z } from "zod";
 import type {
   LongMemEvalInstance,
   OracleConfig,
 } from "@/retrievers/oracle-retriever";
-
-/**
- * Vector store interface for memory retrieval
- */
-export interface RmmVectorStore {
-  /**
-   * Optional embeddings instance used internally by the vector store.
-   * Used for compatibility validation with the middleware's embeddings config.
-   */
-  embeddings?: Embeddings;
-
-  similaritySearch: (
-    query: string,
-    k?: number
-  ) => Promise<
-    Array<{ pageContent: string; metadata: Record<string, unknown> }>
-  >;
-  addDocuments: (
-    documents: Array<{
-      pageContent: string;
-      metadata?: Record<string, unknown>;
-    }>
-  ) => Promise<undefined | string[]>;
-}
 
 // OracleConfig is defined in @/retrievers/oracle-retriever to avoid duplication
 // and ensure consistency with the LongMemEvalInstance type
@@ -82,7 +59,7 @@ export const rmmConfigSchema = z.object({
    * Vector store for memory retrieval and storage.
    * Required for retrospective reflection (memory retrieval).
    */
-  vectorStore: z.custom<RmmVectorStore>().optional(),
+  vectorStore: z.custom<VectorStoreInterface>().optional(),
 
   /**
    * Embeddings instance for encoding queries and memories.

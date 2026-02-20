@@ -11,6 +11,25 @@ import {
   HumanMessage,
   SystemMessage,
 } from "@langchain/core/messages";
+import type { SerializedMessage } from "@/schemas";
+
+/**
+ * Creates a SerializedMessage (plain object) for testing
+ * Uses the new LangChain StoredMessage format: { data: {...}, type: string }
+ */
+export function createSerializedMessage(
+  type: "human" | "ai" | "system" | "tool",
+  content: string
+): SerializedMessage {
+  return {
+    data: {
+      content,
+      role: type,
+      name: "",
+    },
+    type,
+  };
+}
 
 /**
  * Creates a HumanMessage for testing
@@ -51,4 +70,13 @@ export function createTestMessages(
         throw new Error(`Unknown message type: ${msg.type}`);
     }
   });
+}
+
+/**
+ * Creates an array of SerializedMessages for testing
+ */
+export function createTestSerializedMessages(
+  messages: Array<{ type: "human" | "ai" | "system" | "tool"; content: string }>
+): SerializedMessage[] {
+  return messages.map((msg) => createSerializedMessage(msg.type, msg.content));
 }
