@@ -9,14 +9,15 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import {
   type AfterModelHook,
   type BeforeAgentHook,
   type BeforeModelHook,
   createMiddleware,
-  type Runtime,
   type WrapModelCallHook,
 } from "langchain";
+import * as z from "zod";
 import {
   type AfterAgentDependencies,
   afterAgent,
@@ -46,10 +47,7 @@ import {
   type RmmVectorStore,
   rmmConfigSchema,
 } from "@/schemas/config.js";
-import {
-  DEFAULT_REFLECTION_CONFIG,
-  type RmmRuntimeContext,
-} from "@/schemas/index.js";
+import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
 // Offline Pretraining exports - types only
@@ -159,6 +157,15 @@ const logger = getLogger("rmm-middleware");
  */
 export function rmmMiddleware(config: RmmConfig = {}) {
   const parsedConfig = rmmConfigSchema.parse(config);
+
+  /**
+   * Context schema for RMM middleware runtime context.
+   * Defines the shape of runtime.context accessed in middleware hooks.
+   */
+  const rmmContextSchema = z.object({
+    sessionId: z.string().optional(),
+    store: z.custom<BaseStore>().optional(),
+  });
 
   /**
    * Validates that vectorStore's internal embeddings matches the configured embeddings.
@@ -294,12 +301,14 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   // Create the combined middleware
   return createMiddleware({
     name: "RmmMiddleware",
-    beforeAgent: beforeAgentHook as BeforeAgentHook<undefined, unknown>,
-    beforeModel: beforeModelHook as BeforeModelHook<undefined, unknown>,
-    wrapModelCall: wrapModelCallHook as WrapModelCallHook<undefined, unknown>,
-    afterModel: afterModelHook as AfterModelHook<undefined, unknown>,
-    afterAgent: (state, runtime) => {
+    contextSchema: rmmContextSchema,
+    beforeAgent: beforeAgentHook as BeforeAgentHook<undefined, z.infer<typeof rmmContextSchema>>,
+    beforeModel: beforeModelHook as BeforeModelHook<undefined, z.infer<typeof rmmContextSchema>>,
+    wrapModelCall: wrapModelCallHook as WrapModelCallHook<undefined, z.infer<typeof rmmContextSchema>>,
+    afterModel: afterModelHook as AfterModelHook<undefined, z.infer<typeof rmmContextSchema>>,
+    afterAgent: async (state, runtime) => {
       // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
+      // Try configurable first (from createAgent config), then fall back to context
       const configurable = runtime.configurable as
         | { sessionId?: string }
         | undefined;
@@ -309,6 +318,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
       // Extract dependencies from runtime for afterAgent
       // Check both runtime.store (LangGraph) and context.store (user-provided)
       const store = runtime.store ?? runtime.context?.store;
+
       const deps: AfterAgentDependencies = {
         userId,
         store,
@@ -316,7 +326,8 @@ export function rmmMiddleware(config: RmmConfig = {}) {
           ? DEFAULT_REFLECTION_CONFIG
           : undefined,
       };
-      return afterAgent(state, runtime as Runtime<RmmRuntimeContext>, deps);
+
+      return await afterAgent(state, runtime, deps);
     },
   });
 }
