@@ -287,15 +287,7 @@ describe("beforeModel Hook", () => {
     // State with only AI message (no human message to extract)
     const emptyQueryState: BeforeModelState = {
       ...sampleState,
-      messages: [
-        {
-          lc_serialized: { type: "ai" },
-          lc_kwargs: { content: "Hello!" },
-          lc_id: ["ai"],
-          content: "Hello!",
-          additional_kwargs: {},
-        },
-      ],
+      messages: createTestMessages([{ type: "ai", content: "Hello!" }]),
     };
 
     const result = await middleware.beforeModel(emptyQueryState, mockRuntime);

@@ -11,11 +11,8 @@
  * original state before any new messages are appended.
  */
 
-import type { StoredMessage } from "@langchain/core/messages";
-import {
-  type BaseMessage,
-  mapChatMessagesToStoredMessages,
-} from "@langchain/core/messages";
+import type { BaseMessage, StoredMessage } from "@langchain/core/messages";
+import { mapChatMessagesToStoredMessages } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { Runtime } from "langchain";
 import type {
@@ -27,6 +24,7 @@ import type {
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
 import { getLogger } from "@/utils/logger";
 import { countHumanMessages } from "@/utils/message-helpers";
+import { parseStoredMessage } from "@/utils/validation";
 
 const logger = getLogger("after-agent");
 
@@ -49,30 +47,34 @@ export interface AfterAgentDependencies {
 
 /**
  * Converts a BaseMessage to StoredMessage format using LangChain's built-in mapper.
- * This is the proper way to serialize messages for storage.
+ * Validates plain objects against StoredMessage schema.
  */
 function toStoredMessage(message: BaseMessage | StoredMessage): StoredMessage {
-  // If it's already a StoredMessage (plain object), return as-is
-  if (!("toDict" in message)) {
-    return message;
+  // If it's already a BaseMessage, use LangChain's mapper
+  if ("toDict" in message) {
+    const result = mapChatMessagesToStoredMessages([message]);
+    if (result.length === 0) {
+      throw new Error("Failed to serialize message to StoredMessage format");
+    }
+    const stored = result[0];
+    if (!stored) {
+      throw new Error("Failed to serialize message - no stored message");
+    }
+    return stored;
   }
 
-  // Use LangChain's built-in mapper for proper serialization
-  const result = mapChatMessagesToStoredMessages([message]);
-  if (result.length === 0) {
-    throw new Error("Failed to serialize message to StoredMessage format");
-  }
-  return result[0] as StoredMessage;
+  // Validate plain object is a valid StoredMessage
+  return parseStoredMessage(message);
 }
 
 /**
  * Appends current session messages to the buffer.
  * Returns updated buffer with new messages and counts.
  *
- * @param buffer - Existing message buffer with StoredMessage[]
+ * @param buffer - Existing message buffer with SerializedMessage[]
  * @param messages - New messages from agent state (BaseMessage[])
  * @param now - Current timestamp
- * @returns Updated MessageBuffer with StoredMessage[]
+ * @returns Updated MessageBuffer with SerializedMessage[]
  */
 function appendMessagesToBuffer(
   buffer: MessageBuffer,
@@ -114,7 +116,7 @@ function appendMessagesToBuffer(
  * @returns Empty object (no state changes)
  */
 export async function afterAgent(
-  state: RmmMiddlewareState & { messages: BaseMessage[] },
+  state: Partial<RmmMiddlewareState> & { messages: BaseMessage[] },
   _runtime: Runtime<RmmRuntimeContext>,
   deps?: AfterAgentDependencies
 ): Promise<Record<string, unknown>> {

@@ -56,7 +56,7 @@ export function createInMemoryVectorStore(
       throw new Error("Vector dimensions must match");
     }
 
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+    const dotProduct = a.reduce((sum, val, i) => sum + val * (b[i] ?? 0), 0);
     const normA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
     const normB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
 
@@ -67,11 +67,21 @@ export function createInMemoryVectorStore(
     return dotProduct / (normA * normB);
   }
 
+  // Helper to create serializable
+  function createSerializable() {
+    return {
+      lc_namespace: ["langchain", "vectorstores", "in-memory"],
+      lc_serializable: false,
+      lc_kwargs: {},
+      lc_attributes: {},
+    };
+  }
+
   return {
     /**
      * Adds documents to the in-memory store
      */
-    async addDocuments(docs: Document[]): Promise<void> {
+    async addDocuments(docs: Document[]): Promise<string[] | undefined> {
       if (failAddDocuments) {
         throw new Error("Simulated addDocuments failure (for error testing)");
       }
@@ -85,11 +95,15 @@ export function createInMemoryVectorStore(
         console.warn(
           "[InMemoryVectorStore] embedDocuments returned non-array, skipping documents"
         );
-        return;
+        return undefined;
       }
 
       documents.push(...docs);
       vectors.push(...newVectors);
+
+      // Return document IDs (using index as ID)
+      const startId = documents.length - docs.length;
+      return docs.map((_, i) => `doc-${startId + i}`);
     },
 
     /**
@@ -109,10 +123,20 @@ export function createInMemoryVectorStore(
       const queryVector = await embeddings.embedQuery(query);
 
       // Compute similarity scores
-      const scoredDocs = documents.map((doc, index) => ({
-        doc,
-        similarity: cosineSimilarity(queryVector, vectors[index]),
-      }));
+      const scoredDocs = documents
+        .map((doc, index) => {
+          const vector = vectors[index];
+          if (!vector) {
+            return null;
+          }
+          return {
+            doc,
+            similarity: cosineSimilarity(queryVector, vector),
+          };
+        })
+        .filter(
+          (item): item is { doc: Document; similarity: number } => item !== null
+        );
 
       // Sort by similarity (descending)
       scoredDocs.sort((a, b) => b.similarity - a.similarity);
@@ -133,7 +157,7 @@ export function createInMemoryVectorStore(
     /**
      * Not implemented - throws error if called
      */
-    addVectors(): Promise<void> {
+    addVectors(): Promise<string[] | undefined> {
       throw new Error("addVectors not implemented in InMemoryVectorStore");
     },
 
@@ -146,10 +170,39 @@ export function createInMemoryVectorStore(
 
     // Required properties for VectorStoreInterface
     embeddings,
-    _vectorstoreType: "in-memory",
+    _vectorstoreType(): string {
+      return "in-memory";
+    },
     FilterType: {} as never,
     similaritySearchVectorWithScore(): Promise<[Document, number][]> {
       throw new Error("similaritySearchVectorWithScore not implemented");
+    },
+
+    // Serialization
+    ...createSerializable(),
+
+    // asRetriever method
+    asRetriever(k?: number) {
+      return {
+        vectorStore: this,
+        k,
+        invoke: (query: string) => {
+          return this.similaritySearch(query, k ?? 4);
+        },
+      };
+    },
+
+    // Serialization methods
+    toJSON() {
+      return {
+        ...createSerializable(),
+      };
+    },
+
+    toJSONNotImplemented() {
+      return {
+        ...createSerializable(),
+      };
     },
   };
 }

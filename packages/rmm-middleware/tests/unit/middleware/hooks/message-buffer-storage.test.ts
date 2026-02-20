@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
 import type { MessageBuffer } from "@/schemas/index";
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
+import { createSerializedMessage } from "@/tests/helpers/messages";
 
 /**
  * Tests for MessageBufferStorage
@@ -60,15 +61,7 @@ describe("MessageBufferStorage", () => {
       const storage = createMessageBufferStorage(mockStore);
 
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Hello" },
-            lc_id: ["human"],
-            content: "Hello",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Hello")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -88,15 +81,7 @@ describe("MessageBufferStorage", () => {
 
       // Save a buffer first
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Hello" },
-            lc_id: ["human"],
-            content: "Hello",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Hello")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -118,15 +103,7 @@ describe("MessageBufferStorage", () => {
       const mockStore = createMockStore(storeItems);
 
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Hello" },
-            lc_id: ["human"],
-            content: "Hello",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Hello")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -157,15 +134,7 @@ describe("MessageBufferStorage", () => {
 
       // Save initial buffer
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Original message" },
-            lc_id: ["human"],
-            content: "Original message",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Original message")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -180,7 +149,7 @@ describe("MessageBufferStorage", () => {
       const stagingBuffer = await storage.loadStagingBuffer("test-user");
       expect(stagingBuffer).not.toBeNull();
       expect(stagingBuffer?.messages).toHaveLength(1);
-      expect(stagingBuffer?.messages[0].content).toBe("Original message");
+      expect(stagingBuffer?.messages[0].data.content).toBe("Original message");
     });
 
     test("loadStagingBuffer returns null when no staging exists", async () => {
@@ -197,15 +166,7 @@ describe("MessageBufferStorage", () => {
 
       // Save both main buffer and staging
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Main buffer" },
-            lc_id: ["human"],
-            content: "Main buffer",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Main buffer")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -225,7 +186,7 @@ describe("MessageBufferStorage", () => {
       // Verify main buffer still exists
       const mainBuffer = await storage.loadBuffer("test-user");
       expect(mainBuffer.messages).toHaveLength(1);
-      expect(mainBuffer.messages[0].content).toBe("Main buffer");
+      expect(mainBuffer.messages[0].data.content).toBe("Main buffer");
     });
 
     test("staging pattern prevents message loss during async operations", async () => {
@@ -234,15 +195,7 @@ describe("MessageBufferStorage", () => {
 
       // Initial buffer
       const initialBuffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Message 1" },
-            lc_id: ["human"],
-            content: "Message 1",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Message 1")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -255,20 +208,8 @@ describe("MessageBufferStorage", () => {
       // Simulate new message arriving during async operation
       const updatedBuffer: MessageBuffer = {
         messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Message 1" },
-            lc_id: ["human"],
-            content: "Message 1",
-            additional_kwargs: {},
-          },
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Message 2 (arrived during async)" },
-            lc_id: ["human"],
-            content: "Message 2 (arrived during async)",
-            additional_kwargs: {},
-          },
+          createSerializedMessage("human", "Message 1"),
+          createSerializedMessage("human", "Message 2 (arrived during async)"),
         ],
         humanMessageCount: 2,
         lastMessageTimestamp: Date.now(),
@@ -283,7 +224,7 @@ describe("MessageBufferStorage", () => {
       // Verify staging buffer still has original content
       const stagingBuffer = await storage.loadStagingBuffer("test-user");
       expect(stagingBuffer?.messages).toHaveLength(1);
-      expect(stagingBuffer?.messages[0].content).toBe("Message 1");
+      expect(stagingBuffer?.messages[0].data.content).toBe("Message 1");
 
       // Clear staging (simulating end of async reflection)
       await storage.clearStaging("test-user");
@@ -291,7 +232,7 @@ describe("MessageBufferStorage", () => {
       // Verify new message is still in live buffer
       const finalLiveBuffer = await storage.loadBuffer("test-user");
       expect(finalLiveBuffer.messages).toHaveLength(2);
-      expect(finalLiveBuffer.messages[1].content).toBe(
+      expect(finalLiveBuffer.messages[1].data.content).toBe(
         "Message 2 (arrived during async)"
       );
     });
@@ -306,15 +247,7 @@ describe("MessageBufferStorage", () => {
       ]);
 
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Test" },
-            lc_id: ["human"],
-            content: "Test",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Test")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -335,15 +268,7 @@ describe("MessageBufferStorage", () => {
       ]);
 
       const buffer: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "Test" },
-            lc_id: ["human"],
-            content: "Test",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "Test")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -364,30 +289,14 @@ describe("MessageBufferStorage", () => {
       const storage2 = createMessageBufferStorage(mockStore, ["namespace-b"]);
 
       const buffer1: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "A" },
-            lc_id: ["human"],
-            content: "A",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "A")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
       };
 
       const buffer2: MessageBuffer = {
-        messages: [
-          {
-            lc_serialized: { type: "human" },
-            lc_kwargs: { content: "B" },
-            lc_id: ["human"],
-            content: "B",
-            additional_kwargs: {},
-          },
-        ],
+        messages: [createSerializedMessage("human", "B")],
         humanMessageCount: 1,
         lastMessageTimestamp: Date.now(),
         createdAt: Date.now(),
@@ -400,8 +309,8 @@ describe("MessageBufferStorage", () => {
       const loaded1 = await storage1.loadBuffer("user-1");
       const loaded2 = await storage2.loadBuffer("user-1");
 
-      expect(loaded1.messages[0].content).toBe("A");
-      expect(loaded2.messages[0].content).toBe("B");
+      expect(loaded1.messages[0].data.content).toBe("A");
+      expect(loaded2.messages[0].data.content).toBe("B");
     });
   });
 

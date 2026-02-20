@@ -389,13 +389,14 @@ describe("RMMStateSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("rejects invalid message structure", () => {
-    const invalidState = {
+  test("accepts any message structure (validated by TypeScript at compile time)", () => {
+    const anyMessageState = {
       ...createValidRMMState(),
       messages: [{ invalid: "structure" }],
     };
-    const result = RMMStateSchema.safeParse(invalidState);
-    expect(result.success).toBe(false);
+    const result = RMMStateSchema.safeParse(anyMessageState);
+    // Schema now accepts any messages - runtime validation delegated to LangChain types
+    expect(result.success).toBe(true);
   });
 });
 

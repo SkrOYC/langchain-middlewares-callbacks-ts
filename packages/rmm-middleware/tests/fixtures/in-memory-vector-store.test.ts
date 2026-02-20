@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Document } from "@langchain/core/documents";
 import type { Embeddings } from "@langchain/core/embeddings";
+import { AsyncCaller } from "@langchain/core/utils/async_caller";
 
 /**
  * Tests for InMemoryVectorStore fixture
@@ -16,6 +17,7 @@ describe("InMemoryVectorStore Fixture", () => {
   // Mock embeddings that return fixed vectors
   function createMockEmbeddings(dimension = 1536): Embeddings {
     return {
+      caller: new AsyncCaller({}),
       embedQuery(_text: string): Promise<number[]> {
         return Promise.resolve(new Array(dimension).fill(0));
       },

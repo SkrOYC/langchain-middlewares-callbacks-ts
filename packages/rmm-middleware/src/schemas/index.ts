@@ -304,16 +304,6 @@ export function createEmptyGradientAccumulatorState(
 // ============================================================================
 
 /**
- * LangChain BaseMessage schema (simplified for state definition)
- */
-export const BaseMessageSchema = z.object({
-  type: z.string(),
-  content: z.union([z.string(), z.array(z.any())]),
-});
-
-export type BaseMessage = z.infer<typeof BaseMessageSchema>;
-
-/**
  * RMM state with private fields (underscore prefix convention)
  * Private fields are persisted but filtered from public types
  */
@@ -326,8 +316,8 @@ export const RMMStateSchema = z.object({
   _rerankerWeights: RerankerStateSchema,
   _gradientAccumulator: GradientAccumulatorStateSchema.optional(),
 
-  // Standard LangChain state
-  messages: z.array(BaseMessageSchema),
+  // Standard LangChain state - messages are BaseMessage[] at runtime
+  messages: z.array(z.any()),
 });
 
 export type RMMState = z.infer<typeof RMMStateSchema>;
@@ -506,81 +496,20 @@ export const DEFAULT_REFLECTION_CONFIG: ReflectionConfig = {
 
 /**
  * Schema for a serialized LangChain message (StoredMessage format).
- * Uses LangChain's canonical serialization format for BaseMessage.
+ * For runtime validation, use parseStoredMessage() from validation.ts instead.
  */
-export const SerializedMessageSchema = z
-  .object({
-    /** LangChain serialized type identifier (lc format) */
-    lc_serialized: z
-      .object({
-        type: z.string(),
-      })
-      .optional(),
-    /** LangChain internal ID array */
-    lc_id: z.array(z.string()).optional(),
-    /** Message type identifier (legacy format) */
-    type: z.string().optional(),
-    /** Message content */
-    content: z.union([z.string(), z.array(z.unknown()), z.unknown()]),
-    /** Additional kwargs */
-    additional_kwargs: z.record(z.string(), z.unknown()).optional(),
-    /** Message name */
-    name: z.string().optional(),
-    /** Message ID */
-    id: z.string().optional(),
-    /** Response metadata */
-    response_metadata: z.record(z.string(), z.unknown()).optional(),
-    /** Usage metadata */
-    usage_metadata: z.record(z.string(), z.number()).optional(),
-  })
-  .refine(
-    (val) => {
-      // Must have at least one type identifier
-      return (
-        val.lc_serialized !== undefined ||
-        val.lc_id !== undefined ||
-        val.type !== undefined
-      );
-    },
-    {
-      message:
-        "Message must have at least one type identifier (lc_serialized, lc_id, or type)",
-      path: ["type"],
-    }
-  );
-
-/**
- * Type representing a serialized message in the buffer.
- * Matches LangChain's StoredMessage format.
- */
-export type SerializedMessage = StoredMessage;
+export const SerializedMessageSchema = z.unknown();
 
 /**
  * Schema for the persisted message buffer in BaseStore.
- * Stores messages across threads for batched prospective reflection.
- *
- * Note: messages are stored as StoredMessage[] (plain objects), matching
- * LangChain's serialization format. No conversion needed at storage boundary.
- *
- * Inactivity is tracked via BaseStore's updated_at timestamp, not within the buffer itself.
- * This ensures that appending messages doesn't reset the inactivity clock.
+ * For runtime validation, use parseMessageBuffer() from validation.ts instead.
+ * Supports ContentBlock[] content (LangChain v1 format).
  */
-export const MessageBufferSchema = z.object({
-  /** Array of serialized messages waiting for reflection */
-  messages: z.array(SerializedMessageSchema),
-  /** Count of human messages in the buffer (for quick threshold checks) */
-  humanMessageCount: z.number().int().nonnegative(),
-  /** Timestamp of the last message added to the buffer */
-  lastMessageTimestamp: z.number().int().positive(),
-  /** Timestamp when buffer was created */
-  createdAt: z.number().int().positive(),
-  /** Number of reflection retry attempts (for staging buffer) */
-  retryCount: z.number().int().nonnegative().optional(),
-});
+export const MessageBufferSchema = z.unknown();
 
 /**
  * Message buffer for cross-thread message persistence.
- * Uses StoredMessage[] (plain objects) matching LangChain's serialization format.
+ * Uses StoredMessage[] (LangChain's serialization format).
  *
  * Note: Messages stay as StoredMessage[] throughout - no conversion at storage boundary.
  * Inactivity is tracked via BaseStore's updated_at timestamp externally.
@@ -715,3 +644,28 @@ export interface RmmMiddlewareState {
   /** Gradient accumulator for batched REINFORCE updates */
   _gradientAccumulator?: GradientAccumulatorState;
 }
+
+// ============================================================================
+// RMM Middleware State Schema (for createMiddleware)
+// ============================================================================
+
+/**
+ * Zod schema for RMM middleware state.
+ * Used with createMiddleware to provide proper type inference.
+ *
+ * Note: The messages field is handled by LangChain's AgentBuiltInState.
+ * This schema defines only the RMM-specific fields.
+ */
+export const rmmMiddlewareStateSchema = z.object({
+  _rerankerWeights: RerankerStateSchema,
+  _retrievedMemories: z.array(RetrievedMemorySchema).optional(),
+  _citations: z.array(CitationRecordSchema).optional(),
+  _turnCountInSession: z.number().int().nonnegative().optional(),
+  _messageBuffer: MessageBufferSchema.optional(),
+  _gradientAccumulator: GradientAccumulatorStateSchema.optional(),
+});
+
+/**
+ * Type inferred from the RMM middleware state schema
+ */
+export type RmmMiddlewareStateInput = z.input<typeof rmmMiddlewareStateSchema>;

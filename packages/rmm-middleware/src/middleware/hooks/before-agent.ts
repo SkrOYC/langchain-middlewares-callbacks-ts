@@ -14,6 +14,7 @@ import {
   type BaseMessage,
   mapStoredMessagesToChatMessages,
 } from "@langchain/core/messages";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { Runtime } from "langchain";
 import { extractMemories } from "@/algorithms/memory-extraction";
 import { processMemoryUpdate } from "@/algorithms/memory-update";
@@ -21,7 +22,6 @@ import {
   type CitationRecord,
   DEFAULT_REFLECTION_CONFIG,
   type MessageBuffer,
-  MessageBufferSchema,
   type ReflectionConfig,
   type RerankerState,
   type RetrievedMemory,
@@ -35,6 +35,7 @@ import {
 import { createWeightStorage } from "@/storage/weight-storage";
 import { getLogger } from "@/utils/logger";
 import { initializeMatrix } from "@/utils/matrix";
+import { parseMessageBuffer, parseStoredMessages } from "@/utils/validation";
 
 const logger = getLogger("before-agent");
 
@@ -296,10 +297,10 @@ async function processReflection(
   }
 
   try {
-    // FORMAT: Convert StoredMessage[] to BaseMessage[] for extractMemories
-    const sessionHistory: BaseMessage[] = mapStoredMessagesToChatMessages(
-      stagedBuffer.messages
-    );
+    // FORMAT: Validate and convert StoredMessage[] to BaseMessage[] for extractMemories
+    const validatedMessages = parseStoredMessages(stagedBuffer.messages);
+    const sessionHistory: BaseMessage[] =
+      mapStoredMessagesToChatMessages(validatedMessages);
 
     // EXTRACT: Use LLM to extract memories from both speaker perspectives
     // Paper Appendix D.1.1: separate prompts for SPEAKER_1 and SPEAKER_2
@@ -340,7 +341,7 @@ async function processReflection(
     for (const memory of memories) {
       await processMemoryUpdate(
         memory,
-        deps.vectorStore,
+        deps.vectorStore as VectorStoreInterface,
         deps.llm,
         deps.updateMemory
       );
@@ -406,17 +407,19 @@ async function handleRetryStagingFailure(
 
     if (currentStaging) {
       // Validate and parse the staging buffer before modification
-      const parseResult = MessageBufferSchema.safeParse(currentStaging.value);
-      if (!parseResult.success) {
+      let parseResult: MessageBuffer;
+      try {
+        parseResult = parseMessageBuffer(currentStaging.value);
+      } catch (e) {
         logger.warn(
-          `Failed to parse staging buffer during retry handling: ${parseResult.error.message}`
+          `Failed to parse staging buffer during retry handling: ${e instanceof Error ? e.message : String(e)}`
         );
         return;
       }
 
       // Increment retry count
       const updatedStaging = {
-        ...parseResult.data,
+        ...parseResult,
         retryCount: retryCount + 1,
       };
       await bufferStorage.store.put(
@@ -531,11 +534,12 @@ async function checkAndStageReflection(
   }
 
   // Stage buffer for async reflection
-  // Note: item.value is typed as Record<string, unknown> by loader, cast to MessageBuffer
+  // Validate loaded buffer before passing to stageBufferForReflection
+  const validatedBuffer = parseMessageBuffer(item.value);
   await stageBufferForReflection(
     userId,
     bufferStorage,
-    item.value as unknown as MessageBuffer,
+    validatedBuffer,
     reflectionConfig,
     options.reflectionDeps
   );

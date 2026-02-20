@@ -9,7 +9,6 @@
  * - 90.2% Accuracy (as reported in paper's Table 1)
  */
 
-import type { RmmVectorStore } from "@/schemas/config";
 import { getLogger } from "@/utils/logger";
 
 const logger = getLogger("oracle-retriever");
@@ -98,12 +97,12 @@ export interface OracleConfig {
 }
 
 /**
- * Oracle VectorStore implementing RmmVectorStore interface
+ * Oracle VectorStore for LongMemEval evaluation
  *
  * Returns pre-annotated ground-truth sessions for evaluation.
  * Bypasses semantic similarity computation entirely.
  */
-export class OracleVectorStore implements RmmVectorStore {
+export class OracleVectorStore {
   private readonly annotations: LongMemEvalInstance[];
 
   constructor(config: OracleConfig) {

@@ -24,7 +24,11 @@ export function extractLastHumanMessage(
 
   // Iterate backwards to find the last human message
   for (let i = messages.length - 1; i >= 0; i--) {
-    const content = getMessageContent(messages[i]);
+    const message = messages[i];
+    if (message === undefined) {
+      continue;
+    }
+    const content = getMessageContent(message);
     if (content !== null) {
       return content;
     }

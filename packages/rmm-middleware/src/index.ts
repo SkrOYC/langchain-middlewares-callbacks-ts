@@ -9,6 +9,8 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { BaseMessage } from "@langchain/core/messages";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import {
   type AfterModelHook,
@@ -17,7 +19,7 @@ import {
   createMiddleware,
   type WrapModelCallHook,
 } from "langchain";
-import * as z from "zod";
+import { z } from "zod";
 import {
   type AfterAgentDependencies,
   afterAgent,
@@ -42,12 +44,12 @@ import {
 import { extractSpeaker1 } from "@/middleware/prompts/extract-speaker1.js";
 import { extractSpeaker2 } from "@/middleware/prompts/extract-speaker2.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
+import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 import {
-  type RmmConfig,
-  type RmmVectorStore,
-  rmmConfigSchema,
-} from "@/schemas/config.js";
-import { DEFAULT_REFLECTION_CONFIG } from "@/schemas/index.js";
+  DEFAULT_REFLECTION_CONFIG,
+  type RmmMiddlewareState,
+  rmmMiddlewareStateSchema,
+} from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
 // Offline Pretraining exports - types only
@@ -172,7 +174,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
    * Mismatched embeddings cause silent incorrect reranking results.
    */
   if (parsedConfig.vectorStore && parsedConfig.embeddings) {
-    const vsEmbeddings = (parsedConfig.vectorStore as RmmVectorStore)
+    const vsEmbeddings = (parsedConfig.vectorStore as VectorStoreInterface)
       ?.embeddings;
     if (vsEmbeddings && vsEmbeddings !== parsedConfig.embeddings) {
       logger.warn(
@@ -248,9 +250,16 @@ export function rmmMiddleware(config: RmmConfig = {}) {
               similaritySearch: (query) =>
                 parsedConfig.vectorStore?.similaritySearch?.(query as string) ??
                 Promise.resolve([]),
-              addDocuments: (documents) =>
-                parsedConfig.vectorStore?.addDocuments?.(documents) ??
-                Promise.resolve(),
+              addDocuments: (documents) => {
+                const docs = documents as Array<{
+                  pageContent: string;
+                  metadata?: Record<string, unknown>;
+                }>;
+                return (
+                  parsedConfig.vectorStore?.addDocuments?.(docs) ??
+                  Promise.resolve(undefined)
+                );
+              },
             },
             extractSpeaker1,
             extractSpeaker2,
@@ -262,6 +271,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   };
 
   // Build beforeModel hook options
+  // VectorStoreInterface is used directly
   const beforeModelOptions: BeforeModelOptions = {
     vectorStore: parsedConfig.vectorStore as BeforeModelOptions["vectorStore"],
     embeddings: parsedConfig.embeddings as BeforeModelOptions["embeddings"],
@@ -299,13 +309,17 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   }
 
   // Create the combined middleware
+  // Use rmmMiddlewareStateSchema so LangChain knows about our custom state fields
+  type Context = z.infer<typeof rmmContextSchema>;
+  type StateSchema = typeof rmmMiddlewareStateSchema;
   return createMiddleware({
     name: "RmmMiddleware",
+    stateSchema: rmmMiddlewareStateSchema,
     contextSchema: rmmContextSchema,
-    beforeAgent: beforeAgentHook as BeforeAgentHook<undefined, z.infer<typeof rmmContextSchema>>,
-    beforeModel: beforeModelHook as BeforeModelHook<undefined, z.infer<typeof rmmContextSchema>>,
-    wrapModelCall: wrapModelCallHook as WrapModelCallHook<undefined, z.infer<typeof rmmContextSchema>>,
-    afterModel: afterModelHook as AfterModelHook<undefined, z.infer<typeof rmmContextSchema>>,
+    beforeAgent: beforeAgentHook as BeforeAgentHook<StateSchema, Context>,
+    beforeModel: beforeModelHook as BeforeModelHook<StateSchema, Context>,
+    wrapModelCall: wrapModelCallHook as WrapModelCallHook<StateSchema, Context>,
+    afterModel: afterModelHook as AfterModelHook<StateSchema, Context>,
     afterAgent: async (state, runtime) => {
       // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
       // Try configurable first (from createAgent config), then fall back to context
@@ -327,7 +341,12 @@ export function rmmMiddleware(config: RmmConfig = {}) {
           : undefined,
       };
 
-      return await afterAgent(state, runtime, deps);
+      // Pass state directly - afterAgent now accepts partial RmmMiddlewareState
+      return await afterAgent(
+        state as RmmMiddlewareState & { messages: BaseMessage[] },
+        runtime,
+        deps
+      );
     },
   });
 }
