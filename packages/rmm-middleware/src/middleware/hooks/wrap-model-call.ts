@@ -20,13 +20,19 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
 import { type AIMessage, HumanMessage } from "@langchain/core/messages";
+import type { Runtime } from "langchain";
 import {
   applyEmbeddingAdaptation,
   computeRelevanceScore,
   gumbelSoftmaxSample,
   type ScoredMemory,
 } from "@/algorithms/reranking";
-import type { CitationRecord, RerankerState, RetrievedMemory } from "@/schemas";
+import type {
+  CitationRecord,
+  RetrievedMemory,
+  RmmMiddlewareState,
+  RmmRuntimeContext,
+} from "@/schemas";
 import {
   type CitationResult,
   extractCitations,
@@ -59,46 +65,12 @@ export interface WrapModelCallOptions {
 }
 
 /**
- * Runtime interface for wrapModelCall hook
- *
- * Note: embeddings is passed via options, not runtime.context.
- * The _citations field is populated by this hook for downstream use.
- * For exact REINFORCE, we also store embeddings and probabilities.
- */
-interface WrapModelCallRuntime {
-  context: {
-    embeddings?: Embeddings; // May be set by other hooks
-    _citations?: CitationRecord[];
-    // Exact REINFORCE gradient computation data
-    _originalQuery?: number[]; // Original query embedding q
-    _adaptedQuery?: number[]; // Adapted query embedding q'
-    _originalMemoryEmbeddings?: number[][]; // Original memory embeddings m_i for all K
-    _adaptedMemoryEmbeddings?: number[][]; // Adapted memory embeddings m'_i for all K
-    _samplingProbabilities?: number[]; // P_i for all K memories
-    _selectedIndices?: number[]; // Indices of Top-M selected memories
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-/**
- * State interface for wrapModelCall hook
- */
-interface WrapModelCallState {
-  messages: BaseMessage[];
-  _rerankerWeights: RerankerState;
-  _retrievedMemories: RetrievedMemory[];
-  _citations: CitationRecord[];
-  _turnCountInSession: number;
-}
-
-/**
- * Model request interface
+ * Model request interface for wrapModelCall hook
  */
 interface ModelRequest {
   messages: BaseMessage[];
-  state: WrapModelCallState;
-  runtime: WrapModelCallRuntime;
+  state: RmmMiddlewareState & { messages: BaseMessage[] };
+  runtime: Runtime<RmmRuntimeContext>;
   [key: string]: unknown;
 }
 
@@ -235,11 +207,13 @@ export function createRetrospectiveWrapModelCall(
         const selectedIndices = samplingResult.selectedIndices;
 
         // Store embeddings and probabilities for exact REINFORCE in afterModel
+        const ctx = runtime.context;
+
         // Store original query embedding
-        runtime.context._originalQuery = queryEmbedding;
+        ctx._originalQuery = queryEmbedding;
 
         // Store adapted query embedding (q')
-        runtime.context._adaptedQuery = adaptedQuery;
+        ctx._adaptedQuery = adaptedQuery;
 
         // Store all original memory embeddings for K retrieved memories
         // This requires re-applying adaptation to memories that may not have embeddings
@@ -274,14 +248,14 @@ export function createRetrospectiveWrapModelCall(
           }
         }
 
-        runtime.context._originalMemoryEmbeddings = originalMemEmbeddings;
-        runtime.context._adaptedMemoryEmbeddings = adaptedMemEmbeddings;
+        ctx._originalMemoryEmbeddings = originalMemEmbeddings;
+        ctx._adaptedMemoryEmbeddings = adaptedMemEmbeddings;
 
         // Store sampling probabilities for all K memories
-        runtime.context._samplingProbabilities = allProbabilities;
+        ctx._samplingProbabilities = allProbabilities;
 
         // Store selected indices
-        runtime.context._selectedIndices = selectedIndices;
+        ctx._selectedIndices = selectedIndices;
 
         // Step 5: Create ephemeral HumanMessage with citation prompt and memories
         // Per Appendix D.2: Explicit instructions for citing useful memories
@@ -326,7 +300,7 @@ export function createRetrospectiveWrapModelCall(
 
         // Step 8: Store citations in runtime context for afterModel
         // The afterModel hook will use these for RL weight updates
-        runtime.context._citations = citations;
+        ctx._citations = citations;
 
         return response;
       } catch (error) {

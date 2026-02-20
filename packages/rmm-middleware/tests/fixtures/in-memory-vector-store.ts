@@ -143,5 +143,13 @@ export function createInMemoryVectorStore(
     delete(): Promise<void> {
       throw new Error("delete not implemented in InMemoryVectorStore");
     },
+
+    // Required properties for VectorStoreInterface
+    embeddings,
+    _vectorstoreType: "in-memory",
+    FilterType: {} as never,
+    similaritySearchVectorWithScore(): Promise<[Document, number][]> {
+      throw new Error("similaritySearchVectorWithScore not implemented");
+    },
   };
 }

@@ -19,6 +19,7 @@ import type { Embeddings } from "@langchain/core/embeddings";
  */
 export function createMockEmbeddings(dimension = 1536): Embeddings {
   return {
+    caller: () => "mock-embeddings",
     embedQuery(_text: string): Promise<number[]> {
       return Promise.resolve(new Array(dimension).fill(0));
     },
@@ -48,6 +49,7 @@ export function createMockEmbeddingsWithFailure(
   shouldFail = false
 ): Embeddings {
   return {
+    caller: () => "mock-embeddings-failing",
     async embedQuery(_text: string): Promise<number[]> {
       if (shouldFail) {
         const error = new Error("embedQuery failed");

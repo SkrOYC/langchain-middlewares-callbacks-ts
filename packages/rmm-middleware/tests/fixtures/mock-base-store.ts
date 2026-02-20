@@ -60,6 +60,14 @@ export function createMockBaseStore(): BaseStore {
         new Error("listNamespaces not implemented in mock")
       );
     },
+
+    async start(): Promise<void> {
+      // No-op for mock
+    },
+
+    async stop(): Promise<void> {
+      // No-op for mock
+    },
   };
 }
 
@@ -109,6 +117,14 @@ export function createFailingMockBaseStore(
 
     async listNamespaces(): Promise<never> {
       return await Promise.reject(error);
+    },
+
+    async start(): Promise<void> {
+      // No-op for mock
+    },
+
+    async stop(): Promise<void> {
+      // No-op for mock
     },
   };
 }
