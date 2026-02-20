@@ -86,9 +86,13 @@ const ContentBlockImageSchema = z.object({
 
 const ContentBlockImageURLSchema = z.object({
   type: z.literal("image_url"),
-  image_url: z.object({
-    url: z.string().or(z.object({ url: z.string() })),
-  }),
+  image_url: z.union([
+    z.string(),
+    z.object({
+      url: z.string(),
+      detail: z.enum(["auto", "low", "high"]).optional(),
+    }),
+  ]),
   index: z.number().optional(),
 });
 
@@ -123,7 +127,10 @@ const ContentBlockSchema = z.discriminatedUnion("type", [
  * Supports both string content and ContentBlock[] (LangChain v1 format).
  */
 const StoredMessageDataSchema = z.object({
-  content: z.union([z.string(), z.array(ContentBlockSchema)]),
+  content: z.union([
+    z.string(),
+    z.array(z.union([z.string(), ContentBlockSchema])),
+  ]),
   role: z.string().optional(),
   name: z.string().optional(),
   tool_call_id: z.string().optional(),
