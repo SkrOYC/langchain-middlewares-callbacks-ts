@@ -106,7 +106,7 @@ const ContentBlockDataSchema = z.object({
  * Discriminated union of all ContentBlock types.
  * Strict validation matching LangChain's ContentBlock union.
  */
-const _ContentBlockSchema = z.discriminatedUnion("type", [
+const KnownContentBlockSchema = z.discriminatedUnion("type", [
   ContentBlockTextSchema,
   ContentBlockReasoningSchema,
   ContentBlockCitationSchema,
@@ -118,6 +118,20 @@ const _ContentBlockSchema = z.discriminatedUnion("type", [
   ContentBlockDataSchema,
 ]);
 
+/**
+ * Generic ContentBlock schema aligned with BaseContentBlock.
+ * Allows provider-specific and forward-compatible block shapes.
+ */
+const ContentBlockSchema = z.object({ type: z.string() }).passthrough();
+
+/**
+ * Message content supports plain text or content blocks (LangChain v1).
+ */
+const MessageContentSchema = z.union([
+  z.string(),
+  z.array(z.union([KnownContentBlockSchema, ContentBlockSchema])),
+]);
+
 // ============================================================================
 // StoredMessage Zod Schemas
 // ============================================================================
@@ -125,44 +139,27 @@ const _ContentBlockSchema = z.discriminatedUnion("type", [
 /**
  * Schema for StoredMessageData - matches current LangChain StoredMessageData.
  */
-const StoredMessageDataSchema = z.object({
-  content: z.string(),
-  role: z.string().optional(),
-  name: z.string().optional(),
-  tool_call_id: z.string().optional(),
-  additional_kwargs: z.record(z.string(), z.unknown()).optional(),
-  response_metadata: z.record(z.string(), z.unknown()).optional(),
-  id: z.string().optional(),
-});
+const StoredMessageDataSchema = z
+  .object({
+    content: MessageContentSchema,
+    role: z.string().optional(),
+    name: z.string().optional(),
+    tool_call_id: z.string().optional(),
+    additional_kwargs: z.record(z.string(), z.unknown()).optional(),
+    response_metadata: z.record(z.string(), z.unknown()).optional(),
+    id: z.string().optional(),
+  })
+  .passthrough();
 
 /**
  * Schema for StoredMessage - matches LangChain's StoredMessage interface exactly.
  */
-const StoredMessageSchema = z.object({
-  type: z.string(),
-  data: StoredMessageDataSchema,
-});
-
-/**
- * Transform Zod output to match LangChain's StoredMessage type exactly.
- * Keeps explicit undefined fields where expected by StoredMessageData.
- */
-function transformToStoredMessage(
-  data: z.infer<typeof StoredMessageSchema>
-): StoredMessage {
-  return {
-    type: data.type,
-    data: {
-      content: data.data.content,
-      role: data.data.role,
-      name: data.data.name,
-      tool_call_id: data.data.tool_call_id,
-      additional_kwargs: data.data.additional_kwargs,
-      response_metadata: data.data.response_metadata,
-      id: data.data.id,
-    },
-  };
-}
+const StoredMessageSchema = z
+  .object({
+    type: z.string(),
+    data: StoredMessageDataSchema,
+  })
+  .passthrough();
 
 /**
  * Schema for MessageBuffer persisted in BaseStore
@@ -191,7 +188,9 @@ export function parseStoredMessage(value: unknown): StoredMessage {
       .join("; ");
     throw new Error(`Invalid StoredMessage: ${errors}`);
   }
-  return transformToStoredMessage(result.data);
+  // LangChain currently serializes content as string or ContentBlock[] at runtime.
+  // Cast keeps parity with runtime while preserving validation guarantees above.
+  return result.data as StoredMessage;
 }
 
 /**
@@ -238,7 +237,7 @@ export function parseMessageBuffer(value: unknown): MessageBuffer {
   }
   // Transform messages to match LangChain's StoredMessage type
   return {
-    messages: result.data.messages.map(transformToStoredMessage),
+    messages: result.data.messages.map(parseStoredMessage),
     humanMessageCount: result.data.humanMessageCount,
     lastMessageTimestamp: result.data.lastMessageTimestamp,
     createdAt: result.data.createdAt,

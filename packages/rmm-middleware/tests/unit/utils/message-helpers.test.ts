@@ -168,4 +168,28 @@ describe("MessageBufferSchema - Validation", () => {
 
     expect(() => parseMessageBuffer(invalidBuffer)).toThrow();
   });
+
+  test("accepts content block messages (LangChain v1)", () => {
+    const contentBlockBuffer = {
+      messages: [
+        {
+          type: "ai",
+          data: {
+            content: [{ type: "text", text: "Hello from blocks" }],
+            role: "ai",
+            tool_calls: [],
+            invalid_tool_calls: [],
+          },
+        },
+      ],
+      humanMessageCount: 0,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const parsed = parseMessageBuffer(contentBlockBuffer);
+    expect(parsed.messages).toHaveLength(1);
+    const firstContent = parsed.messages[0]?.data.content;
+    expect(Array.isArray(firstContent)).toBe(true);
+  });
 });
