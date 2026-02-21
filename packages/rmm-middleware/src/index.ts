@@ -9,20 +9,10 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import {
-  type AfterModelHook,
-  type BeforeAgentHook,
-  type BeforeModelHook,
-  createMiddleware,
-  type WrapModelCallHook,
-} from "langchain";
+import { createMiddleware } from "langchain";
 import { z } from "zod";
-import {
-  type AfterAgentDependencies,
-  afterAgent,
-} from "@/middleware/hooks/after-agent.js";
+import { createRetrospectiveAfterAgent } from "@/middleware/hooks/after-agent.js";
 import {
   type AfterModelOptions,
   createRetrospectiveAfterModel,
@@ -46,7 +36,6 @@ import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 import {
   DEFAULT_REFLECTION_CONFIG,
-  type RmmMiddlewareState,
   rmmMiddlewareStateSchema,
 } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
@@ -283,46 +272,29 @@ export function rmmMiddleware(config: RmmConfig = {}) {
 
   // Create the combined middleware
   // Use rmmMiddlewareStateSchema so LangChain knows about our custom state fields
-  type Context = z.infer<typeof rmmContextSchema>;
-  type StateSchema = typeof rmmMiddlewareStateSchema;
   return createMiddleware({
     name: "RmmMiddleware",
     stateSchema: rmmMiddlewareStateSchema,
     contextSchema: rmmContextSchema,
-    beforeAgent: beforeAgentHook as BeforeAgentHook<StateSchema, Context>,
-    beforeModel: beforeModelHook as BeforeModelHook<StateSchema, Context>,
-    wrapModelCall: wrapModelCallHook as unknown as WrapModelCallHook<
-      StateSchema,
-      Context
-    >,
-    afterModel: afterModelHook as AfterModelHook<StateSchema, Context>,
-    afterAgent: async (state, runtime) => {
-      // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
-      // Try configurable first (from createAgent config), then fall back to context
-      const configurable = runtime.configurable as
-        | { sessionId?: string }
-        | undefined;
-      const userId =
-        configurable?.sessionId ?? runtime.context?.sessionId ?? "";
-
-      // Extract dependencies from runtime for afterAgent
-      // Check both runtime.store (LangGraph) and context.store (user-provided)
-      const store = runtime.store ?? runtime.context?.store;
-
-      const deps: AfterAgentDependencies = {
-        userId,
-        store,
-        reflectionConfig: parsedConfig.llm
-          ? DEFAULT_REFLECTION_CONFIG
-          : undefined,
-      };
-
-      // Pass state directly - afterAgent now accepts partial RmmMiddlewareState
-      return await afterAgent(
-        state as RmmMiddlewareState & { messages: BaseMessage[] },
-        runtime,
-        deps
-      );
-    },
+    beforeAgent: beforeAgentHook,
+    beforeModel: beforeModelHook,
+    wrapModelCall: wrapModelCallHook,
+    afterModel: afterModelHook,
+    afterAgent: createRetrospectiveAfterAgent({
+      userIdExtractor: (runtime) => {
+        // Try configurable first (from createAgent config)
+        const configurable = runtime.configurable as
+          | { sessionId?: string }
+          | undefined;
+        if (configurable?.sessionId) {
+          return configurable.sessionId;
+        }
+        // Fall back to context
+        return runtime.context?.sessionId ?? "";
+      },
+      reflectionConfig: parsedConfig.llm
+        ? DEFAULT_REFLECTION_CONFIG
+        : undefined,
+    }),
   });
 }

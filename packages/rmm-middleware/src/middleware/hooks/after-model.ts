@@ -19,7 +19,7 @@
 
 import type { BaseMessage } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { Runtime } from "langchain";
+import type { MiddlewareResult, Runtime } from "langchain";
 import type {
   CitationRecord,
   GradientSample,
@@ -208,13 +208,14 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
   return async (
     state: RmmMiddlewareState & { messages: BaseMessage[] },
     runtime: Runtime<RmmRuntimeContext>
-  ): Promise<Record<string, unknown>> => {
+  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
     // Step 1: Check for citations
     const ctx = runtime.context;
     const citations = ctx._citations ?? [];
     const userId = ctx.userId;
     // Support both runtime.store (official API) and runtime.context.store (legacy)
-    const store = runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+    const store =
+      runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
 
     // No citations extracted (malformed or error) → skip RL update
     if (citations.length === 0) {

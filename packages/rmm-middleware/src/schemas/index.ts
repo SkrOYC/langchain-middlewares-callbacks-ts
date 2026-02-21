@@ -1,5 +1,5 @@
 import type { StoredMessage } from "@langchain/core/messages";
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import { StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 import { createZeroMatrix } from "@/utils/matrix";
 
@@ -648,13 +648,22 @@ export interface RmmMiddlewareState {
 // ============================================================================
 
 /**
- * Zod schema for RMM middleware state.
+ * LangChain StateSchema for RMM middleware state.
  * Used with createMiddleware to provide proper type inference.
  *
  * Note: The messages field is handled by LangChain's AgentBuiltInState.
  * This schema defines only the RMM-specific fields.
+ *
+ * @example
+ * import { createMiddleware } from "langchain";
+ * import { rmmMiddlewareStateSchema } from "./schemas";
+ *
+ * const middleware = createMiddleware({
+ *   stateSchema: rmmMiddlewareStateSchema,
+ *   // ... hooks
+ * });
  */
-export const rmmMiddlewareStateSchema = z.object({
+export const rmmMiddlewareStateSchema = new StateSchema({
   _rerankerWeights: RerankerStateSchema,
   _retrievedMemories: z.array(RetrievedMemorySchema).optional(),
   _citations: z.array(CitationRecordSchema).optional(),
@@ -664,6 +673,22 @@ export const rmmMiddlewareStateSchema = z.object({
 });
 
 /**
- * Type inferred from the RMM middleware state schema
+ * Zod schema for RMM middleware state (for validation).
+ * @deprecated Use rmmMiddlewareStateSchema (StateSchema) for LangChain integration.
+ * This Zod schema is kept for backwards compatibility and input validation.
  */
-export type RmmMiddlewareStateInput = z.input<typeof rmmMiddlewareStateSchema>;
+export const rmmMiddlewareStateSchemaZod = z.object({
+  _rerankerWeights: RerankerStateSchema,
+  _retrievedMemories: z.array(RetrievedMemorySchema).optional(),
+  _citations: z.array(CitationRecordSchema).optional(),
+  _turnCountInSession: z.number().int().nonnegative().optional(),
+  _messageBuffer: MessageBufferSchema.optional(),
+  _gradientAccumulator: GradientAccumulatorStateSchema.optional(),
+});
+
+/**
+ * Type inferred from the RMM middleware state schema (input/validation type)
+ */
+export type RmmMiddlewareStateInput = z.input<
+  typeof rmmMiddlewareStateSchemaZod
+>;

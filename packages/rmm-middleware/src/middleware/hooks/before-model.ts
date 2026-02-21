@@ -13,7 +13,7 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { Runtime } from "langchain";
+import type { MiddlewareResult, Runtime } from "langchain";
 import type {
   RerankerState,
   RetrievedMemory,
@@ -182,7 +182,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
   return async (
     state: RmmMiddlewareState & { messages: BaseMessage[] },
     _runtime: Runtime<RmmRuntimeContext>
-  ): Promise<BeforeModelStateUpdate> => {
+  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
     // Lazy validate embedding dimension on first call
     if (!validateOnce) {
       const { createLazyValidator } = await import(

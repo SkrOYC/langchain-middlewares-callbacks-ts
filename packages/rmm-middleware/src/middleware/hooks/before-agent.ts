@@ -15,7 +15,8 @@ import {
   mapStoredMessagesToChatMessages,
 } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { Runtime } from "langchain";
+import type { BaseStore } from "@langchain/langgraph-checkpoint";
+import type { MiddlewareResult, Runtime } from "langchain";
 import { extractMemories } from "@/algorithms/memory-extraction";
 import { processMemoryUpdate } from "@/algorithms/memory-update";
 import {
@@ -485,17 +486,15 @@ async function checkAndStageReflection(
   _rerankerState: RerankerState
 ): Promise<void> {
   // Support both runtime.store (official API) and runtime.context.store (legacy)
-  const store = runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+  const store =
+    runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
 
   // Skip if no userId, no deps, or no store available
   if (!(userId && options.reflectionDeps && store)) {
     return;
   }
 
-  const bufferStorage = createMessageBufferStorage(
-    store,
-    options.namespace
-  );
+  const bufferStorage = createMessageBufferStorage(store, options.namespace);
 
   const item = await bufferStorage.loadBufferItem(userId);
 
@@ -627,7 +626,7 @@ async function stageBufferForReflection(
  */
 function createInitialStateUpdate(
   rerankerState: RerankerState
-): BeforeAgentStateUpdate {
+): MiddlewareResult<Record<string, unknown>> {
   return {
     _rerankerWeights: rerankerState,
     _retrievedMemories: [],
@@ -642,7 +641,7 @@ function createInitialStateUpdate(
 function createErrorStateUpdate(
   error: unknown,
   config?: BeforeAgentOptions["rerankerConfig"]
-): BeforeAgentStateUpdate {
+): MiddlewareResult<Record<string, unknown>> {
   logger.warn(
     "Error loading weights, using initialized state:",
     error instanceof Error ? error.message : String(error)
@@ -740,12 +739,13 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
   return async (
     _state: BeforeAgentState,
     runtime: BeforeAgentRuntime
-  ): Promise<BeforeAgentStateUpdate> => {
+  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
     try {
       const userId = options.userIdExtractor(runtime);
 
       // Get store from runtime (supports both runtime.store and runtime.context.store for legacy)
-      const store = runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+      const store =
+        runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
 
       if (!store) {
         logger.debug("No store available, using initialized weights");

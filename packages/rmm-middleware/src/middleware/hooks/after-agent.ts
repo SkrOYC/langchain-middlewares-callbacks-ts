@@ -14,7 +14,7 @@
 import type { BaseMessage, StoredMessage } from "@langchain/core/messages";
 import { mapChatMessagesToStoredMessages } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { Runtime } from "langchain";
+import type { MiddlewareResult, Runtime } from "langchain";
 import type {
   MessageBuffer,
   ReflectionConfig,
@@ -119,7 +119,7 @@ export async function afterAgent(
   state: Partial<RmmMiddlewareState> & { messages: BaseMessage[] },
   _runtime: Runtime<RmmRuntimeContext>,
   deps?: AfterAgentDependencies
-): Promise<Record<string, unknown>> {
+): Promise<MiddlewareResult<Record<string, unknown>>> {
   try {
     // Skip if no messages
     if (!state.messages || state.messages.length === 0) {
@@ -152,4 +152,67 @@ export async function afterAgent(
     );
     return {};
   }
+}
+
+// ============================================================================
+// Factory Function
+// ============================================================================
+
+/**
+ * Options for creating the afterAgent hook
+ */
+export interface AfterAgentOptions {
+  /**
+   * Function to extract userId from runtime context
+   * Used for multi-user isolation of message buffers
+   */
+  userIdExtractor?: (runtime: Runtime<RmmRuntimeContext>) => string;
+  /**
+   * Reflection configuration (optional - enables prospective reflection)
+   */
+  reflectionConfig?: ReflectionConfig;
+}
+
+/**
+ * Creates the afterAgent hook for Prospective Reflection
+ *
+ * @param options - Configuration options
+ * @returns Middleware with afterAgent hook
+ *
+ * @example
+ * ```typescript
+ * const afterAgent = createRetrospectiveAfterAgent({
+ *   userIdExtractor: (runtime) => runtime.context.userId,
+ * });
+ *
+ * const agent = createAgent({
+ *   model,
+ *   middleware: [afterAgent],
+ * });
+ * ```
+ */
+export function createRetrospectiveAfterAgent(options: AfterAgentOptions = {}) {
+  return (
+    state: RmmMiddlewareState & { messages: BaseMessage[] },
+    runtime: Runtime<RmmRuntimeContext>
+  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
+    // Extract userId from runtime
+    const userId = options.userIdExtractor
+      ? options.userIdExtractor(runtime)
+      : undefined;
+
+    // Get store from runtime
+    const store =
+      runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+
+    // Build dependencies
+    const deps: AfterAgentDependencies = {
+      userId,
+      store,
+      reflectionConfig: options.reflectionConfig,
+    };
+
+    // Delegate to the core afterAgent implementation
+    return afterAgent(state, runtime, deps);
+  };
 }
