@@ -20,7 +20,6 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { type AIMessage, HumanMessage } from "@langchain/core/messages";
-import type { Runtime } from "langchain";
 import {
   applyEmbeddingAdaptation,
   computeRelevanceScore,
@@ -51,16 +50,19 @@ const logger = getLogger("wrap-model-call");
 
 /**
  * LangChain ModelRequest interface for wrapModelCall hook
- * Only includes fields actually used by RMM (per Issue #95 non-goals)
- * Uses index signature for LangChain compatibility
- * See: https://reference.langchain.com/javascript/langchain/index/ModelRequest
+ * Matches the expected structure from LangChain's WrapModelCallHook
+ *
+ * The runtime field uses an inline object structure with context property,
+ * not the Runtime<TContext> type, to match LangChain's expected type signature.
  */
 interface LangChainModelRequest<TState = unknown, TContext = unknown> {
   messages: BaseMessage[];
-  runtime: Runtime<TContext>;
+  runtime: {
+    context: TContext;
+    [key: string]: unknown;
+  };
   state: TState;
-  systemMessage: SystemMessage;
-  [key: string]: unknown;
+  systemMessage?: SystemMessage;
 }
 
 // ============================================================================

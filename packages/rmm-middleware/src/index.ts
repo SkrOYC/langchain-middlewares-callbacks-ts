@@ -153,10 +153,13 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   /**
    * Context schema for RMM middleware runtime context.
    * Defines the shape of runtime.context accessed in middleware hooks.
+   * Only includes user-facing fields (not internal _* fields which belong in state).
    */
   const rmmContextSchema = z.object({
+    userId: z.string().optional(),
     sessionId: z.string().optional(),
     store: z.custom<BaseStore>().optional(),
+    isSessionEnd: z.boolean().optional(),
   });
 
   /**
