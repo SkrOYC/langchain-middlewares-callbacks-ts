@@ -484,13 +484,16 @@ async function checkAndStageReflection(
   options: BeforeAgentOptions,
   _rerankerState: RerankerState
 ): Promise<void> {
+  // Support both runtime.store (official API) and runtime.context.store (legacy)
+  const store = runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+
   // Skip if no userId, no deps, or no store available
-  if (!(userId && options.reflectionDeps && runtime.context.store)) {
+  if (!(userId && options.reflectionDeps && store)) {
     return;
   }
 
   const bufferStorage = createMessageBufferStorage(
-    runtime.context.store,
+    store,
     options.namespace
   );
 
@@ -741,8 +744,8 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
     try {
       const userId = options.userIdExtractor(runtime);
 
-      // Get store from runtime (LangGraph provides store on runtime.store)
-      const store = runtime.store ?? runtime.context?.store;
+      // Get store from runtime (supports both runtime.store and runtime.context.store for legacy)
+      const store = runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
 
       if (!store) {
         logger.debug("No store available, using initialized weights");

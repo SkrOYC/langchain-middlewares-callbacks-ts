@@ -11,7 +11,6 @@ import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
 import {
   type AfterModelHook,
   type BeforeAgentHook,
@@ -154,11 +153,11 @@ export function rmmMiddleware(config: RmmConfig = {}) {
    * Context schema for RMM middleware runtime context.
    * Defines the shape of runtime.context accessed in middleware hooks.
    * Only includes user-facing fields (not internal _* fields which belong in state).
+   * Note: store is accessed via runtime.store, not runtime.context.store.
    */
   const rmmContextSchema = z.object({
     userId: z.string().optional(),
     sessionId: z.string().optional(),
-    store: z.custom<BaseStore>().optional(),
     isSessionEnd: z.boolean().optional(),
   });
 

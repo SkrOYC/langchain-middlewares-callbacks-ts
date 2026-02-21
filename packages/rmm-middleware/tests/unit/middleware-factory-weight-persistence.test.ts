@@ -4,17 +4,15 @@ import { createMockBaseStore } from "../fixtures/mock-base-store";
 /**
  * Tests for factory weight persistence via runtime store
  *
- * These tests verify that beforeAgent correctly uses runtime.context.store
- * (BaseStore) for weight persistence instead of the VectorStore from config.
+ * These tests verify that beforeAgent correctly uses runtime.store
+ * (BaseStore) for weight persistence.
  *
- * Bug: The factory was casting vectorStore to BaseStore at creation time,
- * but VectorStore doesn't have get()/put() methods - this would crash at runtime.
- *
- * Fix: Get BaseStore lazily from runtime.context.store at invocation time.
+ * Note: store is accessed via runtime.store, not runtime.context.store
+ * per the official LangChain createMiddleware API.
  */
 
 describe("Factory - Weight Persistence via Runtime Store", () => {
-  test("beforeAgent uses runtime.context.store when available", async () => {
+  test("beforeAgent uses runtime.store when available", async () => {
     const { rmmMiddleware } = await import("@/index");
 
     // Create a mock store that tracks if get/put were called
@@ -41,10 +39,10 @@ describe("Factory - Weight Persistence via Runtime Store", () => {
       enabled: true,
     });
 
-    // Call beforeAgent with runtime containing store
+    // Call beforeAgent with runtime containing store via runtime.store (correct per API)
     await middleware.beforeAgent({ messages: [] }, {
+      store: mockStore,
       context: {
-        store: mockStore,
         sessionId: "test-user",
       },
     } as any);

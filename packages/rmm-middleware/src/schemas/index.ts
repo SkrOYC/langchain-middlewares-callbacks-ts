@@ -598,8 +598,6 @@ export interface RmmRuntimeContext {
   userId?: string;
   /** Session ID for tracking conversation sessions */
   sessionId?: string;
-  /** BaseStore instance for long-term memory */
-  store?: BaseStore;
   /** Whether this is the end of a session */
   isSessionEnd?: boolean;
 

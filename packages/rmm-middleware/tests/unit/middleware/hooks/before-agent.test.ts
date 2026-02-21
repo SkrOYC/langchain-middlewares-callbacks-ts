@@ -361,9 +361,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     });
 
     const mockRuntime: BeforeAgentRuntime = {
+      store: mockStore,
       context: {
         userId: "test-user",
-        store: mockStore,
       },
     };
 
@@ -574,9 +574,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     });
 
     const mockRuntime: BeforeAgentRuntime = {
+      store: mockStore,
       context: {
         userId: "test-user",
-        store: mockStore,
       },
     };
 
@@ -685,9 +685,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     });
 
     const mockRuntime: BeforeAgentRuntime = {
+      store: mockStore,
       context: {
         userId: "test-user",
-        store: mockStore,
       },
     };
 
@@ -777,9 +777,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     });
 
     const mockRuntime: BeforeAgentRuntime = {
+      store: mockStore,
       context: {
         userId: "test-user",
-        store: mockStore,
       },
     };
 
@@ -891,9 +891,9 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     });
 
     const mockRuntime: BeforeAgentRuntime = {
+      store: mockStore,
       context: {
         userId: "test-user",
-        store: mockStore,
       },
     };
 

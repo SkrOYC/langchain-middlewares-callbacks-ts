@@ -213,7 +213,8 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
     const ctx = runtime.context;
     const citations = ctx._citations ?? [];
     const userId = ctx.userId;
-    const store = runtime.store ?? (ctx.store as BaseStore | undefined);
+    // Support both runtime.store (official API) and runtime.context.store (legacy)
+    const store = runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
 
     // No citations extracted (malformed or error) → skip RL update
     if (citations.length === 0) {
