@@ -14,6 +14,7 @@ const testMemory = {
   rawDialogue: "Speaker 1: I love hiking on weekends",
   timestamp: 1_234_567_890,
   sessionId: "session-1",
+  turnReferences: [0],
   embedding: [],
   relevanceScore: 0.9,
 };

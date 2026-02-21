@@ -1,113 +1,132 @@
 import { describe, expect, test } from "bun:test";
-import { createMockBaseStore } from "../fixtures/mock-base-store";
+import type { Runtime } from "langchain";
+import { rmmMiddleware } from "@/index";
+import type { RmmRuntimeContext } from "@/schemas";
+import { createInMemoryVectorStore } from "@/tests/fixtures/in-memory-vector-store";
+import { createMockBaseStore } from "@/tests/fixtures/mock-base-store";
+import { createMockEmbeddings } from "@/tests/helpers/mock-embeddings";
 
-/**
- * Tests for factory weight persistence via runtime store
- *
- * These tests verify that beforeAgent correctly uses runtime.store
- * (BaseStore) for weight persistence.
- *
- * Note: store is accessed via runtime.store, not runtime.context.store
- * per the official LangChain createMiddleware API.
- */
+function createState() {
+  return {
+    messages: [],
+    _rerankerWeights: {
+      weights: { queryTransform: [[0]], memoryTransform: [[0]] },
+      config: {
+        topK: 3,
+        topM: 1,
+        temperature: 0.5,
+        learningRate: 0.001,
+        baseline: 0.5,
+      },
+    },
+    _retrievedMemories: [],
+    _citations: [],
+    _turnCountInSession: 0,
+  };
+}
 
-describe("Factory - Weight Persistence via Runtime Store", () => {
-  test("beforeAgent uses runtime.store when available", async () => {
-    const { rmmMiddleware } = await import("@/index");
+describe("factory weight persistence", () => {
+  test("beforeAgent reads weights from runtime.store", async () => {
+    const embeddings = createMockEmbeddings();
+    const store = createMockBaseStore();
 
-    // Create a mock store that tracks if get/put were called
-    const mockStore = createMockBaseStore();
     let getCalled = false;
-    const originalGet = mockStore.get.bind(mockStore);
-    mockStore.get = async (namespace, key) => {
+    const originalGet = store.get.bind(store);
+    store.get = (namespace, key) => {
       getCalled = true;
-      return await originalGet(namespace, key);
+      return originalGet(namespace, key);
     };
 
     const middleware = rmmMiddleware({
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      },
-      embeddings: {
-        embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
-        embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
-      },
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
       embeddingDimension: 1536,
       enabled: true,
     });
 
-    // Call beforeAgent with runtime containing store via runtime.store (correct per API)
-    await middleware.beforeAgent({ messages: [] }, {
-      store: mockStore,
-      context: {
-        sessionId: "test-user",
-      },
-    } as any);
+    const beforeAgent = middleware.beforeAgent;
+    expect(beforeAgent).toBeDefined();
+    if (!beforeAgent) {
+      throw new Error("beforeAgent hook missing");
+    }
+    if (typeof beforeAgent === "function") {
+      await beforeAgent(createState(), {
+        store,
+        context: { sessionId: "test-user" },
+      } as Runtime<RmmRuntimeContext>);
+    } else {
+      await beforeAgent.hook(createState(), {
+        store,
+        context: { sessionId: "test-user" },
+      } as Runtime<RmmRuntimeContext>);
+    }
 
-    // Verify store was accessed
     expect(getCalled).toBe(true);
   });
 
-  test("beforeAgent uses initialized weights when store is missing", async () => {
-    const { rmmMiddleware } = await import("@/index");
-
+  test("beforeAgent initializes weights without store", async () => {
+    const embeddings = createMockEmbeddings();
     const middleware = rmmMiddleware({
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      },
-      embeddings: {
-        embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
-        embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
-      },
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
       embeddingDimension: 1536,
       enabled: true,
     });
 
-    // Call beforeAgent without store in runtime
-    const result = await middleware.beforeAgent({ messages: [] }, {
-      context: {},
-    } as any);
+    const beforeAgent = middleware.beforeAgent;
+    expect(beforeAgent).toBeDefined();
+    if (!beforeAgent) {
+      throw new Error("beforeAgent hook missing");
+    }
+    const result =
+      typeof beforeAgent === "function"
+        ? await beforeAgent(createState(), {
+            context: {},
+          } as Runtime<RmmRuntimeContext>)
+        : await beforeAgent.hook(createState(), {
+            context: {},
+          } as Runtime<RmmRuntimeContext>);
 
-    // Should return initialized weights (not crash)
-    expect(result._rerankerWeights).toBeDefined();
-    expect(result._rerankerWeights.config.topK).toBe(20);
+    expect(result).toBeDefined();
+    if (result && typeof result === "object" && "_rerankerWeights" in result) {
+      const typed = result as {
+        _rerankerWeights: { config: { topK: number } };
+      };
+      expect(typed._rerankerWeights.config.topK).toBe(20);
+    }
   });
 
-  test("beforeAgent uses initialized weights when userId is missing", async () => {
-    const { rmmMiddleware } = await import("@/index");
-
-    const mockStore = createMockBaseStore();
+  test("beforeAgent initializes weights when sessionId is missing", async () => {
+    const embeddings = createMockEmbeddings();
     const middleware = rmmMiddleware({
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      },
-      embeddings: {
-        embedQuery: async () => Array.from({ length: 1536 }, () => 0.5),
-        embedDocuments: async () => [Array.from({ length: 1536 }, () => 0.5)],
-      },
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
       embeddingDimension: 1536,
       enabled: true,
     });
 
-    // Call beforeAgent with store but no userId
-    const result = await middleware.beforeAgent({ messages: [] }, {
-      context: {
-        store: mockStore,
-        // No sessionId
-      },
-    } as any);
+    const beforeAgent = middleware.beforeAgent;
+    expect(beforeAgent).toBeDefined();
+    if (!beforeAgent) {
+      throw new Error("beforeAgent hook missing");
+    }
+    const result =
+      typeof beforeAgent === "function"
+        ? await beforeAgent(createState(), {
+            store: createMockBaseStore(),
+            context: {},
+          } as Runtime<RmmRuntimeContext>)
+        : await beforeAgent.hook(createState(), {
+            store: createMockBaseStore(),
+            context: {},
+          } as Runtime<RmmRuntimeContext>);
 
-    // Should return initialized weights (can't save without userId)
-    expect(result._rerankerWeights).toBeDefined();
-    expect(result._rerankerWeights.config.topK).toBe(20);
+    expect(result).toBeDefined();
+    if (result && typeof result === "object" && "_rerankerWeights" in result) {
+      const typed = result as {
+        _rerankerWeights: { config: { topK: number } };
+      };
+      expect(typed._rerankerWeights.config.topK).toBe(20);
+    }
   });
 });

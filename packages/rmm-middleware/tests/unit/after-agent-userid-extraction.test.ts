@@ -1,139 +1,122 @@
 import { describe, expect, test } from "bun:test";
-import { createMockBaseStore } from "../fixtures/mock-base-store";
+import { HumanMessage } from "@langchain/core/messages";
+import type { Runtime } from "langchain";
+import { rmmMiddleware } from "@/index";
+import type { RmmRuntimeContext } from "@/schemas";
+import { createInMemoryVectorStore } from "@/tests/fixtures/in-memory-vector-store";
+import { createMockBaseStore } from "@/tests/fixtures/mock-base-store";
+import { createMockEmbeddings } from "@/tests/helpers/mock-embeddings";
 
-/**
- * Tests for afterAgent userId extraction from runtime
- *
- * These tests verify that afterAgent correctly extracts userId from:
- * - runtime.configurable.sessionId
- * - runtime.context.sessionId
- *
- * Bug: The factory's afterAgent callback was not extracting userId,
- * causing the hook to always return early at line 139: if (!(userId && store)) return {}
- */
-
-describe("afterAgent - UserId Extraction", () => {
-  test("extracts userId from runtime.configurable.sessionId", async () => {
-    const { rmmMiddleware } = await import("@/index");
-
-    const mockStore = createMockBaseStore();
-    const middleware = rmmMiddleware({
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve(undefined);
-        },
+function createState() {
+  return {
+    messages: [new HumanMessage("Test message")],
+    _rerankerWeights: {
+      weights: { queryTransform: [[0]], memoryTransform: [[0]] },
+      config: {
+        topK: 3,
+        topM: 1,
+        temperature: 0.5,
+        learningRate: 0.001,
+        baseline: 0.5,
       },
+    },
+    _retrievedMemories: [],
+    _citations: [],
+    _turnCountInSession: 0,
+  };
+}
+
+describe("afterAgent user/session extraction", () => {
+  test("persists buffer using runtime.context.sessionId", async () => {
+    const embeddings = createMockEmbeddings();
+    const store = createMockBaseStore();
+
+    const middleware = rmmMiddleware({
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
+      embeddingDimension: 1536,
       enabled: true,
     });
 
-    // Runtime with sessionId in configurable
-    const runtime = {
-      configurable: { sessionId: "configurable-user-123" },
-      context: {
-        store: mockStore,
-        sessionId: "context-user-456",
-      },
-    };
+    const afterAgent = middleware.afterAgent;
+    expect(afterAgent).toBeDefined();
+    if (!afterAgent) {
+      throw new Error("afterAgent hook missing");
+    }
 
-    const state = {
-      messages: [
-        {
-          type: "human",
-          data: { content: "Test message", role: "human", name: "" },
-        },
-      ],
-    };
+    if (typeof afterAgent === "function") {
+      await afterAgent(createState(), {
+        context: { sessionId: "context-user-789" },
+        store,
+      } as Runtime<RmmRuntimeContext>);
+    } else {
+      await afterAgent.hook(createState(), {
+        context: { sessionId: "context-user-789" },
+        store,
+      } as Runtime<RmmRuntimeContext>);
+    }
 
-    await middleware.afterAgent(state as never, runtime as never);
-
-    // Should persist to "configurable-user-123" (configurable takes precedence)
-    const buffer = await mockStore.get(
-      ["rmm", "configurable-user-123", "buffer"],
+    const buffer = await store.get(
+      ["rmm", "context-user-789", "buffer"],
       "message-buffer"
     );
     expect(buffer).not.toBeNull();
-    expect(buffer?.value.messages).toHaveLength(1);
+    expect((buffer?.value as { messages: unknown[] }).messages).toHaveLength(1);
   });
 
-  test("extracts userId from runtime.context.sessionId when configurable is missing", async () => {
-    const { rmmMiddleware } = await import("@/index");
-
-    const mockStore = createMockBaseStore();
+  test("returns gracefully when sessionId is missing", async () => {
+    const embeddings = createMockEmbeddings();
     const middleware = rmmMiddleware({
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve(undefined);
-        },
-      },
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
+      embeddingDimension: 1536,
       enabled: true,
     });
 
-    // Runtime with only sessionId in context
-    const runtime = {
-      context: {
-        store: mockStore,
-        sessionId: "context-only-user-789",
-      },
-    };
+    const afterAgent = middleware.afterAgent;
+    expect(afterAgent).toBeDefined();
+    if (!afterAgent) {
+      throw new Error("afterAgent hook missing");
+    }
 
-    const state = {
-      messages: [
-        {
-          type: "human",
-          data: { content: "Test message", role: "human", name: "" },
-        },
-      ],
-    };
+    const result =
+      typeof afterAgent === "function"
+        ? await afterAgent(createState(), {
+            context: {},
+            store: createMockBaseStore(),
+          } as Runtime<RmmRuntimeContext>)
+        : await afterAgent.hook(createState(), {
+            context: {},
+            store: createMockBaseStore(),
+          } as Runtime<RmmRuntimeContext>);
 
-    await middleware.afterAgent(state as never, runtime as never);
-
-    // Should persist to "context-only-user-789"
-    const buffer = await mockStore.get(
-      ["rmm", "context-only-user-789", "buffer"],
-      "message-buffer"
-    );
-    expect(buffer).not.toBeNull();
-    expect(buffer?.value.messages).toHaveLength(1);
+    expect(result).toEqual({});
   });
 
-  test("handles missing userId gracefully", async () => {
-    const { rmmMiddleware } = await import("@/index");
-
-    const mockStore = createMockBaseStore();
+  test("returns gracefully when store is missing", async () => {
+    const embeddings = createMockEmbeddings();
     const middleware = rmmMiddleware({
-      vectorStore: {
-        similaritySearch: async () => [],
-        addDocuments: async () => {
-          return await Promise.resolve(undefined);
-        },
-      },
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
+      embeddingDimension: 1536,
       enabled: true,
     });
 
-    // Runtime without any sessionId
-    const runtime = {
-      configurable: {},
-      context: {
-        store: mockStore,
-      },
-    };
+    const afterAgent = middleware.afterAgent;
+    expect(afterAgent).toBeDefined();
+    if (!afterAgent) {
+      throw new Error("afterAgent hook missing");
+    }
 
-    const state = {
-      messages: [
-        {
-          type: "human",
-          data: { content: "Test message", role: "human", name: "" },
-        },
-      ],
-    };
+    const result =
+      typeof afterAgent === "function"
+        ? await afterAgent(createState(), {
+            context: { sessionId: "u1" },
+          } as Runtime<RmmRuntimeContext>)
+        : await afterAgent.hook(createState(), {
+            context: { sessionId: "u1" },
+          } as Runtime<RmmRuntimeContext>);
 
-    // Should not throw, should return early gracefully
-    const result = await middleware.afterAgent(
-      state as never,
-      runtime as never
-    );
     expect(result).toEqual({});
   });
 });

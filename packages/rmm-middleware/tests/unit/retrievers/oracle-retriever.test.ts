@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type {
+  LongMemEvalInstance,
+  OracleConfig,
+} from "@/retrievers/oracle-retriever";
 
 /**
  * Tests for Oracle Retriever
@@ -11,21 +15,6 @@ import { describe, expect, test } from "bun:test";
  */
 
 describe("Oracle Retriever", () => {
-  // Define test interfaces matching LongMemEval format
-  interface TestSession {
-    role: "user" | "assistant";
-    content: string;
-  }
-
-  interface TestLongMemEvalInstance {
-    question_id: string;
-    question_type: string;
-    question: string;
-    answer: string;
-    answer_session_ids: string[];
-    haystack_sessions: TestSession[][];
-  }
-
   describe("OracleVectorStore exports", () => {
     test("should export OracleVectorStore class", async () => {
       const { OracleVectorStore } = await import(
@@ -34,17 +23,13 @@ describe("Oracle Retriever", () => {
       expect(typeof OracleVectorStore).toBe("function");
     });
 
-    test("should export OracleConfig type", async () => {
-      const module = await import("@/retrievers/oracle-retriever");
-      // Type is exported and can be used in type annotations
-      const config: typeof module.OracleConfig = { annotations: [] };
+    test("should export OracleConfig type", () => {
+      const config: OracleConfig = { annotations: [] };
       expect(config.annotations).toBeEmpty();
     });
 
-    test("should export LongMemEvalInstance type", async () => {
-      const module = await import("@/retrievers/oracle-retriever");
-      // Type is exported and can be used in type annotations
-      const instance: typeof module.LongMemEvalInstance = {
+    test("should export LongMemEvalInstance type", () => {
+      const instance: LongMemEvalInstance = {
         question_id: "test",
         question_type: "single-session-user",
         question: "test",
@@ -62,7 +47,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -102,7 +87,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -139,7 +124,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -170,10 +155,10 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1_abs",
-          question_type: "single-session-user_abs",
+          question_type: "single-session-user",
           question: "What is the user's middle name?",
           answer: "Unknown",
           answer_session_ids: [], // Abstention: no relevant sessions
@@ -203,7 +188,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -244,7 +229,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -277,7 +262,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -314,7 +299,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -345,7 +330,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "multi-session",
@@ -393,7 +378,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",
@@ -423,7 +408,7 @@ describe("Oracle Retriever", () => {
         "@/retrievers/oracle-retriever"
       );
 
-      const mockAnnotations: TestLongMemEvalInstance[] = [
+      const mockAnnotations: LongMemEvalInstance[] = [
         {
           question_id: "q1",
           question_type: "single-session-user",

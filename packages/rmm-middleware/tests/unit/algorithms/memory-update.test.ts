@@ -274,8 +274,9 @@ describe("decideUpdateAction Algorithm", () => {
     );
 
     expect(capturedInputs.length).toBe(1);
-    expect(capturedInputs[0].history).toEqual([]);
-    expect(capturedInputs[0].new).toBe(sampleNewMemory.topicSummary);
+    const firstCapture = capturedInputs[0];
+    expect(firstCapture?.history).toEqual([]);
+    expect(firstCapture?.new).toBe(sampleNewMemory.topicSummary);
   });
 
   test("Formats similar memories as history summaries", async () => {
@@ -311,11 +312,12 @@ describe("decideUpdateAction Algorithm", () => {
     );
 
     expect(capturedInputs.length).toBe(1);
-    expect(capturedInputs[0].history).toEqual([
+    const firstCapture = capturedInputs[0];
+    expect(firstCapture?.history).toEqual([
       "User enjoys outdoor activities like hiking",
       "User is a software engineer",
     ]);
-    expect(capturedInputs[0].new).toBe(sampleNewMemory.topicSummary);
+    expect(firstCapture?.new).toBe(sampleNewMemory.topicSummary);
   });
 
   test("Handles out-of-bounds Merge index gracefully", async () => {

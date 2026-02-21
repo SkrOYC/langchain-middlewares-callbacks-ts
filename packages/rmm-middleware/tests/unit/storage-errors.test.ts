@@ -69,6 +69,14 @@ function createErrorThrowingMockBaseStore(error: Error): BaseStore {
     async listNamespaces(): Promise<never> {
       return await Promise.reject(error);
     },
+
+    async start(): Promise<void> {
+      // No-op for test mock
+    },
+
+    async stop(): Promise<void> {
+      // No-op for test mock
+    },
   };
 }
 
@@ -103,6 +111,14 @@ function createTimeoutMockBaseStore(delayMs: number): BaseStore {
     },
     async listNamespaces(): Promise<never> {
       return await Promise.reject(timeoutError);
+    },
+
+    async start(): Promise<void> {
+      // No-op for test mock
+    },
+
+    async stop(): Promise<void> {
+      // No-op for test mock
     },
   };
 }
@@ -162,6 +178,14 @@ function createPartialFailureMockBaseStore(failAfterOperations = 1): BaseStore {
     },
     async listNamespaces(): Promise<never> {
       return await Promise.reject(new Error("Not implemented"));
+    },
+
+    async start(): Promise<void> {
+      // No-op for test mock
+    },
+
+    async stop(): Promise<void> {
+      // No-op for test mock
     },
   };
 }

@@ -76,8 +76,8 @@ describe("InMemoryVectorStore Fixture", () => {
     );
 
     expect(results).toHaveLength(2);
-    expect(results[0].pageContent).toBe("User likes pizza");
-    expect(results[1].pageContent).toBe("User prefers sushi");
+    expect(results[0]?.pageContent).toBe("User likes pizza");
+    expect(results[1]?.pageContent).toBe("User prefers sushi");
   });
 
   test("should return empty array when no documents exist", async () => {
@@ -139,6 +139,6 @@ describe("InMemoryVectorStore Fixture", () => {
     const results = await vectorStore.similaritySearch("test", 1);
 
     expect(results).toHaveLength(1);
-    expect(results[0].metadata).toEqual(document.metadata);
+    expect(results[0]?.metadata).toEqual(document.metadata);
   });
 });

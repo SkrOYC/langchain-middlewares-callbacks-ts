@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { EvaluationMetrics } from "@/evaluation/metrics";
 
 /**
  * Tests for Evaluation Metrics
@@ -34,9 +35,8 @@ describe("Evaluation Metrics", () => {
       expect(typeof computeTurnAccuracy).toBe("function");
     });
 
-    test("should export EvaluationMetrics type", async () => {
-      const module = await import("@/evaluation/metrics");
-      const metrics: typeof module.EvaluationMetrics = {
+    test("should export EvaluationMetrics type", () => {
+      const metrics: EvaluationMetrics = {
         recallAt1: 0,
         recallAt5: 0,
         recallAt10: 0,

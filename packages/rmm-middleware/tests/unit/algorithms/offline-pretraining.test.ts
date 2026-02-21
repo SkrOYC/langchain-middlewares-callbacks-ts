@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type {
+  ContrastivePair,
+  PretrainingConfig,
+} from "@/algorithms/offline-pretraining";
 
 /**
  * Tests for Offline Pretraining - InfoNCE Contrastive Loss
@@ -24,9 +28,8 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
       expect(typeof SupervisedContrastiveLoss).toBe("function");
     });
 
-    test("should export ContrastivePair type", async () => {
-      const module = await import("@/algorithms/offline-pretraining");
-      const pair: typeof module.ContrastivePair = {
+    test("should export ContrastivePair type", () => {
+      const pair: ContrastivePair = {
         query: [0.1, 0.2, 0.3],
         positive: [0.8, 0.7, 0.6],
         negatives: [
@@ -37,9 +40,8 @@ describe("Offline Pretraining - InfoNCE Loss", () => {
       expect(pair.negatives.length).toBe(2);
     });
 
-    test("should export PretrainingConfig type", async () => {
-      const module = await import("@/algorithms/offline-pretraining");
-      const config: typeof module.PretrainingConfig = {
+    test("should export PretrainingConfig type", () => {
+      const config: PretrainingConfig = {
         temperature: 0.07,
         learningRate: 0.001,
         epochs: 10,

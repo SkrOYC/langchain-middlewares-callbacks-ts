@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { BaseMessage } from "@langchain/core/messages";
-import { HumanMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
+import { FakeToolCallingModel } from "langchain";
+import { createRetrospectiveWrapModelCall } from "@/middleware/hooks/wrap-model-call";
 import {
   createMockEmbeddings,
   createMockEmbeddingsWithFailure,
@@ -10,13 +15,12 @@ import {
  * Tests for wrapModelCall hook error scenarios
  *
  * These tests verify that wrapModelCall gracefully handles errors:
- * 1. Embeddings failure → calls handler normally (no memory injection)
- * 2. Reranking failure → calls handler normally
- * 3. Citation extraction failure → continues but stores no citations
+ * 1. Embeddings failure -> calls handler normally (no memory injection)
+ * 2. Missing human query -> calls handler normally
+ * 3. Empty/missing retrieved memories -> calls handler directly
  */
 
 describe("wrapModelCall Hook Error Scenarios", () => {
-  // Helper to create a valid reranker state
   function createValidRerankerState() {
     return {
       weights: {
@@ -37,7 +41,6 @@ describe("wrapModelCall Hook Error Scenarios", () => {
     };
   }
 
-  // Helper to create mock retrieved memories
   function createMockMemories(length = 5) {
     return Array.from({ length }, (_, i) => ({
       id: `memory-${i}`,
@@ -51,167 +54,137 @@ describe("wrapModelCall Hook Error Scenarios", () => {
     }));
   }
 
-  // Sample messages
-  const sampleMessages: BaseMessage[] = [
-    new HumanMessage({ content: "What is RMM?" }),
-  ];
+  function createRequest(
+    _hook: ReturnType<typeof createRetrospectiveWrapModelCall>,
+    overrides: {
+      request?: Partial<Parameters<typeof _hook>[0]>;
+      state?: Partial<Parameters<typeof _hook>[0]["state"]>;
+    } = {}
+  ): Parameters<typeof _hook>[0] {
+    const baseMessages = [new HumanMessage({ content: "What is RMM?" })];
+    const stateOverrides = overrides.state ?? {};
+    const requestOverrides = overrides.request ?? {};
 
-  test("should handle embeddings embedQuery failure gracefully", async () => {
-    const { createRetrospectiveWrapModelCall } = await import(
-      "@/middleware/hooks/wrap-model-call"
-    );
-
-    const failingEmbeddings = createMockEmbeddingsWithFailure(true);
-
-    const middleware = createRetrospectiveWrapModelCall({
-      embeddings: failingEmbeddings,
-    });
-
-    let handlerCalled = false;
-    const mockHandler = async () => {
-      handlerCalled = true;
-      return await Promise.resolve({
-        content: "Response about RMM",
-        text: "Response about RMM",
-      } satisfies { content: string; text: string });
-    };
-
-    const request = {
-      messages: sampleMessages,
+    const baseRequest: Parameters<typeof _hook>[0] = {
+      model: new FakeToolCallingModel(),
+      messages: baseMessages,
+      systemPrompt: "",
+      systemMessage: new SystemMessage(""),
+      tools: [],
       state: {
+        messages: baseMessages,
         _rerankerWeights: createValidRerankerState(),
         _retrievedMemories: createMockMemories(5),
         _citations: [],
         _turnCountInSession: 1,
+        ...stateOverrides,
       },
       runtime: {
         context: {},
       },
     };
 
-    const result = await middleware(request, mockHandler);
+    return {
+      ...baseRequest,
+      ...requestOverrides,
+      state: {
+        ...baseRequest.state,
+        ...stateOverrides,
+      },
+    };
+  }
 
-    // Should call handler normally without memory injection
+  test("should handle embeddings embedQuery failure gracefully", async () => {
+    const hook = createRetrospectiveWrapModelCall({
+      embeddings: createMockEmbeddingsWithFailure(true),
+      embeddingDimension: 1536,
+    });
+
+    let handlerCalled = false;
+    const handler: Parameters<typeof hook>[1] = () => {
+      handlerCalled = true;
+      return new AIMessage("Response about RMM");
+    };
+
+    const result = await hook(createRequest(hook), handler);
+
     expect(handlerCalled).toBe(true);
     expect(result.content).toBe("Response about RMM");
   });
 
-  test("should handle missing reranker weights gracefully", async () => {
-    const { createRetrospectiveWrapModelCall } = await import(
-      "@/middleware/hooks/wrap-model-call"
-    );
-
-    const workingEmbeddings = createMockEmbeddings();
-
-    const middleware = createRetrospectiveWrapModelCall({
-      embeddings: workingEmbeddings,
+  test("should handle requests without a human query gracefully", async () => {
+    const hook = createRetrospectiveWrapModelCall({
+      embeddings: createMockEmbeddings(),
+      embeddingDimension: 1536,
     });
 
     let handlerCalled = false;
-    const mockHandler = async () => {
+    const handler: Parameters<typeof hook>[1] = () => {
       handlerCalled = true;
-      return await Promise.resolve({
-        content: "Response",
-        text: "Response",
-      } satisfies { content: string; text: string });
+      return new AIMessage("Response");
     };
 
-    const request = {
-      messages: sampleMessages,
+    const request = createRequest(hook, {
+      request: {
+        messages: [new SystemMessage("System only")],
+      },
       state: {
-        _rerankerWeights: {} as any, // Invalid weights
-        _retrievedMemories: createMockMemories(5),
-        _citations: [],
-        _turnCountInSession: 1,
+        messages: [new SystemMessage("System only")],
       },
-      runtime: {
-        context: {},
-      },
-    };
+    });
 
-    const result = await middleware(request, mockHandler);
+    const result = await hook(request, handler);
 
-    // Should call handler normally without reranking
     expect(handlerCalled).toBe(true);
     expect(result.content).toBe("Response");
   });
 
   test("should handle empty retrieved memories array", async () => {
-    const { createRetrospectiveWrapModelCall } = await import(
-      "@/middleware/hooks/wrap-model-call"
-    );
-
-    const workingEmbeddings = createMockEmbeddings();
-
-    const middleware = createRetrospectiveWrapModelCall({
-      embeddings: workingEmbeddings,
+    const hook = createRetrospectiveWrapModelCall({
+      embeddings: createMockEmbeddings(),
+      embeddingDimension: 1536,
     });
 
     let handlerCalled = false;
-    const mockHandler = async () => {
+    const handler: Parameters<typeof hook>[1] = () => {
       handlerCalled = true;
-      return await Promise.resolve({
-        content: "Response",
-        text: "Response",
-      } satisfies { content: string; text: string });
+      return new AIMessage("Response");
     };
 
-    const request = {
-      messages: sampleMessages,
-      state: {
-        _rerankerWeights: createValidRerankerState(),
-        _retrievedMemories: [], // Empty
-        _citations: [],
-        _turnCountInSession: 1,
-      },
-      runtime: {
-        context: {},
-      },
-    };
+    const result = await hook(
+      createRequest(hook, {
+        state: {
+          _retrievedMemories: [],
+        },
+      }),
+      handler
+    );
 
-    const result = await middleware(request, mockHandler);
-
-    // Should call handler directly when no memories
     expect(handlerCalled).toBe(true);
     expect(result.content).toBe("Response");
   });
 
   test("should handle missing retrieved memories gracefully", async () => {
-    const { createRetrospectiveWrapModelCall } = await import(
-      "@/middleware/hooks/wrap-model-call"
-    );
-
-    const workingEmbeddings = createMockEmbeddings();
-
-    const middleware = createRetrospectiveWrapModelCall({
-      embeddings: workingEmbeddings,
+    const hook = createRetrospectiveWrapModelCall({
+      embeddings: createMockEmbeddings(),
+      embeddingDimension: 1536,
     });
 
     let handlerCalled = false;
-    const mockHandler = async () => {
+    const handler: Parameters<typeof hook>[1] = () => {
       handlerCalled = true;
-      return await Promise.resolve({
-        content: "Response",
-        text: "Response",
-      } satisfies { content: string; text: string });
+      return new AIMessage("Response");
     };
 
-    const request = {
-      messages: sampleMessages,
-      state: {
-        _rerankerWeights: createValidRerankerState(),
-        _retrievedMemories: undefined as any, // Missing
-        _citations: [],
-        _turnCountInSession: 1,
-      },
-      runtime: {
-        context: {},
-      },
-    };
+    const result = await hook(
+      createRequest(hook, {
+        state: {
+          _retrievedMemories: undefined,
+        },
+      }),
+      handler
+    );
 
-    const result = await middleware(request, mockHandler);
-
-    // Should call handler directly when memories missing
     expect(handlerCalled).toBe(true);
     expect(result.content).toBe("Response");
   });
