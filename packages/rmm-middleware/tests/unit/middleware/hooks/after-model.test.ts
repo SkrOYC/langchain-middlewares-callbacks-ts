@@ -154,7 +154,7 @@ describe("afterModel Hook Integration", () => {
     };
 
     // Should not throw
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     expect(result).toBeDefined();
     expect(typeof result).toBe("object");
   });
@@ -195,7 +195,7 @@ describe("afterModel Hook Integration", () => {
     };
 
     // Should not throw
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     expect(result).toBeDefined();
   });
 
@@ -237,7 +237,7 @@ describe("afterModel Hook Integration", () => {
     };
 
     // Should not throw
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     expect(result).toBeDefined();
   });
 
@@ -279,7 +279,7 @@ describe("afterModel Hook Integration", () => {
     };
 
     // Should not throw
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     expect(result).toBeDefined();
   });
 
@@ -321,7 +321,7 @@ describe("afterModel Hook Integration", () => {
     };
 
     // Should not throw
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     expect(result).toBeDefined();
   });
 
@@ -368,7 +368,7 @@ describe("afterModel Hook Integration", () => {
       },
     };
 
-    await afterModel.afterModel(state, runtime);
+    await afterModel(state, runtime);
 
     // Verify something was saved
     expect(savedData.size).toBeGreaterThan(0);
@@ -427,7 +427,7 @@ describe("afterModel Hook Integration", () => {
     };
 
     // Should NOT throw a dimension mismatch error
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     expect(result).toBeDefined();
     // Should have updated weights
     expect(result._rerankerWeights).toBeDefined();
@@ -478,7 +478,7 @@ describe("afterModel Hook Integration", () => {
         _turnCountInSession: i,
       };
       const runtime = createRuntime(i);
-      const result = await afterModel.afterModel(state, runtime);
+      const result = await afterModel(state, runtime);
       expect(result).toBeDefined();
     }
   });
@@ -570,7 +570,7 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
       },
     };
 
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
 
     const updatedWeights = result._rerankerWeights as RerankerState;
     expect(updatedWeights).toBeDefined();
@@ -672,13 +672,13 @@ describe("REINFORCE Gradient Correctness (Equation 3)", () => {
 
     // Run with τ=1.0
     const reranker_t1 = makeReranker(1.0);
-    const result_t1 = await afterModel.afterModel(makeState(reranker_t1), {
+    const result_t1 = await afterModel(makeState(reranker_t1), {
       context: makeContext(P_t1),
     });
 
     // Run with τ=0.5
     const reranker_t05 = makeReranker(0.5);
-    const result_t05 = await afterModel.afterModel(makeState(reranker_t05), {
+    const result_t05 = await afterModel(makeState(reranker_t05), {
       context: makeContext(P_t05),
     });
 
@@ -777,7 +777,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
       },
     };
 
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     const updatedWeights = result._rerankerWeights as RerankerState;
 
     // All weight updates should be zero when advantage is zero
@@ -856,7 +856,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
       },
     };
 
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     const updatedWeights = result._rerankerWeights as RerankerState;
 
     // With single memory and P_i = 1.0:
@@ -955,7 +955,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
       },
     };
 
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     const updatedWeights = result._rerankerWeights as RerankerState;
 
     // Verify gradient is computed and non-zero
@@ -1056,7 +1056,7 @@ describe("REINFORCE Gradient Fixes (RMM-11)", () => {
       },
     };
 
-    const result = await afterModel.afterModel(state, runtime);
+    const result = await afterModel(state, runtime);
     const updatedWeights = result._rerankerWeights as RerankerState;
 
     // Get the actual gradient

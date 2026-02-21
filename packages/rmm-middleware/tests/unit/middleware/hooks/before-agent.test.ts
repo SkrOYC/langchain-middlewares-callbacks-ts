@@ -156,7 +156,7 @@ describe("beforeAgent Hook", () => {
       },
     };
 
-    const result = await middleware.beforeAgent(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result).not.toBeNull();
     expect(result._rerankerWeights).toBeDefined();
@@ -203,7 +203,7 @@ describe("beforeAgent Hook", () => {
       },
     };
 
-    const result = await middleware.beforeAgent(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result).not.toBeNull();
     expect(result._rerankerWeights).toBeDefined();
@@ -258,7 +258,7 @@ describe("beforeAgent Hook", () => {
       },
     };
 
-    const result = await middleware.beforeAgent(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result._rerankerWeights).toBeDefined();
     expect(result._retrievedMemories).toEqual([]);
@@ -305,7 +305,7 @@ describe("beforeAgent Hook", () => {
     };
 
     // Should not throw, should return initialized weights
-    const result = await middleware.beforeAgent(sampleState, mockRuntime);
+    const result = await middleware(sampleState, mockRuntime);
 
     expect(result).not.toBeNull();
     expect(result._rerankerWeights).toBeDefined();
@@ -367,7 +367,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       },
     };
 
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Verify staged buffer was created
     const stagedBufferKey = "rmm|test-user|buffer|staging|message-buffer";
@@ -427,7 +427,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // Start reflection (non-blocking)
-    const reflectionPromise = middleware.beforeAgent(sampleState, mockRuntime);
+    const reflectionPromise = middleware(sampleState, mockRuntime);
 
     // Simulate new message arriving during reflection
     // Wait for clearBuffer to be called first
@@ -521,7 +521,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       },
     };
 
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Verify live buffer still exists (not cleared)
     const liveBuffer = storedBuffers.get("rmm|test-user|buffer|message-buffer");
@@ -580,7 +580,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
       },
     };
 
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Verify main buffer is cleared after staging (prevents duplicate processing)
     const mainBufferKey = "rmm|test-user|buffer|message-buffer";
@@ -692,7 +692,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // First, trigger the middleware which starts async reflection
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Wait for reflection to complete (it runs asynchronously)
     // We can detect completion by waiting for the captured documents
@@ -784,7 +784,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // Trigger reflection (will fail gracefully)
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Give async reflection time to fail gracefully
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -898,7 +898,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // Trigger reflection (will retry after addDocuments failure)
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Give retry logic time to execute (increased timeout for exponential backoff)
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -996,7 +996,7 @@ describe("beforeAgent Hook - Staging Pattern", () => {
     };
 
     // Trigger reflection (will fail)
-    const reflectionPromise = middleware.beforeAgent(sampleState, mockRuntime);
+    const reflectionPromise = middleware(sampleState, mockRuntime);
 
     // Wait for reflection to start reading from staging
     // This ensures we add messages AFTER reflection has read staging content
@@ -1277,7 +1277,7 @@ describe("reflectionDeps Interface Extensions", () => {
       },
     };
 
-    await middleware.beforeAgent(sampleState, mockRuntime);
+    await middleware(sampleState, mockRuntime);
 
     // Wait for async reflection
     let attempts = 0;

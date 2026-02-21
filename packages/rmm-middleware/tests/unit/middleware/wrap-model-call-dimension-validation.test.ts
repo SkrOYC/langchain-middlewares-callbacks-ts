@@ -72,9 +72,9 @@ describe("wrapModelCall Hook Dimension Validation", () => {
       },
     };
 
-    await expect(
-      middleware.wrapModelCall(request, mockHandler)
-    ).rejects.toThrow("Embedding dimension mismatch");
+    await expect(middleware(request, mockHandler)).rejects.toThrow(
+      "Embedding dimension mismatch"
+    );
   });
 
   test("should throw ConfigurationError when embeddings dimension is too large", async () => {
@@ -137,9 +137,9 @@ describe("wrapModelCall Hook Dimension Validation", () => {
       },
     };
 
-    await expect(
-      middleware.wrapModelCall(request, mockHandler)
-    ).rejects.toThrow("Embedding dimension mismatch");
+    await expect(middleware(request, mockHandler)).rejects.toThrow(
+      "Embedding dimension mismatch"
+    );
   });
 
   test("should throw ConfigurationError with expected 1536 dimension in error message", async () => {
@@ -202,9 +202,7 @@ describe("wrapModelCall Hook Dimension Validation", () => {
       },
     };
 
-    await expect(
-      middleware.wrapModelCall(request, mockHandler)
-    ).rejects.toThrow("1536");
+    await expect(middleware(request, mockHandler)).rejects.toThrow("1536");
   });
 
   test("should throw ConfigurationError when actual dimension is included in error message", async () => {
@@ -267,9 +265,7 @@ describe("wrapModelCall Hook Dimension Validation", () => {
       },
     };
 
-    await expect(
-      middleware.wrapModelCall(request, mockHandler)
-    ).rejects.toThrow("2048");
+    await expect(middleware(request, mockHandler)).rejects.toThrow("2048");
   });
 
   test("should initialize successfully with correct 1536 dimension", async () => {
@@ -330,8 +326,6 @@ describe("wrapModelCall Hook Dimension Validation", () => {
       },
     };
 
-    await expect(
-      middleware.wrapModelCall(request, mockHandler)
-    ).resolves.toBeDefined();
+    await expect(middleware(request, mockHandler)).resolves.toBeDefined();
   });
 });

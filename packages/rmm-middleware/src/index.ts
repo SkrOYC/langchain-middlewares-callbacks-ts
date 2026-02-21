@@ -101,16 +101,6 @@ export type {
 } from "@/schemas/config.js";
 export type { RmmMiddlewareState, RmmRuntimeContext } from "@/schemas/index.js";
 
-/**
- * Extracts the hook function from a middleware factory result
- */
-function extractHook<T extends Record<string, unknown>, K extends keyof T>(
-  factory: T,
-  hookKey: K
-): T[K] {
-  return factory[hookKey];
-}
-
 const logger = getLogger("rmm-middleware");
 
 /**
@@ -244,23 +234,9 @@ export function rmmMiddleware(config: RmmConfig = {}) {
       ? ["rmm", parsedConfig.sessionId]
       : undefined,
     reflectionDeps:
-      parsedConfig.llm && parsedConfig.embeddings
+      parsedConfig.llm && parsedConfig.embeddings && parsedConfig.vectorStore
         ? {
-            vectorStore: {
-              similaritySearch: (query) =>
-                parsedConfig.vectorStore?.similaritySearch?.(query as string) ??
-                Promise.resolve([]),
-              addDocuments: (documents) => {
-                const docs = documents as Array<{
-                  pageContent: string;
-                  metadata?: Record<string, unknown>;
-                }>;
-                return (
-                  parsedConfig.vectorStore?.addDocuments?.(docs) ??
-                  Promise.resolve(undefined)
-                );
-              },
-            },
+            vectorStore: parsedConfig.vectorStore as VectorStoreInterface,
             extractSpeaker1,
             extractSpeaker2,
             updateMemory,
@@ -284,28 +260,23 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     clipThreshold: 100,
   };
 
-  // Create hook factories and extract hooks
-  const beforeAgentMiddleware =
-    createRetrospectiveBeforeAgent(beforeAgentOptions);
-  const beforeAgentHook = extractHook(beforeAgentMiddleware, "beforeAgent");
+  // Create hooks directly (factories now return hook functions)
+  const beforeAgentHook = createRetrospectiveBeforeAgent(beforeAgentOptions);
 
-  const beforeModelMiddleware =
-    createRetrospectiveBeforeModel(beforeModelOptions);
-  const beforeModelHook = extractHook(beforeModelMiddleware, "beforeModel");
+  const beforeModelHook = createRetrospectiveBeforeModel(beforeModelOptions);
 
-  const afterModelMiddleware = createRetrospectiveAfterModel(afterModelOptions);
-  const afterModelHook = extractHook(afterModelMiddleware, "afterModel");
+  const afterModelHook = createRetrospectiveAfterModel(afterModelOptions);
 
   // Create wrapModelCall hook only if embeddings is present (optional for retrospective reflection)
-  let wrapModelCallHook: ReturnType<typeof extractHook> | undefined;
+  let wrapModelCallHook:
+    | ReturnType<typeof createRetrospectiveWrapModelCall>
+    | undefined;
   if (parsedConfig.embeddings && parsedConfig.embeddingDimension) {
     const wrapModelCallOptions: WrapModelCallOptions = {
       embeddings: parsedConfig.embeddings as Embeddings,
       embeddingDimension: parsedConfig.embeddingDimension,
     };
-    const wrapModelCallMiddleware =
-      createRetrospectiveWrapModelCall(wrapModelCallOptions);
-    wrapModelCallHook = extractHook(wrapModelCallMiddleware, "wrapModelCall");
+    wrapModelCallHook = createRetrospectiveWrapModelCall(wrapModelCallOptions);
   }
 
   // Create the combined middleware
@@ -318,7 +289,10 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     contextSchema: rmmContextSchema,
     beforeAgent: beforeAgentHook as BeforeAgentHook<StateSchema, Context>,
     beforeModel: beforeModelHook as BeforeModelHook<StateSchema, Context>,
-    wrapModelCall: wrapModelCallHook as WrapModelCallHook<StateSchema, Context>,
+    wrapModelCall: wrapModelCallHook as unknown as WrapModelCallHook<
+      StateSchema,
+      Context
+    >,
     afterModel: afterModelHook as AfterModelHook<StateSchema, Context>,
     afterAgent: async (state, runtime) => {
       // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)

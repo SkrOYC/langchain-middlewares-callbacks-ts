@@ -205,127 +205,123 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
   const batchSize = options.batchSize ?? 4;
   const clipThreshold = options.clipThreshold ?? 100;
 
-  return {
-    name: "rmm-after-model",
+  return async (
+    state: RmmMiddlewareState & { messages: BaseMessage[] },
+    runtime: Runtime<RmmRuntimeContext>
+  ): Promise<Record<string, unknown>> => {
+    // Step 1: Check for citations
+    const ctx = runtime.context;
+    const citations = ctx._citations ?? [];
+    const userId = ctx.userId;
+    const store = runtime.store ?? (ctx.store as BaseStore | undefined);
 
-    afterModel: async (
-      state: RmmMiddlewareState & { messages: BaseMessage[] },
-      runtime: Runtime<RmmRuntimeContext>
-    ): Promise<Record<string, unknown>> => {
-      // Step 1: Check for citations
-      const ctx = runtime.context;
-      const citations = ctx._citations ?? [];
-      const userId = ctx.userId;
-      const store = runtime.store ?? (ctx.store as BaseStore | undefined);
+    // No citations extracted (malformed or error) → skip RL update
+    if (citations.length === 0) {
+      logger.debug("No citations found, skipping RL update");
+      return {
+        _turnCountInSession: state._turnCountInSession,
+      };
+    }
 
-      // No citations extracted (malformed or error) → skip RL update
-      if (citations.length === 0) {
-        logger.debug("No citations found, skipping RL update");
-        return {
-          _turnCountInSession: state._turnCountInSession,
+    // Missing required context → skip update
+    if (!(userId && store)) {
+      logger.warn("Missing userId or store, skipping RL update");
+      return {
+        _turnCountInSession: state._turnCountInSession,
+      };
+    }
+
+    try {
+      const embDim = getEmbeddingDimension(state._rerankerWeights);
+
+      // Step 2: Build GradientSample from runtime context
+      const gradientSample = buildGradientSample(
+        state._rerankerWeights,
+        citations,
+        {
+          originalQuery: ctx._originalQuery,
+          adaptedQuery: ctx._adaptedQuery,
+          originalMemoryEmbeddings: ctx._originalMemoryEmbeddings,
+          adaptedMemoryEmbeddings: ctx._adaptedMemoryEmbeddings,
+          samplingProbabilities: ctx._samplingProbabilities,
+          selectedIndices: ctx._selectedIndices,
+        },
+        embDim
+      );
+
+      // Step 3: Load gradient accumulator from BaseStore
+      const gradientStorage = createGradientStorage(store);
+      const weightStorage = createWeightStorage(store);
+
+      // Load current accumulator state (graceful degradation: null on failure)
+      let accumulator = await gradientStorage.load(userId);
+
+      if (!accumulator) {
+        // Create new accumulator
+        accumulator = {
+          samples: [],
+          accumulatedGradWq: createZeroMatrix(embDim, embDim),
+          accumulatedGradWm: createZeroMatrix(embDim, embDim),
+          lastBatchIndex: 0,
+          lastUpdated: Date.now(),
+          version: 0,
         };
       }
 
-      // Missing required context → skip update
-      if (!(userId && store)) {
-        logger.warn("Missing userId or store, skipping RL update");
-        return {
-          _turnCountInSession: state._turnCountInSession,
-        };
-      }
-
-      try {
-        const embDim = getEmbeddingDimension(state._rerankerWeights);
-
-        // Step 2: Build GradientSample from runtime context
-        const gradientSample = buildGradientSample(
+      // Step 4-6: Accumulate gradients and apply update if batch is full
+      const isSessionEnd = ctx.isSessionEnd ?? false;
+      const { accumulator: updatedAccumulator, updatedWeights } =
+        accumulateGradients(
+          accumulator,
+          gradientSample,
           state._rerankerWeights,
-          citations,
-          {
-            originalQuery: ctx._originalQuery,
-            adaptedQuery: ctx._adaptedQuery,
-            originalMemoryEmbeddings: ctx._originalMemoryEmbeddings,
-            adaptedMemoryEmbeddings: ctx._adaptedMemoryEmbeddings,
-            samplingProbabilities: ctx._samplingProbabilities,
-            selectedIndices: ctx._selectedIndices,
-          },
-          embDim
+          embDim,
+          batchSize,
+          isSessionEnd,
+          clipThreshold
         );
 
-        // Step 3: Load gradient accumulator from BaseStore
-        const gradientStorage = createGradientStorage(store);
-        const weightStorage = createWeightStorage(store);
+      // Step 7: Persist updated weights to BaseStore
+      const saved = await weightStorage.saveWeights(userId, updatedWeights);
 
-        // Load current accumulator state (graceful degradation: null on failure)
-        let accumulator = await gradientStorage.load(userId);
-
-        if (!accumulator) {
-          // Create new accumulator
-          accumulator = {
-            samples: [],
-            accumulatedGradWq: createZeroMatrix(embDim, embDim),
-            accumulatedGradWm: createZeroMatrix(embDim, embDim),
-            lastBatchIndex: 0,
-            lastUpdated: Date.now(),
-            version: 0,
-          };
-        }
-
-        // Step 4-6: Accumulate gradients and apply update if batch is full
-        const isSessionEnd = ctx.isSessionEnd ?? false;
-        const { accumulator: updatedAccumulator, updatedWeights } =
-          accumulateGradients(
-            accumulator,
-            gradientSample,
-            state._rerankerWeights,
-            embDim,
-            batchSize,
-            isSessionEnd,
-            clipThreshold
-          );
-
-        // Step 7: Persist updated weights to BaseStore
-        const saved = await weightStorage.saveWeights(userId, updatedWeights);
-
-        if (!saved) {
-          logger.warn("Failed to persist updated weights");
-        }
-
-        // Persist accumulator state (with version increment for optimistic locking)
-        updatedAccumulator.version += 1;
-        const saveSuccess = await gradientStorage.save(
-          userId,
-          updatedAccumulator
-        );
-
-        if (!saveSuccess) {
-          logger.warn("Failed to save gradient accumulator");
-        }
-
-        // Step 8: Clear runtime context embeddings for next turn
-        clearRuntimeContext(runtime);
-
-        // Return updated state
-        return {
-          _rerankerWeights: updatedWeights,
-          _gradientAccumulator: updatedAccumulator.samples,
-          _citations: [],
-          _turnCountInSession: state._turnCountInSession,
-        };
-      } catch (error) {
-        logger.warn(
-          "Error during RL update, continuing:",
-          error instanceof Error ? error.message : String(error)
-        );
-
-        // Clear context even on error
-        clearRuntimeContext(runtime);
-
-        return {
-          _turnCountInSession: state._turnCountInSession,
-        };
+      if (!saved) {
+        logger.warn("Failed to persist updated weights");
       }
-    },
+
+      // Persist accumulator state (with version increment for optimistic locking)
+      updatedAccumulator.version += 1;
+      const saveSuccess = await gradientStorage.save(
+        userId,
+        updatedAccumulator
+      );
+
+      if (!saveSuccess) {
+        logger.warn("Failed to save gradient accumulator");
+      }
+
+      // Step 8: Clear runtime context embeddings for next turn
+      clearRuntimeContext(runtime);
+
+      // Return updated state
+      return {
+        _rerankerWeights: updatedWeights,
+        _gradientAccumulator: updatedAccumulator.samples,
+        _citations: [],
+        _turnCountInSession: state._turnCountInSession,
+      };
+    } catch (error) {
+      logger.warn(
+        "Error during RL update, continuing:",
+        error instanceof Error ? error.message : String(error)
+      );
+
+      // Clear context even on error
+      clearRuntimeContext(runtime);
+
+      return {
+        _turnCountInSession: state._turnCountInSession,
+      };
+    }
   };
 }
 
