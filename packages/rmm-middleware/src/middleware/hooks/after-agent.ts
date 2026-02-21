@@ -14,7 +14,7 @@
 import type { BaseMessage, StoredMessage } from "@langchain/core/messages";
 import { mapChatMessagesToStoredMessages } from "@langchain/core/messages";
 import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { MiddlewareResult, Runtime } from "langchain";
+import type { Runtime } from "langchain";
 import type {
   MessageBuffer,
   ReflectionConfig,
@@ -119,7 +119,7 @@ export async function afterAgent(
   state: Partial<RmmMiddlewareState> & { messages: BaseMessage[] },
   _runtime: Runtime<RmmRuntimeContext>,
   deps?: AfterAgentDependencies
-): Promise<MiddlewareResult<Record<string, unknown>>> {
+): Promise<Record<string, never>> {
   try {
     // Skip if no messages
     if (!state.messages || state.messages.length === 0) {
@@ -195,15 +195,13 @@ export function createRetrospectiveAfterAgent(options: AfterAgentOptions = {}) {
   return (
     state: RmmMiddlewareState & { messages: BaseMessage[] },
     runtime: Runtime<RmmRuntimeContext>
-  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
+  ): Promise<Record<string, never>> => {
     // Extract userId from runtime
     const userId = options.userIdExtractor
       ? options.userIdExtractor(runtime)
       : undefined;
 
-    // Get store from runtime
-    const store =
-      runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+    const store = runtime.store;
 
     // Build dependencies
     const deps: AfterAgentDependencies = {

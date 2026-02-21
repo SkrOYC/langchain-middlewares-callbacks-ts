@@ -13,11 +13,10 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { MiddlewareResult, Runtime } from "langchain";
+import type { Runtime } from "langchain";
 import type {
   RerankerState,
   RetrievedMemory,
-  RmmMiddlewareState,
   RmmRuntimeContext,
 } from "@/schemas";
 import { getLogger } from "@/utils/logger";
@@ -179,10 +178,17 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
 
+  interface BeforeModelState {
+    messages: BaseMessage[];
+    _rerankerWeights?: RerankerState | null;
+    _retrievedMemories?: RetrievedMemory[];
+    _turnCountInSession?: number;
+  }
+
   return async (
-    state: RmmMiddlewareState & { messages: BaseMessage[] },
+    state: BeforeModelState,
     _runtime: Runtime<RmmRuntimeContext>
-  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
+  ): Promise<BeforeModelStateUpdate> => {
     // Lazy validate embedding dimension on first call
     if (!validateOnce) {
       const { createLazyValidator } = await import(
