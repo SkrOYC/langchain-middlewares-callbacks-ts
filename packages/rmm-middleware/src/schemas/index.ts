@@ -505,7 +505,8 @@ export const SerializedMessageSchema = z.unknown();
  * For runtime validation, use parseMessageBuffer() from validation.ts instead.
  * Supports ContentBlock[] content (LangChain v1 format).
  */
-export const MessageBufferSchema = z.unknown();
+export const MessageBufferSchema: z.ZodType<MessageBuffer> =
+  z.custom<MessageBuffer>();
 
 /**
  * Message buffer for cross-thread message persistence.

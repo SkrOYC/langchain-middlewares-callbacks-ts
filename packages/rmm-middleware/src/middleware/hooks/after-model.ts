@@ -18,13 +18,12 @@
  */
 
 import type { BaseMessage } from "@langchain/core/messages";
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { MiddlewareResult, Runtime } from "langchain";
+import type { Runtime } from "langchain";
 import type {
   CitationRecord,
+  GradientAccumulatorState,
   GradientSample,
   RerankerState,
-  RmmMiddlewareState,
   RmmRuntimeContext,
 } from "@/schemas";
 
@@ -40,6 +39,12 @@ import {
 } from "@/utils/matrix";
 
 const logger = getLogger("after-model");
+
+interface AfterModelState {
+  messages: BaseMessage[];
+  _rerankerWeights: RerankerState;
+  _turnCountInSession?: number;
+}
 
 // ============================================================================
 // Constants
@@ -58,7 +63,7 @@ const EPSILON = 1e-9;
  * Accumulates gradients and applies update if batch is full
  */
 function accumulateGradients(
-  accumulator: NonNullable<RmmMiddlewareState["_gradientAccumulator"]>,
+  accumulator: GradientAccumulatorState,
   gradientSample: GradientSample,
   rerankerWeights: RerankerState,
   embDim: number,
@@ -66,7 +71,7 @@ function accumulateGradients(
   isSessionEnd: boolean,
   clipThreshold: number
 ): {
-  accumulator: NonNullable<RmmMiddlewareState["_gradientAccumulator"]>;
+  accumulator: GradientAccumulatorState;
   updatedWeights: RerankerState;
   batchApplied: boolean;
 } {
@@ -206,16 +211,14 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
   const clipThreshold = options.clipThreshold ?? 100;
 
   return async (
-    state: RmmMiddlewareState & { messages: BaseMessage[] },
+    state: AfterModelState,
     runtime: Runtime<RmmRuntimeContext>
-  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
+  ): Promise<AfterModelStateUpdate> => {
     // Step 1: Check for citations
     const ctx = runtime.context;
     const citations = ctx._citations ?? [];
     const userId = ctx.userId;
-    // Support both runtime.store (official API) and runtime.context.store (legacy)
-    const store =
-      runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+    const store = runtime.store;
 
     // No citations extracted (malformed or error) → skip RL update
     if (citations.length === 0) {
@@ -307,7 +310,7 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
       // Return updated state
       return {
         _rerankerWeights: updatedWeights,
-        _gradientAccumulator: updatedAccumulator.samples,
+        _gradientAccumulator: updatedAccumulator,
         _citations: [],
         _turnCountInSession: state._turnCountInSession,
       };
@@ -814,4 +817,14 @@ function clearRuntimeContext(runtime: Runtime<RmmRuntimeContext>): void {
   ctx._adaptedMemoryEmbeddings = undefined;
   ctx._samplingProbabilities = undefined;
   ctx._selectedIndices = undefined;
+}
+
+/**
+ * State update returned by the afterModel hook.
+ */
+export interface AfterModelStateUpdate {
+  _rerankerWeights?: RerankerState;
+  _gradientAccumulator?: GradientAccumulatorState;
+  _citations?: CitationRecord[];
+  _turnCountInSession?: number;
 }

@@ -49,7 +49,8 @@ describe("Memory Actions", () => {
       await addMemory(sampleMemory as any, mockVectorStore as any);
 
       expect(addedDocuments.length).toBe(1);
-      expect(addedDocuments[0].pageContent).toBe(sampleMemory.topicSummary);
+      const firstDoc = addedDocuments[0];
+      expect(firstDoc?.pageContent).toBe(sampleMemory.topicSummary);
     });
 
     test("includes correct metadata in document", async () => {
@@ -74,11 +75,11 @@ describe("Memory Actions", () => {
       await addMemory(sampleMemory as any, mockVectorStore as any);
 
       expect(addedDocuments.length).toBe(1);
-      const metadata = addedDocuments[0].metadata;
-      expect(metadata.id).toBe(sampleMemory.id);
-      expect(metadata.sessionId).toBe(sampleMemory.sessionId);
-      expect(metadata.timestamp).toBe(sampleMemory.timestamp);
-      expect(metadata.turnReferences).toEqual(sampleMemory.turnReferences);
+      const metadata = addedDocuments[0]?.metadata;
+      expect(metadata?.id).toBe(sampleMemory.id);
+      expect(metadata?.sessionId).toBe(sampleMemory.sessionId);
+      expect(metadata?.timestamp).toBe(sampleMemory.timestamp);
+      expect(metadata?.turnReferences).toEqual(sampleMemory.turnReferences);
     });
 
     test("propagates VectorStore errors for retry handling", async () => {
@@ -118,7 +119,8 @@ describe("Memory Actions", () => {
 
       await addMemory(sampleMemory as any, mockVectorStore as any);
 
-      expect(addedDocuments[0].pageContent).toBe(sampleMemory.topicSummary);
+      const firstDoc = addedDocuments[0];
+      expect(firstDoc?.pageContent).toBe(sampleMemory.topicSummary);
     });
   });
 
@@ -173,7 +175,8 @@ describe("Memory Actions", () => {
       await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       expect(addedDocuments.length).toBe(1);
-      expect(addedDocuments[0].pageContent).toBe(mergedSummary);
+      const firstDoc = addedDocuments[0];
+      expect(firstDoc?.pageContent).toBe(mergedSummary);
     });
 
     test("includes existing metadata in updated document", async () => {
@@ -224,7 +227,10 @@ describe("Memory Actions", () => {
           metadata: Record<string, unknown>;
         }>
       ) => {
-        addedMetadata.push(docs[0].metadata);
+        const firstDoc = docs[0];
+        if (firstDoc) {
+          addedMetadata.push(firstDoc.metadata);
+        }
       };
 
       const mockVectorStore = {
@@ -237,8 +243,9 @@ describe("Memory Actions", () => {
 
       // The updated document should preserve metadata
       expect(addedMetadata.length).toBe(1);
-      expect(addedMetadata[0].sessionId).toBe(existingMetadata.sessionId);
-      expect(addedMetadata[0].turnReferences).toEqual(
+      const firstMetadata = addedMetadata[0];
+      expect(firstMetadata?.sessionId).toBe(existingMetadata.sessionId);
+      expect(firstMetadata?.turnReferences).toEqual(
         existingMetadata.turnReferences
       );
     });
@@ -330,7 +337,7 @@ describe("Memory Actions", () => {
       await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
 
       expect(deletedIds.length).toBe(1);
-      expect(deletedIds[0][0]).toBe(existingId);
+      expect(deletedIds[0]?.[0]).toBe(existingId);
     });
 
     test("uses provided mergedSummary as pageContent", async () => {
@@ -364,7 +371,10 @@ describe("Memory Actions", () => {
           metadata: Record<string, unknown>;
         }>
       ) => {
-        addedContent.push(docs[0].pageContent);
+        const firstDoc = docs[0];
+        if (firstDoc) {
+          addedContent.push(firstDoc.pageContent);
+        }
       };
 
       const mockVectorStore = {
@@ -405,7 +415,10 @@ describe("Memory Actions", () => {
         }>
       ) => {
         addDocumentsCalled = true;
-        addedContent.push(docs[0].pageContent);
+        const firstDoc = docs[0];
+        if (firstDoc) {
+          addedContent.push(firstDoc.pageContent);
+        }
       };
 
       const mockDelete = (_options: { ids: string[] }) => {

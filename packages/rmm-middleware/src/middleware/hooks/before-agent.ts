@@ -15,8 +15,7 @@ import {
   mapStoredMessagesToChatMessages,
 } from "@langchain/core/messages";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
-import type { BaseStore } from "@langchain/langgraph-checkpoint";
-import type { MiddlewareResult, Runtime } from "langchain";
+import type { Runtime } from "langchain";
 import { extractMemories } from "@/algorithms/memory-extraction";
 import { processMemoryUpdate } from "@/algorithms/memory-update";
 import {
@@ -26,7 +25,6 @@ import {
   type ReflectionConfig,
   type RerankerState,
   type RetrievedMemory,
-  type RmmMiddlewareState,
   type RmmRuntimeContext,
 } from "@/schemas";
 import {
@@ -172,7 +170,9 @@ type BeforeAgentRuntime = Runtime<RmmRuntimeContext>;
 /**
  * State type for beforeAgent hook
  */
-type BeforeAgentState = RmmMiddlewareState & { messages: BaseMessage[] };
+interface BeforeAgentState {
+  messages: BaseMessage[];
+}
 
 // ============================================================================
 // Trigger Logic
@@ -485,9 +485,7 @@ async function checkAndStageReflection(
   options: BeforeAgentOptions,
   _rerankerState: RerankerState
 ): Promise<void> {
-  // Support both runtime.store (official API) and runtime.context.store (legacy)
-  const store =
-    runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+  const store = runtime.store;
 
   // Skip if no userId, no deps, or no store available
   if (!(userId && options.reflectionDeps && store)) {
@@ -626,7 +624,7 @@ async function stageBufferForReflection(
  */
 function createInitialStateUpdate(
   rerankerState: RerankerState
-): MiddlewareResult<Record<string, unknown>> {
+): BeforeAgentStateUpdate {
   return {
     _rerankerWeights: rerankerState,
     _retrievedMemories: [],
@@ -641,7 +639,7 @@ function createInitialStateUpdate(
 function createErrorStateUpdate(
   error: unknown,
   config?: BeforeAgentOptions["rerankerConfig"]
-): MiddlewareResult<Record<string, unknown>> {
+): BeforeAgentStateUpdate {
   logger.warn(
     "Error loading weights, using initialized state:",
     error instanceof Error ? error.message : String(error)
@@ -739,13 +737,11 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
   return async (
     _state: BeforeAgentState,
     runtime: BeforeAgentRuntime
-  ): Promise<MiddlewareResult<Record<string, unknown>>> => {
+  ): Promise<BeforeAgentStateUpdate> => {
     try {
       const userId = options.userIdExtractor(runtime);
 
-      // Get store from runtime (supports both runtime.store and runtime.context.store for legacy)
-      const store =
-        runtime.store ?? (runtime.context as { store?: BaseStore })?.store;
+      const store = runtime.store;
 
       if (!store) {
         logger.debug("No store available, using initialized weights");

@@ -9,9 +9,9 @@ import type { BaseMessage } from "@langchain/core/messages";
 import {
   AIMessage,
   HumanMessage,
+  type StoredMessage,
   SystemMessage,
 } from "@langchain/core/messages";
-import type { SerializedMessage } from "@/schemas";
 
 /**
  * Creates a SerializedMessage (plain object) for testing
@@ -20,12 +20,13 @@ import type { SerializedMessage } from "@/schemas";
 export function createSerializedMessage(
   type: "human" | "ai" | "system" | "tool",
   content: string
-): SerializedMessage {
+): StoredMessage {
   return {
     data: {
       content,
       role: type,
       name: "",
+      tool_call_id: undefined,
     },
     type,
   };
@@ -77,6 +78,6 @@ export function createTestMessages(
  */
 export function createTestSerializedMessages(
   messages: Array<{ type: "human" | "ai" | "system" | "tool"; content: string }>
-): SerializedMessage[] {
+): StoredMessage[] {
   return messages.map((msg) => createSerializedMessage(msg.type, msg.content));
 }

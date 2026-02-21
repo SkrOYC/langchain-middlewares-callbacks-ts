@@ -155,7 +155,8 @@ describe("Reranking Algorithms", () => {
       // W · q = q (for identity)
       // q' = q + q = 2q
       for (let i = 0; i < result.length; i++) {
-        expect(result[i]).toBeCloseTo(sampleQuery[i] * 2, 10);
+        const queryValue = sampleQuery[i];
+        expect(result[i]).toBeCloseTo((queryValue ?? 0) * 2, 10);
       }
     });
   });
@@ -314,24 +315,31 @@ describe("Reranking Algorithms", () => {
       const { gumbelSoftmaxSample } = await import("@/algorithms/reranking");
 
       // Create memories with a clear gap: two high scores, two low scores
+      const baseMemory0 = sampleMemories[0];
+      const baseMemory1 = sampleMemories[1];
+      const baseMemory2 = sampleMemories[2];
+      const baseMemory3 = sampleMemories[3];
+      if (!(baseMemory0 && baseMemory1 && baseMemory2 && baseMemory3)) {
+        throw new Error("Expected sample memories to contain four entries");
+      }
       const gapMemories: ScoredMemory[] = [
         {
-          ...(sampleMemories[0] ?? { id: "fallback-0" }),
+          ...baseMemory0,
           id: "high-0",
           rerankScore: 100,
         },
         {
-          ...(sampleMemories[1] ?? { id: "fallback-1" }),
+          ...baseMemory1,
           id: "low-0",
           rerankScore: -100,
         },
         {
-          ...(sampleMemories[2] ?? { id: "fallback-2" }),
+          ...baseMemory2,
           id: "high-1",
           rerankScore: 99,
         },
         {
-          ...(sampleMemories[3] ?? { id: "fallback-3" }),
+          ...baseMemory3,
           id: "low-1",
           rerankScore: -99,
         },
@@ -372,7 +380,13 @@ describe("Reranking Algorithms", () => {
       for (let i = 0; i < result.selectedMemories.length; i++) {
         const selectedMemory = result.selectedMemories[i];
         const originalIndex = result.selectedIndices[i];
+        if (originalIndex === undefined || selectedMemory === undefined) {
+          continue;
+        }
         const originalMemory = sampleMemories[originalIndex];
+        if (originalMemory === undefined) {
+          continue;
+        }
 
         expect(selectedMemory.id).toBe(originalMemory.id);
       }

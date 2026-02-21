@@ -106,7 +106,8 @@ describe("findSimilarMemories Algorithm", () => {
     expect(result).not.toBeNull();
     expect(Array.isArray(result)).toBe(true);
     expect(result?.length).toBe(1);
-    expect(result?.[0].id).toBe("existing-memory-1");
+    const firstResult = result?.[0];
+    expect(firstResult?.id).toBe("existing-memory-1");
   });
 
   test("returns empty array when no matches", async () => {
@@ -221,8 +222,10 @@ describe("findSimilarMemories Algorithm", () => {
     expect(result?.length).toBe(2);
 
     // Verify retrieved memories have expected structure
-    expect(result?.[0].topicSummary).toBe("User likes outdoor activities");
-    expect(result?.[1].topicSummary).toBe("User is a software engineer");
+    const firstResult = result?.[0];
+    const secondResult = result?.[1];
+    expect(firstResult?.topicSummary).toBe("User likes outdoor activities");
+    expect(secondResult?.topicSummary).toBe("User is a software engineer");
   });
 
   test("handles VectorStore errors gracefully", async () => {
@@ -288,11 +291,11 @@ describe("findSimilarMemories Algorithm", () => {
     expect(result?.length).toBe(1);
 
     const retrieved = result?.[0];
-    expect(retrieved.id).toBe(expectedId);
-    expect(retrieved.sessionId).toBe(expectedSessionId);
-    expect(retrieved.timestamp).toBe(expectedTimestamp);
-    expect(retrieved.turnReferences).toEqual(expectedTurnRefs);
-    expect(retrieved.rawDialogue).toBe("Test memory content");
+    expect(retrieved?.id).toBe(expectedId);
+    expect(retrieved?.sessionId).toBe(expectedSessionId);
+    expect(retrieved?.timestamp).toBe(expectedTimestamp);
+    expect(retrieved?.turnReferences).toEqual(expectedTurnRefs);
+    expect(retrieved?.rawDialogue).toBe("Test memory content");
   });
 
   test("handles multiple similar memories", async () => {
@@ -342,9 +345,12 @@ describe("findSimilarMemories Algorithm", () => {
 
     expect(result).not.toBeNull();
     expect(result?.length).toBe(3);
-    expect(result?.[0].id).toBe("memory-1");
-    expect(result?.[1].id).toBe("memory-2");
-    expect(result?.[2].id).toBe("memory-3");
+    const firstResult = result?.[0];
+    const secondResult = result?.[1];
+    const thirdResult = result?.[2];
+    expect(firstResult?.id).toBe("memory-1");
+    expect(secondResult?.id).toBe("memory-2");
+    expect(thirdResult?.id).toBe("memory-3");
   });
 
   test("uses topicSummary for similarity search query", async () => {

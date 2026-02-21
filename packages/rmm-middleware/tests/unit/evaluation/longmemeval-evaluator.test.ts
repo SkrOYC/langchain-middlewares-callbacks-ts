@@ -1,27 +1,58 @@
 import { describe, expect, test } from "bun:test";
+import { Document } from "@langchain/core/documents";
+import type { VectorStoreInterface } from "@langchain/core/vectorstores";
+import {
+  type EvaluationResult,
+  LongMemEvalEvaluator,
+  type Table1Metrics,
+} from "@/evaluation/longmemeval-evaluator";
+import type { LongMemEvalInstance } from "@/retrievers/oracle-retriever";
+import { createInMemoryVectorStore } from "@/tests/fixtures/in-memory-vector-store";
+import { createMockEmbeddings } from "@/tests/helpers/mock-embeddings";
 
-/**
- * Tests for LongMemEval Evaluator
- *
- * These tests verify:
- * 1. LongMemEvalEvaluator class functionality
- * 2. Table 1 format reproduction (Oracle: 100% Recall@5)
- * 3. Abstention question filtering
- * 4. Session-level and turn-level accuracy computation
- */
+function createInstance(
+  overrides: Partial<LongMemEvalInstance> = {}
+): LongMemEvalInstance {
+  return {
+    question_id: "q1",
+    question_type: "single-session-user",
+    question: "What is the user's name?",
+    answer: "John",
+    answer_session_ids: ["session-0"],
+    haystack_sessions: [[{ role: "user", content: "Hello, my name is John" }]],
+    ...overrides,
+  };
+}
+
+function createEmptyRetriever(): VectorStoreInterface {
+  return createInMemoryVectorStore(createMockEmbeddings());
+}
+
+async function createRetrieverWithSession(
+  sessionId: string
+): Promise<VectorStoreInterface> {
+  const retriever = createEmptyRetriever();
+  await retriever.addDocuments([
+    new Document({
+      pageContent: "test content",
+      metadata: {
+        sessionId,
+        questionId: "q1",
+        relevanceScore: 1.0,
+      },
+    }),
+  ]);
+  return retriever;
+}
 
 describe("LongMemEval Evaluator", () => {
   describe("Exports", () => {
-    test("should export LongMemEvalEvaluator class", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
+    test("should export LongMemEvalEvaluator class", () => {
       expect(typeof LongMemEvalEvaluator).toBe("function");
     });
 
-    test("should export EvaluationResult type", async () => {
-      const module = await import("@/evaluation/longmemeval-evaluator");
-      const result: typeof module.EvaluationResult = {
+    test("should export EvaluationResult type", () => {
+      const result: EvaluationResult = {
         recallAt5: 1.0,
         accuracy: 0.9,
         sessionAccuracy: 0.95,
@@ -29,13 +60,14 @@ describe("LongMemEval Evaluator", () => {
         mrr: 0.92,
         totalQuestions: 100,
         abstentionCount: 10,
+        evaluatedInstances: 100,
+        skippedInstances: 10,
       };
       expect(result.recallAt5).toBe(1.0);
     });
 
-    test("should export Table1Metrics type", async () => {
-      const module = await import("@/evaluation/longmemeval-evaluator");
-      const metrics: typeof module.Table1Metrics = {
+    test("should export Table1Metrics type", () => {
+      const metrics: Table1Metrics = {
         retriever: "Oracle",
         recallAt5: 1.0,
         accuracy: 0.902,
@@ -47,43 +79,19 @@ describe("LongMemEval Evaluator", () => {
   });
 
   describe("LongMemEvalEvaluator initialization", () => {
-    test("creates evaluator with valid config", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
+    test("creates evaluator with valid config", () => {
       const evaluator = new LongMemEvalEvaluator({
         dataset: [],
-        retriever: {
-          similaritySearch: async () => {
-            return await Promise.resolve([]);
-          },
-          addDocuments: async () => {
-            return await Promise.resolve();
-          },
-        },
+        retriever: createEmptyRetriever(),
       });
 
       expect(evaluator).toBeDefined();
     });
 
-    test("accepts custom retriever implementation", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
+    test("accepts custom retriever implementation", () => {
       const evaluator = new LongMemEvalEvaluator({
         dataset: [],
-        retriever: mockRetriever,
+        retriever: createEmptyRetriever(),
       });
 
       expect(evaluator).toBeDefined();
@@ -92,83 +100,19 @@ describe("LongMemEval Evaluator", () => {
 
   describe("Oracle results reproduction", () => {
     test("Oracle retriever achieves 100% Recall@5", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      // Mock Oracle retriever that returns ground truth
-      const mockOracleRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([
-            {
-              pageContent: "test content",
-              metadata: {
-                sessionId: "session-0",
-                questionId: "q1",
-                relevanceScore: 1.0,
-              },
-            },
-          ]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
-        dataset: [
-          {
-            question_id: "q1",
-            question_type: "single-session-user",
-            question: "What is the user's name?",
-            answer: "John",
-            answer_session_ids: ["session-0"],
-            haystack_sessions: [
-              [{ role: "user", content: "Hello, my name is John" }],
-            ],
-          },
-        ],
-        retriever: mockOracleRetriever,
+        dataset: [createInstance()],
+        retriever: await createRetrieverWithSession("session-0"),
       });
 
       const results = await evaluator.evaluate();
-
-      // Oracle should achieve 100% Recall@5
       expect(results.recallAt5).toBe(1.0);
     });
 
     test("Oracle retriever achieves high accuracy", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      // Mock Oracle retriever
-      const mockOracleRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([
-            {
-              pageContent: "test content",
-              metadata: {
-                sessionId: "session-0",
-                questionId: "q1",
-                relevanceScore: 1.0,
-              },
-            },
-          ]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
         dataset: [
-          {
-            question_id: "q1",
-            question_type: "single-session-user",
-            question: "What is the user's name?",
-            answer: "John",
-            answer_session_ids: ["session-0"],
+          createInstance({
             haystack_sessions: [
               [
                 {
@@ -179,59 +123,22 @@ describe("LongMemEval Evaluator", () => {
                 { role: "assistant", content: "Nice to meet you, John" },
               ],
             ],
-          },
+          }),
         ],
-        retriever: mockOracleRetriever,
+        retriever: await createRetrieverWithSession("session-0"),
       });
 
       const results = await evaluator.evaluate();
-
-      // Oracle should achieve high accuracy (100% when has_answer is present)
       expect(results.accuracy).toBe(1.0);
     });
 
     test("produces Table 1 format metrics", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([
-            {
-              pageContent: "test content",
-              metadata: {
-                sessionId: "session-0",
-                questionId: "q1",
-                relevanceScore: 1.0,
-              },
-            },
-          ]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
-        dataset: [
-          {
-            question_id: "q1",
-            question_type: "single-session-user",
-            question: "What is the user's name?",
-            answer: "John",
-            answer_session_ids: ["session-0"],
-            haystack_sessions: [
-              [{ role: "user", content: "Hello, my name is John" }],
-            ],
-          },
-        ],
-        retriever: mockRetriever,
+        dataset: [createInstance()],
+        retriever: await createRetrieverWithSession("session-0"),
       });
 
-      // Must call evaluate() first to generate metrics
       await evaluator.evaluate();
-
       const tableMetrics = evaluator.getTable1Metrics("Oracle");
 
       expect(tableMetrics).toHaveProperty("retriever");
@@ -245,60 +152,28 @@ describe("LongMemEval Evaluator", () => {
 
   describe("Abstention filtering", () => {
     test("filters abstention questions", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
         dataset: [
-          {
+          createInstance({
             question_id: "q1_abs",
-            question_type: "single-session-user_abs", // Abstention type
             question: "What is the user's middle name?",
             answer: "Unknown",
             answer_session_ids: [],
-            haystack_sessions: [
-              [{ role: "user", content: "Hello, my name is John" }],
-            ],
-          },
+          }),
         ],
-        retriever: mockRetriever,
+        retriever: createEmptyRetriever(),
       });
 
       const results = await evaluator.evaluate();
-
-      // Abstention questions should not affect metrics
       expect(results.abstentionCount).toBe(1);
     });
   });
 
   describe("Dataset handling", () => {
     test("handles empty dataset", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
         dataset: [],
-        retriever: mockRetriever,
+        retriever: createEmptyRetriever(),
       });
 
       const results = await evaluator.evaluate();
@@ -308,147 +183,57 @@ describe("LongMemEval Evaluator", () => {
     });
 
     test("processes multiple question types", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([
-            {
-              pageContent: "test content",
-              metadata: {
-                sessionId: "session-0",
-                questionId: "q1",
-                relevanceScore: 1.0,
-              },
-            },
-          ]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
         dataset: [
-          {
+          createInstance({
             question_id: "q1",
             question_type: "single-session-user",
-            question: "User's name?",
-            answer: "John",
-            answer_session_ids: ["session-0"],
-            haystack_sessions: [[{ role: "user", content: "My name is John" }]],
-          },
-          {
+          }),
+          createInstance({
             question_id: "q2",
             question_type: "multi-session",
             question: "User's preferences?",
             answer: "Hiking",
             answer_session_ids: ["session-1"],
             haystack_sessions: [[{ role: "user", content: "I love hiking" }]],
-          },
+          }),
         ],
-        retriever: mockRetriever,
+        retriever: createEmptyRetriever(),
       });
 
       const results = await evaluator.evaluate();
-
       expect(results.totalQuestions).toBe(2);
     });
   });
 
-  describe("Session accuracy", () => {
+  describe("Session and turn accuracy", () => {
     test("computes session-level accuracy", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([
-            {
-              pageContent: "test content",
-              metadata: {
-                sessionId: "session-0",
-                questionId: "q1",
-                relevanceScore: 1.0,
-              },
-            },
-          ]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
-        dataset: [
-          {
-            question_id: "q1",
-            question_type: "single-session-user",
-            question: "User's name?",
-            answer: "John",
-            answer_session_ids: ["session-0"],
-            haystack_sessions: [[{ role: "user", content: "My name is John" }]],
-          },
-        ],
-        retriever: mockRetriever,
+        dataset: [createInstance()],
+        retriever: await createRetrieverWithSession("session-0"),
       });
 
       const results = await evaluator.evaluate();
-
-      // Perfect session accuracy for Oracle
       expect(results.sessionAccuracy).toBe(1.0);
     });
-  });
 
-  describe("Turn accuracy", () => {
     test("computes turn-level accuracy", async () => {
-      const { LongMemEvalEvaluator } = await import(
-        "@/evaluation/longmemeval-evaluator"
-      );
-
-      const mockRetriever = {
-        similaritySearch: async (_query: string, _k?: number) => {
-          return await Promise.resolve([
-            {
-              pageContent: "test content",
-              metadata: {
-                sessionId: "session-0",
-                questionId: "q1",
-                relevanceScore: 1.0,
-              },
-            },
-          ]);
-        },
-        addDocuments: async () => {
-          return await Promise.resolve();
-        },
-      };
-
       const evaluator = new LongMemEvalEvaluator({
         dataset: [
-          {
-            question_id: "q1",
-            question_type: "single-session-user",
-            question: "User's name?",
-            answer: "John",
-            answer_session_ids: ["session-0"],
+          createInstance({
             haystack_sessions: [
               [
-                { role: "user", content: "My name is John" },
+                { role: "user", content: "My name is John", has_answer: true },
                 { role: "assistant", content: "Nice to meet you, John" },
               ],
             ],
-          },
+          }),
         ],
-        retriever: mockRetriever,
+        retriever: await createRetrieverWithSession("session-0"),
       });
 
       const results = await evaluator.evaluate();
 
-      // Turn accuracy should be computed
       expect(typeof results.turnAccuracy).toBe("number");
       expect(results.turnAccuracy).toBeGreaterThanOrEqual(0);
     });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SerializedMessage } from "@/schemas";
+import type { StoredMessage } from "@langchain/core/messages";
 import {
   countHumanMessages,
   getLastHumanMessage,
@@ -16,12 +16,13 @@ import { parseMessageBuffer } from "@/utils/validation";
  * 3. Find the last human message in an array
  */
 
-function createTestMessage(type: string, content: string): SerializedMessage {
+function createTestMessage(type: string, content: string): StoredMessage {
   return {
     data: {
       content,
       role: type,
       name: "",
+      tool_call_id: undefined,
     },
     type,
   };
@@ -46,18 +47,28 @@ describe("Message Helpers", () => {
 
     test("handles message with type property only", () => {
       const message = {
-        data: { content: "Hello", role: "human", name: "" },
+        data: {
+          content: "Hello",
+          role: "human",
+          name: "",
+          tool_call_id: undefined,
+        },
         type: "human",
-      } as unknown as SerializedMessage;
+      } as unknown as StoredMessage;
 
       expect(isHumanMessage(message)).toBe(true);
     });
 
     test("handles message with data.role", () => {
       const message = {
-        data: { content: "Hello", role: "human", name: "" },
+        data: {
+          content: "Hello",
+          role: "human",
+          name: "",
+          tool_call_id: undefined,
+        },
         type: "message",
-      } as unknown as SerializedMessage;
+      } as unknown as StoredMessage;
 
       expect(isHumanMessage(message)).toBe(true);
     });
@@ -65,7 +76,7 @@ describe("Message Helpers", () => {
 
   describe("countHumanMessages", () => {
     test("counts human messages correctly", () => {
-      const messages: SerializedMessage[] = [
+      const messages: StoredMessage[] = [
         createTestMessage("human", "Hello"),
         createTestMessage("ai", "Hi there!"),
         createTestMessage("human", "How are you?"),
@@ -83,7 +94,7 @@ describe("Message Helpers", () => {
     });
 
     test("returns 0 for no human messages", () => {
-      const messages: SerializedMessage[] = [
+      const messages: StoredMessage[] = [
         createTestMessage("ai", "I am AI"),
         createTestMessage("system", "System message"),
       ];
@@ -93,9 +104,7 @@ describe("Message Helpers", () => {
     });
 
     test("handles single human message", () => {
-      const messages: SerializedMessage[] = [
-        createTestMessage("human", "Hello"),
-      ];
+      const messages: StoredMessage[] = [createTestMessage("human", "Hello")];
 
       const count = countHumanMessages(messages);
       expect(count).toBe(1);
@@ -104,7 +113,7 @@ describe("Message Helpers", () => {
 
   describe("getLastHumanMessage", () => {
     test("finds last human message", () => {
-      const messages: SerializedMessage[] = [
+      const messages: StoredMessage[] = [
         createTestMessage("human", "First"),
         createTestMessage("ai", "AI response"),
         createTestMessage("human", "Last human"),
@@ -116,9 +125,7 @@ describe("Message Helpers", () => {
     });
 
     test("returns undefined for no human messages", () => {
-      const messages: SerializedMessage[] = [
-        createTestMessage("ai", "I am AI"),
-      ];
+      const messages: StoredMessage[] = [createTestMessage("ai", "I am AI")];
 
       const last = getLastHumanMessage(messages);
       expect(last).toBeUndefined();
@@ -160,5 +167,29 @@ describe("MessageBufferSchema - Validation", () => {
     };
 
     expect(() => parseMessageBuffer(invalidBuffer)).toThrow();
+  });
+
+  test("accepts content block messages (LangChain v1)", () => {
+    const contentBlockBuffer = {
+      messages: [
+        {
+          type: "ai",
+          data: {
+            content: [{ type: "text", text: "Hello from blocks" }],
+            role: "ai",
+            tool_calls: [],
+            invalid_tool_calls: [],
+          },
+        },
+      ],
+      humanMessageCount: 0,
+      lastMessageTimestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    const parsed = parseMessageBuffer(contentBlockBuffer);
+    expect(parsed.messages).toHaveLength(1);
+    const firstContent = parsed.messages[0]?.data.content;
+    expect(Array.isArray(firstContent)).toBe(true);
   });
 });

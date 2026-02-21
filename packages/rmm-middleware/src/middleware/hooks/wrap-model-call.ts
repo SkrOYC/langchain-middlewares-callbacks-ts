@@ -18,8 +18,9 @@
  */
 
 import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseMessage, SystemMessage } from "@langchain/core/messages";
-import { type AIMessage, HumanMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "@langchain/core/messages";
+import { HumanMessage } from "@langchain/core/messages";
+import type { WrapModelCallHook } from "langchain";
 import {
   applyEmbeddingAdaptation,
   computeRelevanceScore,
@@ -29,8 +30,8 @@ import {
 import type {
   CitationRecord,
   RetrievedMemory,
-  RmmMiddlewareState,
   RmmRuntimeContext,
+  rmmMiddlewareStateSchemaZod,
 } from "@/schemas";
 import {
   type CitationResult,
@@ -43,27 +44,6 @@ import {
 } from "@/utils/memory-helpers";
 
 const logger = getLogger("wrap-model-call");
-
-// ============================================================================
-// LangChain Type Definitions
-// ============================================================================
-
-/**
- * LangChain ModelRequest interface for wrapModelCall hook
- * Matches the expected structure from LangChain's WrapModelCallHook
- *
- * The runtime field uses an inline object structure with context property,
- * not the Runtime<TContext> type, to match LangChain's expected type signature.
- */
-interface LangChainModelRequest<TState = unknown, TContext = unknown> {
-  messages: BaseMessage[];
-  runtime: {
-    context: TContext;
-    [key: string]: unknown;
-  };
-  state: TState;
-  systemMessage?: SystemMessage;
-}
 
 // ============================================================================
 // Configuration
@@ -125,19 +105,12 @@ export function createRetrospectiveWrapModelCall(
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
 
-  // Use LangChain's ModelRequest type for full type safety
-  return async (
-    request: LangChainModelRequest<
-      RmmMiddlewareState & { messages: BaseMessage[] },
-      RmmRuntimeContext
-    >,
-    handler: (
-      request: LangChainModelRequest<
-        RmmMiddlewareState & { messages: BaseMessage[] },
-        RmmRuntimeContext
-      >
-    ) => Promise<AIMessage>
-  ): Promise<AIMessage> => {
+  type RmmWrapModelCallHook = WrapModelCallHook<
+    typeof rmmMiddlewareStateSchemaZod,
+    RmmRuntimeContext
+  >;
+
+  const wrapModelCall: RmmWrapModelCallHook = async (request, handler) => {
     const { state, runtime } = request;
 
     // Lazy validate embedding dimension on first call
@@ -285,7 +258,10 @@ export function createRetrospectiveWrapModelCall(
       });
 
       // Step 6: Call handler with augmented messages
-      const augmentedMessages = [...state.messages, ephemeralMessage];
+      const augmentedMessages: BaseMessage[] = [
+        ...state.messages,
+        ephemeralMessage,
+      ];
       const response = await handler({
         ...request,
         messages: augmentedMessages,
@@ -329,6 +305,8 @@ export function createRetrospectiveWrapModelCall(
       return handler(request);
     }
   };
+
+  return wrapModelCall;
 }
 
 // ============================================================================

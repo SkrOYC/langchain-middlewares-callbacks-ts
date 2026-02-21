@@ -147,7 +147,12 @@ describe("matmul", () => {
         allFinite = false;
         break;
       }
-      sum += row[0];
+      const first = row[0];
+      if (first === undefined) {
+        allFinite = false;
+        break;
+      }
+      sum += first;
     }
     expect(allFinite).toBe(true);
     expect(sum).not.toBe(0); // Should have accumulated some values
@@ -551,7 +556,7 @@ describe("clipMatrixByNorm", () => {
   });
 
   test("preserves gradient direction when clipping", () => {
-    const matrix = [
+    const matrix: [[number, number], [number, number]] = [
       [1, 2],
       [3, 4],
     ];

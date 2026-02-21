@@ -38,8 +38,9 @@ describe("afterModel Hook Storage Error Scenarios", () => {
   function createValidCitations(topM = 5): CitationRecord[] {
     return Array.from({ length: topM }, (_, i) => ({
       memoryId: `memory-${i}`,
+      cited: i % 2 === 0,
       reward: i % 2 === 0 ? 1 : -1,
-      index: i,
+      turnIndex: i,
     }));
   }
 

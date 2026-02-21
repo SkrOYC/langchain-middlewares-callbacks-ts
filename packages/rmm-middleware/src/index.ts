@@ -36,7 +36,7 @@ import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 import {
   DEFAULT_REFLECTION_CONFIG,
-  rmmMiddlewareStateSchema,
+  rmmMiddlewareStateSchemaZod,
 } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
@@ -169,6 +169,8 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   if (!parsedConfig.enabled) {
     return createMiddleware({
       name: "RmmMiddleware",
+      stateSchema: rmmMiddlewareStateSchemaZod,
+      contextSchema: rmmContextSchema,
       beforeAgent: () => undefined,
       beforeModel: () => undefined,
       afterModel: () => undefined,
@@ -202,14 +204,6 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   // Build beforeAgent hook options
   const beforeAgentOptions: BeforeAgentOptions = {
     userIdExtractor: (runtime) => {
-      // Try configurable first (from createAgent config)
-      const configurable = runtime.configurable as
-        | { sessionId?: string }
-        | undefined;
-      if (configurable?.sessionId) {
-        return configurable.sessionId;
-      }
-      // Fall back to context
       return runtime.context?.sessionId ?? "";
     },
     rerankerConfig: {
@@ -274,7 +268,8 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   // Use rmmMiddlewareStateSchema so LangChain knows about our custom state fields
   return createMiddleware({
     name: "RmmMiddleware",
-    stateSchema: rmmMiddlewareStateSchema,
+    // Prefer Zod schema here to avoid cross-package StateSchema identity drift.
+    stateSchema: rmmMiddlewareStateSchemaZod,
     contextSchema: rmmContextSchema,
     beforeAgent: beforeAgentHook,
     beforeModel: beforeModelHook,
@@ -282,14 +277,6 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     afterModel: afterModelHook,
     afterAgent: createRetrospectiveAfterAgent({
       userIdExtractor: (runtime) => {
-        // Try configurable first (from createAgent config)
-        const configurable = runtime.configurable as
-          | { sessionId?: string }
-          | undefined;
-        if (configurable?.sessionId) {
-          return configurable.sessionId;
-        }
-        // Fall back to context
         return runtime.context?.sessionId ?? "";
       },
       reflectionConfig: parsedConfig.llm

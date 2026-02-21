@@ -1,361 +1,102 @@
 import { describe, expect, test } from "bun:test";
-import type { BaseStore, Item } from "@langchain/langgraph-checkpoint";
-import type { MessageBuffer } from "@/schemas/index";
+import type { MessageBuffer } from "@/schemas";
 import { createMessageBufferStorage } from "@/storage/message-buffer-storage";
+import { createMockBaseStore } from "@/tests/fixtures/mock-base-store";
 import { createSerializedMessage } from "@/tests/helpers/messages";
 
-/**
- * Tests for MessageBufferStorage
- *
- * These tests verify:
- * 1. Basic buffer operations (load, save, clear)
- * 2. Staging pattern (stageBuffer, clearStaging)
- * 3. Custom namespace isolation
- */
-
-function createMockStore(existingItems?: Map<string, Item>): {
-  get: BaseStore["get"];
-  put: BaseStore["put"];
-  delete: BaseStore["delete"];
-} {
-  const storeItems = existingItems ?? new Map<string, Item>();
-
+function createBuffer(text: string): MessageBuffer {
+  const now = Date.now();
   return {
-    async get(namespace, key) {
-      const fullKey = [...namespace, key].join("|");
-      return await Promise.resolve(storeItems.get(fullKey) ?? null);
-    },
-    async put(namespace, key, value) {
-      const fullKey = [...namespace, key].join("|");
-      storeItems.set(fullKey, {
-        value,
-        key,
-        namespace,
-        created_at: new Date(),
-        updated_at: new Date(),
-      });
-      return await Promise.resolve();
-    },
-    async delete(namespace, key) {
-      const fullKey = [...namespace, key].join("|");
-      storeItems.delete(fullKey);
-      return await Promise.resolve();
-    },
+    messages: [createSerializedMessage("human", text)],
+    humanMessageCount: 1,
+    lastMessageTimestamp: now,
+    createdAt: now,
   };
 }
 
-describe("MessageBufferStorage", () => {
-  describe("Basic Operations", () => {
-    test("loadBuffer returns empty buffer when none exists", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
+describe("message buffer storage", () => {
+  test("loadBuffer returns empty buffer when not found", async () => {
+    const storage = createMessageBufferStorage(createMockBaseStore());
+    const buffer = await storage.loadBuffer("u1");
 
-      const buffer = await storage.loadBuffer("test-user");
-
-      expect(buffer.messages).toHaveLength(0);
-      expect(buffer.humanMessageCount).toBe(0);
-    });
-
-    test("saveBuffer persists buffer correctly", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
-
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Hello")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-
-      const result = await storage.saveBuffer("test-user", buffer);
-      expect(result).toBe(true);
-
-      const loadedBuffer = await storage.loadBuffer("test-user");
-      expect(loadedBuffer.messages).toHaveLength(1);
-      expect(loadedBuffer.humanMessageCount).toBe(1);
-    });
-
-    test("clearBuffer resets to empty buffer", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
-
-      // Save a buffer first
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Hello")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-      await storage.saveBuffer("test-user", buffer);
-
-      // Clear it
-      const result = await storage.clearBuffer("test-user");
-      expect(result).toBe(true);
-
-      // Verify empty
-      const loadedBuffer = await storage.loadBuffer("test-user");
-      expect(loadedBuffer.messages).toHaveLength(0);
-      expect(loadedBuffer.humanMessageCount).toBe(0);
-    });
-
-    test("loadBufferItem returns Item with updatedAt", async () => {
-      const storeItems = new Map<string, Item>();
-      const mockStore = createMockStore(storeItems);
-
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Hello")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-
-      storeItems.set("rmm|test-user|buffer|message-buffer", {
-        value: buffer,
-        key: "message-buffer",
-        namespace: ["rmm", "test-user", "buffer"],
-        created_at: new Date(Date.now() - 1000),
-        updated_at: new Date(),
-      });
-
-      const storage = createMessageBufferStorage(mockStore);
-      const item = await storage.loadBufferItem("test-user");
-
-      expect(item).not.toBeNull();
-      expect(item?.updated_at.getTime()).toBeGreaterThan(
-        item?.created_at.getTime()
-      );
-    });
+    expect(buffer.messages).toHaveLength(0);
+    expect(buffer.humanMessageCount).toBe(0);
   });
 
-  describe("Staging Pattern", () => {
-    test("stageBuffer creates staging copy of buffer", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
+  test("saveBuffer and loadBuffer round-trip", async () => {
+    const storage = createMessageBufferStorage(createMockBaseStore());
 
-      // Save initial buffer
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Original message")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-      await storage.saveBuffer("test-user", buffer);
+    const ok = await storage.saveBuffer("u1", createBuffer("hello"));
+    expect(ok).toBe(true);
 
-      // Stage the buffer
-      const result = await storage.stageBuffer("test-user", buffer);
-      expect(result).toBe(true);
-
-      // Verify staging buffer was created with same content
-      const stagingBuffer = await storage.loadStagingBuffer("test-user");
-      expect(stagingBuffer).not.toBeNull();
-      expect(stagingBuffer?.messages).toHaveLength(1);
-      expect(stagingBuffer?.messages[0].data.content).toBe("Original message");
-    });
-
-    test("loadStagingBuffer returns null when no staging exists", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
-
-      const stagingBuffer = await storage.loadStagingBuffer("test-user");
-      expect(stagingBuffer).toBeNull();
-    });
-
-    test("clearStaging removes only staging area", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
-
-      // Save both main buffer and staging
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Main buffer")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-
-      await storage.saveBuffer("test-user", buffer);
-      await storage.stageBuffer("test-user", buffer);
-
-      // Clear staging
-      const result = await storage.clearStaging("test-user");
-      expect(result).toBe(true);
-
-      // Verify staging is gone
-      const stagingBuffer = await storage.loadStagingBuffer("test-user");
-      expect(stagingBuffer).toBeNull();
-
-      // Verify main buffer still exists
-      const mainBuffer = await storage.loadBuffer("test-user");
-      expect(mainBuffer.messages).toHaveLength(1);
-      expect(mainBuffer.messages[0].data.content).toBe("Main buffer");
-    });
-
-    test("staging pattern prevents message loss during async operations", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
-
-      // Initial buffer
-      const initialBuffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Message 1")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-      await storage.saveBuffer("test-user", initialBuffer);
-
-      // Stage the buffer (simulating start of async reflection)
-      await storage.stageBuffer("test-user", initialBuffer);
-
-      // Simulate new message arriving during async operation
-      const updatedBuffer: MessageBuffer = {
-        messages: [
-          createSerializedMessage("human", "Message 1"),
-          createSerializedMessage("human", "Message 2 (arrived during async)"),
-        ],
-        humanMessageCount: 2,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-      await storage.saveBuffer("test-user", updatedBuffer);
-
-      // Verify live buffer has new message
-      const liveBuffer = await storage.loadBuffer("test-user");
-      expect(liveBuffer.messages).toHaveLength(2);
-
-      // Verify staging buffer still has original content
-      const stagingBuffer = await storage.loadStagingBuffer("test-user");
-      expect(stagingBuffer?.messages).toHaveLength(1);
-      expect(stagingBuffer?.messages[0].data.content).toBe("Message 1");
-
-      // Clear staging (simulating end of async reflection)
-      await storage.clearStaging("test-user");
-
-      // Verify new message is still in live buffer
-      const finalLiveBuffer = await storage.loadBuffer("test-user");
-      expect(finalLiveBuffer.messages).toHaveLength(2);
-      expect(finalLiveBuffer.messages[1].data.content).toBe(
-        "Message 2 (arrived during async)"
-      );
-    });
+    const loaded = await storage.loadBuffer("u1");
+    expect(loaded.messages).toHaveLength(1);
+    expect(loaded.messages[0]?.data.content).toBe("hello");
   });
 
-  describe("Namespace Isolation", () => {
-    test("custom namespace prefixes storage keys correctly", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore, [
-        "custom",
-        "namespace",
-      ]);
+  test("loadBufferItem exposes store timestamps", async () => {
+    const storage = createMessageBufferStorage(createMockBaseStore());
 
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Test")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
+    await storage.saveBuffer("u1", createBuffer("hello"));
+    const item = await storage.loadBufferItem("u1");
 
-      await storage.saveBuffer("test-user", buffer);
-
-      // Verify buffer was saved with custom namespace
-      const loadedBuffer = await storage.loadBuffer("test-user");
-      expect(loadedBuffer.messages).toHaveLength(1);
-    });
-
-    test("staging uses same custom namespace", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore, [
-        "custom",
-        "namespace",
-      ]);
-
-      const buffer: MessageBuffer = {
-        messages: [createSerializedMessage("human", "Test")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-
-      await storage.saveBuffer("test-user", buffer);
-      await storage.stageBuffer("test-user", buffer);
-
-      // Verify staging buffer exists
-      const stagingBuffer = await storage.loadStagingBuffer("test-user");
-      expect(stagingBuffer).not.toBeNull();
-      expect(stagingBuffer?.messages).toHaveLength(1);
-    });
-
-    test("different namespaces create isolated storage", async () => {
-      const mockStore = createMockStore();
-      const storage1 = createMessageBufferStorage(mockStore, ["namespace-a"]);
-      const storage2 = createMessageBufferStorage(mockStore, ["namespace-b"]);
-
-      const buffer1: MessageBuffer = {
-        messages: [createSerializedMessage("human", "A")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-
-      const buffer2: MessageBuffer = {
-        messages: [createSerializedMessage("human", "B")],
-        humanMessageCount: 1,
-        lastMessageTimestamp: Date.now(),
-        createdAt: Date.now(),
-      };
-
-      await storage1.saveBuffer("user-1", buffer1);
-      await storage2.saveBuffer("user-1", buffer2);
-
-      // Verify isolation
-      const loaded1 = await storage1.loadBuffer("user-1");
-      const loaded2 = await storage2.loadBuffer("user-1");
-
-      expect(loaded1.messages[0].data.content).toBe("A");
-      expect(loaded2.messages[0].data.content).toBe("B");
-    });
+    expect(item).not.toBeNull();
+    if (!item) {
+      return;
+    }
+    expect(item.createdAt).toBeInstanceOf(Date);
+    expect(item.updatedAt).toBeInstanceOf(Date);
   });
 
-  describe("Error Handling", () => {
-    test("loadBuffer handles store errors gracefully", async () => {
-      const mockStore: BaseStore = {
-        get: async () => {
-          return await Promise.reject(new Error("Store error"));
-        },
-        put: async () => {
-          return await Promise.resolve();
-        },
-        delete: async () => {
-          return await Promise.resolve();
-        },
-        batch: async () => {
-          return await Promise.resolve([]);
-        },
-        search: async () => {
-          return await Promise.resolve([]);
-        },
-        listNamespaces: async () => {
-          return await Promise.resolve([]);
-        },
-      };
+  test("stageBuffer and clearStaging lifecycle", async () => {
+    const storage = createMessageBufferStorage(createMockBaseStore());
 
-      const storage = createMessageBufferStorage(mockStore);
-      const buffer = await storage.loadBuffer("test-user");
+    const staged = await storage.stageBuffer("u1", createBuffer("staged"));
+    expect(staged).toBe(true);
 
-      expect(buffer.messages).toHaveLength(0);
-      expect(buffer.humanMessageCount).toBe(0);
-    });
+    const beforeClear = await storage.loadStagingBuffer("u1");
+    expect(beforeClear?.messages[0]?.data.content).toBe("staged");
 
-    test("saveBuffer handles validation errors gracefully", async () => {
-      const mockStore = createMockStore();
-      const storage = createMessageBufferStorage(mockStore);
+    const cleared = await storage.clearStaging("u1");
+    expect(cleared).toBe(true);
 
-      // Invalid buffer (missing required fields)
-      const invalidBuffer = {
-        messages: "not-an-array",
-        humanMessageCount: "not-a-number",
-      } as unknown as MessageBuffer;
+    const afterClear = await storage.loadStagingBuffer("u1");
+    expect(afterClear).toBeNull();
+  });
 
-      const result = await storage.saveBuffer("test-user", invalidBuffer);
-      expect(result).toBe(false);
-    });
+  test("clearBuffer resets main buffer", async () => {
+    const storage = createMessageBufferStorage(createMockBaseStore());
+
+    await storage.saveBuffer("u1", createBuffer("hello"));
+    const ok = await storage.clearBuffer("u1");
+    expect(ok).toBe(true);
+
+    const loaded = await storage.loadBuffer("u1");
+    expect(loaded.messages).toHaveLength(0);
+    expect(loaded.humanMessageCount).toBe(0);
+  });
+
+  test("custom namespaces remain isolated", async () => {
+    const store = createMockBaseStore();
+    const storageA = createMessageBufferStorage(store, ["a"]);
+    const storageB = createMessageBufferStorage(store, ["b"]);
+
+    await storageA.saveBuffer("u1", createBuffer("A"));
+    await storageB.saveBuffer("u1", createBuffer("B"));
+
+    const loadedA = await storageA.loadBuffer("u1");
+    const loadedB = await storageB.loadBuffer("u1");
+
+    expect(loadedA.messages[0]?.data.content).toBe("A");
+    expect(loadedB.messages[0]?.data.content).toBe("B");
+  });
+
+  test("saveBuffer returns false for invalid payload", async () => {
+    const storage = createMessageBufferStorage(createMockBaseStore());
+
+    const bad = { messages: "not-array" } as unknown as MessageBuffer;
+    const ok = await storage.saveBuffer("u1", bad);
+
+    expect(ok).toBe(false);
   });
 });

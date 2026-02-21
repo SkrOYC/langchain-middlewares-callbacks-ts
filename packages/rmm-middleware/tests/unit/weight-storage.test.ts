@@ -260,14 +260,19 @@ describe("WeightStorage", () => {
       const weights = createValidRerankerState();
 
       // Modify specific values to verify precision
-      weights.weights.queryTransform[0][0] = 0.123_456_789;
-      weights.weights.memoryTransform[100][200] = -0.987_654_321;
+      const queryRow = weights.weights.queryTransform[0];
+      const memoryRow = weights.weights.memoryTransform[100];
+      if (!(queryRow && memoryRow)) {
+        throw new Error("Failed to initialize reranker matrices for test");
+      }
+      queryRow[0] = 0.123_456_789;
+      memoryRow[200] = -0.987_654_321;
 
       await weightStorage.saveWeights("user-123", weights);
       const loaded = await weightStorage.loadWeights("user-123");
 
-      expect(loaded?.weights.queryTransform[0][0]).toBe(0.123_456_789);
-      expect(loaded?.weights.memoryTransform[100][200]).toBe(-0.987_654_321);
+      expect(loaded?.weights.queryTransform[0]?.[0]).toBe(0.123_456_789);
+      expect(loaded?.weights.memoryTransform[100]?.[200]).toBe(-0.987_654_321);
     });
 
     test("handles large matrices efficiently (18MB)", async () => {

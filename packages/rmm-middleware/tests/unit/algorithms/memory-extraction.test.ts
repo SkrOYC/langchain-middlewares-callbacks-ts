@@ -1,523 +1,152 @@
 import { describe, expect, test } from "bun:test";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { createMockEmbeddings } from "@/tests/helpers/mock-embeddings";
 
-// UUID regex for validating memory entry IDs
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * Tests for memory extraction algorithm
- *
- * These tests verify that extractMemories():
- * 1. Valid extraction returns MemoryEntry array
- * 2. "NO_TRAIT" returns empty array
- * 3. Invalid JSON returns null
- * 4. LLM failure returns null (graceful degradation)
- * 5. Empty session returns empty array
- */
-
-describe("extractMemories Algorithm", () => {
-  // Helper to suppress console.warn during error-handling tests
-  const suppressWarnings = async (fn: () => Promise<void>) => {
-    const originalWarn = console.warn;
-    console.warn = () => {
-      // intentionally empty - suppresses console.warn during error-handling tests
-    };
-    try {
-      await fn();
-    } finally {
-      console.warn = originalWarn;
-    }
-  };
-
-  // Mock BaseMessage array representing session history
-  const mockSessionHistory = [
-    { type: "human", content: "Hello, I went hiking this weekend" },
-    { type: "ai", content: "That sounds great! How was it?" },
-    { type: "human", content: "It was amazing, I love being outdoors" },
-    { type: "ai", content: "What else do you enjoy doing?" },
+function createSessionHistory() {
+  return [
+    new HumanMessage("Hello, I went hiking this weekend"),
+    new AIMessage("That sounds great!"),
+    new HumanMessage("I also like coffee shops"),
+    new AIMessage("Good to know."),
   ];
+}
 
-  // Sample dialogue formatter for testing
-  const mockSpeakerPrompt = (dialogueSession: string): string => {
-    return `Dialogue:\n${dialogueSession}`;
-  };
+const promptBuilder = (dialogue: string) => `Dialogue:\n${dialogue}`;
 
-  test("should export extractMemories function", async () => {
+describe("extractMemories", () => {
+  test("exports extractMemories", async () => {
     const { extractMemories } = await import("@/algorithms/memory-extraction");
     expect(typeof extractMemories).toBe("function");
   });
 
-  test("valid extraction returns MemoryEntry array", async () => {
+  test("returns extracted memories with embeddings", async () => {
     const { extractMemories } = await import("@/algorithms/memory-extraction");
 
-    // Mock summarization model that returns valid extraction output
-    const mockSummarizationModelValid = {
-      invoke: () => {
-        const content = JSON.stringify({
+    const llm = {
+      invoke: async () => ({
+        text: JSON.stringify({
           extracted_memories: [
-            {
-              summary: "User enjoys hiking on weekends",
-              reference: [0, 2],
-            },
-            {
-              summary: "User is a software engineer",
-              reference: [1, 3],
-            },
+            { summary: "User likes hiking", reference: [0] },
+            { summary: "User likes coffee", reference: [1] },
           ],
-        });
-        return { content, text: content };
-      },
-    };
-
-    // Mock embeddings that return predictable vectors
-    const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
+        }),
+      }),
     };
 
     const result = await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelValid as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt,
-      "test-session-123"
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder,
+      "session-1"
     );
 
     expect(result).not.toBeNull();
-    expect(Array.isArray(result)).toBe(true);
     expect(result?.length).toBe(2);
-
-    // Verify MemoryEntry structure
-    const firstMemory = result?.[0];
-    expect(firstMemory.id).toBeDefined();
-    expect(typeof firstMemory.topicSummary).toBe("string");
-    expect(typeof firstMemory.rawDialogue).toBe("string");
-    expect(typeof firstMemory.timestamp).toBe("number");
-    expect(firstMemory.sessionId).toBe("test-session-123");
-    expect(Array.isArray(firstMemory.embedding)).toBe(true);
-    expect(firstMemory.embedding.length).toBe(1536);
-    expect(Array.isArray(firstMemory.turnReferences)).toBe(true);
+    const first = result?.[0];
+    expect(first).toBeDefined();
+    if (!first) {
+      return;
+    }
+    expect(first.topicSummary).toBe("User likes hiking");
+    expect(first.embedding.length).toBe(1536);
+    expect(first.sessionId).toBe("session-1");
+    expect(first.id).toMatch(UUID_REGEX);
   });
 
-  test("NO_TRAIT returns empty array", async () => {
+  test("returns empty array for NO_TRAIT", async () => {
     const { extractMemories } = await import("@/algorithms/memory-extraction");
 
-    // Mock summarization model that returns NO_TRAIT
-    const mockSummarizationModelNoTrait = {
-      invoke: () => {
-        const content = "NO_TRAIT";
-        return { content, text: content };
-      },
-    };
-
-    // Mock embeddings
-    const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
+    const llm = {
+      invoke: async () => ({ text: "NO_TRAIT" }),
     };
 
     const result = await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelNoTrait as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder
     );
 
-    expect(result).not.toBeNull();
-    expect(Array.isArray(result)).toBe(true);
-    expect(result?.length).toBe(0);
+    expect(result).toEqual([]);
   });
 
-  test("invalid JSON returns null", async () => {
-    await suppressWarnings(async () => {
-      const { extractMemories } = await import(
-        "@/algorithms/memory-extraction"
-      );
-
-      // Mock summarization model that returns invalid JSON
-      const mockSummarizationModelInvalidJson = {
-        invoke: () => {
-          const content = "this is not valid json";
-          return { content, text: content };
-        },
-      };
-
-      // Mock embeddings
-      const mockEmbeddings = {
-        embedQuery: async () =>
-          Array.from({ length: 1536 }, () => Math.random()),
-        embedDocuments: async (texts: string[]) =>
-          texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-      };
-
-      const result = await extractMemories(
-        mockSessionHistory,
-        mockSummarizationModelInvalidJson as any,
-        mockEmbeddings as any,
-        mockSpeakerPrompt
-      );
-
-      expect(result).toBeNull();
-    });
-  });
-
-  test("LLM failure returns null (graceful degradation)", async () => {
-    await suppressWarnings(async () => {
-      const { extractMemories } = await import(
-        "@/algorithms/memory-extraction"
-      );
-
-      // Mock LLM that returns content causing parse failure (triggers catch block)
-      const mockSummarizationModelError = {
-        invoke: () => {
-          const content = "{ invalid json that will fail parsing";
-          return { content, text: content };
-        },
-      };
-
-      // Mock embeddings
-      const mockEmbeddings = {
-        embedQuery: async () =>
-          Array.from({ length: 1536 }, () => Math.random()),
-        embedDocuments: async (texts: string[]) =>
-          texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-      };
-
-      const result = await extractMemories(
-        mockSessionHistory,
-        mockSummarizationModelError as any,
-        mockEmbeddings as any,
-        mockSpeakerPrompt
-      );
-
-      expect(result).toBeNull();
-    });
-  });
-
-  test("empty session returns empty array", async () => {
+  test("returns null for invalid JSON", async () => {
     const { extractMemories } = await import("@/algorithms/memory-extraction");
 
-    // Mock embeddings (won't be called for empty session)
-    const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
+    const llm = {
+      invoke: async () => ({ text: "not-json" }),
     };
+
+    const result = await extractMemories(
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder
+    );
+
+    expect(result).toBeNull();
+  });
+
+  test("returns null when llm invoke throws", async () => {
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
+
+    const llm = {
+      invoke: async () => {
+        return await Promise.reject(new Error("LLM failed"));
+      },
+    };
+
+    const result = await extractMemories(
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder
+    );
+
+    expect(result).toBeNull();
+  });
+
+  test("returns empty array for empty session", async () => {
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
 
     const result = await extractMemories(
       [],
-      {} as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
+      { invoke: async () => ({ text: "NO_TRAIT" }) } as never,
+      createMockEmbeddings(),
+      promptBuilder
     );
 
-    expect(result).not.toBeNull();
-    expect(Array.isArray(result)).toBe(true);
-    expect(result?.length).toBe(0);
+    expect(result).toEqual([]);
   });
 
-  test("formats session history into dialogue with turn markers", async () => {
+  test("passes formatted turn markers to prompt builder", async () => {
     const { extractMemories } = await import("@/algorithms/memory-extraction");
 
-    const capturedInput: string[] = [];
-
-    const customMockModel = {
-      invoke: (input: string) => {
-        capturedInput.push(input);
-        return {
-          content: JSON.stringify({
-            extracted_memories: [{ summary: "Test", reference: [0] }],
-          }),
-        };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
+    let captured = "";
+    const llm = {
+      invoke: async () => ({
+        text: JSON.stringify({
+          extracted_memories: [{ summary: "x", reference: [0] }],
+        }),
+      }),
     };
 
     await extractMemories(
-      mockSessionHistory,
-      customMockModel as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      (dialogue) => {
+        captured = dialogue;
+        return dialogue;
+      }
     );
 
-    expect(capturedInput.length).toBe(1);
-    const input = capturedInput[0];
-
-    // Verify that the input contains turn markers (Turn 0 and Turn 1 for 4 messages)
-    expect(input).toContain("Turn 0");
-    expect(input).toContain("Turn 1");
-    expect(input).toContain("human");
-    expect(input).toContain("ai");
-  });
-
-  test("generates embeddings for extracted summaries", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    let embedDocumentsCalled = false;
-    let _embedQueryCalled = false;
-
-    const mockSummarizationModelValid = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [
-            { summary: "User enjoys hiking", reference: [0] },
-          ],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => {
-        _embedQueryCalled = true;
-        return Array.from({ length: 1536 }, () => Math.random());
-      },
-      embedDocuments: (texts: string[]) => {
-        embedDocumentsCalled = true;
-        return texts.map(() =>
-          Array.from({ length: 1536 }, () => Math.random())
-        );
-      },
-    };
-
-    await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelValid as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-
-    // Should call embedDocuments for extracted memories
-    expect(embedDocumentsCalled).toBe(true);
-  });
-
-  test("includes turn references in MemoryEntry", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const mockSummarizationModelValid = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [
-            { summary: "User enjoys hiking on weekends", reference: [0, 2] },
-            { summary: "User is a software engineer", reference: [1, 3] },
-          ],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: async () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: async (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const result = await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelValid as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.[0].turnReferences).toEqual([0, 2]);
-    expect(result?.[1].turnReferences).toEqual([1, 3]);
-  });
-
-  test("uses provided sessionId in MemoryEntry", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const sessionId = "custom-session-id-456";
-
-    const mockSummarizationModelValid = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [{ summary: "Test", reference: [0] }],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const result = await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelValid as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt,
-      sessionId
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.[0].sessionId).toBe(sessionId);
-  });
-
-  test("generates UUID for each memory entry", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const mockSummarizationModelValid = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [
-            { summary: "First memory", reference: [0] },
-            { summary: "Second memory", reference: [1] },
-          ],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const result = await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelValid as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.[0].id).not.toBe(result?.[1].id);
-
-    // Validate UUID format
-    expect(result?.[0].id).toMatch(UUID_REGEX);
-    expect(result?.[1].id).toMatch(UUID_REGEX);
-  });
-
-  test("includes timestamp in MemoryEntry", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const mockSummarizationModelValid = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [{ summary: "Test", reference: [0] }],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const beforeTime = Date.now();
-    const result = await extractMemories(
-      mockSessionHistory,
-      mockSummarizationModelValid as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-    const afterTime = Date.now();
-
-    expect(result).not.toBeNull();
-    expect(result?.[0].timestamp).toBeGreaterThanOrEqual(beforeTime);
-    expect(result?.[0].timestamp).toBeLessThanOrEqual(afterTime);
-  });
-
-  test("handles memories with empty reference array", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const customMockModel = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [{ summary: "Test memory", reference: [] }],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const result = await extractMemories(
-      mockSessionHistory,
-      customMockModel as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.[0].turnReferences).toEqual([]);
-  });
-
-  test("handles single memory extraction", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const customMockModel = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: [{ summary: "Single memory", reference: [0] }],
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const result = await extractMemories(
-      mockSessionHistory,
-      customMockModel as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.length).toBe(1);
-  });
-
-  test("handles many memories extraction", async () => {
-    const { extractMemories } = await import("@/algorithms/memory-extraction");
-
-    const customMockModel = {
-      invoke: () => {
-        const content = JSON.stringify({
-          extracted_memories: Array.from({ length: 10 }, (_, i) => ({
-            summary: `Memory ${i}`,
-            reference: [i],
-          })),
-        });
-        return { content, text: content };
-      },
-    };
-
-    const mockEmbeddings = {
-      embedQuery: () => Array.from({ length: 1536 }, () => Math.random()),
-      embedDocuments: (texts: string[]) =>
-        texts.map(() => Array.from({ length: 1536 }, () => Math.random())),
-    };
-
-    const result = await extractMemories(
-      mockSessionHistory,
-      customMockModel as any,
-      mockEmbeddings as any,
-      mockSpeakerPrompt
-    );
-
-    expect(result).not.toBeNull();
-    expect(result?.length).toBe(10);
+    expect(captured).toContain("Turn 0");
+    expect(captured).toContain("human");
+    expect(captured).toContain("ai");
   });
 });

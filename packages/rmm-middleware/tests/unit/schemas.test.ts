@@ -659,6 +659,8 @@ describe("ReflectionConfigSchema", () => {
       minInactivityMs: 600_000,
       maxInactivityMs: 1_800_000,
       mode: "strict",
+      maxRetries: 3,
+      retryDelayMs: 1000,
     };
     const result = ReflectionConfigSchema.safeParse(validConfig);
     expect(result.success).toBe(true);
@@ -978,17 +980,17 @@ describe("Dynamic Embedding Dimensions", () => {
     test("creates state with 768x768 matrices", () => {
       const state = createDefaultRerankerState(768);
       expect(state.weights.queryTransform.length).toBe(768);
-      expect(state.weights.queryTransform[0].length).toBe(768);
+      expect(state.weights.queryTransform[0]?.length).toBe(768);
       expect(state.weights.memoryTransform.length).toBe(768);
-      expect(state.weights.memoryTransform[0].length).toBe(768);
+      expect(state.weights.memoryTransform[0]?.length).toBe(768);
     });
 
     test("creates state with 1024x1024 matrices", () => {
       const state = createDefaultRerankerState(1024);
       expect(state.weights.queryTransform.length).toBe(1024);
-      expect(state.weights.queryTransform[0].length).toBe(1024);
+      expect(state.weights.queryTransform[0]?.length).toBe(1024);
       expect(state.weights.memoryTransform.length).toBe(1024);
-      expect(state.weights.memoryTransform[0].length).toBe(1024);
+      expect(state.weights.memoryTransform[0]?.length).toBe(1024);
     });
 
     test("created state passes schema validation with custom dimension", () => {
