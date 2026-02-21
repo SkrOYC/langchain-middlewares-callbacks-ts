@@ -20,7 +20,6 @@
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseMessage } from "@langchain/core/messages";
 import { type AIMessage, HumanMessage } from "@langchain/core/messages";
-import type { Runtime } from "langchain";
 import {
   applyEmbeddingAdaptation,
   computeRelevanceScore,
@@ -31,7 +30,6 @@ import type {
   CitationRecord,
   RetrievedMemory,
   RmmMiddlewareState,
-  RmmRuntimeContext,
 } from "@/schemas";
 import {
   type CitationResult,
@@ -62,16 +60,6 @@ export interface WrapModelCallOptions {
    * Embedding dimension for reranker matrices
    */
   embeddingDimension: number;
-}
-
-/**
- * Model request interface for wrapModelCall hook
- */
-interface ModelRequest {
-  messages: BaseMessage[];
-  state: RmmMiddlewareState & { messages: BaseMessage[] };
-  runtime: Runtime<RmmRuntimeContext>;
-  [key: string]: unknown;
 }
 
 // ============================================================================
@@ -115,11 +103,20 @@ export function createRetrospectiveWrapModelCall(
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
 
+  // Use unknown with type assertions for LangChain hook compatibility
+  // This is safer than 'any' while maintaining compatibility
   return async (
-    request: ModelRequest,
-    handler: (request: ModelRequest) => Promise<AIMessage>
+    request: { state: unknown; runtime: unknown },
+    handler: (request: {
+      state: unknown;
+      runtime: unknown;
+      messages: unknown[];
+    }) => Promise<AIMessage>
   ): Promise<AIMessage> => {
-    const { state, runtime } = request;
+    const state = request.state as RmmMiddlewareState & {
+      messages: BaseMessage[];
+    };
+    const runtime = request.runtime;
 
     // Lazy validate embedding dimension on first call
     if (!validateOnce) {

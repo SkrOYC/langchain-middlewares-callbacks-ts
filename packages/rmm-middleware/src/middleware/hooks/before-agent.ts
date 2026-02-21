@@ -741,8 +741,8 @@ export function createRetrospectiveBeforeAgent(options: BeforeAgentOptions) {
     try {
       const userId = options.userIdExtractor(runtime);
 
-      // Get store from runtime context (BaseStore provided by LangGraph)
-      const store = runtime.context?.store;
+      // Get store from runtime (LangGraph provides store on runtime.store)
+      const store = runtime.store ?? runtime.context?.store;
 
       if (!store) {
         logger.debug("No store available, using initialized weights");

@@ -289,10 +289,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     contextSchema: rmmContextSchema,
     beforeAgent: beforeAgentHook as BeforeAgentHook<StateSchema, Context>,
     beforeModel: beforeModelHook as BeforeModelHook<StateSchema, Context>,
-    wrapModelCall: wrapModelCallHook as unknown as WrapModelCallHook<
-      StateSchema,
-      Context
-    >,
+    wrapModelCall: wrapModelCallHook as WrapModelCallHook<StateSchema, Context>,
     afterModel: afterModelHook as AfterModelHook<StateSchema, Context>,
     afterAgent: async (state, runtime) => {
       // Extract userId from runtime (same pattern as beforeAgent's userIdExtractor)
