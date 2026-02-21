@@ -40,6 +40,12 @@ import {
 
 const logger = getLogger("after-model");
 
+interface AfterModelState {
+  messages: BaseMessage[];
+  _rerankerWeights: RerankerState;
+  _turnCountInSession?: number;
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -203,12 +209,6 @@ export function createRetrospectiveAfterModel(options: AfterModelOptions = {}) {
   // Apply defaults
   const batchSize = options.batchSize ?? 4;
   const clipThreshold = options.clipThreshold ?? 100;
-
-  interface AfterModelState {
-    messages: BaseMessage[];
-    _rerankerWeights: RerankerState;
-    _turnCountInSession?: number;
-  }
 
   return async (
     state: AfterModelState,

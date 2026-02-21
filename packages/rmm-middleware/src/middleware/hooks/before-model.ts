@@ -24,6 +24,13 @@ import { extractLastHumanMessage } from "@/utils/memory-helpers";
 
 const logger = getLogger("before-model");
 
+interface BeforeModelState {
+  messages: BaseMessage[];
+  _rerankerWeights?: RerankerState | null;
+  _retrievedMemories?: RetrievedMemory[];
+  _turnCountInSession?: number;
+}
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -177,13 +184,6 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
 
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
-
-  interface BeforeModelState {
-    messages: BaseMessage[];
-    _rerankerWeights?: RerankerState | null;
-    _retrievedMemories?: RetrievedMemory[];
-    _turnCountInSession?: number;
-  }
 
   return async (
     state: BeforeModelState,
