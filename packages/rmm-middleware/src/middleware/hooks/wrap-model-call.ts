@@ -18,8 +18,9 @@
  */
 
 import type { Embeddings } from "@langchain/core/embeddings";
-import type { BaseMessage } from "@langchain/core/messages";
+import type { BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { type AIMessage, HumanMessage } from "@langchain/core/messages";
+import type { Runtime } from "langchain";
 import {
   applyEmbeddingAdaptation,
   computeRelevanceScore,
@@ -30,6 +31,7 @@ import type {
   CitationRecord,
   RetrievedMemory,
   RmmMiddlewareState,
+  RmmRuntimeContext,
 } from "@/schemas";
 import {
   type CitationResult,
@@ -42,6 +44,24 @@ import {
 } from "@/utils/memory-helpers";
 
 const logger = getLogger("wrap-model-call");
+
+// ============================================================================
+// LangChain Type Definitions
+// ============================================================================
+
+/**
+ * LangChain ModelRequest interface for wrapModelCall hook
+ * Only includes fields actually used by RMM (per Issue #95 non-goals)
+ * Uses index signature for LangChain compatibility
+ * See: https://reference.langchain.com/javascript/langchain/index/ModelRequest
+ */
+interface LangChainModelRequest<TState = unknown, TContext = unknown> {
+  messages: BaseMessage[];
+  runtime: Runtime<TContext>;
+  state: TState;
+  systemMessage: SystemMessage;
+  [key: string]: unknown;
+}
 
 // ============================================================================
 // Configuration
@@ -103,20 +123,20 @@ export function createRetrospectiveWrapModelCall(
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
 
-  // Use unknown with type assertions for LangChain hook compatibility
-  // This is safer than 'any' while maintaining compatibility
+  // Use LangChain's ModelRequest type for full type safety
   return async (
-    request: { state: unknown; runtime: unknown },
-    handler: (request: {
-      state: unknown;
-      runtime: unknown;
-      messages: unknown[];
-    }) => Promise<AIMessage>
+    request: LangChainModelRequest<
+      RmmMiddlewareState & { messages: BaseMessage[] },
+      RmmRuntimeContext
+    >,
+    handler: (
+      request: LangChainModelRequest<
+        RmmMiddlewareState & { messages: BaseMessage[] },
+        RmmRuntimeContext
+      >
+    ) => Promise<AIMessage>
   ): Promise<AIMessage> => {
-    const state = request.state as RmmMiddlewareState & {
-      messages: BaseMessage[];
-    };
-    const runtime = request.runtime;
+    const { state, runtime } = request;
 
     // Lazy validate embedding dimension on first call
     if (!validateOnce) {
