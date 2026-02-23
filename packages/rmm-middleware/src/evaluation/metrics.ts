@@ -12,9 +12,12 @@ export interface EvaluationMetrics {
   recallAt1: number;
   recallAt5: number;
   recallAt10: number;
+  ndcgAt1: number;
+  ndcgAt5: number;
+  ndcgAt10: number;
   mrr: number;
   sessionAccuracy: number;
-  turnAccuracy: number;
+  recallAtTurnK: number;
 }
 
 /**
@@ -124,6 +127,53 @@ export function computeMeanReciprocalRank(
 }
 
 /**
+ * Computes NDCG@K for a single query with binary relevance.
+ *
+ * NDCG@K = DCG@K / IDCG@K
+ *
+ * With binary relevance labels:
+ * DCG@K = Σ((rel_i) / log2(i + 1)), i starts at rank 1
+ *
+ * @param retrieved - Ordered list of retrieved IDs
+ * @param relevant - Set of relevant IDs
+ * @param k - Number of top results to consider
+ * @returns NDCG value in range [0, 1]
+ */
+export function computeNdcgAtK(
+  retrieved: string[],
+  relevant: string[],
+  k: number
+): number {
+  if (k <= 0 || relevant.length === 0) {
+    return 0;
+  }
+
+  const relevantSet = new Set(relevant);
+  const topK = retrieved.slice(0, k);
+  let dcg = 0;
+
+  for (let index = 0; index < topK.length; index++) {
+    const retrievedId = topK[index];
+    if (retrievedId !== undefined && relevantSet.has(retrievedId)) {
+      const rank = index + 1;
+      dcg += 1 / Math.log2(rank + 1);
+    }
+  }
+
+  const idealCount = Math.min(k, relevantSet.size);
+  let idcg = 0;
+  for (let index = 1; index <= idealCount; index++) {
+    idcg += 1 / Math.log2(index + 1);
+  }
+
+  if (idcg === 0) {
+    return 0;
+  }
+
+  return dcg / idcg;
+}
+
+/**
  * Computes session-level accuracy for LongMemEval
  *
  * Session Accuracy = |Retrieved ∩ AnswerSessions| / |AnswerSessions|
@@ -159,9 +209,9 @@ export function computeSessionAccuracy(
 }
 
 /**
- * Computes turn-level accuracy for LongMemEval
+ * Computes turn-level recall for LongMemEval
  *
- * Turn Accuracy = (retrieved turns with has_answer) / (total turns with has_answer)
+ * Recall@TurnK = (retrieved turns with has_answer) / (total turns with has_answer)
  *
  * Measures fine-grained recall at the turn level within sessions.
  * Only counts turns that are present in both the retrieved set and have answers.
@@ -169,9 +219,9 @@ export function computeSessionAccuracy(
  * @param retrievedTurns - Array of turns that were retrieved
  * @param allTurns - Array of all turns in the ground truth with has_answer flags
  * @param hasAnswer - Boolean array indicating which turns contain the answer
- * @returns Accuracy value in range [0, 1]
+ * @returns Recall value in range [0, 1]
  */
-export function computeTurnAccuracy(
+export function computeRecallAtTurnK(
   retrievedTurns: Array<{ role: string; content: string }>,
   allTurns: Array<{ role: string; content: string }>,
   hasAnswer: boolean[]
@@ -215,6 +265,17 @@ export function computeTurnAccuracy(
 }
 
 /**
+ * @deprecated Use computeRecallAtTurnK instead.
+ */
+export function computeTurnAccuracy(
+  retrievedTurns: Array<{ role: string; content: string }>,
+  allTurns: Array<{ role: string; content: string }>,
+  hasAnswer: boolean[]
+): number {
+  return computeRecallAtTurnK(retrievedTurns, allTurns, hasAnswer);
+}
+
+/**
  * Computes all evaluation metrics for a retrieval run
  *
  * @param results - Array of retrieval results to evaluate
@@ -234,7 +295,7 @@ export function computeAllMetrics(
   const allRetrieved: string[][] = [];
   const allRelevant: string[][] = [];
   let totalSessionAccuracy = 0;
-  let totalTurnAccuracy = 0;
+  let totalRecallAtTurnK = 0;
   let sessionCount = 0;
   let turnCount = 0;
 
@@ -251,7 +312,7 @@ export function computeAllMetrics(
     }
 
     if (result.retrievedTurns && result.allTurns && result.hasAnswer) {
-      totalTurnAccuracy += computeTurnAccuracy(
+      totalRecallAtTurnK += computeRecallAtTurnK(
         result.retrievedTurns,
         result.allTurns,
         result.hasAnswer
@@ -264,9 +325,12 @@ export function computeAllMetrics(
     recallAt1: computeMeanRecallAtK(allRetrieved, allRelevant, 1),
     recallAt5: computeMeanRecallAtK(allRetrieved, allRelevant, 5),
     recallAt10: computeMeanRecallAtK(allRetrieved, allRelevant, 10),
+    ndcgAt1: computeMeanNdcgAtK(allRetrieved, allRelevant, 1),
+    ndcgAt5: computeMeanNdcgAtK(allRetrieved, allRelevant, 5),
+    ndcgAt10: computeMeanNdcgAtK(allRetrieved, allRelevant, 10),
     mrr: computeMeanReciprocalRank(allRetrieved, allRelevant),
     sessionAccuracy: sessionCount > 0 ? totalSessionAccuracy / sessionCount : 0,
-    turnAccuracy: turnCount > 0 ? totalTurnAccuracy / turnCount : 0,
+    recallAtTurnK: turnCount > 0 ? totalRecallAtTurnK / turnCount : 0,
   };
 }
 
@@ -293,4 +357,26 @@ function computeMeanRecallAtK(
   }
 
   return totalRecall / retrieved.length;
+}
+
+function computeMeanNdcgAtK(
+  retrieved: string[][],
+  relevant: string[][],
+  k: number
+): number {
+  if (retrieved.length === 0) {
+    return 0;
+  }
+
+  let totalNdcg = 0;
+  for (let i = 0; i < retrieved.length; i++) {
+    const queryRetrieved = retrieved[i];
+    const queryRelevant = relevant[i];
+    if (queryRetrieved === undefined || queryRelevant === undefined) {
+      continue;
+    }
+    totalNdcg += computeNdcgAtK(queryRetrieved, queryRelevant, k);
+  }
+
+  return totalNdcg / retrieved.length;
 }

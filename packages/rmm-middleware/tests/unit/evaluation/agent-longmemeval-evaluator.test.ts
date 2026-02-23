@@ -68,6 +68,8 @@ describe("AgentLongMemEvalEvaluator", () => {
       expect(result.accuracy).toBe(1);
       expect(result.recallAt5).toBeGreaterThanOrEqual(0);
       expect(result.recallAt5).toBeLessThanOrEqual(1);
+      expect(result.ndcgAt5).toBeGreaterThanOrEqual(0);
+      expect(result.ndcgAt5).toBeLessThanOrEqual(1);
     }
   });
 
@@ -300,7 +302,7 @@ describe("AgentLongMemEvalEvaluator", () => {
     }
   });
 
-  test("uses Top-M retrieval IDs for metrics when retrievalMetricSource=topm", async () => {
+  test("uses Top-M retrieval IDs for metrics", async () => {
     const dataset: LongMemEvalInstance[] = [
       {
         question_id: "q-topm",
@@ -362,7 +364,6 @@ describe("AgentLongMemEvalEvaluator", () => {
       modelFactory: () => new FakeToolCallingModel(),
       vectorStoreFactory: () => Promise.resolve(makeVectorStore()),
       prebuildTopicMemoryBank: false,
-      retrievalMetricSource: "topm",
     });
 
     const outputTopM = await evaluatorTopM.evaluate();
@@ -379,30 +380,6 @@ describe("AgentLongMemEvalEvaluator", () => {
     expect(recordTopM.retrievedSessionIds).toEqual(["session-a"]);
     expect(recordTopM.retrievalSource).toBe("topm");
     expect(recordTopM.recallAt5).toBe(0);
-
-    const evaluatorTopK = new AgentLongMemEvalEvaluator({
-      dataset,
-      methods: ["rag"],
-      judge: createMockJudge(() => true),
-      embeddings: createMockEmbeddings(128),
-      embeddingDimension: 128,
-      topK: 2,
-      topM: 1,
-      modelFactory: () => new FakeToolCallingModel(),
-      vectorStoreFactory: () => Promise.resolve(makeVectorStore()),
-      prebuildTopicMemoryBank: false,
-      retrievalMetricSource: "topk",
-    });
-
-    const outputTopK = await evaluatorTopK.evaluate();
-    expect(outputTopK.records).toHaveLength(1);
-    const recordTopK = outputTopK.records[0];
-    if (!recordTopK) {
-      throw new Error("Expected one Top-K record");
-    }
-    expect(recordTopK.retrievedSessionIds).toEqual(["session-a", "session-b"]);
-    expect(recordTopK.retrievalSource).toBe("topk");
-    expect(recordTopK.recallAt5).toBe(1);
   });
 });
 

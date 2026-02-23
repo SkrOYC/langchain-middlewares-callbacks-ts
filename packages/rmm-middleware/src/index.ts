@@ -102,7 +102,9 @@ export type {
 export {
   computeAllMetrics,
   computeMeanReciprocalRank,
+  computeNdcgAtK,
   computeRecallAtK,
+  computeRecallAtTurnK,
   computeSessionAccuracy,
   computeTurnAccuracy,
 } from "@/evaluation/metrics.js";

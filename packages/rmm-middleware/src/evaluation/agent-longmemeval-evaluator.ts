@@ -28,6 +28,7 @@ import {
 import type { AnswerJudge } from "@/evaluation/judges";
 import {
   computeMeanReciprocalRank,
+  computeNdcgAtK,
   computeRecallAtK,
   computeSessionAccuracy,
 } from "@/evaluation/metrics";
@@ -58,6 +59,7 @@ export interface AgentRunRecord {
   selectedMemoryIds?: string[];
   answerSessionIds: string[];
   recallAt5: number;
+  ndcgAt5?: number;
   sessionAccuracy?: number;
   mrr?: number;
   timestamp: string;
@@ -68,6 +70,7 @@ export interface AgentLongMemEvalResult {
   totalQuestions: number;
   skippedAbstentions: number;
   recallAt5: number;
+  ndcgAt5: number;
   accuracy: number;
   sessionAccuracy: number;
   mrr: number;
@@ -245,7 +248,11 @@ export class AgentLongMemEvalEvaluator {
     this.strictPrebuildCoverage = normalizeCoverage(
       config.strictPrebuildCoverage
     );
-    this.retrievalMetricSource = config.retrievalMetricSource ?? "topm";
+    // Metrics are paper-aligned and always computed from final Top-M selections.
+    this.retrievalMetricSource =
+      config.retrievalMetricSource === "topk"
+        ? "topm"
+        : (config.retrievalMetricSource ?? "topm");
   }
 
   async evaluate(): Promise<AgentLongMemEvalOutput> {
@@ -256,6 +263,7 @@ export class AgentLongMemEvalEvaluator {
         totalQuestions: number;
         skippedAbstentions: number;
         recallAt5: number;
+        ndcgAt5: number;
         accuracy: number;
         sessionAccuracy: number;
         mrr: number;
@@ -361,6 +369,7 @@ export class AgentLongMemEvalEvaluator {
           totalQuestions: 0,
           skippedAbstentions: abstentionCount,
           recallAt5: 0,
+          ndcgAt5: 0,
           accuracy: 0,
           sessionAccuracy: 0,
           mrr: 0,
@@ -377,6 +386,7 @@ export class AgentLongMemEvalEvaluator {
       const seededSummary = existingSummaryByMethod.get(method) ?? {
         totalQuestions: 0,
         recallAt5: 0,
+        ndcgAt5: 0,
         accuracy: 0,
         sessionAccuracy: 0,
         mrr: 0,
@@ -387,6 +397,7 @@ export class AgentLongMemEvalEvaluator {
         totalQuestions: seededSummary.totalQuestions,
         skippedAbstentions: abstentionCount,
         recallAt5: seededSummary.recallAt5,
+        ndcgAt5: seededSummary.ndcgAt5,
         accuracy: seededSummary.accuracy,
         sessionAccuracy: seededSummary.sessionAccuracy,
         mrr: seededSummary.mrr,
@@ -495,11 +506,13 @@ export class AgentLongMemEvalEvaluator {
             probeContext.selectedSessionIds.length > 0
               ? probeContext.selectedSessionIds
               : topKRetrievedSessionIds.slice(0, this.topM);
-          const retrievedSessionIds =
-            this.retrievalMetricSource === "topk"
-              ? topKRetrievedSessionIds
-              : topMRetrievedSessionIds;
+          const retrievedSessionIds = topMRetrievedSessionIds;
           const recallAt5 = computeRecallAtK(
+            retrievedSessionIds,
+            instance.answer_session_ids,
+            5
+          );
+          const ndcgAt5 = computeNdcgAtK(
             retrievedSessionIds,
             instance.answer_session_ids,
             5
@@ -521,6 +534,7 @@ export class AgentLongMemEvalEvaluator {
 
           summary.totalQuestions += 1;
           summary.recallAt5 += recallAt5;
+          summary.ndcgAt5 += ndcgAt5;
           summary.sessionAccuracy += sessionAccuracy;
           summary.mrr += mrr;
           summary.accuracy += decision.correct ? 1 : 0;
@@ -541,6 +555,7 @@ export class AgentLongMemEvalEvaluator {
             selectedMemoryIds: probeContext.selectedMemoryIds,
             answerSessionIds: [...instance.answer_session_ids],
             recallAt5,
+            ndcgAt5,
             sessionAccuracy,
             mrr,
             timestamp: new Date().toISOString(),
@@ -567,6 +582,7 @@ export class AgentLongMemEvalEvaluator {
           totalQuestions: 0,
           skippedAbstentions: summary?.skippedAbstentions ?? 0,
           recallAt5: 0,
+          ndcgAt5: 0,
           accuracy: 0,
           sessionAccuracy: 0,
           mrr: 0,
@@ -578,6 +594,7 @@ export class AgentLongMemEvalEvaluator {
         totalQuestions: summary.totalQuestions,
         skippedAbstentions: summary.skippedAbstentions,
         recallAt5: summary.recallAt5 / summary.totalQuestions,
+        ndcgAt5: summary.ndcgAt5 / summary.totalQuestions,
         accuracy: summary.accuracy / summary.totalQuestions,
         sessionAccuracy: summary.sessionAccuracy / summary.totalQuestions,
         mrr: summary.mrr / summary.totalQuestions,
@@ -1303,6 +1320,7 @@ function seedSummaryByMethod(records: AgentRunRecord[]): Map<
   {
     totalQuestions: number;
     recallAt5: number;
+    ndcgAt5: number;
     accuracy: number;
     sessionAccuracy: number;
     mrr: number;
@@ -1313,6 +1331,7 @@ function seedSummaryByMethod(records: AgentRunRecord[]): Map<
     {
       totalQuestions: number;
       recallAt5: number;
+      ndcgAt5: number;
       accuracy: number;
       sessionAccuracy: number;
       mrr: number;
@@ -1323,6 +1342,7 @@ function seedSummaryByMethod(records: AgentRunRecord[]): Map<
     const current = summary.get(record.method) ?? {
       totalQuestions: 0,
       recallAt5: 0,
+      ndcgAt5: 0,
       accuracy: 0,
       sessionAccuracy: 0,
       mrr: 0,
@@ -1342,9 +1362,18 @@ function seedSummaryByMethod(records: AgentRunRecord[]): Map<
             [record.retrievedSessionIds],
             [record.answerSessionIds]
           );
+    const ndcgAt5 =
+      typeof record.ndcgAt5 === "number"
+        ? record.ndcgAt5
+        : computeNdcgAtK(
+            record.retrievedSessionIds,
+            record.answerSessionIds,
+            5
+          );
 
     current.totalQuestions += 1;
     current.recallAt5 += record.recallAt5;
+    current.ndcgAt5 += ndcgAt5;
     current.sessionAccuracy += sessionAccuracy;
     current.mrr += mrr;
     current.accuracy += record.judgedCorrect ? 1 : 0;
