@@ -8,6 +8,7 @@ dist
 artifacts
 
 # benchmark datasets (downloaded locally)
+data/
 data/longmemeval/*.json
 data/longmemeval/cache/*.bin
 data/longmemeval/cache/*.jsonl
