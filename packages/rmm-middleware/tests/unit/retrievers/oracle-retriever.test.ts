@@ -119,6 +119,41 @@ describe("Oracle Retriever", () => {
       ]);
     });
 
+    test("resolves official LongMemEval session IDs via haystack_session_ids", async () => {
+      const { OracleVectorStore } = await import(
+        "@/retrievers/oracle-retriever"
+      );
+
+      const mockAnnotations: LongMemEvalInstance[] = [
+        {
+          question_id: "q1",
+          question_type: "single-session-user",
+          question: "Which city did I move to?",
+          answer: "Lisbon",
+          answer_session_ids: ["answer_42"],
+          haystack_session_ids: ["share_0", "answer_42", "share_1"],
+          haystack_sessions: [
+            [{ role: "user", content: "I like coffee." }],
+            [{ role: "assistant", content: "You moved to Lisbon last year." }],
+            [{ role: "user", content: "I also like tea." }],
+          ],
+        },
+      ];
+
+      const oracle = new OracleVectorStore({
+        annotations: mockAnnotations,
+      });
+
+      const result = await oracle.similaritySearch(
+        "Which city did I move to?",
+        5
+      );
+
+      expect(result.length).toBe(1);
+      expect(result[0]?.metadata?.sessionId).toBe("answer_42");
+      expect(result[0]?.pageContent).toContain("Lisbon");
+    });
+
     test("returns max k sessions when answer_session_ids has fewer entries", async () => {
       const { OracleVectorStore } = await import(
         "@/retrievers/oracle-retriever"

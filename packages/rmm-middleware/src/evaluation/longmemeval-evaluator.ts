@@ -14,7 +14,7 @@ import {
 import {
   type LongMemEvalInstance,
   type LongMemEvalTurn,
-  parseSessionIndex,
+  resolveSessionIndex,
 } from "@/retrievers/oracle-retriever";
 
 /**
@@ -225,11 +225,11 @@ function countHasAnswerTurns(session: LongMemEvalTurn[]): number {
  */
 function getSessionById(
   sessionId: string,
-  haystack: LongMemEvalTurn[][]
+  instance: LongMemEvalInstance
 ): LongMemEvalTurn[] | undefined {
-  const sessionIndex = parseSessionIndex(sessionId);
-  if (sessionIndex >= 0 && sessionIndex < haystack.length) {
-    return haystack[sessionIndex];
+  const sessionIndex = resolveSessionIndex(sessionId, instance);
+  if (sessionIndex >= 0 && sessionIndex < instance.haystack_sessions.length) {
+    return instance.haystack_sessions[sessionIndex];
   }
   return undefined;
 }
@@ -237,13 +237,10 @@ function getSessionById(
 /**
  * Counts total has_answer turns in ground truth sessions
  */
-function countGroundTruthHasAnswerTurns(
-  answerSessionIds: string[],
-  haystack: LongMemEvalTurn[][]
-): number {
+function countGroundTruthHasAnswerTurns(instance: LongMemEvalInstance): number {
   let count = 0;
-  for (const sessionId of answerSessionIds) {
-    const session = getSessionById(sessionId, haystack);
+  for (const sessionId of instance.answer_session_ids) {
+    const session = getSessionById(sessionId, instance);
     if (session !== undefined) {
       count += countHasAnswerTurns(session);
     }
@@ -257,14 +254,14 @@ function countGroundTruthHasAnswerTurns(
 function countRetrievedHasAnswerTurns(
   retrievedSessionIds: string[],
   relevantSessions: Set<string>,
-  haystack: LongMemEvalTurn[][]
+  instance: LongMemEvalInstance
 ): number {
   let count = 0;
   for (const sessionId of retrievedSessionIds) {
     if (!relevantSessions.has(sessionId)) {
       continue;
     }
-    const session = getSessionById(sessionId, haystack);
+    const session = getSessionById(sessionId, instance);
     if (session !== undefined) {
       count += countHasAnswerTurns(session);
     }
@@ -298,10 +295,7 @@ function computeTurnAccuracyForInstance(
   const relevantSessions = new Set(instance.answer_session_ids);
 
   // Count total has_answer turns in ground truth
-  const totalHasAnswerTurns = countGroundTruthHasAnswerTurns(
-    instance.answer_session_ids,
-    instance.haystack_sessions
-  );
+  const totalHasAnswerTurns = countGroundTruthHasAnswerTurns(instance);
 
   if (totalHasAnswerTurns === 0) {
     return 0;
@@ -311,7 +305,7 @@ function computeTurnAccuracyForInstance(
   const retrievedHasAnswerTurns = countRetrievedHasAnswerTurns(
     retrievedSessionIds,
     relevantSessions,
-    instance.haystack_sessions
+    instance
   );
 
   return retrievedHasAnswerTurns / totalHasAnswerTurns;

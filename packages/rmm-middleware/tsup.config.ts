@@ -2,12 +2,18 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: [
+    "src/index.ts",
     "src/algorithms/memory-actions.ts",
     "src/algorithms/memory-extraction.ts",
     "src/algorithms/memory-update.ts",
     "src/algorithms/offline-pretraining.ts",
     "src/algorithms/reranking.ts",
     "src/algorithms/similarity-search.ts",
+    "src/evaluation/agent-longmemeval-evaluator.ts",
+    "src/evaluation/baselines.ts",
+    "src/evaluation/dataset-loader.ts",
+    "src/evaluation/eval-probe-middleware.ts",
+    "src/evaluation/judges.ts",
     "src/evaluation/longmemeval-evaluator.ts",
     "src/evaluation/metrics.ts",
     "src/retrievers/oracle-retriever.ts",

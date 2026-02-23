@@ -33,6 +33,118 @@ bun add @skroyc/rmm-middleware
 
 See [SPEC.md](./SPEC.md) for detailed implementation specification, algorithm details, and API reference.
 
+## Official LongMemEval Benchmark
+
+This package includes a ready-to-run benchmark flow against the official
+LongMemEval cleaned dataset.
+
+### 1) Install dependencies
+
+```bash
+bun install
+```
+
+### 2) Configure provider keys/models
+
+```bash
+export ANTHROPIC_API_KEY="..."
+export ANTHROPIC_API_URL="https://your-anthropic-compatible-endpoint" # optional
+export VOYAGEAI_API_KEY="..."
+
+export EVAL_MODEL="your-provider-model-id"
+export EVAL_JUDGE_MODEL="your-judge-model-id" # optional, defaults to EVAL_MODEL
+export EVAL_EMBEDDINGS_MODEL="voyage-4-lite"
+export EVAL_EMBEDDING_DIMENSION="1024"
+```
+
+Notes:
+- `EVAL_EMBEDDING_DIMENSION` must match your embeddings model output dimension.
+  For `voyage-4-lite`, use `1024` (or `256`, `512`, `2048` if you configure those).
+- `ANTHROPIC_API_URL` is optional and only needed for Anthropic-compatible endpoints.
+
+### 3) Download official datasets
+
+```bash
+bun run download:longmemeval
+```
+
+This downloads:
+- `data/longmemeval/longmemeval_s_cleaned.json`
+- `data/longmemeval/longmemeval_m_cleaned.json`
+- `data/longmemeval/longmemeval_oracle.json`
+
+### 4) Run benchmark
+
+LongMemEval-S (recommended first run):
+
+```bash
+bun run eval:longmemeval:official:s
+```
+
+LongMemEval-M:
+
+```bash
+bun run eval:longmemeval:official:m
+```
+
+Oracle file:
+
+```bash
+bun run eval:longmemeval:official:oracle
+```
+
+Outputs are written under `artifacts/` as:
+- `summary.json`
+- `records.jsonl`
+- `progress.json` (updated during execution)
+- `run.log` (verbose JSONL trace: prebuild progress, model request/response payloads, per-record metrics)
+
+Runs are resumable by default. If a run is interrupted, re-running the same
+command continues from existing `records.jsonl` (already processed
+`method + question_id` pairs are skipped).
+
+Embedding calls are cached locally by default to avoid re-paying for repeated
+session/query embeddings across reruns. Cache files are stored at:
+
+- `data/longmemeval/cache/embeddings.bin`
+- `data/longmemeval/cache/embeddings.index.jsonl`
+
+You can control this behavior with CLI flags:
+
+```bash
+bun scripts/run-agent-longmemeval.ts \
+  --embedding-cache=true \
+  --embedding-cache-path ./data/longmemeval/cache/embeddings \
+  --embedding-cache-namespace "voyage-4-lite|dim=1024" \
+  --resume=true
+```
+
+Topic-memory-bank prebuild (Prospective Reflection) is enabled by default for `rmm`.
+You can tune it with:
+
+```bash
+bun scripts/run-agent-longmemeval.ts \
+  --prebuild-topic-bank=true \
+  --prebuild-methods rmm \
+  --prebuild-all-before-evaluation=true \
+  --reflection-model-adapter ./scripts/adapters/anthropic-model-adapter.ts \
+  --reflection-cache=true \
+  --reflection-cache-path ./data/longmemeval/cache/reflection-cache.jsonl \
+  --prebuild-speaker2=true \
+  --prebuild-max-sessions 50
+```
+
+Notes:
+- For paper alignment, keep `--prebuild-topic-bank=true`.
+- `--prebuild-all-before-evaluation=true` enforces a strict two-phase run:
+  build topic/summary memory banks for all pending questions first, then run
+  answer generation + judging.
+- Reflection model calls used for extraction/update are cached locally in
+  `reflection-cache.jsonl` and appended as they complete, so interrupted runs
+  can resume without repeating paid reflection calls.
+- `--prebuild-max-sessions` is optional; omit it for full-dataset runs.
+- Set `--log-file <path>` if you want logs outside the output directory.
+
 ## License
 
 MIT

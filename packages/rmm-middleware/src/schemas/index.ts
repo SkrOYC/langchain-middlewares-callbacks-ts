@@ -664,28 +664,50 @@ export interface RmmMiddlewareState {
  *   // ... hooks
  * });
  */
-export const rmmMiddlewareStateSchema = new StateSchema({
-  _rerankerWeights: RerankerStateSchema,
-  _retrievedMemories: z.array(RetrievedMemorySchema).optional(),
-  _citations: z.array(CitationRecordSchema).optional(),
-  _turnCountInSession: z.number().int().nonnegative().optional(),
-  _messageBuffer: MessageBufferSchema.optional(),
-  _gradientAccumulator: GradientAccumulatorStateSchema.optional(),
-});
+export function createRmmMiddlewareStateSchema(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  const rerankerStateSchema = createRerankerStateSchema(embeddingDimension);
+  const retrievedMemorySchema = createRetrievedMemorySchema(embeddingDimension);
+  const gradientAccumulatorSchema =
+    createGradientAccumulatorStateSchema(embeddingDimension);
+
+  return new StateSchema({
+    _rerankerWeights: rerankerStateSchema,
+    _retrievedMemories: z.array(retrievedMemorySchema).optional(),
+    _citations: z.array(CitationRecordSchema).optional(),
+    _turnCountInSession: z.number().int().nonnegative().optional(),
+    _messageBuffer: MessageBufferSchema.optional(),
+    _gradientAccumulator: gradientAccumulatorSchema.optional(),
+  });
+}
+
+export const rmmMiddlewareStateSchema = createRmmMiddlewareStateSchema();
 
 /**
  * Zod schema for RMM middleware state (for validation).
  * @deprecated Use rmmMiddlewareStateSchema (StateSchema) for LangChain integration.
  * This Zod schema is kept for backwards compatibility and input validation.
  */
-export const rmmMiddlewareStateSchemaZod = z.object({
-  _rerankerWeights: RerankerStateSchema,
-  _retrievedMemories: z.array(RetrievedMemorySchema).optional(),
-  _citations: z.array(CitationRecordSchema).optional(),
-  _turnCountInSession: z.number().int().nonnegative().optional(),
-  _messageBuffer: MessageBufferSchema.optional(),
-  _gradientAccumulator: GradientAccumulatorStateSchema.optional(),
-});
+export function createRmmMiddlewareStateSchemaZod(
+  embeddingDimension = DEFAULT_EMBEDDING_DIMENSION
+) {
+  const rerankerStateSchema = createRerankerStateSchema(embeddingDimension);
+  const retrievedMemorySchema = createRetrievedMemorySchema(embeddingDimension);
+  const gradientAccumulatorSchema =
+    createGradientAccumulatorStateSchema(embeddingDimension);
+
+  return z.object({
+    _rerankerWeights: rerankerStateSchema,
+    _retrievedMemories: z.array(retrievedMemorySchema).optional(),
+    _citations: z.array(CitationRecordSchema).optional(),
+    _turnCountInSession: z.number().int().nonnegative().optional(),
+    _messageBuffer: MessageBufferSchema.optional(),
+    _gradientAccumulator: gradientAccumulatorSchema.optional(),
+  });
+}
+
+export const rmmMiddlewareStateSchemaZod = createRmmMiddlewareStateSchemaZod();
 
 /**
  * Type inferred from the RMM middleware state schema (input/validation type)

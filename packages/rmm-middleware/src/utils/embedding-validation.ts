@@ -7,7 +7,7 @@ const logger = getLogger("embedding-validation");
 /**
  * Validates that embeddings produce vectors of the correct dimension
  *
- * RMM requires 1536-dimensional embeddings (matching OpenAI ada-002).
+ * RMM requires embeddings to match the configured reranker dimension.
  * This validation ensures reranker weights are compatible with embeddings.
  *
  * Validation is performed lazily on first call to allow:
@@ -81,13 +81,14 @@ export async function validateEmbeddingDimension(
  * ```
  */
 export function createLazyValidator(
-  embeddings: Embeddings
+  embeddings: Embeddings,
+  expectedDimension = 1536
 ): () => Promise<void> {
   let validated = false;
 
   return async function validateOnce(): Promise<void> {
     if (!validated) {
-      await validateEmbeddingDimension(embeddings);
+      await validateEmbeddingDimension(embeddings, expectedDimension);
       validated = true;
     }
   };

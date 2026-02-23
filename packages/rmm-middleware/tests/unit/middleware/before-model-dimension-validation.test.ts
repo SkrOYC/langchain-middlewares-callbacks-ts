@@ -92,4 +92,22 @@ describe("beforeModel dimension validation", () => {
       hook(createState(), { context: {} } as never)
     ).resolves.toBeDefined();
   });
+
+  test("passes with custom embedding dimension", async () => {
+    const { createRetrospectiveBeforeModel } = await import(
+      "@/middleware/hooks/before-model"
+    );
+
+    const embeddings = createMockEmbeddings(1024);
+    const hook = createRetrospectiveBeforeModel({
+      vectorStore: createInMemoryVectorStore(embeddings),
+      embeddings,
+      topK: 20,
+      embeddingDimension: 1024,
+    });
+
+    await expect(
+      hook(createState(), { context: {} } as never)
+    ).resolves.toBeDefined();
+  });
 });

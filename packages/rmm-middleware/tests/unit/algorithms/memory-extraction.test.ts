@@ -91,6 +91,91 @@ describe("extractMemories", () => {
     expect(result).toBeNull();
   });
 
+  test("parses fenced JSON output", async () => {
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
+
+    const llm = {
+      invoke: async () => ({
+        text: [
+          "```json",
+          JSON.stringify(
+            {
+              extracted_memories: [
+                { summary: "User likes hiking", reference: [0] },
+              ],
+            },
+            null,
+            2
+          ),
+          "```",
+        ].join("\n"),
+      }),
+    };
+
+    const result = await extractMemories(
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.length).toBe(1);
+    expect(result?.[0]?.topicSummary).toBe("User likes hiking");
+  });
+
+  test("handles object-style NO_TRAIT payload", async () => {
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
+
+    const llm = {
+      invoke: async () => ({
+        text: JSON.stringify({
+          extracted_memories: "NO_TRAIT",
+        }),
+      }),
+    };
+
+    const result = await extractMemories(
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  test("falls back to response.content when response.text is empty", async () => {
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
+
+    const llm = {
+      invoke: async () => ({
+        text: "",
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              extracted_memories: [
+                { summary: "User tracks sleep quality", reference: [1] },
+              ],
+            }),
+          },
+        ],
+      }),
+    };
+
+    const result = await extractMemories(
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.length).toBe(1);
+    expect(result?.[0]?.topicSummary).toBe("User tracks sleep quality");
+  });
+
   test("returns null when llm invoke throws", async () => {
     const { extractMemories } = await import("@/algorithms/memory-extraction");
 
@@ -146,7 +231,7 @@ describe("extractMemories", () => {
     );
 
     expect(captured).toContain("Turn 0");
-    expect(captured).toContain("human");
-    expect(captured).toContain("ai");
+    expect(captured).toContain("SPEAKER_1");
+    expect(captured).toContain("SPEAKER_2");
   });
 });

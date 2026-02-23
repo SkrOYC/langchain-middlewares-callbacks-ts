@@ -47,7 +47,7 @@ describe("wrapModelCall dimension validation", () => {
 
     const hook = createRetrospectiveWrapModelCall({
       embeddings: createMockEmbeddings(512),
-      embeddingDimension: 512,
+      embeddingDimension: 1536,
     });
 
     const handler: Parameters<typeof hook>[1] = () => new AIMessage("ok");
@@ -64,7 +64,7 @@ describe("wrapModelCall dimension validation", () => {
 
     const hook = createRetrospectiveWrapModelCall({
       embeddings: createMockEmbeddings(2048),
-      embeddingDimension: 2048,
+      embeddingDimension: 1536,
     });
 
     const handler: Parameters<typeof hook>[1] = () => new AIMessage("ok");
@@ -81,7 +81,7 @@ describe("wrapModelCall dimension validation", () => {
 
     const hook = createRetrospectiveWrapModelCall({
       embeddings: createMockEmbeddings(512),
-      embeddingDimension: 512,
+      embeddingDimension: 1536,
     });
 
     const handler: Parameters<typeof hook>[1] = () => new AIMessage("ok");
@@ -97,6 +97,21 @@ describe("wrapModelCall dimension validation", () => {
     const hook = createRetrospectiveWrapModelCall({
       embeddings: createMockEmbeddings(1536),
       embeddingDimension: 1536,
+    });
+
+    const handler: Parameters<typeof hook>[1] = () => new AIMessage("ok");
+
+    await expect(hook(createRequest(hook), handler)).resolves.toBeDefined();
+  });
+
+  test("passes with custom embedding dimension", async () => {
+    const { createRetrospectiveWrapModelCall } = await import(
+      "@/middleware/hooks/wrap-model-call"
+    );
+
+    const hook = createRetrospectiveWrapModelCall({
+      embeddings: createMockEmbeddings(1024),
+      embeddingDimension: 1024,
     });
 
     const handler: Parameters<typeof hook>[1] = () => new AIMessage("ok");

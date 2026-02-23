@@ -66,7 +66,11 @@ describe("wrapModelCall hook", () => {
 
     const result = await hook(request, handler);
     expect(called).toBe(true);
-    expect(result.content).toBe("ok");
+    if ("content" in result) {
+      expect(result.content).toBe("ok");
+    } else {
+      throw new Error("Unexpected Command response from wrapModelCall");
+    }
   });
 
   test("injects ephemeral message and stores citations in context", async () => {
