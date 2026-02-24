@@ -27,6 +27,10 @@ import {
   wrapModelWithInvokeCache,
 } from "./utils/cached-chat-model";
 import { CachedEmbeddings } from "./utils/cached-embeddings";
+import {
+  SharedRateLimitCoordinator,
+  wrapModelWithRateLimitRetry,
+} from "./utils/rate-limit-retry-model";
 
 const NO_CITE_TAG_REGEX = /\[NO_CITE\]/i;
 
@@ -64,6 +68,7 @@ interface CliArgs {
   allowRawFallback: boolean;
   strictPrebuildCoverage: number;
   retrievalMetricSource: "topm" | "topk";
+  prebuildZeroMemoryRetries: number;
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Main orchestrates full run lifecycle with explicit, ordered steps for traceability and resumability.
@@ -76,10 +81,10 @@ async function main() {
   const datasetPath = resolve(args.dataset);
 
   const dataset = await loadLongMemEvalDataset(args.dataset);
-  const modelFactory = await loadModelFactory(args.modelAdapter);
-  const reflectionModelFactory = await resolveReflectionModelFactory(
+  const baseModelFactory = await loadModelFactory(args.modelAdapter);
+  const baseReflectionModelFactory = await resolveReflectionModelFactory(
     args,
-    modelFactory
+    baseModelFactory
   );
   const reflectionCache = args.reflectionCache
     ? await CachedChatModelStore.create({
@@ -143,33 +148,65 @@ async function main() {
     await logHandle.write(line);
   };
 
+  const rateLimitCoordinator = new SharedRateLimitCoordinator({
+    onEvent: async (event) => {
+      await writeLog({
+        event: "rate_limit_retry",
+        details: event,
+      });
+    },
+  });
+  const modelFactory = (
+    method: AgentEvalMethod,
+    instance: (typeof dataset)[number]
+  ): BaseChatModel =>
+    wrapModelWithRateLimitRetry(baseModelFactory(method), {
+      coordinator: rateLimitCoordinator,
+      scope: `generation:${method}:${instance.question_id}`,
+    });
+
   const reflectionModelFactoryWithCache =
-    reflectionModelFactory && reflectionCache
+    baseReflectionModelFactory && reflectionCache
       ? (
           method: AgentEvalMethod,
           instance: (typeof dataset)[number]
         ): BaseChatModel =>
-          wrapModelWithInvokeCache(reflectionModelFactory(method), {
-            cache: reflectionCache,
-            namespace: [
-              "longmemeval-reflection",
-              method,
-              args.reflectionModelAdapter ?? args.modelAdapter ?? "default",
-            ].join("|"),
-            emptyResponseRetryCount: 1,
-            onEvent: async (event) => {
-              await writeLog({
-                event: "reflection_cache",
-                details: {
-                  method,
-                  questionId: instance.question_id,
-                  questionType: instance.question_type,
-                  ...event,
-                },
-              });
+          wrapModelWithInvokeCache(
+            wrapModelWithRateLimitRetry(baseReflectionModelFactory(method), {
+              coordinator: rateLimitCoordinator,
+              scope: `reflection:${method}:${instance.question_id}`,
+            }),
+            {
+              cache: reflectionCache,
+              namespace: [
+                "longmemeval-reflection",
+                method,
+                args.reflectionModelAdapter ?? args.modelAdapter ?? "default",
+              ].join("|"),
+              emptyResponseRetryCount: 1,
+              onEvent: async (event) => {
+                await writeLog({
+                  event: "reflection_cache",
+                  details: {
+                    method,
+                    questionId: instance.question_id,
+                    questionType: instance.question_type,
+                    ...event,
+                  },
+                });
+              },
             },
-          })
-      : reflectionModelFactory;
+          )
+      : baseReflectionModelFactory
+        ? (
+            method: AgentEvalMethod,
+            instance: (typeof dataset)[number]
+          ): BaseChatModel =>
+            wrapModelWithRateLimitRetry(baseReflectionModelFactory(method), {
+              coordinator: rateLimitCoordinator,
+              scope: `reflection:${method}:${instance.question_id}`,
+            })
+        : undefined;
 
   const writeProgressSnapshot = async (force = false): Promise<void> => {
     if (!args.saveArtifacts) {
@@ -230,6 +267,7 @@ async function main() {
           allowRawFallback: args.allowRawFallback,
           strictPrebuildCoverage: args.strictPrebuildCoverage,
           retrievalMetricSource: args.retrievalMetricSource,
+          prebuildZeroMemoryRetries: args.prebuildZeroMemoryRetries,
           prebuildTopicMemoryBank: args.prebuildTopicMemoryBank,
           prebuildMethods: args.prebuildMethods,
           includeSpeaker2InPrebuild: args.includeSpeaker2InPrebuild,
@@ -283,6 +321,7 @@ async function main() {
       allowRawFallback: args.allowRawFallback,
       strictPrebuildCoverage: args.strictPrebuildCoverage,
       retrievalMetricSource: args.retrievalMetricSource,
+      prebuildZeroMemoryRetries: args.prebuildZeroMemoryRetries,
     });
     await writeRunManifest();
 
@@ -436,6 +475,7 @@ async function main() {
       requirePrebuildCompletion: args.requirePrebuild,
       strictPrebuildCoverage: args.strictPrebuildCoverage,
       retrievalMetricSource: args.retrievalMetricSource,
+      prebuildZeroMemoryRetries: args.prebuildZeroMemoryRetries,
     });
 
     const output = await evaluator.evaluate();
@@ -570,6 +610,10 @@ function parseArgs(argv: string[]): CliArgs {
     kv.get("strict-prebuild-coverage"),
     resolvedRequirePrebuild ? 1 : 0
   );
+  const resolvedPrebuildZeroMemoryRetries = parseIntWithDefault(
+    kv.get("prebuild-zero-memory-retries"),
+    parseIntWithDefault(process.env.EVAL_PREBUILD_ZERO_MEMORY_RETRIES, 2)
+  );
   const embeddingDimension = parseIntWithDefault(
     kv.get("embedding-dimension"),
     defaultEmbeddingDimension
@@ -635,6 +679,7 @@ function parseArgs(argv: string[]): CliArgs {
     allowRawFallback: resolvedAllowRawFallback,
     strictPrebuildCoverage: resolvedStrictCoverage,
     retrievalMetricSource: resolvedRetrievalMetricSource,
+    prebuildZeroMemoryRetries: resolvedPrebuildZeroMemoryRetries,
   };
 }
 

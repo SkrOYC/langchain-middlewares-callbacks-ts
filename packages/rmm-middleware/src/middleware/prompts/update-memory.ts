@@ -236,26 +236,33 @@ export function updateMemory(
   const historyJson = JSON.stringify({ history_summaries: historySummaries });
   const newSummaryJson = JSON.stringify({ new_summary: newSummary });
 
+  // Rationale:
+  // - Remove "and similar" from the task intro to avoid a merge-biased prior.
+  // - Require exactly one action to match paper-aligned add-or-merge semantics
+  //   in execution (one decision per extracted memory).
+  // - Add conservative tie-break ("if uncertain, Add") to reduce accidental
+  //   over-merge without introducing new algorithmic guardrails.
   const prompt = `Task Description: Given a list of history personal summaries for a specific user and a new
-and similar personal summary from the same user, update the personal history summaries
-following the instructions below:
+personal summary from the same user, decide how to update the personal history summaries.
 
 * Input format: Both the history personal summaries and the new personal summary
   are provided in JSON format, with the top-level keys of "history_summaries" and
   "new_summary".
-* Possible update actions:
-  – Add: If the new personal summary is not relevant to any history personal summary,
-    add it.
+* Choose exactly ONE action for this new summary:
+  – Add: Use Add() when the new personal summary introduces a distinct aspect that is
+    not already covered by any history personal summary.
     Format: Add()
-  – Merge: If the new personal summary is relevant to a history personal summary,
-    merge them as an updated summary.
+  – Merge: Use Merge(index, merged_summary) only when the new personal summary and one
+    history personal summary describe the same aspect and should be consolidated.
     Format: Merge(index, merged_summary)
     Note: index is the position of the relevant history summary in the list.
     merged_summary is the merged summary of the new summary and the relevant history
     summary. Two summaries are considered relevant if they discuss the same aspect
     of the user's personal information or experiences.
-* If multiple actions need to be executed, output each action in a single line, and
-  separate them with a newline character ("\\n").
+* Decision rule:
+  – If uncertain whether it is the same aspect, choose Add().
+* Output format:
+  – Return exactly one line: either Add() or Merge(index, merged_summary).
 * Do not include additional explanations or examples in the output—only return the
   required action functions.
 

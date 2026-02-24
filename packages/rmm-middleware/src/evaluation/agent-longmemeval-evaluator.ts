@@ -98,7 +98,15 @@ export interface AgentPrebuildEvent {
   method: AgentEvalMethod;
   questionId: string;
   questionType: string;
-  stage: "start" | "session" | "fallback_raw" | "complete" | "skipped";
+  stage:
+    | "start"
+    | "session"
+    | "retry_no_memories"
+    | "fallback_raw"
+    | "complete"
+    | "skipped";
+  attempt?: number;
+  maxAttempts?: number;
   sessionsProcessed?: number;
   totalSessions?: number;
   extractedMemories?: number;
@@ -110,6 +118,7 @@ interface VectorStoreFactoryOptions {
   prebuildTopicMemoryBank: boolean;
   includeSpeaker2: boolean;
   allowRawFallback?: boolean;
+  prebuildZeroMemoryRetries?: number;
   maxPrebuildSessions?: number;
   reflectionModel?: BaseChatModel;
   onPrebuildEvent?: (event: AgentPrebuildEvent) => Promise<void> | void;
@@ -158,6 +167,7 @@ export interface AgentLongMemEvalEvaluatorConfig {
   requirePrebuildCompletion?: boolean;
   strictPrebuildCoverage?: number;
   retrievalMetricSource?: RetrievalMetricSource;
+  prebuildZeroMemoryRetries?: number;
 }
 
 export interface AgentEvalProgress {
@@ -214,6 +224,7 @@ export class AgentLongMemEvalEvaluator {
   private readonly requirePrebuildCompletion: boolean;
   private readonly strictPrebuildCoverage: number;
   private readonly retrievalMetricSource: RetrievalMetricSource;
+  private readonly prebuildZeroMemoryRetries: number;
 
   constructor(config: AgentLongMemEvalEvaluatorConfig) {
     this.dataset = config.dataset;
@@ -247,6 +258,10 @@ export class AgentLongMemEvalEvaluator {
     this.requirePrebuildCompletion = config.requirePrebuildCompletion ?? false;
     this.strictPrebuildCoverage = normalizeCoverage(
       config.strictPrebuildCoverage
+    );
+    this.prebuildZeroMemoryRetries = normalizeNonNegativeInt(
+      config.prebuildZeroMemoryRetries,
+      2
     );
     // Metrics are paper-aligned and always computed from final Top-M selections.
     this.retrievalMetricSource =
@@ -669,6 +684,7 @@ export class AgentLongMemEvalEvaluator {
       prebuildTopicMemoryBank,
       includeSpeaker2: this.includeSpeaker2InPrebuild,
       allowRawFallback: this.allowRawFallback,
+      prebuildZeroMemoryRetries: this.prebuildZeroMemoryRetries,
       maxPrebuildSessions: this.maxPrebuildSessions,
       reflectionModel: this.reflectionModelFactory
         ? this.reflectionModelFactory(method, instance)
@@ -809,6 +825,10 @@ async function defaultVectorStoreFactory(
     : createSimpleInMemoryVectorStore(embeddings);
   const shouldPrebuild = options?.prebuildTopicMemoryBank ?? false;
   const allowRawFallback = options?.allowRawFallback ?? true;
+  const zeroMemoryRetries = normalizeNonNegativeInt(
+    options?.prebuildZeroMemoryRetries,
+    2
+  );
 
   if (shouldPrebuild) {
     await options?.onPrebuildEvent?.({
@@ -838,16 +858,50 @@ async function defaultVectorStoreFactory(
 
     const reflectionModel = options?.reflectionModel;
     if (reflectionModel) {
-      const prebuildResult = await buildTopicMemoryBank({
-        instance,
-        vectorStore,
-        embeddings,
-        reflectionModel,
-        includeSpeaker2: options?.includeSpeaker2 ?? true,
-        maxPrebuildSessions: options?.maxPrebuildSessions,
-        method,
-        onPrebuildEvent: options?.onPrebuildEvent,
-      });
+      const maxAttempts = zeroMemoryRetries + 1;
+      let prebuildResult:
+        | {
+            sessionsProcessed: number;
+            extractedMemories: number;
+            storedMemories: number;
+          }
+        | undefined;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        prebuildResult = await buildTopicMemoryBank({
+          instance,
+          vectorStore,
+          embeddings,
+          reflectionModel,
+          includeSpeaker2: options?.includeSpeaker2 ?? true,
+          maxPrebuildSessions: options?.maxPrebuildSessions,
+          method,
+          onPrebuildEvent: options?.onPrebuildEvent,
+        });
+        if (prebuildResult.storedMemories > 0) {
+          break;
+        }
+        if (attempt < maxAttempts) {
+          await options?.onPrebuildEvent?.({
+            timestamp: new Date().toISOString(),
+            method,
+            questionId: instance.question_id,
+            questionType: instance.question_type,
+            stage: "retry_no_memories",
+            attempt,
+            maxAttempts,
+            totalSessions: instance.haystack_sessions.length,
+            sessionsProcessed: prebuildResult.sessionsProcessed,
+            extractedMemories: prebuildResult.extractedMemories,
+            storedMemories: prebuildResult.storedMemories,
+            reason: `no topic memories extracted on attempt ${attempt}; retrying`,
+          });
+        }
+      }
+      if (!prebuildResult) {
+        throw new Error(
+          `[agent-longmemeval] prebuild failed for ${method}:${instance.question_id} because no prebuild attempt completed`
+        );
+      }
 
       if (prebuildResult.storedMemories > 0) {
         if (persistentStore) {
@@ -883,15 +937,17 @@ async function defaultVectorStoreFactory(
         questionId: instance.question_id,
         questionType: instance.question_type,
         stage: "fallback_raw",
+        attempt: maxAttempts,
+        maxAttempts,
         totalSessions: instance.haystack_sessions.length,
         sessionsProcessed: prebuildResult.sessionsProcessed,
         extractedMemories: prebuildResult.extractedMemories,
         storedMemories: prebuildResult.storedMemories,
-        reason: "no topic memories extracted; falling back to raw sessions",
+        reason: `no topic memories extracted after ${maxAttempts} attempts; falling back to raw sessions`,
       });
       if (!allowRawFallback) {
         throw new Error(
-          `[agent-longmemeval] prebuild extracted zero topic memories for ${method}:${instance.question_id} and raw fallback is disabled`
+          `[agent-longmemeval] prebuild extracted zero topic memories for ${method}:${instance.question_id} after ${maxAttempts} attempts and raw fallback is disabled`
         );
       }
     } else {
@@ -1226,6 +1282,20 @@ function normalizeCoverage(value: number | undefined): number {
   }
   if (numeric >= 1) {
     return 1;
+  }
+  return numeric;
+}
+
+function normalizeNonNegativeInt(
+  value: number | undefined,
+  fallback: number
+): number {
+  if (!Number.isFinite(value ?? Number.NaN)) {
+    return Math.max(0, Math.floor(fallback));
+  }
+  const numeric = Math.floor(value ?? fallback);
+  if (numeric < 0) {
+    return 0;
   }
   return numeric;
 }
