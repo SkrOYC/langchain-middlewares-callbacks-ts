@@ -145,6 +145,69 @@ Notes:
 - `--prebuild-max-sessions` is optional; omit it for full-dataset runs.
 - Set `--log-file <path>` if you want logs outside the output directory.
 
+### Embedding Call Map (Cost Audit)
+
+Use this map when auditing Voyage/embedding usage during prebuild/eval runs.
+
+```text
+Legend:
+  [E#] = embeddings API call-site
+  ──►  = function call
+  (N)  = multiplicative loop / repetition
+
+RUNNER: scripts/run-agent-longmemeval.ts
+  └─ CachedEmbeddings wrapper
+      ├─ cache hit  -> no provider call
+      └─ cache miss -> provider embed* call
+
+A) PREBUILD PATH (mode=prebuild or mode=all, method=rmm)
+for each question (parallel up to prebuildConcurrency)
+  └─ for each session (sequential)
+      └─ extractMemories(...)
+          └─ [E1] embeddings.embedDocuments(summaries_batch)
+
+      └─ for each extracted memory
+          └─ processMemoryUpdate(...)
+              ├─ findSimilarMemories(...)
+              │   └─ vectorStore.similaritySearch(...)
+              │       └─ [E2] embeddings.embedQuery(new_memory_summary)
+              └─ addMemory / mergeMemory
+                  └─ vectorStore.addDocuments([doc])
+                      └─ [E3] embeddings.embedDocuments([summary_or_merged_summary])
+
+B) EVAL PATH (mode=eval/all, method=rmm)
+agent.invoke(...)
+  ├─ beforeModel hook
+  │   ├─ vectorStore.similaritySearch(user_question)
+  │   │   └─ [E4] embeddings.embedQuery(user_question)
+  │   └─ populateMemoryEmbeddings(topK_memories)
+  │       └─ [E5] embeddings.embedDocuments(topK_topic_summaries)
+  └─ wrapModelCall hook
+      └─ [E6] embeddings.embedQuery(user_question)
+
+  one-time per middleware instance:
+    └─ [E7] embeddings.embedQuery("Dimension validation test")
+
+C) EVAL PATH (method=rag) ⚠ potentially expensive
+if no persisted rag store exists for question:
+  └─ buildRawSessionDocuments(all haystack sessions)
+      └─ vectorStore.addDocuments(docs)
+          └─ [E8] embeddings.embedDocuments(raw_session_texts_batch)
+
+and per question retrieval:
+  └─ vectorStore.similaritySearch(question)
+      └─ [E9] embeddings.embedQuery(question)
+
+D) METHOD=oracle
+No embeddings calls (oracle retriever uses labeled sessions directly).
+```
+
+Interpretation:
+- Large embedding bills usually come from high-volume prebuild loops (`E1/E2/E3`)
+  and, if enabled without persisted cache, raw-session indexing in RAG (`E8`).
+- Strict paper runs should keep `--allow-raw-fallback=false` and persist vector
+  stores to avoid accidental raw-session embedding churn.
+
 ## License
 
 MIT
