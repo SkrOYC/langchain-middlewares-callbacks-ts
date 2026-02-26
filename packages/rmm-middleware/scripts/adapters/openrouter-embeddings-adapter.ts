@@ -19,6 +19,10 @@ function requiredEnvAny(names: string[]): string {
   );
 }
 
+// Map OPENROUTER_API_KEY to OPENAI_API_KEY for langchain/openai compatibility
+const _apiKey = requiredEnvAny(["OPENROUTER_API_KEY"]);
+process.env.OPENAI_API_KEY = _apiKey;
+
 function _parseBooleanWithDefault(
   raw: string | undefined,
   fallback: boolean
@@ -95,10 +99,9 @@ export function createEmbeddings() {
     | undefined;
 
   const base = new OpenAIEmbeddings({
-    openAIApiKey: apiKey,
     model:
       process.env.EVAL_EMBEDDINGS_MODEL ??
-      "nvidia/llama-nemotron-embed-vl-1b-v2",
+      "nvidia/llama-nemotron-embed-vl-1b-v2:free",
     dimensions: outputDimension,
     encodingFormat,
     batchSize: Number(process.env.EVAL_EMBEDDING_BATCH_SIZE ?? "8"),

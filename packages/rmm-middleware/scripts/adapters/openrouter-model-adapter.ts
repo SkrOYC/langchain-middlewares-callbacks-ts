@@ -9,12 +9,13 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-export function createModel(_method: AgentEvalMethod) {
-  const openRouterApiKey = requiredEnv("OPENROUTER_API_KEY");
+// Map OPENROUTER_API_KEY to OPENAI_API_KEY for langchain/openai compatibility
+const _openRouterApiKey = requiredEnv("OPENROUTER_API_KEY");
+process.env.OPENAI_API_KEY = _openRouterApiKey;
 
+export function createModel(_method: AgentEvalMethod) {
   return new ChatOpenAI({
-    openAIApiKey: openRouterApiKey,
-    model: process.env.EVAL_MODEL ?? "nvidia/nemotron-3-nano-30b-a3b",
+    model: process.env.EVAL_MODEL ?? "nvidia/nemotron-3-nano-30b-a3b:free",
     temperature: Number(process.env.EVAL_TEMPERATURE ?? "0"),
     maxTokens: Number(process.env.EVAL_MAX_TOKENS ?? "16384"),
     maxRetries: Number(process.env.EVAL_MAX_RETRIES ?? "2"),

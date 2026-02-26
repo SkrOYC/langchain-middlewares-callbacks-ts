@@ -13,7 +13,7 @@ const judgeModel = new ChatOpenAI({
   model:
     process.env.EVAL_JUDGE_MODEL ??
     process.env.EVAL_MODEL ??
-    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
   temperature: 0,
   maxRetries: Number(process.env.EVAL_MAX_RETRIES ?? "2"),
   maxTokens: Number(process.env.EVAL_JUDGE_MAX_TOKENS ?? "256"),
