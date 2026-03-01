@@ -19,6 +19,6 @@
     "ultracite": "^7.1.4"
   },
   "dependencies": {
-    "@langchain/core": "^1.1.19"
+    "@langchain/core": "^1.1.28"
   }
 }
