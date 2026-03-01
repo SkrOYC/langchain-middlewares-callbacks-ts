@@ -23,24 +23,6 @@ function requiredEnvAny(names: string[]): string {
 const _apiKey = requiredEnvAny(["OPENROUTER_API_KEY"]);
 process.env.OPENAI_API_KEY = _apiKey;
 
-function _parseBooleanWithDefault(
-  raw: string | undefined,
-  fallback: boolean
-): boolean {
-  if (raw === undefined) {
-    return fallback;
-  }
-
-  const normalized = raw.trim().toLowerCase();
-  if (["1", "true", "yes", "y"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "n"].includes(normalized)) {
-    return false;
-  }
-  return fallback;
-}
-
 function parseErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
