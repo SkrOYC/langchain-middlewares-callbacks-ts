@@ -9,6 +9,7 @@ import {
 import { dirname, resolve } from "node:path";
 import { Document } from "@langchain/core/documents";
 import type { Embeddings } from "@langchain/core/embeddings";
+import { getLogger } from "@/utils/logger";
 
 interface UpsertRecord {
   op: "upsert";
@@ -60,6 +61,8 @@ export interface PersistentSimpleVectorStoreOptions {
   embeddings: Embeddings;
   basePath: string;
 }
+
+const logger = getLogger("persistent-simple-vector-store");
 
 /**
  * Disk-backed vector store for evaluation runs.
@@ -294,6 +297,9 @@ export class PersistentSimpleVectorStore {
       const metadata = normalizeMetadata(record.metadata);
       const vector = normalizeVectorOrNull(record.vector);
       if (!vector) {
+        logger.warn(
+          `Skipping malformed journal upsert record without valid vector: ${record.id}`
+        );
         return;
       }
       this.entriesById.set(record.id, {
