@@ -44,6 +44,12 @@ export type AgentEvalMethod = "rmm" | "rag" | "oracle";
 export type RetrievalMetricSource = "topm" | "topk";
 type PrebuildFinalStage = "complete" | "fallback_raw" | "skipped" | "missing";
 
+interface PrebuildResumeState {
+  sessionsProcessed: number;
+  extractedMemories: number;
+  storedMemories: number;
+}
+
 export interface AgentRunRecord {
   method: AgentEvalMethod;
   questionId: string;
@@ -666,6 +672,16 @@ export class AgentLongMemEvalEvaluator {
     if (marker && marker.storedMemories > 0) {
       return "complete";
     }
+    const progressMarker = persistentStore.getPrebuildProgress();
+    if (progressMarker) {
+      if (
+        progressMarker.storedMemories > 0 &&
+        progressMarker.sessionsProcessed >= progressMarker.totalSessions
+      ) {
+        return "complete";
+      }
+      return "missing";
+    }
     if (persistentStore.hasDocuments()) {
       return "fallback_raw";
     }
@@ -829,15 +845,32 @@ async function defaultVectorStoreFactory(
     options?.prebuildZeroMemoryRetries,
     2
   );
+  const totalSessions = instance.haystack_sessions.length;
+  const sessionLimit =
+    typeof options?.maxPrebuildSessions === "number" &&
+    options.maxPrebuildSessions > 0
+      ? Math.min(totalSessions, options.maxPrebuildSessions)
+      : totalSessions;
 
   if (shouldPrebuild) {
+    const existingProgressMarker = persistentStore?.getPrebuildProgress();
+    const resumeState = normalizePrebuildResumeState(
+      existingProgressMarker,
+      sessionLimit
+    );
     await options?.onPrebuildEvent?.({
       timestamp: new Date().toISOString(),
       method,
       questionId: instance.question_id,
       questionType: instance.question_type,
       stage: "start",
-      totalSessions: instance.haystack_sessions.length,
+      totalSessions: sessionLimit,
+      sessionsProcessed: resumeState?.sessionsProcessed,
+      extractedMemories: resumeState?.extractedMemories,
+      storedMemories: resumeState?.storedMemories,
+      reason: resumeState
+        ? `resuming topic prebuild from session ${resumeState.sessionsProcessed}`
+        : undefined,
     });
 
     const existingPrebuildMarker = persistentStore?.getPrebuildMarker();
@@ -874,6 +907,23 @@ async function defaultVectorStoreFactory(
           reflectionModel,
           includeSpeaker2: options?.includeSpeaker2 ?? true,
           maxPrebuildSessions: options?.maxPrebuildSessions,
+          resumeState: attempt === 1 ? resumeState ?? undefined : undefined,
+          onSessionCheckpoint: async (checkpoint) => {
+            if (!persistentStore) {
+              return;
+            }
+            await persistentStore.markPrebuildProgress({
+              schemaVersion: 1,
+              method,
+              questionId: instance.question_id,
+              questionType: instance.question_type,
+              totalSessions: sessionLimit,
+              sessionsProcessed: checkpoint.sessionsProcessed,
+              extractedMemories: checkpoint.extractedMemories,
+              storedMemories: checkpoint.storedMemories,
+              updatedAt: new Date().toISOString(),
+            });
+          },
           method,
           onPrebuildEvent: options?.onPrebuildEvent,
         });
@@ -889,7 +939,7 @@ async function defaultVectorStoreFactory(
             stage: "retry_no_memories",
             attempt,
             maxAttempts,
-            totalSessions: instance.haystack_sessions.length,
+            totalSessions: sessionLimit,
             sessionsProcessed: prebuildResult.sessionsProcessed,
             extractedMemories: prebuildResult.extractedMemories,
             storedMemories: prebuildResult.storedMemories,
@@ -910,7 +960,7 @@ async function defaultVectorStoreFactory(
             method,
             questionId: instance.question_id,
             questionType: instance.question_type,
-            totalSessions: instance.haystack_sessions.length,
+            totalSessions: sessionLimit,
             sessionsProcessed: prebuildResult.sessionsProcessed,
             extractedMemories: prebuildResult.extractedMemories,
             storedMemories: prebuildResult.storedMemories,
@@ -923,7 +973,7 @@ async function defaultVectorStoreFactory(
           questionId: instance.question_id,
           questionType: instance.question_type,
           stage: "complete",
-          totalSessions: instance.haystack_sessions.length,
+          totalSessions: sessionLimit,
           sessionsProcessed: prebuildResult.sessionsProcessed,
           extractedMemories: prebuildResult.extractedMemories,
           storedMemories: prebuildResult.storedMemories,
@@ -939,12 +989,15 @@ async function defaultVectorStoreFactory(
         stage: "fallback_raw",
         attempt: maxAttempts,
         maxAttempts,
-        totalSessions: instance.haystack_sessions.length,
+        totalSessions: sessionLimit,
         sessionsProcessed: prebuildResult.sessionsProcessed,
         extractedMemories: prebuildResult.extractedMemories,
         storedMemories: prebuildResult.storedMemories,
         reason: `no topic memories extracted after ${maxAttempts} attempts; falling back to raw sessions`,
       });
+      if (persistentStore) {
+        await persistentStore.clearPrebuildProgress();
+      }
       if (!allowRawFallback) {
         throw new Error(
           `[agent-longmemeval] prebuild extracted zero topic memories for ${method}:${instance.question_id} after ${maxAttempts} attempts and raw fallback is disabled`
@@ -960,6 +1013,9 @@ async function defaultVectorStoreFactory(
         reason:
           "prebuild requested but no reflectionModelFactory configured; falling back to raw sessions",
       });
+      if (persistentStore) {
+        await persistentStore.clearPrebuildProgress();
+      }
       if (!allowRawFallback) {
         throw new Error(
           `[agent-longmemeval] prebuild failed for ${method}:${instance.question_id} because reflection model is missing and raw fallback is disabled`
@@ -1007,6 +1063,10 @@ async function buildTopicMemoryBank(input: {
   reflectionModel: BaseChatModel;
   includeSpeaker2: boolean;
   maxPrebuildSessions?: number;
+  resumeState?: PrebuildResumeState;
+  onSessionCheckpoint?: (
+    checkpoint: PrebuildResumeState
+  ) => Promise<void> | void;
   method: AgentEvalMethod;
   onPrebuildEvent?: (event: AgentPrebuildEvent) => Promise<void> | void;
 }): Promise<{
@@ -1021,21 +1081,26 @@ async function buildTopicMemoryBank(input: {
     reflectionModel,
     includeSpeaker2,
     maxPrebuildSessions,
+    resumeState,
+    onSessionCheckpoint,
     method,
     onPrebuildEvent,
   } = input;
-
-  let sessionsProcessed = 0;
-  let extractedMemories = 0;
-  let storedMemories = 0;
 
   const totalSessions = instance.haystack_sessions.length;
   const sessionLimit =
     typeof maxPrebuildSessions === "number" && maxPrebuildSessions > 0
       ? Math.min(totalSessions, maxPrebuildSessions)
       : totalSessions;
+  const initialSessionsProcessed = Math.max(
+    0,
+    Math.min(resumeState?.sessionsProcessed ?? 0, sessionLimit)
+  );
+  let sessionsProcessed = initialSessionsProcessed;
+  let extractedMemories = Math.max(0, resumeState?.extractedMemories ?? 0);
+  let storedMemories = Math.max(0, resumeState?.storedMemories ?? 0);
 
-  for (let index = 0; index < sessionLimit; index++) {
+  for (let index = initialSessionsProcessed; index < sessionLimit; index++) {
     const session = instance.haystack_sessions[index];
     if (!session) {
       continue;
@@ -1086,6 +1151,11 @@ async function buildTopicMemoryBank(input: {
       stage: "session",
       sessionsProcessed,
       totalSessions: sessionLimit,
+      extractedMemories,
+      storedMemories,
+    });
+    await onSessionCheckpoint?.({
+      sessionsProcessed,
       extractedMemories,
       storedMemories,
     });
@@ -1298,6 +1368,43 @@ function normalizeNonNegativeInt(
     return 0;
   }
   return numeric;
+}
+
+function normalizePrebuildResumeState(
+  marker:
+    | {
+        sessionsProcessed?: number;
+        extractedMemories?: number;
+        storedMemories?: number;
+      }
+    | null
+    | undefined,
+  sessionLimit: number
+): PrebuildResumeState | null {
+  if (!marker) {
+    return null;
+  }
+
+  const sessionsProcessed = Number(marker.sessionsProcessed ?? 0);
+  if (!Number.isFinite(sessionsProcessed) || sessionsProcessed <= 0) {
+    return null;
+  }
+
+  const boundedSessionsProcessed = Math.min(
+    Math.max(0, Math.floor(sessionsProcessed)),
+    Math.max(0, Math.floor(sessionLimit))
+  );
+  return {
+    sessionsProcessed: boundedSessionsProcessed,
+    extractedMemories: Math.max(
+      0,
+      Math.floor(Number(marker.extractedMemories ?? 0))
+    ),
+    storedMemories: Math.max(
+      0,
+      Math.floor(Number(marker.storedMemories ?? 0))
+    ),
+  };
 }
 
 async function runWithConcurrency<T>(

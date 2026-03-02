@@ -302,6 +302,127 @@ describe("AgentLongMemEvalEvaluator", () => {
     }
   });
 
+  test("resumes prebuild from persisted session checkpoint within a question", async () => {
+    const dataset: LongMemEvalInstance[] = [
+      {
+        question_id: "q-resume",
+        question_type: "single-session-user",
+        question: "What did I like?",
+        answer: "Hiking",
+        answer_session_ids: ["s3"],
+        haystack_session_ids: ["s1", "s2", "s3"],
+        haystack_sessions: [
+          [{ role: "user", content: "I love hiking in spring." }],
+          [{ role: "user", content: "I train every weekend." }],
+          [{ role: "user", content: "I prefer mountain trails." }],
+        ],
+      },
+    ];
+
+    const embeddings = createMockEmbeddings(128);
+    const cacheDir = await mkdtemp(resolve(tmpdir(), "rmm-prebuild-resume-"));
+    const firstInstance = dataset[0];
+    if (!firstInstance) {
+      throw new Error("Expected dataset row");
+    }
+
+    const basePath = resolve(
+      cacheDir,
+      "rmm",
+      `${sanitizePathComponent(firstInstance.question_id)}-${hashQuestionId(
+        firstInstance.question_id
+      )}`
+    );
+
+    try {
+      const reflectionModel = {
+        invoke: () => {
+          return Promise.resolve({
+            text: JSON.stringify({
+              extracted_memories: [
+                {
+                  summary: "SPEAKER_1 likes hiking.",
+                  reference: [0],
+                },
+              ],
+            }),
+          });
+        },
+      };
+
+      const evaluatorRun1 = new AgentLongMemEvalEvaluator({
+        dataset,
+        methods: ["rmm"],
+        judge: createMockJudge(() => true),
+        embeddings,
+        embeddingDimension: 128,
+        topK: 1,
+        topM: 1,
+        modelFactory: () => new FakeToolCallingModel(),
+        reflectionModelFactory: () => reflectionModel as never,
+        prebuildTopicMemoryBank: true,
+        prebuildMethods: ["rmm"],
+        includeSpeaker2InPrebuild: false,
+        prebuildAllBeforeEvaluation: true,
+        vectorStoreCacheDir: cacheDir,
+        evaluationEnabled: false,
+        onPrebuildEvent: (event) => {
+          if (event.stage === "session" && event.sessionsProcessed === 3) {
+            throw new Error("simulated_interrupt");
+          }
+        },
+      });
+
+      await expect(evaluatorRun1.evaluate()).rejects.toThrow(
+        "simulated_interrupt"
+      );
+
+      const partialStore = await PersistentSimpleVectorStore.create({
+        embeddings,
+        basePath,
+      });
+      expect(partialStore.getPrebuildMarker()).toBeNull();
+      expect(partialStore.getPrebuildProgress()?.sessionsProcessed).toBe(2);
+
+      const resumedSessions: number[] = [];
+      const evaluatorRun2 = new AgentLongMemEvalEvaluator({
+        dataset,
+        methods: ["rmm"],
+        judge: createMockJudge(() => true),
+        embeddings,
+        embeddingDimension: 128,
+        topK: 1,
+        topM: 1,
+        modelFactory: () => new FakeToolCallingModel(),
+        reflectionModelFactory: () => reflectionModel as never,
+        prebuildTopicMemoryBank: true,
+        prebuildMethods: ["rmm"],
+        includeSpeaker2InPrebuild: false,
+        prebuildAllBeforeEvaluation: true,
+        vectorStoreCacheDir: cacheDir,
+        evaluationEnabled: false,
+        onPrebuildEvent: (event) => {
+          if (event.stage === "session" && event.sessionsProcessed) {
+            resumedSessions.push(event.sessionsProcessed);
+          }
+        },
+      });
+
+      const output = await evaluatorRun2.evaluate();
+      expect(output.prebuildSummary?.complete).toBe(1);
+      expect(resumedSessions).toEqual([3]);
+
+      const completedStore = await PersistentSimpleVectorStore.create({
+        embeddings,
+        basePath,
+      });
+      expect(completedStore.getPrebuildMarker()?.sessionsProcessed).toBe(3);
+      expect(completedStore.getPrebuildProgress()).toBeNull();
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
   test("uses Top-M retrieval IDs for metrics", async () => {
     const dataset: LongMemEvalInstance[] = [
       {

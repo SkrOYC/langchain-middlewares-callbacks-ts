@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Document } from "@langchain/core/documents";
 import type { Embeddings } from "@langchain/core/embeddings";
@@ -38,6 +44,18 @@ export interface PersistentVectorStorePrebuildMarker {
   completedAt: string;
 }
 
+export interface PersistentVectorStorePrebuildProgress {
+  schemaVersion: 1;
+  method: string;
+  questionId: string;
+  questionType: string;
+  totalSessions: number;
+  sessionsProcessed: number;
+  extractedMemories: number;
+  storedMemories: number;
+  updatedAt: string;
+}
+
 export interface PersistentSimpleVectorStoreOptions {
   embeddings: Embeddings;
   basePath: string;
@@ -49,6 +67,7 @@ export interface PersistentSimpleVectorStoreOptions {
  * Data model:
  * - `${basePath}.journal.jsonl`: append-only upsert/delete operations
  * - `${basePath}.complete.json`: optional marker written when prebuild completes
+ * - `${basePath}.progress.json`: incremental prebuild checkpoint for resume
  *
  * This keeps memory banks durable across process restarts and supports delete-based merges.
  */
@@ -57,19 +76,23 @@ export class PersistentSimpleVectorStore {
 
   private readonly journalPath: string;
   private readonly completePath: string;
+  private readonly progressPath: string;
   private readonly entriesById = new Map<string, StoredEntry>();
   private writeChain: Promise<void> = Promise.resolve();
   private generatedIdCounter = 0;
   private prebuildMarker: PersistentVectorStorePrebuildMarker | null = null;
+  private prebuildProgress: PersistentVectorStorePrebuildProgress | null = null;
 
   private constructor(options: {
     embeddings: Embeddings;
     journalPath: string;
     completePath: string;
+    progressPath: string;
   }) {
     this.embeddings = options.embeddings;
     this.journalPath = options.journalPath;
     this.completePath = options.completePath;
+    this.progressPath = options.progressPath;
   }
 
   static async create(
@@ -82,10 +105,12 @@ export class PersistentSimpleVectorStore {
       embeddings: options.embeddings,
       journalPath: `${basePath}.journal.jsonl`,
       completePath: `${basePath}.complete.json`,
+      progressPath: `${basePath}.progress.json`,
     });
 
     await store.loadJournal();
     await store.loadCompleteMarker();
+    await store.loadProgressMarker();
     return store;
   }
 
@@ -97,6 +122,24 @@ export class PersistentSimpleVectorStore {
     return this.prebuildMarker ? { ...this.prebuildMarker } : null;
   }
 
+  getPrebuildProgress(): PersistentVectorStorePrebuildProgress | null {
+    return this.prebuildProgress ? { ...this.prebuildProgress } : null;
+  }
+
+  async markPrebuildProgress(
+    progress: PersistentVectorStorePrebuildProgress
+  ): Promise<void> {
+    this.prebuildProgress = {
+      ...progress,
+      schemaVersion: 1,
+    };
+    await writeFile(
+      this.progressPath,
+      `${JSON.stringify(this.prebuildProgress, null, 2)}\n`,
+      "utf8"
+    );
+  }
+
   async markPrebuildComplete(
     marker: PersistentVectorStorePrebuildMarker
   ): Promise<void> {
@@ -104,11 +147,18 @@ export class PersistentSimpleVectorStore {
       ...marker,
       schemaVersion: 1,
     };
+    this.prebuildProgress = null;
     await writeFile(
       this.completePath,
       `${JSON.stringify(this.prebuildMarker, null, 2)}\n`,
       "utf8"
     );
+    await removeFileIfExists(this.progressPath);
+  }
+
+  async clearPrebuildProgress(): Promise<void> {
+    this.prebuildProgress = null;
+    await removeFileIfExists(this.progressPath);
   }
 
   async addDocuments(documents: Document[]): Promise<string[]> {
@@ -330,6 +380,51 @@ export class PersistentSimpleVectorStore {
     }
   }
 
+  private async loadProgressMarker(): Promise<void> {
+    let raw: string;
+    try {
+      raw = await readFile(this.progressPath, "utf8");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        return;
+      }
+      throw error;
+    }
+
+    try {
+      const parsed = JSON.parse(
+        raw
+      ) as Partial<PersistentVectorStorePrebuildProgress>;
+      if (
+        parsed &&
+        parsed.schemaVersion === 1 &&
+        typeof parsed.method === "string" &&
+        typeof parsed.questionId === "string" &&
+        typeof parsed.questionType === "string" &&
+        Number.isFinite(parsed.totalSessions) &&
+        Number.isFinite(parsed.sessionsProcessed) &&
+        Number.isFinite(parsed.extractedMemories) &&
+        Number.isFinite(parsed.storedMemories) &&
+        typeof parsed.updatedAt === "string"
+      ) {
+        this.prebuildProgress = {
+          schemaVersion: 1,
+          method: parsed.method,
+          questionId: parsed.questionId,
+          questionType: parsed.questionType,
+          totalSessions: Number(parsed.totalSessions),
+          sessionsProcessed: Number(parsed.sessionsProcessed),
+          extractedMemories: Number(parsed.extractedMemories),
+          storedMemories: Number(parsed.storedMemories),
+          updatedAt: parsed.updatedAt,
+        };
+      }
+    } catch {
+      // Ignore malformed progress marker file to keep resume resilient.
+    }
+  }
+
   private async appendRecords(records: JournalRecord[]): Promise<void> {
     if (records.length === 0) {
       return;
@@ -345,6 +440,17 @@ export class PersistentSimpleVectorStore {
     const next = this.writeChain.then(task, task);
     this.writeChain = next.catch(() => undefined);
     return next;
+  }
+}
+
+async function removeFileIfExists(path: string): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT") {
+      throw error;
+    }
   }
 }
 

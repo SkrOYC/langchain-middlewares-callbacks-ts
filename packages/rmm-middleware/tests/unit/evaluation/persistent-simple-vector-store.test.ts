@@ -112,4 +112,61 @@ describe("PersistentSimpleVectorStore", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("persists prebuild progress and clears it on completion", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rmm-prebuild-progress-"));
+    const basePath = join(dir, "store");
+
+    try {
+      const embeddings = createKeywordEmbeddings();
+      const storeA = await PersistentSimpleVectorStore.create({
+        embeddings,
+        basePath,
+      });
+      expect(storeA.getPrebuildProgress()).toBeNull();
+
+      await storeA.markPrebuildProgress({
+        schemaVersion: 1,
+        method: "rmm",
+        questionId: "q-progress",
+        questionType: "single-session-user",
+        totalSessions: 5,
+        sessionsProcessed: 2,
+        extractedMemories: 4,
+        storedMemories: 4,
+        updatedAt: "2026-03-02T00:00:00.000Z",
+      });
+
+      const storeB = await PersistentSimpleVectorStore.create({
+        embeddings,
+        basePath,
+      });
+      const progress = storeB.getPrebuildProgress();
+      expect(progress).not.toBeNull();
+      expect(progress?.questionId).toBe("q-progress");
+      expect(progress?.sessionsProcessed).toBe(2);
+      expect(progress?.storedMemories).toBe(4);
+
+      await storeB.markPrebuildComplete({
+        schemaVersion: 1,
+        method: "rmm",
+        questionId: "q-progress",
+        questionType: "single-session-user",
+        totalSessions: 5,
+        sessionsProcessed: 5,
+        extractedMemories: 9,
+        storedMemories: 9,
+        completedAt: "2026-03-02T00:05:00.000Z",
+      });
+
+      const storeC = await PersistentSimpleVectorStore.create({
+        embeddings,
+        basePath,
+      });
+      expect(storeC.getPrebuildProgress()).toBeNull();
+      expect(storeC.getPrebuildMarker()?.sessionsProcessed).toBe(5);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
