@@ -23,15 +23,10 @@
     export LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH
     echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
     echo "Bun version: $(bun --version)"
-    echo "Building packages..."
-    bun run build
   '';
 
   # https://devenv.sh/tests/
   enterTest = ''
-    echo "Running build verification..."
-    bun run build
-    echo ""
     echo "Running tests..."
     bun test
   '';
