@@ -54,9 +54,10 @@ describe("LongMemEval Evaluator", () => {
     test("should export EvaluationResult type", () => {
       const result: EvaluationResult = {
         recallAt5: 1.0,
+        ndcgAt5: 0.95,
         accuracy: 0.9,
         sessionAccuracy: 0.95,
-        turnAccuracy: 0.88,
+        recallAtTurnK: 0.88,
         mrr: 0.92,
         totalQuestions: 100,
         abstentionCount: 10,
@@ -70,9 +71,10 @@ describe("LongMemEval Evaluator", () => {
       const metrics: Table1Metrics = {
         retriever: "Oracle",
         recallAt5: 1.0,
+        ndcgAt5: 1.0,
         accuracy: 0.902,
         sessionAccuracy: 0.95,
-        turnAccuracy: 0.88,
+        recallAtTurnK: 0.88,
       };
       expect(metrics.recallAt5).toBe(1.0);
     });
@@ -143,9 +145,10 @@ describe("LongMemEval Evaluator", () => {
 
       expect(tableMetrics).toHaveProperty("retriever");
       expect(tableMetrics).toHaveProperty("recallAt5");
+      expect(tableMetrics).toHaveProperty("ndcgAt5");
       expect(tableMetrics).toHaveProperty("accuracy");
       expect(tableMetrics).toHaveProperty("sessionAccuracy");
-      expect(tableMetrics).toHaveProperty("turnAccuracy");
+      expect(tableMetrics).toHaveProperty("recallAtTurnK");
       expect(tableMetrics.retriever).toBe("Oracle");
     });
   });
@@ -206,7 +209,7 @@ describe("LongMemEval Evaluator", () => {
     });
   });
 
-  describe("Session and turn accuracy", () => {
+  describe("Session and turn recall", () => {
     test("computes session-level accuracy", async () => {
       const evaluator = new LongMemEvalEvaluator({
         dataset: [createInstance()],
@@ -234,8 +237,8 @@ describe("LongMemEval Evaluator", () => {
 
       const results = await evaluator.evaluate();
 
-      expect(typeof results.turnAccuracy).toBe("number");
-      expect(results.turnAccuracy).toBeGreaterThanOrEqual(0);
+      expect(typeof results.recallAtTurnK).toBe("number");
+      expect(results.recallAtTurnK).toBeGreaterThanOrEqual(0);
     });
   });
 });

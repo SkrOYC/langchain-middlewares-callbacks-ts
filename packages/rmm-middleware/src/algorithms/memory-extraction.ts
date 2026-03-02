@@ -7,6 +7,7 @@ import type { MemoryEntry } from "@/schemas/index";
 import { getLogger } from "@/utils/logger";
 
 const logger = getLogger("memory-extraction");
+const CODE_FENCE_JSON_REGEX = /```(?:json)?\s*([\s\S]*?)\s*```/i;
 
 /**
  * Formats a session history into a dialogue string with turn markers.
@@ -27,7 +28,7 @@ function formatSessionHistory(history: BaseMessage[]): string {
       continue;
     }
     const turnNumber = Math.floor(i / 2);
-    const speaker = message.type;
+    const speaker = normalizeSpeakerLabel(message.type);
 
     dialogueParts.push(
       `* Turn ${turnNumber}:\n  – ${speaker}: ${message.content}`
@@ -35,6 +36,16 @@ function formatSessionHistory(history: BaseMessage[]): string {
   }
 
   return dialogueParts.join("\n");
+}
+
+function normalizeSpeakerLabel(type: string | undefined): string {
+  if (type === "human" || type === "humanmessage") {
+    return "SPEAKER_1";
+  }
+  if (type === "ai" || type === "aimessage" || type === "assistant") {
+    return "SPEAKER_2";
+  }
+  return "SPEAKER_2";
 }
 
 /**
@@ -45,6 +56,11 @@ interface ExtractionOutput {
     summary: string;
     reference: number[];
   }>;
+}
+
+interface ParsedExtractionResult {
+  type: "no_trait" | "data" | "invalid";
+  data?: ExtractionOutput;
 }
 
 /**
@@ -93,34 +109,21 @@ export async function extractMemories(
 
     // Step 3: Call LLM with extraction prompt
     const response = await summarizationModel.invoke(prompt);
-    const responseContent = response.text;
+    const responseContent = extractTextFromModelResponse(response);
 
-    // Step 4: Handle NO_TRAIT special case
-    if (responseContent === "NO_TRAIT") {
+    // Step 4-6: Parse and normalize LLM extraction output
+    const parsed = parseExtractionOutput(responseContent);
+    if (parsed.type === "no_trait") {
       return [];
     }
-
-    // Step 5: Parse JSON response
-    let extractionOutput: ExtractionOutput;
-
-    try {
-      extractionOutput = JSON.parse(responseContent) as ExtractionOutput;
-    } catch {
-      // Invalid JSON - return null for graceful degradation
-      logger.warn("Failed to parse LLM response as JSON:", responseContent);
+    if (parsed.type === "invalid" || !parsed.data) {
+      logger.warn(
+        "Failed to parse LLM response as extraction JSON:",
+        truncateForLog(responseContent)
+      );
       return null;
     }
-
-    // Step 6: Validate extraction output structure
-    if (
-      !(
-        extractionOutput.extracted_memories &&
-        Array.isArray(extractionOutput.extracted_memories)
-      )
-    ) {
-      logger.warn("Invalid extraction output structure:", extractionOutput);
-      return null;
-    }
+    const extractionOutput = parsed.data;
 
     // Step 7: Generate embeddings for each extracted memory
     const summaries = extractionOutput.extracted_memories.map(
@@ -143,11 +146,13 @@ export async function extractMemories(
       // Build raw dialogue from turn references
       const rawDialogueTurns = extracted.reference
         .map((turnIndex) => {
-          const messageIndex = turnIndex * 2;
-          if (messageIndex < sessionHistory.length) {
-            return sessionHistory[messageIndex]?.content;
-          }
-          return "";
+          const turnMessages = sessionHistory
+            .filter(
+              (_, messageIndex) => Math.floor(messageIndex / 2) === turnIndex
+            )
+            .map((message) => String(message.content ?? "").trim())
+            .filter((content) => content.length > 0);
+          return turnMessages.join(" ");
         })
         .filter((content) => content !== "")
         .join(" | ");
@@ -180,4 +185,139 @@ export async function extractMemories(
     logger.warn("Error during memory extraction:", error);
     return null;
   }
+}
+
+function parseExtractionOutput(
+  responseContent: string
+): ParsedExtractionResult {
+  const normalized = responseContent.trim();
+
+  if (normalized === "NO_TRAIT") {
+    return { type: "no_trait" };
+  }
+
+  const direct = tryParseExtractionJson(normalized);
+  if (direct.type !== "invalid") {
+    return direct;
+  }
+
+  const codeFenceMatch = normalized.match(CODE_FENCE_JSON_REGEX);
+  const fencedBody = codeFenceMatch?.[1];
+  if (fencedBody) {
+    const fromFence = tryParseExtractionJson(fencedBody.trim());
+    if (fromFence.type !== "invalid") {
+      return fromFence;
+    }
+  }
+
+  const firstBrace = normalized.indexOf("{");
+  const lastBrace = normalized.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    const jsonLike = normalized.slice(firstBrace, lastBrace + 1);
+    const fromSlice = tryParseExtractionJson(jsonLike);
+    if (fromSlice.type !== "invalid") {
+      return fromSlice;
+    }
+  }
+
+  return { type: "invalid" };
+}
+
+function extractTextFromModelResponse(response: unknown): string {
+  if (typeof response === "string") {
+    return response;
+  }
+
+  if (!response || typeof response !== "object") {
+    return "";
+  }
+
+  const responseAny = response as {
+    text?: unknown;
+    content?: unknown;
+  };
+
+  if (typeof responseAny.text === "string" && responseAny.text.trim() !== "") {
+    return responseAny.text;
+  }
+
+  const content = responseAny.content;
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (
+          part &&
+          typeof part === "object" &&
+          "text" in part &&
+          typeof (part as { text?: unknown }).text === "string"
+        ) {
+          return (part as { text: string }).text;
+        }
+        return "";
+      })
+      .join("\n")
+      .trim();
+  }
+
+  return "";
+}
+
+function tryParseExtractionJson(raw: string): ParsedExtractionResult {
+  let parsedUnknown: unknown;
+  try {
+    parsedUnknown = JSON.parse(raw);
+  } catch {
+    return { type: "invalid" };
+  }
+
+  if (parsedUnknown === "NO_TRAIT") {
+    return { type: "no_trait" };
+  }
+
+  if (
+    typeof parsedUnknown === "object" &&
+    parsedUnknown !== null &&
+    "extracted_memories" in parsedUnknown
+  ) {
+    const maybe = parsedUnknown as {
+      extracted_memories?: unknown;
+    };
+
+    if (maybe.extracted_memories === "NO_TRAIT") {
+      return { type: "no_trait" };
+    }
+
+    if (Array.isArray(maybe.extracted_memories)) {
+      const isValid = maybe.extracted_memories.every(
+        (entry) =>
+          typeof entry === "object" &&
+          entry !== null &&
+          typeof (entry as { summary?: unknown }).summary === "string" &&
+          Array.isArray((entry as { reference?: unknown }).reference)
+      );
+
+      if (isValid) {
+        return {
+          type: "data",
+          data: parsedUnknown as ExtractionOutput,
+        };
+      }
+    }
+  }
+
+  return { type: "invalid" };
+}
+
+function truncateForLog(value: string, maxLength = 400): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}... [truncated ${value.length - maxLength} chars]`;
 }

@@ -21,7 +21,7 @@ const DIGIT_REGEX = /(\d+)/;
  * Parses a session ID to extract the numeric index
  *
  * Supports multiple formats:
- * - "session-0", "session-1", ... (LongMemEval standard format)
+ * - "session-0", "session-1", ... (legacy synthetic format)
  * - "0", "1", ... (numeric format)
  * - "sess-0", "sess-1", ... (alternative prefix)
  *
@@ -85,8 +85,43 @@ export interface LongMemEvalInstance {
     | "multi-session";
   question: string;
   answer: string;
+  question_date?: string;
   answer_session_ids: string[]; // Ground truth for Oracle retriever
+  haystack_dates?: string[];
+  /**
+   * Optional explicit IDs for each haystack session.
+   * Official LongMemEval datasets provide this field.
+   */
+  haystack_session_ids?: string[];
   haystack_sessions: LongMemEvalTurn[][];
+}
+
+/**
+ * Resolves a session ID to its haystack index.
+ *
+ * Preference order:
+ * 1. Exact lookup in haystack_session_ids (official dataset path)
+ * 2. Numeric parsing fallback (legacy synthetic IDs)
+ */
+export function resolveSessionIndex(
+  sessionId: string,
+  instance: Pick<
+    LongMemEvalInstance,
+    "haystack_sessions" | "haystack_session_ids"
+  >
+): number {
+  const explicitIds = instance.haystack_session_ids;
+  if (Array.isArray(explicitIds)) {
+    const explicitIndex = explicitIds.indexOf(sessionId);
+    if (
+      explicitIndex >= 0 &&
+      explicitIndex < instance.haystack_sessions.length
+    ) {
+      return explicitIndex;
+    }
+  }
+
+  return parseSessionIndex(sessionId);
 }
 
 /**
@@ -155,8 +190,8 @@ export class OracleVectorStore {
     }> = [];
 
     for (const sessionId of instance.answer_session_ids.slice(0, maxResults)) {
-      // Parse session ID to get numeric index
-      const sessionIndex = parseSessionIndex(sessionId);
+      // Resolve session ID to haystack index using explicit IDs when available.
+      const sessionIndex = resolveSessionIndex(sessionId, instance);
 
       if (
         sessionIndex < 0 ||
@@ -179,7 +214,7 @@ export class OracleVectorStore {
       results.push({
         pageContent,
         metadata: {
-          sessionId,
+          sessionId: instance.haystack_session_ids?.[sessionIndex] ?? sessionId,
           questionId: instance.question_id,
           relevanceScore: 1.0, // Oracle has perfect relevance
         },

@@ -118,7 +118,7 @@ export function createRetrospectiveWrapModelCall(
       const { createLazyValidator } = await import(
         "@/utils/embedding-validation"
       );
-      validateOnce = createLazyValidator(embeddings);
+      validateOnce = createLazyValidator(embeddings, embeddingDimension);
     }
     await validateOnce();
 

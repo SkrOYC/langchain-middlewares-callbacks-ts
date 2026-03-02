@@ -5,6 +5,13 @@ node_modules
 out
 dist
 *.tgz
+artifacts
+
+# benchmark datasets (downloaded locally)
+data/
+data/longmemeval/*.json
+data/longmemeval/cache/*.bin
+data/longmemeval/cache/*.jsonl
 
 # code coverage
 coverage

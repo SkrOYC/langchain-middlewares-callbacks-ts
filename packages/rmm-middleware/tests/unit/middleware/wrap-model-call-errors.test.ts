@@ -109,7 +109,11 @@ describe("wrapModelCall Hook Error Scenarios", () => {
     const result = await hook(createRequest(hook), handler);
 
     expect(handlerCalled).toBe(true);
-    expect(result.content).toBe("Response about RMM");
+    if ("content" in result) {
+      expect(result.content).toBe("Response about RMM");
+    } else {
+      throw new Error("Unexpected Command response from wrapModelCall");
+    }
   });
 
   test("should handle requests without a human query gracefully", async () => {
@@ -136,7 +140,11 @@ describe("wrapModelCall Hook Error Scenarios", () => {
     const result = await hook(request, handler);
 
     expect(handlerCalled).toBe(true);
-    expect(result.content).toBe("Response");
+    if ("content" in result) {
+      expect(result.content).toBe("Response");
+    } else {
+      throw new Error("Unexpected Command response from wrapModelCall");
+    }
   });
 
   test("should handle empty retrieved memories array", async () => {
@@ -161,7 +169,11 @@ describe("wrapModelCall Hook Error Scenarios", () => {
     );
 
     expect(handlerCalled).toBe(true);
-    expect(result.content).toBe("Response");
+    if ("content" in result) {
+      expect(result.content).toBe("Response");
+    } else {
+      throw new Error("Unexpected Command response from wrapModelCall");
+    }
   });
 
   test("should handle missing retrieved memories gracefully", async () => {
@@ -186,6 +198,10 @@ describe("wrapModelCall Hook Error Scenarios", () => {
     );
 
     expect(handlerCalled).toBe(true);
-    expect(result.content).toBe("Response");
+    if ("content" in result) {
+      expect(result.content).toBe("Response");
+    } else {
+      throw new Error("Unexpected Command response from wrapModelCall");
+    }
   });
 });

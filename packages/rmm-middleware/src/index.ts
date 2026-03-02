@@ -35,8 +35,9 @@ import { extractSpeaker2 } from "@/middleware/prompts/extract-speaker2.js";
 import { updateMemory } from "@/middleware/prompts/update-memory.js";
 import { type RmmConfig, rmmConfigSchema } from "@/schemas/config.js";
 import {
+  createRmmMiddlewareStateSchemaZod,
+  DEFAULT_EMBEDDING_DIMENSION,
   DEFAULT_REFLECTION_CONFIG,
-  rmmMiddlewareStateSchemaZod,
 } from "@/schemas/index.js";
 import { getLogger } from "@/utils/logger";
 
@@ -52,6 +53,37 @@ export {
   OfflinePretrainer,
   SupervisedContrastiveLoss,
 } from "@/algorithms/offline-pretraining.js";
+// Agent evaluation exports - types only
+export type {
+  AgentEvalMethod,
+  AgentLongMemEvalEvaluatorConfig,
+  AgentLongMemEvalOutput,
+  AgentLongMemEvalResult,
+  AgentPrebuildEvent,
+  AgentRunRecord,
+} from "@/evaluation/agent-longmemeval-evaluator.js";
+// Agent evaluation exports - values
+export { AgentLongMemEvalEvaluator } from "@/evaluation/agent-longmemeval-evaluator.js";
+export {
+  createOracleBaselineMiddleware,
+  createRagMiddleware,
+} from "@/evaluation/baselines.js";
+export { loadLongMemEvalDataset } from "@/evaluation/dataset-loader.js";
+export { createEvalProbeMiddleware } from "@/evaluation/eval-probe-middleware.js";
+// Judge exports - types only
+export type {
+  AnswerJudge,
+  AnswerJudgeDecision,
+  AnswerJudgeInput,
+  PromptJudgeRunner,
+} from "@/evaluation/judges.js";
+// Judge exports - values
+export {
+  buildLongMemEvalJudgePrompt,
+  createExactMatchJudge,
+  createMockJudge,
+  createPromptJudge,
+} from "@/evaluation/judges.js";
 // Evaluation exports - types only
 export type {
   EvaluationResult,
@@ -70,7 +102,9 @@ export type {
 export {
   computeAllMetrics,
   computeMeanReciprocalRank,
+  computeNdcgAtK,
   computeRecallAtK,
+  computeRecallAtTurnK,
   computeSessionAccuracy,
   computeTurnAccuracy,
 } from "@/evaluation/metrics.js";
@@ -137,6 +171,11 @@ const logger = getLogger("rmm-middleware");
  */
 export function rmmMiddleware(config: RmmConfig = {}) {
   const parsedConfig = rmmConfigSchema.parse(config);
+  const effectiveEmbeddingDimension =
+    parsedConfig.embeddingDimension ?? DEFAULT_EMBEDDING_DIMENSION;
+  const middlewareStateSchemaZod = createRmmMiddlewareStateSchemaZod(
+    effectiveEmbeddingDimension
+  );
 
   /**
    * Context schema for RMM middleware runtime context.
@@ -169,7 +208,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   if (!parsedConfig.enabled) {
     return createMiddleware({
       name: "RmmMiddleware",
-      stateSchema: rmmMiddlewareStateSchemaZod,
+      stateSchema: middlewareStateSchemaZod,
       contextSchema: rmmContextSchema,
       beforeAgent: () => undefined,
       beforeModel: () => undefined,
@@ -237,6 +276,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
     vectorStore: parsedConfig.vectorStore as BeforeModelOptions["vectorStore"],
     embeddings: parsedConfig.embeddings as BeforeModelOptions["embeddings"],
     topK: parsedConfig.topK,
+    embeddingDimension: parsedConfig.embeddingDimension,
   };
 
   // Build afterModel hook options
@@ -269,7 +309,7 @@ export function rmmMiddleware(config: RmmConfig = {}) {
   return createMiddleware({
     name: "RmmMiddleware",
     // Prefer Zod schema here to avoid cross-package StateSchema identity drift.
-    stateSchema: rmmMiddlewareStateSchemaZod,
+    stateSchema: middlewareStateSchemaZod,
     contextSchema: rmmContextSchema,
     beforeAgent: beforeAgentHook,
     beforeModel: beforeModelHook,

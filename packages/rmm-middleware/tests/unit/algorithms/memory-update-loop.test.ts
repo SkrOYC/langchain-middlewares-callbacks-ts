@@ -429,7 +429,7 @@ describe("processMemoryUpdate", () => {
     );
   });
 
-  test("executes all merge actions with different indices", async () => {
+  test("applies only the first action when multiple merge actions are returned", async () => {
     const { processMemoryUpdate } = await import("@/algorithms/memory-update");
 
     const addedDocs: Array<{ pageContent: string }> = [];
@@ -535,19 +535,10 @@ describe("processMemoryUpdate", () => {
       mockUpdatePrompt
     );
 
-    // Should have deleted three different memories
-    expect(deletedIds).toHaveLength(3);
-    expect(deletedIds).toContain(existingMemory1.id);
-    expect(deletedIds).toContain(existingMemory2.id);
-    expect(deletedIds).toContain(existingMemory3.id);
-
-    // Should have added three merged documents
-    expect(addedDocs.length).toBe(3);
-
-    // Verify all three merged summaries are present
-    const summaries = addedDocs.map((d) => d.pageContent);
-    expect(summaries).toContain("User likes running and is active.");
-    expect(summaries).toContain("User plays tennis and enjoys sports.");
-    expect(summaries).toContain("User swims regularly and is active.");
+    // Paper-aligned behavior: one add-or-merge action per extracted memory.
+    // Only the first valid action should execute.
+    expect(deletedIds).toEqual([existingMemory1.id]);
+    expect(addedDocs.length).toBe(1);
+    expect(addedDocs[0]?.pageContent).toBe("User likes running and is active.");
   });
 });

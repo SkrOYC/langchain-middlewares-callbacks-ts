@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 /**
- * Tests for updateMemory prompt template (Appendix D.1.2)
+ * Tests for updateMemory prompt template
  *
  * These tests verify that the prompt template:
- * 1. Matches the exact structure from Appendix D.1.2
+ * 1. Preserves core Add vs Merge semantics
  * 2. Handles history summaries and new summary inputs
- * 3. Supports Add() and Merge(index, merged_summary) actions
+ * 3. Enforces a single action decision format
  */
 
 describe("updateMemory Prompt Template", () => {
@@ -35,14 +35,14 @@ describe("updateMemory Prompt Template", () => {
     const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory([], "New summary");
     expect(prompt).toContain("Add()");
-    expect(prompt).toContain("not relevant to any history");
+    expect(prompt).toContain("distinct aspect");
   });
 
   test("should specify Merge action format", async () => {
     const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory(["Existing summary"], "New summary");
     expect(prompt).toContain("Merge(index, merged_summary)");
-    expect(prompt).toContain("relevant to a history personal summary");
+    expect(prompt).toContain("same aspect");
   });
 
   test("should contain input format instructions", async () => {
@@ -63,10 +63,11 @@ describe("updateMemory Prompt Template", () => {
     expect(prompt).toContain("Merge(0,");
   });
 
-  test("should handle multiple actions on separate lines", async () => {
+  test("should require exactly one action in output", async () => {
     const { updateMemory } = await import("@/middleware/prompts/update-memory");
     const prompt = updateMemory(["Summary 1", "Summary 2"], "New summary");
-    expect(prompt).toContain("newline");
+    expect(prompt).toContain("Choose exactly ONE action");
+    expect(prompt).toContain("Return exactly one line");
   });
 
   test("should be a non-configurable built-in prompt", async () => {

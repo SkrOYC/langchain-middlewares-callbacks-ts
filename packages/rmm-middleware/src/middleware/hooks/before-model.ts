@@ -55,6 +55,12 @@ export interface BeforeModelOptions {
    * @default 20
    */
   topK?: number;
+
+  /**
+   * Expected embedding dimension for validation.
+   * @default 1536
+   */
+  embeddingDimension?: number;
 }
 
 // ============================================================================
@@ -181,6 +187,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
 
   // Apply defaults
   const topK = options.topK ?? 20;
+  const expectedDimension = options.embeddingDimension ?? 1536;
 
   // Lazy validator state (created once, reused across calls)
   let validateOnce: (() => Promise<void>) | null = null;
@@ -194,7 +201,7 @@ export function createRetrospectiveBeforeModel(options: BeforeModelOptions) {
       const { createLazyValidator } = await import(
         "@/utils/embedding-validation"
       );
-      validateOnce = createLazyValidator(embeddings);
+      validateOnce = createLazyValidator(embeddings, expectedDimension);
     }
     await validateOnce();
 

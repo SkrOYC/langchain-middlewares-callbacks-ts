@@ -200,9 +200,7 @@ Additional Instructions:
 * The citation is evaluated based on whether the response references the original turns, not the summaries.
 * Follow the format of the examples provided above.
 
-<memories>
 ${memories.length > 0 ? memoriesBlock : "<memories></memories>"}
-</memories>
 
 </system-reminder>`;
 }

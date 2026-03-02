@@ -8,13 +8,14 @@
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import {
   computeMeanReciprocalRank,
+  computeNdcgAtK,
   computeRecallAtK,
   computeSessionAccuracy,
 } from "@/evaluation/metrics";
 import {
   type LongMemEvalInstance,
   type LongMemEvalTurn,
-  parseSessionIndex,
+  resolveSessionIndex,
 } from "@/retrievers/oracle-retriever";
 
 /**
@@ -22,9 +23,10 @@ import {
  */
 export interface EvaluationResult {
   recallAt5: number;
+  ndcgAt5: number;
   accuracy: number;
   sessionAccuracy: number;
-  turnAccuracy: number;
+  recallAtTurnK: number;
   mrr: number;
   totalQuestions: number;
   abstentionCount: number;
@@ -40,9 +42,10 @@ export interface EvaluationResult {
 export interface Table1Metrics {
   retriever: string;
   recallAt5: number;
+  ndcgAt5: number;
   accuracy: number;
   sessionAccuracy: number;
-  turnAccuracy: number;
+  recallAtTurnK: number;
 }
 
 /**
@@ -51,6 +54,8 @@ export interface Table1Metrics {
 export interface LongMemEvalEvaluatorConfig {
   dataset: LongMemEvalInstance[];
   retriever: VectorStoreInterface;
+  topK?: number;
+  topM?: number;
 }
 
 /**
@@ -62,11 +67,15 @@ export interface LongMemEvalEvaluatorConfig {
 export class LongMemEvalEvaluator {
   private readonly dataset: LongMemEvalInstance[];
   private readonly retriever: VectorStoreInterface;
+  private readonly topK: number;
+  private readonly topM: number;
   private lastResults?: EvaluationResult;
 
   constructor(config: LongMemEvalEvaluatorConfig) {
     this.dataset = config.dataset;
     this.retriever = config.retriever;
+    this.topK = config.topK ?? 20;
+    this.topM = config.topM ?? 5;
   }
 
   /**
@@ -76,8 +85,9 @@ export class LongMemEvalEvaluator {
    */
   async evaluate(): Promise<EvaluationResult> {
     let totalRecall5 = 0;
+    let totalNdcg5 = 0;
     let totalSessionAccuracy = 0;
-    let totalTurnAccuracy = 0;
+    let totalRecallAtTurnK = 0;
     let totalMRR = 0;
     let questionCount = 0;
     let abstentionCount = 0;
@@ -92,39 +102,51 @@ export class LongMemEvalEvaluator {
       // Retrieve memories for this question
       const retrieved = await this.retriever.similaritySearch(
         instance.question,
-        10
+        this.topK
       );
 
-      // Extract retrieved session IDs
-      const retrievedSessionIds = retrieved
+      // Extract and apply final Top-M selection used for generation and metrics.
+      const topKRetrievedSessionIds = retrieved
         .map((r) => r.metadata?.sessionId)
         .filter((id): id is string => id !== undefined);
+      const topMRetrievedSessionIds = topKRetrievedSessionIds.slice(
+        0,
+        this.topM
+      );
 
       // Compute Recall@5
       const recall5 = computeRecallAtK(
-        retrievedSessionIds,
+        topMRetrievedSessionIds,
         instance.answer_session_ids,
         5
       );
       totalRecall5 += recall5;
 
+      // Compute NDCG@5
+      const ndcg5 = computeNdcgAtK(
+        topMRetrievedSessionIds,
+        instance.answer_session_ids,
+        5
+      );
+      totalNdcg5 += ndcg5;
+
       // Compute session accuracy
       const sessionAcc = computeSessionAccuracy(
-        retrievedSessionIds,
+        topMRetrievedSessionIds,
         instance.answer_session_ids
       );
       totalSessionAccuracy += sessionAcc;
 
-      // Compute turn accuracy
-      const turnAcc = computeTurnAccuracyForInstance(
+      // Compute turn-level recall
+      const turnRecall = computeRecallAtTurnKForInstance(
         instance,
-        retrievedSessionIds
+        topMRetrievedSessionIds
       );
-      totalTurnAccuracy += turnAcc;
+      totalRecallAtTurnK += turnRecall;
 
       // Compute MRR
       const mrr = computeMeanReciprocalRank(
-        [retrievedSessionIds],
+        [topMRetrievedSessionIds],
         [instance.answer_session_ids]
       );
       totalMRR += mrr;
@@ -132,17 +154,18 @@ export class LongMemEvalEvaluator {
       questionCount++;
     }
 
-    // accuracy = turn-level accuracy (proportion of answer-containing turns retrieved)
+    // accuracy = turn-level recall (proportion of answer-containing turns retrieved)
     // This matches the paper's Table 1 "Accuracy" metric
-    const avgTurnAccuracy =
-      questionCount > 0 ? totalTurnAccuracy / questionCount : 0;
+    const avgRecallAtTurnK =
+      questionCount > 0 ? totalRecallAtTurnK / questionCount : 0;
 
     this.lastResults = {
       recallAt5: questionCount > 0 ? totalRecall5 / questionCount : 0,
-      accuracy: avgTurnAccuracy, // Turn-level accuracy per paper definition
+      ndcgAt5: questionCount > 0 ? totalNdcg5 / questionCount : 0,
+      accuracy: avgRecallAtTurnK, // Turn-level recall per paper definition
       sessionAccuracy:
         questionCount > 0 ? totalSessionAccuracy / questionCount : 0,
-      turnAccuracy: avgTurnAccuracy,
+      recallAtTurnK: avgRecallAtTurnK,
       mrr: questionCount > 0 ? totalMRR / questionCount : 0,
       totalQuestions: questionCount,
       abstentionCount,
@@ -172,9 +195,10 @@ export class LongMemEvalEvaluator {
     return {
       retriever: retrieverName,
       recallAt5: this.lastResults.recallAt5,
+      ndcgAt5: this.lastResults.ndcgAt5,
       accuracy: this.lastResults.accuracy,
       sessionAccuracy: this.lastResults.sessionAccuracy,
-      turnAccuracy: this.lastResults.turnAccuracy,
+      recallAtTurnK: this.lastResults.recallAtTurnK,
     };
   }
 
@@ -225,11 +249,11 @@ function countHasAnswerTurns(session: LongMemEvalTurn[]): number {
  */
 function getSessionById(
   sessionId: string,
-  haystack: LongMemEvalTurn[][]
+  instance: LongMemEvalInstance
 ): LongMemEvalTurn[] | undefined {
-  const sessionIndex = parseSessionIndex(sessionId);
-  if (sessionIndex >= 0 && sessionIndex < haystack.length) {
-    return haystack[sessionIndex];
+  const sessionIndex = resolveSessionIndex(sessionId, instance);
+  if (sessionIndex >= 0 && sessionIndex < instance.haystack_sessions.length) {
+    return instance.haystack_sessions[sessionIndex];
   }
   return undefined;
 }
@@ -237,13 +261,10 @@ function getSessionById(
 /**
  * Counts total has_answer turns in ground truth sessions
  */
-function countGroundTruthHasAnswerTurns(
-  answerSessionIds: string[],
-  haystack: LongMemEvalTurn[][]
-): number {
+function countGroundTruthHasAnswerTurns(instance: LongMemEvalInstance): number {
   let count = 0;
-  for (const sessionId of answerSessionIds) {
-    const session = getSessionById(sessionId, haystack);
+  for (const sessionId of instance.answer_session_ids) {
+    const session = getSessionById(sessionId, instance);
     if (session !== undefined) {
       count += countHasAnswerTurns(session);
     }
@@ -257,14 +278,14 @@ function countGroundTruthHasAnswerTurns(
 function countRetrievedHasAnswerTurns(
   retrievedSessionIds: string[],
   relevantSessions: Set<string>,
-  haystack: LongMemEvalTurn[][]
+  instance: LongMemEvalInstance
 ): number {
   let count = 0;
   for (const sessionId of retrievedSessionIds) {
     if (!relevantSessions.has(sessionId)) {
       continue;
     }
-    const session = getSessionById(sessionId, haystack);
+    const session = getSessionById(sessionId, instance);
     if (session !== undefined) {
       count += countHasAnswerTurns(session);
     }
@@ -273,24 +294,24 @@ function countRetrievedHasAnswerTurns(
 }
 
 /**
- * Helper to compute turn accuracy for a single instance
+ * Helper to compute turn-level recall for a single instance
  *
- * Turn accuracy measures the proportion of answer-containing turns
+ * Turn-level recall measures the proportion of answer-containing turns
  * that are successfully retrieved, using the `has_answer` field from
  * the LongMemEval dataset.
  *
  * Per the LongMemEval paper:
  * - Turns that contain the required evidence have `has_answer: true`
- * - Turn-level accuracy = (retrieved turns with has_answer) / (total turns with has_answer)
+ * - Turn-level recall = (retrieved turns with has_answer) / (total turns with has_answer)
  *
  * Since we retrieve at the session level, we consider all has_answer
  * turns in the retrieved sessions as "retrieved".
  *
  * @param instance - LongMemEval instance with haystack_sessions
  * @param retrievedSessionIds - IDs of sessions that were retrieved
- * @returns Turn accuracy in range [0, 1]
+ * @returns Turn-level recall in range [0, 1]
  */
-function computeTurnAccuracyForInstance(
+function computeRecallAtTurnKForInstance(
   instance: LongMemEvalInstance,
   retrievedSessionIds: string[]
 ): number {
@@ -298,10 +319,7 @@ function computeTurnAccuracyForInstance(
   const relevantSessions = new Set(instance.answer_session_ids);
 
   // Count total has_answer turns in ground truth
-  const totalHasAnswerTurns = countGroundTruthHasAnswerTurns(
-    instance.answer_session_ids,
-    instance.haystack_sessions
-  );
+  const totalHasAnswerTurns = countGroundTruthHasAnswerTurns(instance);
 
   if (totalHasAnswerTurns === 0) {
     return 0;
@@ -311,7 +329,7 @@ function computeTurnAccuracyForInstance(
   const retrievedHasAnswerTurns = countRetrievedHasAnswerTurns(
     retrievedSessionIds,
     relevantSessions,
-    instance.haystack_sessions
+    instance
   );
 
   return retrievedHasAnswerTurns / totalHasAnswerTurns;

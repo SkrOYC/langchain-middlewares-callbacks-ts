@@ -112,37 +112,35 @@ export async function processMemoryUpdate(
     updatePrompt
   );
 
-  // Step 4: Execute actions
-  // The paper describes an exclusive "add OR merge" decision per memory.
-  // We prioritize Merge actions. If any are present, we execute them.
-  // Otherwise, we add the new memory exactly once (even if multiple Add
-  // actions are returned due to parser quirks).
+  // Step 4: Execute action
+  // Paper-aligned behavior: one Add-or-Merge decision per extracted memory.
+  // If multiple valid actions are returned, we keep only the first.
   if (actions.length === 0) {
     await addMemory(memory, vectorStore);
     return;
   }
 
-  const hasMergeAction = actions.some((a) => a.action === "Merge");
-
-  if (hasMergeAction) {
-    const processedIndices = new Set<number>();
-    for (const action of actions) {
-      if (action.action === "Merge") {
-        if (processedIndices.has(action.index)) {
-          logger.warn(
-            `Duplicate merge index ${action.index} skipped (first-wins)`
-          );
-          continue;
-        }
-        processedIndices.add(action.index);
-        const targetMemory = similarMemories[action.index];
-        if (targetMemory) {
-          await mergeMemory(targetMemory, action.merged_summary, vectorStore);
-        }
-      }
-    }
-  } else {
-    // No Merge actions — add the memory once
-    await addMemory(memory, vectorStore);
+  if (actions.length > 1) {
+    logger.warn(
+      `Received ${actions.length} update actions for one memory; applying first action only`
+    );
   }
+
+  const action = actions[0];
+  if (!action) {
+    await addMemory(memory, vectorStore);
+    return;
+  }
+
+  if (action.action === "Merge") {
+    const targetMemory = similarMemories[action.index];
+    if (!targetMemory) {
+      await addMemory(memory, vectorStore);
+      return;
+    }
+    await mergeMemory(targetMemory, action.merged_summary, vectorStore);
+    return;
+  }
+
+  await addMemory(memory, vectorStore);
 }
