@@ -20,6 +20,8 @@ import { type BaseEvent, EventType } from "./events";
 import { createAGUIMiddleware } from "./middleware/createAGUIMiddleware";
 import type { AGUIMiddlewareOptions } from "./middleware/types";
 
+let hasWarnedEmitToolResultsDeprecation = false;
+
 /**
  * Configuration for creating an AG-UI enabled agent.
  */
@@ -42,17 +44,35 @@ export interface AGUIAgentConfig {
  * This function creates a LangChain agent with automatic AG-UI protocol integration:
  * - Middleware handles lifecycle events (RUN_STARTED, RUN_FINISHED, etc.)
  * - Callbacks handle streaming events (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS, etc.)
- * - Callbacks must be passed at runtime via agent.streamEvents() config
+ * - Callback handler is bound by default and merged with runtime callbacks
  * - Guaranteed cleanup via middleware wrapModelCall with try-finally
- *
- * Note: Callbacks are not bound to the model here because:
- * 1. Some models (like MockChatModel in tests) don't properly support withConfig()
- * 2. Users should pass callbacks at runtime for proper streaming
  *
  * @param config - Agent configuration
  * @returns An agent with AG-UI protocol support
  */
 export function createAGUIAgent(config: AGUIAgentConfig) {
+	const callbackEmitToolResults =
+		config.callbackOptions?.emitToolResults ??
+		config.middlewareOptions?.emitToolResults ??
+		true;
+
+	if (
+		typeof config.middlewareOptions?.emitToolResults === "boolean" &&
+		typeof config.callbackOptions?.emitToolResults === "undefined" &&
+		!hasWarnedEmitToolResultsDeprecation
+	) {
+		hasWarnedEmitToolResultsDeprecation = true;
+		console.warn(
+			"[AG-UI] `middlewareOptions.emitToolResults` is deprecated. Use `callbackOptions.emitToolResults` instead.",
+		);
+	}
+
+	const callbackHandler = new AGUICallbackHandler({
+		onEvent: config.onEvent,
+		...config.callbackOptions,
+		emitToolResults: callbackEmitToolResults,
+	});
+
 	// Create middleware with callback
 	const middleware = createAGUIMiddleware({
 		onEvent: config.onEvent,
@@ -79,18 +99,21 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
 		middleware: [middleware],
 	});
 
+	const agentWithCallbacks =
+		agent && typeof (agent as any).withConfig === "function"
+			? (agent as any).withConfig({
+					callbacks: [callbackHandler],
+				})
+			: agent;
+
 	// Attach global listeners for guaranteed cleanup and error handling if supported
-	if (agent && typeof (agent as any).withListeners === "function") {
-		return (agent as any).withListeners({
+	if (
+		agentWithCallbacks &&
+		typeof (agentWithCallbacks as any).withListeners === "function"
+	) {
+		return (agentWithCallbacks as any).withListeners({
 			onError: (run: any) => {
 				try {
-					// Extract threadId and runId from run config if available
-					const threadId = run.config?.configurable?.threadId as
-						| string
-						| undefined;
-					const agentRunId = run.config?.configurable?.runId as
-						| string
-						| undefined;
 					config.onEvent({
 						type: EventType.RUN_ERROR,
 						message:
@@ -107,5 +130,5 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
 		});
 	}
 
-	return agent;
+	return agentWithCallbacks;
 }

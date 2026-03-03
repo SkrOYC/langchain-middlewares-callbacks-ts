@@ -27,6 +27,8 @@ export interface AGUICallbackHandlerOptions {
 	emitTextMessages?: boolean;
 	/** Emit TOOL_CALL events: START, ARGS, END, RESULT (default: true) */
 	emitToolCalls?: boolean;
+	/** Emit TOOL_CALL_RESULT events (default: true) */
+	emitToolResults?: boolean;
 	/** Emit THINKING events: START, TEXT_MESSAGE_*, END (default: true) */
 	emitThinking?: boolean;
 	/** Maximum payload size in bytes for UI events (default: 50KB) */
@@ -56,6 +58,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 	private _enabled: boolean;
 	private _emitTextMessages: boolean;
 	private _emitToolCalls: boolean;
+	private _emitToolResults: boolean;
 	private _emitThinking: boolean;
 
 	private maxUIPayloadSize: number;
@@ -67,6 +70,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 		this._enabled = options?.enabled ?? true;
 		this._emitTextMessages = options?.emitTextMessages ?? true;
 		this._emitToolCalls = options?.emitToolCalls ?? true;
+		this._emitToolResults = options?.emitToolResults ?? true;
 		this._emitThinking = options?.emitThinking ?? true;
 		this.maxUIPayloadSize = options?.maxUIPayloadSize ?? 50 * 1024;
 		this.chunkLargeResults = options?.chunkLargeResults ?? false;
@@ -99,6 +103,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
 	set emitToolCalls(value: boolean) {
 		this._emitToolCalls = value;
+	}
+
+	/** Control TOOL_CALL_RESULT event emission */
+	get emitToolResults(): boolean {
+		return this._emitToolResults;
+	}
+
+	set emitToolResults(value: boolean) {
+		this._emitToolResults = value;
 	}
 
 	/** Control THINKING event emission */
@@ -687,12 +700,14 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 				timestamp: Date.now(),
 			} as BaseEvent);
 
-			this.emitToolResultWithPolicy(
-				output,
-				toolCallId,
-				messageId,
-				toolInfo?.name,
-			);
+			if (this.emitToolResults) {
+				this.emitToolResultWithPolicy(
+					output,
+					toolCallId,
+					messageId,
+					toolInfo?.name,
+				);
+			}
 		} catch {
 			// Fail-safe
 		}
