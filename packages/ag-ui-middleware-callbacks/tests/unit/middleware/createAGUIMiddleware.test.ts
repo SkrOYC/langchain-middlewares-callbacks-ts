@@ -21,10 +21,7 @@ describe("createAGUIMiddleware", () => {
 				messages: [new HumanMessage("Hello"), new AIMessage("Hi there!")],
 			};
 			const runtime = {
-				config: {
-					configurable: { thread_id: "thread-123", run_id: "run-123" },
-				},
-				context: { onEvent: mockCallback.emit },
+				context: { thread_id: "thread-123", run_id: "run-123" },
 			};
 
 			const beforeAgent = middleware.beforeAgent as any;
@@ -34,6 +31,7 @@ describe("createAGUIMiddleware", () => {
 				expect.objectContaining({
 					type: "RUN_STARTED",
 					threadId: "thread-123",
+					runId: "run-123",
 				}),
 			);
 
@@ -64,8 +62,7 @@ describe("createAGUIMiddleware", () => {
 
 			const state = { secret: "top-secret", other: "public" };
 			const runtime = {
-				config: { configurable: { run_id: "run-123" } },
-				context: { onEvent: mockCallback.emit },
+				context: { run_id: "run-123" },
 			};
 
 			const beforeAgent = middleware.beforeAgent as any;
@@ -86,8 +83,7 @@ describe("createAGUIMiddleware", () => {
 				app_data: "keep me",
 			};
 			const runtime = {
-				config: { configurable: { run_id: "run-123" } },
-				context: { onEvent: mockCallback.emit },
+				context: { run_id: "run-123" },
 			};
 
 			const beforeAgent = middleware.beforeAgent as any;
@@ -97,7 +93,6 @@ describe("createAGUIMiddleware", () => {
 				(call) => call[0].type === "STATE_SNAPSHOT",
 			);
 			expect(snapshotCall).toBeDefined();
-			// This should FAIL currently because we haven't implemented filtering yet
 			expect(snapshotCall![0].snapshot.messages).toBeUndefined();
 		});
 	});
@@ -111,8 +106,7 @@ describe("createAGUIMiddleware", () => {
 
 			const state = {};
 			const runtime = {
-				config: { configurable: { thread_id: "t1", run_id: "run-123" } },
-				context: { onEvent: mockCallback.emit },
+				context: { thread_id: "t1", run_id: "run-123" },
 			};
 
 			const beforeAgent = middleware.beforeAgent as any;
@@ -144,8 +138,7 @@ describe("createAGUIMiddleware", () => {
 
 			const state = { messages: ["msg1", "msg2"] };
 			const runtime = {
-				config: { configurable: { thread_id: "t1", run_id: "run-123" } },
-				context: { onEvent: mockCallback.emit },
+				context: { thread_id: "t1", run_id: "run-123" },
 			};
 
 			const beforeAgent = middleware.beforeAgent as any;
@@ -160,6 +153,70 @@ describe("createAGUIMiddleware", () => {
 					result: { status: "done", count: 2 },
 				}),
 			);
+		});
+	});
+
+	describe("ID resolution", () => {
+		test("uses context IDs before explicit overrides", async () => {
+			const callback = createMockCallback();
+			const middleware = createAGUIMiddleware({
+				onEvent: callback.emit,
+				threadIdOverride: "override-thread",
+				runIdOverride: "override-run",
+			});
+
+			const state = {};
+			const runtime = {
+				context: { thread_id: "context-thread", run_id: "context-run" },
+			};
+
+			const beforeAgent = middleware.beforeAgent as any;
+			const afterAgent = middleware.afterAgent as any;
+			await beforeAgent(state, runtime);
+			await afterAgent(state, runtime);
+
+			const runStarted = callback.events.find((e) => e.type === "RUN_STARTED");
+			const runFinished = callback.events.find((e) => e.type === "RUN_FINISHED");
+
+			expect(runStarted?.threadId).toBe("context-thread");
+			expect(runStarted?.runId).toBe("context-run");
+			expect(runFinished?.threadId).toBe("context-thread");
+			expect(runFinished?.runId).toBe("context-run");
+		});
+
+		test("uses explicit overrides when context IDs are absent", async () => {
+			const callback = createMockCallback();
+			const middleware = createAGUIMiddleware({
+				onEvent: callback.emit,
+				threadIdOverride: "override-thread",
+				runIdOverride: "override-run",
+			});
+
+			const state = {};
+			const runtime = { context: {} };
+
+			const beforeAgent = middleware.beforeAgent as any;
+			await beforeAgent(state, runtime);
+
+			const runStarted = callback.events.find((e) => e.type === "RUN_STARTED");
+			expect(runStarted?.threadId).toBe("override-thread");
+			expect(runStarted?.runId).toBe("override-run");
+		});
+
+		test("falls back only when run ID is missing", async () => {
+			const callback = createMockCallback();
+			const middleware = createAGUIMiddleware({ onEvent: callback.emit });
+
+			const state = {};
+			const runtime = { context: {} };
+
+			const beforeAgent = middleware.beforeAgent as any;
+			await beforeAgent(state, runtime);
+
+			const runStarted = callback.events.find((e) => e.type === "RUN_STARTED");
+			expect(typeof runStarted?.runId).toBe("string");
+			expect(runStarted?.runId.length).toBeGreaterThan(0);
+			expect(runStarted?.threadId).toBe("");
 		});
 	});
 });

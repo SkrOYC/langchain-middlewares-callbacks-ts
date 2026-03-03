@@ -59,6 +59,50 @@ describe("AGUICallbackHandler", () => {
 				}),
 			);
 		});
+
+		test("handleLLMStart prefers metadata/config context run_id for agent correlation", async () => {
+			const mockCallback = createMockCallback();
+			const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+			const runId = "internal-run-id";
+
+			await handler.handleLLMStart(
+				null,
+				["prompt"],
+				runId,
+				undefined,
+				{
+					options: {
+						context: { run_id: "context-run-id" },
+					},
+				},
+				undefined,
+				{
+					run_id: "metadata-run-id",
+				},
+			);
+
+			expect((handler as any).agentRunIds.get(runId)).toBe("metadata-run-id");
+		});
+
+		test("handleLLMStart supports legacy agui_runId as compatibility fallback", async () => {
+			const mockCallback = createMockCallback();
+			const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+			const runId = "internal-run-id";
+
+			await handler.handleLLMStart(
+				null,
+				["prompt"],
+				runId,
+				undefined,
+				undefined,
+				undefined,
+				{
+					agui_runId: "legacy-run-id",
+				},
+			);
+
+			expect((handler as any).agentRunIds.get(runId)).toBe("legacy-run-id");
+		});
 	});
 
 	describe("Tool Callbacks", () => {
