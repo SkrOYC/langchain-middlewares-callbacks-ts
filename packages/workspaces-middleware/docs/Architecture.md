@@ -1,4 +1,4 @@
-# Architecture.md
+# Architecture.md: WorkspacesMiddleware
 
 ## 1. ARCHITECTURAL STRATEGY
 
@@ -22,7 +22,7 @@ Within the boundary of the `WorkspacesMiddleware`, the system is decomposed into
 *   **[Tool Synthesizer]**: *Domain Service* - Evaluates the aggregate `AccessScope` of all registered Workspaces to dynamically provision the allowed toolset (TBD signatures) for the agent.
 *   **[VFS Router]**: *Core Domain* - Receives normalized POSIX paths. Executes Longest-Prefix Match algorithms to resolve a requested logical path to a specific `Mount`.
 *   **[Access Guard]**: *Security Bulkhead* - Sits between the VFS Router and the Store Ports. Cross-references the requested operation type (Read vs. Write) against the resolved Workspace's `AccessScope` (`READ_ONLY`, `READ_WRITE`, `WRITE_ONLY`). Preemptively rejects violations.
-*   **[Store Port]**: *Driven Port* - The abstract interface defining standard data operations (Read, Write, List, Search) that all persistence mechanisms must implement.
+*   **[Store Port]**: *Driven Port* - The abstract interface defining standard data operations that all persistence mechanisms must implement.
 *   **[Physical Store Adapter]**: *Driven Adapter* - Implements the Store Port. Translates normalized logical paths to host-specific OS paths (handling Windows/POSIX differences) and executes native file I/O.
 *   **[Virtual Store Adapter]**: *Driven Adapter* - Implements the Store Port. Translates logical paths to namespace keys and executes operations against an external/cross-thread Key-Value database (e.g., LangGraph `BaseStore`).
 
@@ -60,8 +60,14 @@ C4Container
 
 ## 4. CRITICAL EXECUTION FLOWS
 
-### Flow 1: Initialization & Context Injection
-*Shows how the middleware provisions the agent safely before the first LLM token is generated.*
+### Flow 1: Initialization & Context Injection (P0)
+*Maps to Epic 2: Tool Injection, Prompt Map Injection*
+
+### Flow 2: Authorized Virtual File Read (P0)
+*Maps to Epic 1: Longest-Prefix Resolution*
+
+### Flow 3: Unauthorized Physical Write Attempt (P0)
+*Maps to Epic 1 & Epic 2: Access Scope Pre-Emptive Rejection*
 
 ```mermaid
 sequenceDiagram
@@ -81,8 +87,8 @@ sequenceDiagram
     Interceptor-->>Agent: Injects Tools + Prompt Map
 ```
 
-### Flow 2: Authorized Virtual File Read
-*Shows a successful read operation routed to an abstracted KV store.*
+### Flow 2: Authorized Virtual File Read (P0)
+*Maps to Epic 1: Longest-Prefix Resolution*
 
 ```mermaid
 sequenceDiagram
@@ -109,8 +115,8 @@ sequenceDiagram
     Interceptor-->>Agent: Returns formatted content
 ```
 
-### Flow 3: Unauthorized Physical Write Attempt
-*Shows the Access Guard acting as a bulkhead, rejecting the request before touching infrastructure.*
+### Flow 3: Unauthorized Physical Write Attempt (P0)
+*Maps to Epic 1 & Epic 2: Access Scope Pre-Emptive Rejection*
 
 ```mermaid
 sequenceDiagram

@@ -1,4 +1,4 @@
-# Tasks.md
+# Tasks.md: WorkspacesMiddleware
 
 ## 1. EXECUTIVE SUMMARY
 - **Total Estimation:** 32 Story Points
@@ -144,7 +144,7 @@ flowchart LR
 > ```gherkin
 > Given a middleware configuration with only READ_ONLY mounts
 > When the Tool Synthesizer generates the schema
-> Then it returns only read_file, ls, and search tools
+> Then it returns only read_file, ls, and list tools
 > 
 > Given a configuration containing at least one READ_WRITE mount
 > When the Synthesizer generates the schema

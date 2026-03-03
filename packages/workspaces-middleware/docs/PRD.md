@@ -21,7 +21,7 @@ Strict adherence to these terms is mandatory. Synonyms are forbidden.
 | **Workspace** | The logical directory path exposed to the agent (e.g., `/project/docs`), paired with a strict Access Scope. This is the *only* file structure the agent perceives. | Root, Folder, Environment |
 | **Access Scope** | The immutable permissions bound to a Workspace. Must be exactly one of: Read-Only (RO), Read-Write (RW), or Write-Only (WO). | Permissions, Rights |
 | **Mount** | The underlying target destination that backs a Workspace. This is the translation layer mapping the logical Workspace to a specific Virtual Namespace or Physical Path. | Target, Binding |
-| **Store** | The implementation capability that executes file operations (Read, Write, List, Search) against a Mount. Stores are strictly data-centric and incapable of arbitrary compute/execution. | Backend, Adapter |
+| **Store** | The implementation capability that executes file operations against a Mount. Stores are strictly data-centric and incapable of arbitrary compute/execution. | Backend, Adapter |
 | **Physical Store** | A Store capability that interacts with the actual host machine's hard drive. | FS Backend, LocalFS |
 | **Virtual Store** | A Store capability that interacts with an abstracted, ephemeral, or persistent key-value database, keeping data entirely off the host's physical hard drive. | State Backend, DB Store |
 
@@ -35,11 +35,11 @@ Strict adherence to these terms is mandatory. Synonyms are forbidden.
 
 ## 4. FUNCTIONAL CAPABILITIES
 
-### Epic 1: The VFS Router & Overlapping Boundaries
+### Epic 1: The VFS Router & Overlapping Boundaries (P0)
 - **Capability 1.1 - Longest-Prefix Resolution:** The system must evaluate all file operations against configured Workspaces. If Workspaces overlap (e.g., `/home` is RO, `/home/src` is RW), the system must route the operation using longest-prefix match logic.
 - **Capability 1.2 - Path Jailbreaking Defense:** The system must intercept and neutralize any directory traversal attempts (e.g., `../../`) ensuring the agent can never escape the logical boundary of a Workspace.
 
-### Epic 2: Strict Access Scope Enforcement
+### Epic 2: Strict Access Scope Enforcement (P0)
 - **Capability 2.1 - Pre-Emptive Rejection:** If an agent attempts an operation that violates a Workspace's Access Scope (e.g., editing a file in an RO Workspace), the system must reject the operation at the routing layer and return a graceful failure message to the agent, without invoking the underlying Store.
 - **Capability 2.2 - Dynamic Tool Injection:** The system must intelligently provision tools to the agent based on the aggregate Access Scopes of its Workspaces. (e.g., If an agent only possesses RO Workspaces, "Edit" and "Write" tools must not be injected into its prompt or tool schema).
 - **Capability 2.3 - Prompt Map Injection:** The system must dynamically append a "Filesystem Map" to the agent's system prompt, explicitly detailing its available Workspaces and their Access Scopes.
@@ -49,6 +49,9 @@ Strict adherence to these terms is mandatory. Synonyms are forbidden.
 - **Separation of Concerns (No Compute):** The system must strictly handle data operations. Arbitrary shell execution or compute must be entirely decoupled from the Store and Workspace capabilities.
 - **State Efficiency:** The Virtual Store must not persist large file data inside the agent's ephemeral conversation state (graph state). It must utilize an external or cross-thread persistence layer to prevent Out-Of-Memory (OOM) errors and payload bloat.
 - **Failsafe Default (Deny-by-Default):** Any path requested by an agent that does not resolve to an explicitly configured Workspace must be aggressively denied. If the middleware is initialized with an empty configuration, the agent has zero access.
+- **Scalability:** The system must support concurrent agent workspaces without interference. The Virtual Store must handle multiple namespaces efficiently, ensuring no cross-contamination of data between isolated workspaces.
+- **Availability:** Network-backed stores (Virtual Store with external databases) must implement timeout mechanisms to prevent hanging the agent execution thread indefinitely.
+- **Security:** All file operations must be validated against Access Scopes before execution. Path traversal attacks must be neutralized at the routing layer.
 
 ## 6. BOUNDARY ANALYSIS
 
@@ -111,10 +114,6 @@ classDiagram
 
     class Store {
         <<interface>>
-        +read()
-        +write()
-        +list()
-        +search()
     }
     
     class PhysicalStore {
