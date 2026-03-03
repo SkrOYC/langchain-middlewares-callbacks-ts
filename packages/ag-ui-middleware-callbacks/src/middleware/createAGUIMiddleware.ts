@@ -12,6 +12,7 @@ import { generateDeterministicId } from "../utils/idGenerator";
 import { mapLangChainMessageToAGUI } from "../utils/messageMapper";
 import { computeStateDelta } from "../utils/stateDiff";
 import { isValidEvent, validateEvent } from "../utils/validation";
+import { resolveLifecycleIds } from "./idResolution";
 import {
 	type AGUIMiddlewareOptions,
 	AGUIMiddlewareOptionsSchema,
@@ -192,40 +193,27 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 			threadId: z.string().optional(),
 		}) as any,
 
-		beforeAgent: async (state, runtime) => {
-			modelTurnIndex = 0;
-			const runtimeAny = runtime as any;
-			const configurable =
-				runtimeAny.config?.configurable || runtimeAny.configurable;
+			beforeAgent: async (state, runtime) => {
+				modelTurnIndex = 0;
+				const runtimeAny = runtime as any;
+				const resolvedIds = resolveLifecycleIds({
+					context: runtimeAny?.context,
+					threadIdOverride: validated.threadIdOverride,
+					runIdOverride: validated.runIdOverride,
+					createFallbackRunId: () => crypto.randomUUID(),
+				});
 
-			threadId =
-				(configurable?.threadId as string | undefined) ||
-				(configurable?.thread_id as string | undefined) ||
-				(configurable?.checkpoint_id as string | undefined) ||
-				validated.threadIdOverride ||
-				(runtimeAny.context?.threadId as string | undefined) ||
-				(runtimeAny.context?.thread_id as string | undefined) ||
-				"";
+				threadId = resolvedIds.threadId;
+				runId = resolvedIds.runId;
 
-			// Exhaustive search for Run ID - generate fallback if not found
-			runId =
-				validated.runIdOverride ||
-				(configurable?.run_id as string | undefined) ||
-				(runtimeAny.runId as string | undefined) ||
-				(runtimeAny.id as string | undefined) ||
-				(runtimeAny.context?.runId as string | undefined) ||
-				(runtimeAny.context?.run_id as string | undefined) ||
-				(runtimeAny.config?.runId as string | undefined) ||
-				crypto.randomUUID(); // Generate fallback for streamEvents compatibility
-
-			try {
-				emitEvent({
-					type: EventType.RUN_STARTED,
-					threadId,
-					runId,
-					input: cleanLangChainData(runtimeAny.config?.input),
-					timestamp: Date.now(),
-				} as BaseEvent);
+				try {
+					emitEvent({
+						type: EventType.RUN_STARTED,
+						threadId,
+						runId,
+						input: cleanLangChainData(runtimeAny?.config?.input),
+						timestamp: Date.now(),
+					} as BaseEvent);
 
 				if (
 					validated.emitStateSnapshots === "initial" ||
@@ -259,22 +247,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 						timestamp: Date.now(),
 					} as BaseEvent);
 				}
-			} catch {
-				// Fail-safe
-			}
+				} catch {
+					// Fail-safe
+				}
 
-			// Store runId in metadata for callback coordination
-			// This allows callbacks to use the same runId as middleware
-			const configAny = runtimeAny.config as any;
-			if (configAny) {
-				configAny.metadata = {
-					...(configAny.metadata || {}),
-					agui_runId: runId,
-				};
-			}
-
-			return {};
-		},
+				return {};
+			},
 
 		beforeModel: async (state, runtime) => {
 			const turnIndex = modelTurnIndex++;
@@ -282,19 +260,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 			const stepName = `model_call_${messageId}`;
 			currentStepName = stepName;
 
-			// Store messageId in metadata for callback coordination
-			// This ensures callbacks use the same messageId as middleware
-			const runtimeAny = runtime as any;
-			const configAny = runtimeAny.config as any;
-			if (configAny) {
-				configAny.metadata = {
-					...(configAny.metadata || {}),
-					agui_messageId: messageId,
-				};
-			}
-
-			try {
-				emitEvent({
+				try {
+					emitEvent({
 					type: EventType.STEP_STARTED,
 					stepName,
 					timestamp: Date.now(),
@@ -309,18 +276,18 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 						turnIndex,
 						activityTracker,
 						"started",
-						validated.activityMapper,
-						{
-							stepName,
-							modelName:
-								(runtime as any).config?.model?._modelType || "unknown",
-							inputPreview: getInputPreview(state),
-						} as Record<string, any>,
-					);
+							validated.activityMapper,
+							{
+								stepName,
+								modelName:
+									(runtime as any).config?.model?._modelType || "unknown",
+								inputPreview: getInputPreview(state),
+							} as Record<string, any>,
+						);
 				}
 
-				// TEXT_MESSAGE_START is handled by AGUICallbackHandler
-				// It reads messageId from metadata in handleLLMStart
+					// TEXT_MESSAGE_START is handled by AGUICallbackHandler
+					// using deterministic IDs derived from the resolved run ID.
 			} catch {
 				// Fail-safe
 			}
@@ -330,8 +297,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
 		afterModel: async (state, _runtime) => {
 			try {
-				// TEXT_MESSAGE_END is handled by AGUICallbackHandler
-				// It uses the same messageId from metadata coordination
+					// TEXT_MESSAGE_END is handled by AGUICallbackHandler
+					// using the same deterministic message ID.
 
 				emitEvent({
 					type: EventType.STEP_FINISHED,

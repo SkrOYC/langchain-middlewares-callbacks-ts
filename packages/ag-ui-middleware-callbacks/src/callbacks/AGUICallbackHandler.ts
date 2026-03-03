@@ -201,11 +201,19 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 	): Promise<void> {
 		if (!this.enabled || !this.emitTextMessages) return;
 
-		// Priority: metadata.agui_messageId (from middleware) > metadata.run_id > parentRunId > runId
+		const contextAny = (_extraParams as any)?.options?.context as
+			| Record<string, unknown>
+			| undefined;
+		const metadataAny = _metadata as Record<string, unknown> | undefined;
+
+		// Priority: callback metadata/context run IDs > parentRunId > current runId.
+		// agui_runId remains a compatibility fallback for older integrations.
 		const agentRunId =
-			((_metadata as any)?.agui_runId as string | undefined) ||
-			((_metadata as any)?.run_id as string | undefined) ||
-			((_metadata as any)?.configurable?.run_id as string | undefined) ||
+			(metadataAny?.run_id as string | undefined) ||
+			(metadataAny?.runId as string | undefined) ||
+			(contextAny?.run_id as string | undefined) ||
+			(contextAny?.runId as string | undefined) ||
+			(metadataAny?.agui_runId as string | undefined) ||
 			_parentRunId ||
 			runId;
 
@@ -215,7 +223,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 		}
 
 		// Check if middleware sent us a messageId via metadata
-		const middlewareMessageId = (_metadata as any)?.agui_messageId as
+		const middlewareMessageId = (metadataAny as any)?.agui_messageId as
 			| string
 			| undefined;
 

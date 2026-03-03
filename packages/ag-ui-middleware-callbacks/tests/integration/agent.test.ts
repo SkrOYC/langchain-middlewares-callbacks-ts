@@ -352,6 +352,86 @@ describe("State Management", () => {
 	});
 });
 
+describe("Run ID Correlation", () => {
+	test("invoke uses context IDs consistently across lifecycle events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+		const { agent } = createTestAgent(model, [], callback);
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]), {
+			context: { run_id: "ctx-run-invoke", thread_id: "ctx-thread-invoke" },
+			configurable: { run_id: "cfg-run-invoke", thread_id: "cfg-thread-invoke" },
+		});
+
+		const runStarted = getEventsByType(callback, "RUN_STARTED")[0];
+		const runFinished = getEventsByType(callback, "RUN_FINISHED")[0];
+
+		expect(runStarted.runId).toBe("ctx-run-invoke");
+		expect(runStarted.threadId).toBe("ctx-thread-invoke");
+		expect(runFinished.runId).toBe("ctx-run-invoke");
+		expect(runFinished.threadId).toBe("ctx-thread-invoke");
+	});
+
+	test("stream uses context IDs consistently across lifecycle events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+		const { agent } = createTestAgent(model, [], callback);
+
+		const stream = await agent.stream(
+			formatAgentInput([{ role: "user", content: "Hi" }]),
+			{
+				context: { run_id: "ctx-run-stream", thread_id: "ctx-thread-stream" },
+				configurable: {
+					run_id: "cfg-run-stream",
+					thread_id: "cfg-thread-stream",
+				},
+			},
+		);
+		await collectStreamChunks(stream);
+
+		const runStarted = getEventsByType(callback, "RUN_STARTED")[0];
+		const runFinished = getEventsByType(callback, "RUN_FINISHED")[0];
+
+		expect(runStarted.runId).toBe("ctx-run-stream");
+		expect(runStarted.threadId).toBe("ctx-thread-stream");
+		expect(runFinished.runId).toBe("ctx-run-stream");
+		expect(runFinished.threadId).toBe("ctx-thread-stream");
+	});
+
+	test("streamEvents uses context IDs consistently across lifecycle events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+		const { agent } = createTestAgent(model, [], callback);
+
+		const eventStream = await (agent as any).streamEvents(
+			formatAgentInput([{ role: "user", content: "Hi" }]),
+			{
+				version: "v2",
+				context: {
+					run_id: "ctx-run-stream-events",
+					thread_id: "ctx-thread-stream-events",
+				},
+				configurable: {
+					run_id: "cfg-run-stream-events",
+					thread_id: "cfg-thread-stream-events",
+				},
+			},
+		);
+		for await (const _event of eventStream) {
+			// consume stream
+		}
+
+		const runStarted = getEventsByType(callback, "RUN_STARTED")[0];
+		const runFinished = getEventsByType(callback, "RUN_FINISHED")[0];
+
+		expect(runStarted.runId).toBe("ctx-run-stream-events");
+		expect(runStarted.threadId).toBe("ctx-thread-stream-events");
+		expect(runFinished.runId).toBe("ctx-run-stream-events");
+		expect(runFinished.threadId).toBe("ctx-thread-stream-events");
+	});
+
+});
+
 // Copy of Streaming section
 describe("Streaming", () => {
 	test("Streaming emits TEXT_MESSAGE_CONTENT events", async () => {
