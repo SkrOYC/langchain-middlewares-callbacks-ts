@@ -130,6 +130,10 @@ describe("createAGUIMiddleware", () => {
 			context: { thread_id: "thread-123", run_id: "run-123" },
 			config: { input: { messages: [] } },
 		};
+		const getSnapshotIndexes = (events: any[]) =>
+			events
+				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
+				.filter((index) => index !== -1);
 
 		const runLifecycle = async (mode: "initial" | "final" | "all" | "none") => {
 			const callback = createMockCallback();
@@ -154,9 +158,7 @@ describe("createAGUIMiddleware", () => {
 
 		test("initial emits exactly one STATE_SNAPSHOT at run start", async () => {
 			const events = await runLifecycle("initial");
-			const snapshotIndexes = events
-				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
-				.filter((index) => index !== -1);
+			const snapshotIndexes = getSnapshotIndexes(events);
 
 			expect(snapshotIndexes).toHaveLength(1);
 			expect(snapshotIndexes[0]).toBe(
@@ -166,9 +168,7 @@ describe("createAGUIMiddleware", () => {
 
 		test("final emits exactly one STATE_SNAPSHOT at run end", async () => {
 			const events = await runLifecycle("final");
-			const snapshotIndexes = events
-				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
-				.filter((index) => index !== -1);
+			const snapshotIndexes = getSnapshotIndexes(events);
 			const runFinishedIndex = events.findIndex(
 				(event) => event.type === "RUN_FINISHED",
 			);
@@ -179,9 +179,7 @@ describe("createAGUIMiddleware", () => {
 
 		test("all emits exactly two STATE_SNAPSHOT events (start and end)", async () => {
 			const events = await runLifecycle("all");
-			const snapshotIndexes = events
-				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
-				.filter((index) => index !== -1);
+			const snapshotIndexes = getSnapshotIndexes(events);
 			const runStartedIndex = events.findIndex((event) => event.type === "RUN_STARTED");
 			const runFinishedIndex = events.findIndex(
 				(event) => event.type === "RUN_FINISHED",
