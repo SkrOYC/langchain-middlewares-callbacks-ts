@@ -85,9 +85,14 @@ classDiagram
 ## 4. API CONTRACT (PROGRAMMATIC INTERFACES)
 
 ### 4.1. Middleware Initialization Contract
-The public API for the developer configuring the agent.
+
+The developer configures the middleware by providing mount definitions and registering their custom tools. The middleware provides thin I/O services that tools consume.
 
 ```typescript
+// ============================================================================
+// TYPES: What the Developer Configures
+// ============================================================================
+
 export type AccessScope = "READ_ONLY" | "READ_WRITE" | "WRITE_ONLY";
 
 export interface PhysicalStoreConfig {
@@ -105,42 +110,130 @@ export type StoreConfig = PhysicalStoreConfig | VirtualStoreConfig;
 export interface MountConfig {
   prefix: string;          // Logical path, e.g., "/project"
   scope: AccessScope;
-  store: StoreConfig;      // Configuration for the store adapter
+  store: StoreConfig;
 }
 
 export interface WorkspacesMiddlewareOptions {
   mounts: Array<MountConfig>;
+  tools: Array<RegisteredTool>;  // Developer's custom tools
 }
 ```
 
-### 4.2. Tool Interfaces (The Deferred LLM Contracts)
+### 4.2. Developer Tool Contract (Thick Tool, Thin Service)
 
-While the precise Zod schemas will be harvested during the Execution phase, the underlying TypeScript interfaces that dictate the expected LLM inputs are firmly defined here. Following the pattern from LangChain's DeepAgents filesystem backend, these interfaces align with proven tool schemas that LLMs can reliably invoke.
+The middleware provides **thin I/O services**. The developer brings **thick tools** that contain all the logic. Tools receive resolved content and return new content.
 
 ```typescript
-// Read operation. Provisioned for RO and RW scopes.
-export interface ReadFileContract {
-  path: string;
-  offset?: number;
-  limit?: number;
+// ============================================================================
+// TYPES: What the Middleware Provides to Developer Tools (Injectable)
+// ============================================================================
+
+/**
+ * Thin I/O service - provides primitive file operations.
+ * Developer tools MUST consume these to read/write files.
+ */
+export interface VFSServices {
+  /**
+   * Resolve a logical path to its mounted location and normalized key.
+   * Performs path validation and access checks.
+   */
+  resolve(path: string): VFSResolution;
+
+  /**
+   * Read the FULL content of a file.
+   * Returns the complete file contents as a string.
+   */
+  read(key: string): Promise<string>;
+
+  /**
+   * Write the FULL new content to a file.
+   * Replaces entire file contents.
+   */
+  write(key: string, content: string): Promise<void>;
+
+  /**
+   * List files in a directory.
+   * @param key - Directory key (without trailing slash)
+   */
+  list(key: string): Promise<string[]>;
+
+  /**
+   * Get metadata about a file.
+   */
+  stat(key: string): Promise<FileMetadata>;
 }
 
-// Write operation. Provisioned only for RW and WO scopes.
-export interface WriteFileContract {
-  path: string;
+export interface VFSResolution {
+  mount: MountConfig;
+  normalizedKey: string;  // Sanitized relative path
+  scope: AccessScope;
+}
+
+export interface FileMetadata {
+  exists: boolean;
+  isDirectory: boolean;
+  size?: number;
+  modified?: Date;
+}
+
+// ============================================================================
+// TYPES: What Developer Tools MUST Return
+// ============================================================================
+
+/**
+ * Contract that ALL developer tools MUST return.
+ * This is what the LLM sees in its context.
+ */
+export interface ToolResult {
+  /** The message content that the LLM sees */
   content: string;
+  
+  /** Optional metadata for middleware/agent awareness */
+  metadata?: {
+    /** What operation was performed */
+    operation?: "read" | "write" | "edit" | "list" | "search";
+    /** Files that were modified */
+    filesModified?: string[];
+    /** Files that were read */
+    filesRead?: string[];
+  };
 }
 
-// Edit operation. Provisioned only for RW and WO scopes.
-export interface EditFileContract {
-  path: string;
-  old_string: string;
-  new_string: string;
-}
+// ============================================================================
+// TYPES: How Developer Registers Their Tools
+// ============================================================================
 
-// List operation. Provisioned for RO and RW scopes.
-export interface ListDirectoryContract {
-  path: string;
+/**
+ * Operation types - declared by developer for access control
+ */
+export type OperationType = "read" | "write" | "edit" | "list" | "search";
+
+/**
+ * A tool registration from the developer.
+ * Developer defines ANY signature they want - middleware just wraps it.
+ */
+export interface RegisteredTool {
+  /** Tool name - passed directly to agent */
+  name: string;
+  
+  /** Tool description - passed directly to agent */
+  description: string;
+  
+  /** Zod schema for parameters - passed directly to agent's schema */
+  parameters: ZodSchema;
+  
+  /** Operations this tool performs - for access control enforcement */
+  operations: OperationType[];
+  
+  /**
+   * The tool handler - developer provides FULL logic.
+   * Receives parsed params + our services.
+   * MUST return ToolResult.
+   */
+  handler: (
+    params: unknown,      // Already validated against parameters schema
+    services: VFSServices // Our thin I/O services
+  ) => Promise<ToolResult>;
 }
 ```
 
@@ -223,9 +316,9 @@ src/
 2.  **Stateless Iteration:** The `Filesystem Map` injected into the prompt must be regenerated dynamically via the `beforeModel` hook on every turn. This ensures that if mount configurations are somehow altered dynamically (e.g., via another higher-level orchestrator), the agent's prompt reflects the exact reality of that specific turn.
 3.  **Exception Handling at the Boundary:** Any error thrown by the `infrastructure` layer (e.g., `ENOENT` from Node.js) must be caught by the `wrapToolCall` adapter and transformed into a graceful string message returned as a `ToolMessage` to the LLM. The Node.js event loop must never crash due to a bad LLM tool call.
 
-### 5.3. Middleware Hook Implementation (LangChain `createMiddleware` Pattern)
+### 5.3. Middleware Hook Implementation (Thick Tool Pattern)
 
-Following LangChain's `createMiddleware` API (circa 2025/2026), the middleware must implement the following hooks:
+Following LangChain's `createMiddleware` API (circa 2025/2026), the middleware wraps developer-registered tools and injects VFSServices.
 
 ```typescript
 import { createMiddleware } from "langchain";
@@ -244,22 +337,45 @@ export const workspacesMiddleware = createMiddleware({
   beforeModel: async (state, runtime) => {
     const fsMap = generateFilesystemMap(runtime);
     // Inject into the first system message or prepend as system instruction
-    return {
-      // Return partial state update - middleware can modify messages
-    };
+    return {};
   },
 
-  // Route tool calls to VFS, transform errors to ToolMessages
+  // Intercept tool calls - wrap developer tools with VFSServices
   wrapToolCall: async (request, handler) => {
+    const { toolCall } = request;
+    const toolName = toolCall.name;
+    
+    // 1. Find registered tool
+    const registeredTool = this.registeredTools.get(toolName);
+    if (!registeredTool) {
+      // Not our tool - pass through to default handler
+      return handler();
+    }
+
+    // 2. Validate params against tool's Zod schema
+    const params = registeredTool.parameters.parse(toolCall.args);
+
+    // 3. Build VFSServices with access control
+    const services = this.buildVFSServices(registeredTool.operations);
+
+    // 4. Check access - authorize operations declared by tool
+    for (const op of registeredTool.operations) {
+      services.authorize(op); // Throws if denied
+    }
+
     try {
-      // 1. Validate path via VFS Router
-      // 2. Authorize via Access Guard  
-      // 3. Execute via appropriate Store Port
-      // 4. Return ToolMessage with result
+      // 5. Execute developer's handler with injected services
+      const result = await registeredTool.handler(params, services);
+      
+      // 6. Return ToolMessage with result content
+      return new ToolMessage({
+        tool_call_id: toolCall.id,
+        content: result.content,
+      });
     } catch (error) {
       // Transform to graceful error message - never let exception bubble
       return new ToolMessage({
-        tool_call_id: request.toolCall.id,
+        tool_call_id: toolCall.id,
         content: `Error: ${error.message}`,
       });
     }
@@ -267,12 +383,101 @@ export const workspacesMiddleware = createMiddleware({
 });
 ```
 
-**Key Hook Semantics:**
-- **`beforeModel`**: Runs before each LLM invocation. Used to inject the dynamic Filesystem Map into the prompt.
-- **`wrapToolCall`**: Intercepts every tool invocation. Must return either a `ToolMessage` or a `Command`. Returning a `Command` allows short-circuiting (e.g., retry or jumpTo).
-- **`contextSchema`**: Provides typed per-invocation context (threadId, runId) without polluting graph state.
+### 5.4. Developer Usage Example
 
-### 5.4. Large File Eviction Strategy
+This is how a developer uses the middleware - registering their thick tools:
+
+```typescript
+import { createAgent } from "langchain";
+import { createWorkspacesMiddleware, type VFSServices } from "workspaces-middleware";
+import { z } from "zod";
+
+// DEVELOPER'S THICK TOOL - contains ALL the logic
+const strReplaceTool = {
+  name: "str_replace",
+  description: "Replace exact text in a file",
+  
+  // ANY signature developer wants
+  parameters: z.object({
+    path: z.string(),
+    oldStr: z.string(),
+    newStr: z.string(),
+  }),
+  
+  // Declares what operations this tool performs
+  operations: ["edit"],
+  
+  // FULL LOGIC - developer handles everything
+  handler: async (params: { path: string; oldStr: string; newStr: string }, services: VFSServices) => {
+    // 1. Get FULL content from OUR service
+    const resolved = services.resolve(params.path);
+    const current = await services.read(resolved.normalizedKey);
+    
+    // 2. Developer does their logic (string replacement, AI, etc.)
+    if (!current.includes(params.oldStr)) {
+      return { 
+        content: `Error: String not found in file`,
+        metadata: { operation: "edit" }
+      };
+    }
+    const updated = current.replace(params.oldStr, params.newStr);
+    
+    // 3. Write FULL new content to OUR service
+    await services.write(resolved.normalizedKey, updated);
+    
+    // 4. Return OUR contract
+    return { 
+      content: `Replaced "${params.oldStr}" with "${params.newStr}"`,
+      metadata: { operation: "edit", filesModified: [params.path] }
+    };
+  },
+};
+
+// Another example - semantic AI edit tool
+const semanticEditTool = {
+  name: "semantic_edit",
+  description: "Edit file using natural language instructions",
+  
+  parameters: z.object({
+    path: z.string(),
+    instruction: z.string(),  // Developer's own signature
+  }),
+  
+  operations: ["read", "write"],
+  
+  handler: async (params, services) => {
+    // 1. Read full content via OUR service
+    const resolved = services.resolve(params.path);
+    const content = await services.read(resolved.normalizedKey);
+    
+    // 2. Developer does ANY logic (e.g., call AI)
+    const edit = await myAI.editFile(content, params.instruction);
+    
+    // 3. Write via OUR service
+    await services.write(resolved.normalizedKey, edit.newContent);
+    
+    // 4. Return OUR contract
+    return { 
+      content: edit.explanation,
+      metadata: { operation: "edit", filesModified: [params.path] }
+    };
+  },
+};
+
+// Pass middleware to agent - tools go DIRECTLY to agent
+const agent = createAgent({
+  model,
+  tools: [strReplaceTool, semanticEditTool],  // ← Direct pass!
+  middleware: createWorkspacesMiddleware({
+    mounts: [
+      { prefix: "/project", scope: "READ_WRITE", store: { type: "physical", rootDir: "./workspace" } }
+    ],
+    tools: [strReplaceTool, semanticEditTool],
+  }),
+});
+```
+
+### 5.5. Large File Eviction Strategy
 
 Per the DeepAgents middleware pattern, large file reads present memory risks. The `StorePort` implementation must:
 
@@ -280,7 +485,7 @@ Per the DeepAgents middleware pattern, large file reads present memory risks. Th
 2. **Pagination Support:** The `ReadFileContract` supports `offset` and `limit` parameters; adapters must honor these
 3. **Truncation with Warning:** If a file exceeds the LLM context window, truncate and append: `[...truncated. File size: X bytes. Use offset/limit to read remaining content.]`
 
-### 5.5. Test Coverage Requirements
+### 5.6. Test Coverage Requirements
 
 | Scenario | Expected Outcome |
 |----------|-----------------|
