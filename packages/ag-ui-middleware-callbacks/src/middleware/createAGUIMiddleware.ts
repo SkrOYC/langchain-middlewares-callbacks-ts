@@ -195,8 +195,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
 			beforeAgent: async (state, runtime) => {
 				modelTurnIndex = 0;
+				const runtimeAny = runtime as any;
 				const resolvedIds = resolveLifecycleIds({
-					context: (runtime as any)?.context,
+					context: runtimeAny?.context,
 					threadIdOverride: validated.threadIdOverride,
 					runIdOverride: validated.runIdOverride,
 					createFallbackRunId: () => crypto.randomUUID(),
@@ -210,7 +211,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 						type: EventType.RUN_STARTED,
 						threadId,
 						runId,
-						input: undefined,
+						input: cleanLangChainData(runtimeAny?.config?.input),
 						timestamp: Date.now(),
 					} as BaseEvent);
 
@@ -278,7 +279,8 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 							validated.activityMapper,
 							{
 								stepName,
-								modelName: "unknown",
+								modelName:
+									(runtime as any).config?.model?._modelType || "unknown",
 								inputPreview: getInputPreview(state),
 							} as Record<string, any>,
 						);

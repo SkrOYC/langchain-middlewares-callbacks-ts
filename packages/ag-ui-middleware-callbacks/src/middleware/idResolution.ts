@@ -25,11 +25,15 @@ function nonEmptyString(value: unknown): string | undefined {
 /**
  * Resolve lifecycle IDs using contract-supported paths.
  *
- * Precedence:
+ * Precedence for `threadId`:
  * 1. runtime.context.thread_id / runtime.context.threadId
- * 2. runtime.context.run_id / runtime.context.runId
- * 3. explicit overrides
- * 4. fallback values
+ * 2. threadIdOverride option
+ * 3. fallback to ""
+ *
+ * Precedence for `runId`:
+ * 1. runtime.context.run_id / runtime.context.runId
+ * 2. runIdOverride option
+ * 3. fallback via createFallbackRunId()
  */
 export function resolveLifecycleIds(
 	options: ResolveLifecycleIdsOptions,
