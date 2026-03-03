@@ -280,6 +280,13 @@ describe("Tool Calling", () => {
 
 // Copy of State Management section
 describe("State Management", () => {
+	const getSnapshotIndexes = (callback: { events: any[] }) =>
+		callback.events
+			.map((event: any, index: number) =>
+				event.type === "STATE_SNAPSHOT" ? index : -1,
+			)
+			.filter((index: number) => index !== -1);
+
 	test("State snapshots are emitted correctly", async () => {
 		const callback = createMockCallback();
 		const model = createTextModel(["Hello"]);
@@ -311,6 +318,99 @@ describe("State Management", () => {
 		// Snapshot should contain the state
 		expect(snapshotEvent.snapshot).toBeDefined();
 		expect(typeof snapshotEvent.snapshot).toBe("object");
+	});
+
+	test("emitStateSnapshots='initial' emits one snapshot before steps", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const { agent } = createTestAgent(model, [], callback, {
+			emitStateSnapshots: "initial",
+		});
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+
+		expectEventCount(callback, "STATE_SNAPSHOT", 1);
+
+		const snapshotIndex = getSnapshotIndexes(callback)[0];
+		const runStartedIndex = callback.events.findIndex(
+			(event) => event.type === "RUN_STARTED",
+		);
+		const stepStartedIndex = callback.events.findIndex(
+			(event) => event.type === "STEP_STARTED",
+		);
+
+		expect(snapshotIndex).toBe(runStartedIndex + 1);
+		expect(snapshotIndex).toBeLessThan(stepStartedIndex);
+	});
+
+	test("emitStateSnapshots='final' emits one snapshot at end", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const { agent } = createTestAgent(model, [], callback, {
+			emitStateSnapshots: "final",
+		});
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+
+		expectEventCount(callback, "STATE_SNAPSHOT", 1);
+
+		const snapshotIndex = getSnapshotIndexes(callback)[0];
+		const stepFinishedIndex = callback.events.findIndex(
+			(event) => event.type === "STEP_FINISHED",
+		);
+		const runFinishedIndex = callback.events.findIndex(
+			(event) => event.type === "RUN_FINISHED",
+		);
+
+		expect(snapshotIndex).toBeGreaterThan(stepFinishedIndex);
+		expect(snapshotIndex).toBe(runFinishedIndex - 1);
+	});
+
+	test("emitStateSnapshots='all' emits exactly initial and final snapshots", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const { agent } = createTestAgent(model, [], callback, {
+			emitStateSnapshots: "all",
+		});
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+
+		expectEventCount(callback, "STATE_SNAPSHOT", 2);
+
+		const snapshotIndexes = getSnapshotIndexes(callback);
+		const runStartedIndex = callback.events.findIndex(
+			(event) => event.type === "RUN_STARTED",
+		);
+		const stepStartedIndex = callback.events.findIndex(
+			(event) => event.type === "STEP_STARTED",
+		);
+		const stepFinishedIndex = callback.events.findIndex(
+			(event) => event.type === "STEP_FINISHED",
+		);
+		const runFinishedIndex = callback.events.findIndex(
+			(event) => event.type === "RUN_FINISHED",
+		);
+
+		expect(snapshotIndexes[0]).toBe(runStartedIndex + 1);
+		expect(snapshotIndexes[0]).toBeLessThan(stepStartedIndex);
+		expect(snapshotIndexes[1]).toBeGreaterThan(stepFinishedIndex);
+		expect(snapshotIndexes[1]).toBe(runFinishedIndex - 1);
+	});
+
+	test("emitStateSnapshots='none' emits no snapshots", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const { agent } = createTestAgent(model, [], callback, {
+			emitStateSnapshots: "none",
+		});
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]));
+
+		expectEventCount(callback, "STATE_SNAPSHOT", 0);
 	});
 
 	test("Multi-turn conversation maintains thread context", async () => {

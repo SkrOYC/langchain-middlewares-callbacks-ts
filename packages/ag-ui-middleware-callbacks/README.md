@@ -87,6 +87,12 @@ const middleware = createAGUIMiddleware({
 });
 ```
 
+`emitStateSnapshots` mode semantics:
+- `initial`: emit one `STATE_SNAPSHOT` in `beforeAgent`
+- `final`: emit one `STATE_SNAPSHOT` in `afterAgent`
+- `all`: emit one in `beforeAgent` and one in `afterAgent`
+- `none`: emit no `STATE_SNAPSHOT` events
+
 ## Events
 
 | Event | Source | Description |
@@ -108,7 +114,7 @@ const middleware = createAGUIMiddleware({
 | `THINKING_TEXT_MESSAGE_CONTENT` | Callback | Thinking content chunk |
 | `THINKING_TEXT_MESSAGE_END` | Callback | Thinking message ended |
 | `THINKING_END` | Callback | Reasoning phase completed |
-| `STATE_SNAPSHOT` | Middleware | State snapshot (after streaming) |
+| `STATE_SNAPSHOT` | Middleware | State snapshot at run start/end (per `emitStateSnapshots` mode) |
 | `MESSAGES_SNAPSHOT` | Middleware | Messages snapshot |
 | `ACTIVITY_SNAPSHOT` | Middleware | New activity detected |
 | `ACTIVITY_DELTA` | Middleware | Activity update |
