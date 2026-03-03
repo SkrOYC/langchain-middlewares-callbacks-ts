@@ -1049,6 +1049,14 @@ See Section 2.6 for complete callback handler implementation including all event
 
 **Why Middleware Only**: State management requires full access to agent state and the ability to compute JSON Patch deltas. Callbacks cannot access or modify agent state.
 
+**Snapshot Mode Contract (`emitStateSnapshots`)**
+- `initial`: emit once in `beforeAgent`
+- `final`: emit once in `afterAgent`
+- `all`: emit once in `beforeAgent` and once in `afterAgent`
+- `none`: emit no `STATE_SNAPSHOT` events
+
+`afterModel` must not emit `STATE_SNAPSHOT`; it runs once per model turn and would otherwise create duplicate snapshots for `initial`/`final` modes.
+
 ### 4.5 Activity Events
 
 | AG-UI Event | Mechanism | LangChain Feature | Trigger |

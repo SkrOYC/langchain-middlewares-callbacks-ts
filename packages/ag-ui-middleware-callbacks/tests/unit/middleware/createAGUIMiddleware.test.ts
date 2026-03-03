@@ -125,6 +125,83 @@ describe("createAGUIMiddleware", () => {
 		});
 	});
 
+	describe("emitStateSnapshots mode semantics", () => {
+		const runtime = {
+			context: { thread_id: "thread-123", run_id: "run-123" },
+			config: { input: { messages: [] } },
+		};
+
+		const runLifecycle = async (mode: "initial" | "final" | "all" | "none") => {
+			const callback = createMockCallback();
+			const middleware = createAGUIMiddleware({
+				onEvent: callback.emit,
+				emitStateSnapshots: mode,
+			});
+			const state = { messages: [new HumanMessage("Hello")], custom: "value" };
+
+			const beforeAgent = middleware.beforeAgent as any;
+			const beforeModel = middleware.beforeModel as any;
+			const afterModel = middleware.afterModel as any;
+			const afterAgent = middleware.afterAgent as any;
+
+			await beforeAgent(state, runtime);
+			await beforeModel(state, runtime);
+			await afterModel(state, runtime);
+			await afterAgent(state, runtime);
+
+			return callback.events;
+		};
+
+		test("initial emits exactly one STATE_SNAPSHOT at run start", async () => {
+			const events = await runLifecycle("initial");
+			const snapshotIndexes = events
+				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
+				.filter((index) => index !== -1);
+
+			expect(snapshotIndexes).toHaveLength(1);
+			expect(snapshotIndexes[0]).toBe(
+				events.findIndex((event) => event.type === "RUN_STARTED") + 1,
+			);
+		});
+
+		test("final emits exactly one STATE_SNAPSHOT at run end", async () => {
+			const events = await runLifecycle("final");
+			const snapshotIndexes = events
+				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
+				.filter((index) => index !== -1);
+			const runFinishedIndex = events.findIndex(
+				(event) => event.type === "RUN_FINISHED",
+			);
+
+			expect(snapshotIndexes).toHaveLength(1);
+			expect(snapshotIndexes[0]).toBe(runFinishedIndex - 1);
+		});
+
+		test("all emits exactly two STATE_SNAPSHOT events (start and end)", async () => {
+			const events = await runLifecycle("all");
+			const snapshotIndexes = events
+				.map((event, index) => (event.type === "STATE_SNAPSHOT" ? index : -1))
+				.filter((index) => index !== -1);
+			const runStartedIndex = events.findIndex((event) => event.type === "RUN_STARTED");
+			const runFinishedIndex = events.findIndex(
+				(event) => event.type === "RUN_FINISHED",
+			);
+
+			expect(snapshotIndexes).toHaveLength(2);
+			expect(snapshotIndexes[0]).toBe(runStartedIndex + 1);
+			expect(snapshotIndexes[1]).toBe(runFinishedIndex - 1);
+		});
+
+		test("none emits zero STATE_SNAPSHOT events", async () => {
+			const events = await runLifecycle("none");
+			const snapshotEvents = events.filter(
+				(event) => event.type === "STATE_SNAPSHOT",
+			);
+
+			expect(snapshotEvents).toHaveLength(0);
+		});
+	});
+
 	describe("afterAgent", () => {
 		test("applies resultMapper to RUN_FINISHED (Red Phase)", async () => {
 			const resultMapper = (result: any) => ({

@@ -150,6 +150,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 	// Validate options at creation time
 	const validated = AGUIMiddlewareOptionsSchema.parse(options);
 
+	type SnapshotMode = NonNullable<AGUIMiddlewareOptions["emitStateSnapshots"]>;
+	type SnapshotPhase = "initial" | "final";
+
 	// Create emit function with optional validation
 	// In "strict" mode, throw on invalid events; in true mode, log warnings
 	const emitEvent = (event: BaseEvent) => {
@@ -169,6 +172,45 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 			}
 		}
 		validated.onEvent(event);
+	};
+
+	const shouldEmitStateSnapshot = (
+		mode: SnapshotMode,
+		phase: SnapshotPhase,
+	): boolean => {
+		if (mode === "none") return false;
+		if (mode === "all") return true;
+		return mode === phase;
+	};
+
+	const mapStateSnapshot = (state: unknown): any => {
+		const cleanedState = cleanLangChainData(state);
+		const snapshot = validated.stateMapper
+			? validated.stateMapper(cleanedState)
+			: cleanedState;
+
+		// Remove messages from state snapshot by default to avoid redundancy
+		if (!validated.stateMapper && snapshot && typeof snapshot === "object") {
+			delete (snapshot as any).messages;
+		}
+
+		return snapshot;
+	};
+
+	const emitStateSnapshotIfConfigured = (
+		phase: SnapshotPhase,
+		state: unknown,
+	): void => {
+		if (!shouldEmitStateSnapshot(validated.emitStateSnapshots, phase)) {
+			return;
+		}
+
+		const snapshot = mapStateSnapshot(state);
+		emitEvent({
+			type: EventType.STATE_SNAPSHOT,
+			snapshot,
+			timestamp: Date.now(),
+		} as BaseEvent);
 	};
 
 	let threadId: string | undefined;
@@ -215,29 +257,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 						timestamp: Date.now(),
 					} as BaseEvent);
 
-				if (
-					validated.emitStateSnapshots === "initial" ||
-					validated.emitStateSnapshots === "all"
-				) {
-					const snapshot = validated.stateMapper
-						? validated.stateMapper(state)
-						: cleanLangChainData(state);
-
-					// Remove messages from state snapshot by default to avoid redundancy
-					if (
-						!validated.stateMapper &&
-						snapshot &&
-						typeof snapshot === "object"
-					) {
-						delete (snapshot as any).messages;
-					}
-
-					emitEvent({
-						type: EventType.STATE_SNAPSHOT,
-						snapshot,
-						timestamp: Date.now(),
-					} as BaseEvent);
-				}
+					emitStateSnapshotIfConfigured("initial", state);
 
 				const stateAny = state as any;
 				if (stateAny.messages && Array.isArray(stateAny.messages)) {
@@ -325,43 +345,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 					);
 				}
 
-				// Emit STATE_SNAPSHOT after state-stabilizing events (not during streaming)
-				// Per AG-UI spec and LangGraph implementation: emit only when streaming has completed
-				// and state is stable. STATE_DELTA is NOT used in actual LangGraph implementations.
-				if (validated.emitStateSnapshots !== "none") {
-					// Only emit STATE_SNAPSHOT after streaming completes (state-stabilizing event)
-					// This follows the LangGraph pattern: emit after tool/text streaming ends
-					const filteredState = cleanLangChainData(state);
-					const snapshot = validated.stateMapper
-						? validated.stateMapper(filteredState)
-						: filteredState;
-
-					// Remove messages from state snapshot (messages are in MESSAGES_SNAPSHOT)
-					if (
-						!validated.stateMapper &&
-						snapshot &&
-						typeof snapshot === "object"
-					) {
-						delete (snapshot as any).messages;
-					}
-
-					// Only emit if we have meaningful state to share
-					const stateKeys = snapshot
-						? Object.keys(snapshot).filter(
-								(k) => snapshot[k] !== undefined && snapshot[k] !== null,
-							)
-						: [];
-					if (stateKeys.length > 0) {
-						emitEvent({
-							type: EventType.STATE_SNAPSHOT,
-							snapshot,
-							timestamp: Date.now(),
-						} as BaseEvent);
-					}
+				} catch {
+					// Fail-safe
 				}
-			} catch {
-				// Fail-safe
-			}
 
 			currentStepName = undefined;
 			return {};
@@ -369,29 +355,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
 
 		afterAgent: async (state, _runtime) => {
 			try {
-				if (
-					validated.emitStateSnapshots === "final" ||
-					validated.emitStateSnapshots === "all"
-				) {
-					const snapshot = validated.stateMapper
-						? validated.stateMapper(state)
-						: cleanLangChainData(state);
-
-					// Remove messages from state snapshot by default to avoid redundancy
-					if (
-						!validated.stateMapper &&
-						snapshot &&
-						typeof snapshot === "object"
-					) {
-						delete (snapshot as any).messages;
-					}
-
-					emitEvent({
-						type: EventType.STATE_SNAPSHOT,
-						snapshot,
-						timestamp: Date.now(),
-					} as BaseEvent);
-				}
+					emitStateSnapshotIfConfigured("final", state);
 
 				const stateAny = state as any;
 				if (stateAny.error) {
