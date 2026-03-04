@@ -92,7 +92,11 @@ describe("createAGUIAgent option wiring", () => {
 		const model = createTextModel([
 			new AIMessage({
 				content: [
-					{ type: "reasoning", reasoning: "Check assumptions first.", index: 0 },
+					{
+						type: "reasoning",
+						reasoning: "Check assumptions first.",
+						index: 0,
+					},
 					{ type: "text", text: "Done." },
 				] as any,
 			}),

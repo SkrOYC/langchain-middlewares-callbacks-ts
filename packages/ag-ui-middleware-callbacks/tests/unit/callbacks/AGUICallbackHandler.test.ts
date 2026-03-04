@@ -547,7 +547,9 @@ describe("AGUICallbackHandler", () => {
 
 				await handler.handleLLMEnd(output, runId);
 
-				const emitCalls = mockCallback.emit.mock.calls.map((call: any[]) => call[0]);
+				const emitCalls = mockCallback.emit.mock.calls.map(
+					(call: any[]) => call[0],
+				);
 				const eventTypes = emitCalls.map((event: any) => event.type);
 
 				expect(eventTypes).toContain("REASONING_START");
@@ -577,7 +579,9 @@ describe("AGUICallbackHandler", () => {
 				expect(typeof reasoningStart?.messageId).toBe("string");
 				expect(typeof reasoningMessageStart?.messageId).toBe("string");
 				expect(reasoningMessageStart?.role).toBe("reasoning");
-				expect(reasoningContent?.messageId).toBe(reasoningMessageStart?.messageId);
+				expect(reasoningContent?.messageId).toBe(
+					reasoningMessageStart?.messageId,
+				);
 				expect(reasoningContent?.delta).toBe(
 					"I should inspect the constraints first. Then I can answer with a concise plan.",
 				);
@@ -1150,25 +1154,25 @@ describe("AGUICallbackHandler", () => {
 				expect(eventsWithContent).toHaveLength(0);
 			});
 
-				test("all options can be configured via constructor", async () => {
-					const mockCallback = createMockCallback();
-					const handler = new AGUICallbackHandler({
+			test("all options can be configured via constructor", async () => {
+				const mockCallback = createMockCallback();
+				const handler = new AGUICallbackHandler({
 					onEvent: mockCallback.emit,
 					enabled: true,
 					emitTextMessages: true,
-						emitToolCalls: true,
-						emitToolResults: true,
-						emitThinking: true,
-						reasoningEventMode: "reasoning",
-					});
+					emitToolCalls: true,
+					emitToolResults: true,
+					emitThinking: true,
+					reasoningEventMode: "reasoning",
+				});
 
 				expect(handler.enabled).toBe(true);
 				expect(handler.emitTextMessages).toBe(true);
-					expect(handler.emitToolCalls).toBe(true);
-					expect(handler.emitToolResults).toBe(true);
-					expect(handler.emitThinking).toBe(true);
-					expect(handler.reasoningEventMode).toBe("reasoning");
-				});
+				expect(handler.emitToolCalls).toBe(true);
+				expect(handler.emitToolResults).toBe(true);
+				expect(handler.emitThinking).toBe(true);
+				expect(handler.reasoningEventMode).toBe("reasoning");
+			});
 
 			test("default values are all true", async () => {
 				const mockCallback = createMockCallback();
@@ -1178,11 +1182,11 @@ describe("AGUICallbackHandler", () => {
 
 				expect(handler.enabled).toBe(true);
 				expect(handler.emitTextMessages).toBe(true);
-					expect(handler.emitToolCalls).toBe(true);
-					expect(handler.emitToolResults).toBe(true);
-					expect(handler.emitThinking).toBe(true);
-					expect(handler.reasoningEventMode).toBe("thinking");
-				});
+				expect(handler.emitToolCalls).toBe(true);
+				expect(handler.emitToolResults).toBe(true);
+				expect(handler.emitThinking).toBe(true);
+				expect(handler.reasoningEventMode).toBe("thinking");
 			});
+		});
 	});
 });

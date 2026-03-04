@@ -413,15 +413,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 		try {
 			const generations = _output?.generations;
 			if (Array.isArray(generations) && generations.length > 0) {
-					const firstGeneration = generations[0]?.[0];
-					if (firstGeneration?.message) {
-						this.detectAndEmitThinking(
-							firstGeneration.message,
-							messageId ?? runId,
-						);
-					}
+				const firstGeneration = generations[0]?.[0];
+				if (firstGeneration?.message) {
+					this.detectAndEmitThinking(
+						firstGeneration.message,
+						messageId ?? runId,
+					);
 				}
-			} catch {
+			}
+		} catch {
 			// Fail-safe
 		}
 
