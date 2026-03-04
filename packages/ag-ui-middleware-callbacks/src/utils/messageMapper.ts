@@ -63,6 +63,16 @@ function isAGUIBinaryInputContent(
 	if (value.type !== "binary" || typeof value.mimeType !== "string") {
 		return false;
 	}
+
+	if (
+		(value.id !== undefined && typeof value.id !== "string") ||
+		(value.url !== undefined && typeof value.url !== "string") ||
+		(value.data !== undefined && typeof value.data !== "string") ||
+		(value.filename !== undefined && typeof value.filename !== "string")
+	) {
+		return false;
+	}
+
 	return (
 		typeof value.id === "string" ||
 		typeof value.url === "string" ||

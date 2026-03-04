@@ -115,6 +115,26 @@ describe("messageMapper", () => {
 		);
 	});
 
+	it("should reject malformed binary content with invalid optional field types", () => {
+		const message = new HumanMessage({
+			content: [
+				{
+					type: "binary",
+					mimeType: "image/png",
+					id: 123,
+					url: "https://example.com/image.png",
+				},
+			] as any,
+		});
+
+		const mapped = mapLangChainMessageToAGUI(message);
+		expect(mapped.role).toBe("user");
+		expect(typeof mapped.content).toBe("string");
+		expect(mapped.content).toBe(
+			'[{"type":"binary","mimeType":"image/png","id":123,"url":"https://example.com/image.png"}]',
+		);
+	});
+
 	it("should fallback when message content is non-serializable", () => {
 		const cyclic: Record<string, unknown> = {};
 		cyclic.self = cyclic;
