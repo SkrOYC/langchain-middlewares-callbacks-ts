@@ -115,6 +115,12 @@ const agent = createAGUIAgent({
 - `all`: emit one in `beforeAgent` and one in `afterAgent`
 - `none`: emit no `STATE_SNAPSHOT` events
 
+`MESSAGES_SNAPSHOT` content mapping semantics:
+- Plain string content remains unchanged.
+- `user` messages preserve AG-UI-compatible structured content (`InputContent[]`, e.g. `text`/`binary` blocks).
+- Non-compatible structured content is serialized to JSON string to remain schema-compliant.
+- Non-serializable values use a controlled fallback string instead of throwing.
+
 ## Events
 
 | Event | Source | Description |

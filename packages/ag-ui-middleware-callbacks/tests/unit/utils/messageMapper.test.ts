@@ -76,4 +76,101 @@ describe("messageMapper", () => {
 		const mapped = mapLangChainMessageToAGUI(message);
 		expect(mapped.id).toBe("existing-id");
 	});
+
+	it("should preserve structured user content when AG-UI compatible", () => {
+		const message = new HumanMessage({
+			content: [
+				{ type: "text", text: "Look at this" },
+				{
+					type: "binary",
+					mimeType: "image/png",
+					url: "https://example.com/image.png",
+				},
+			] as any,
+		});
+
+		const mapped = mapLangChainMessageToAGUI(message);
+		expect(mapped.role).toBe("user");
+		expect(Array.isArray(mapped.content)).toBe(true);
+		expect(mapped.content).toEqual([
+			{ type: "text", text: "Look at this" },
+			{
+				type: "binary",
+				mimeType: "image/png",
+				url: "https://example.com/image.png",
+			},
+		]);
+	});
+
+	it("should stringify unsupported structured user content", () => {
+		const message = new HumanMessage({
+			content: [{ type: "image", url: "https://example.com/nope.png" }] as any,
+		});
+
+		const mapped = mapLangChainMessageToAGUI(message);
+		expect(mapped.role).toBe("user");
+		expect(typeof mapped.content).toBe("string");
+		expect(mapped.content).toBe(
+			'[{"type":"image","url":"https://example.com/nope.png"}]',
+		);
+	});
+
+	it("should reject malformed binary content with invalid optional field types", () => {
+		const message = new HumanMessage({
+			content: [
+				{
+					type: "binary",
+					mimeType: "image/png",
+					id: 123,
+					url: "https://example.com/image.png",
+				},
+			] as any,
+		});
+
+		const mapped = mapLangChainMessageToAGUI(message);
+		expect(mapped.role).toBe("user");
+		expect(typeof mapped.content).toBe("string");
+		expect(mapped.content).toBe(
+			'[{"type":"binary","mimeType":"image/png","id":123,"url":"https://example.com/image.png"}]',
+		);
+	});
+
+	it("should fallback when message content is non-serializable", () => {
+		const cyclic: Record<string, unknown> = {};
+		cyclic.self = cyclic;
+
+		const message = new HumanMessage({
+			content: cyclic as any,
+		});
+
+		const mapped = mapLangChainMessageToAGUI(message);
+		expect(mapped.role).toBe("user");
+		expect(mapped.content).toBe("[unserializable content]");
+	});
+
+	it("should fallback tool arguments when non-serializable", () => {
+		const cyclicArgs: Record<string, unknown> = {};
+		cyclicArgs.self = cyclicArgs;
+		const message = new AIMessage({
+			content: "Thinking...",
+			tool_calls: [
+				{
+					id: "call_1",
+					name: "get_weather",
+					args: cyclicArgs,
+				},
+			],
+		});
+
+		const mapped = mapLangChainMessageToAGUI(message);
+		expect(mapped.toolCalls).toHaveLength(1);
+		expect(mapped.toolCalls?.[0]).toEqual({
+			id: "call_1",
+			type: "function",
+			function: {
+				name: "get_weather",
+				arguments: "{}",
+			},
+		});
+	});
 });

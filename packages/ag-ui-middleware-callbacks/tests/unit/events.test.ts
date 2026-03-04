@@ -53,7 +53,7 @@ describe("Event Type Definitions", () => {
 				{
 					id: "msg-2",
 					role: "assistant",
-					tool_calls: [
+					toolCalls: [
 						{
 							id: "tc-1",
 							type: "function",

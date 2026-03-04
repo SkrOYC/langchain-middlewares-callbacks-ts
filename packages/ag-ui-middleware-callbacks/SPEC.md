@@ -1049,6 +1049,12 @@ See Section 2.6 for complete callback handler implementation including all event
 
 **Why Middleware Only**: State management requires full access to agent state and the ability to compute JSON Patch deltas. Callbacks cannot access or modify agent state.
 
+**`MESSAGES_SNAPSHOT` Mapping Contract**
+- Preserve string content as-is.
+- Preserve structured multimodal content only when it matches AG-UI user-message schema (`content: InputContent[]`).
+- Keep tool call mapping schema-compliant (`toolCalls[].function.arguments` must be a string).
+- Apply controlled string fallbacks for unsupported or non-serializable content instead of throwing.
+
 **Snapshot Mode Contract (`emitStateSnapshots`)**
 - `initial`: emit once in `beforeAgent`
 - `final`: emit once in `afterAgent`
