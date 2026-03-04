@@ -33,6 +33,14 @@ describe("Event Type Definitions", () => {
 		expect(event.type).toBe(EventType.THINKING_START);
 	});
 
+	test("REASONING_START event has correct structure", () => {
+		const event: AGUIEvent = {
+			type: EventType.REASONING_START,
+			messageId: "reasoning-phase-1",
+		};
+		expect(event.type).toBe(EventType.REASONING_START);
+	});
+
 	test("MESSAGES_SNAPSHOT event uses Message objects", () => {
 		const event: AGUIEvent = {
 			type: EventType.MESSAGES_SNAPSHOT,
@@ -99,6 +107,16 @@ describe("@ag-ui/core Integration", () => {
 			type: EventType.TOOL_CALL_START,
 			toolCallId: "tool-1",
 			toolCallName: "calculator",
+		};
+		const result = EventSchemas.safeParse(event);
+		expect(result.success).toBe(true);
+	});
+
+	test("EventSchemas validates REASONING_MESSAGE_START event", () => {
+		const event = {
+			type: EventType.REASONING_MESSAGE_START,
+			messageId: "reasoning-msg-1",
+			role: "reasoning",
 		};
 		const result = EventSchemas.safeParse(event);
 		expect(result.success).toBe(true);

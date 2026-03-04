@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+- Added reasoning migration mode in `AGUICallbackHandler`:
+  - `reasoningEventMode: "thinking"` (default, backward-compatible)
+  - `reasoningEventMode: "reasoning"` (emits `REASONING_*`)
+- Added `REASONING_*` emission lifecycle support:
+  - `REASONING_START`
+  - `REASONING_MESSAGE_START`
+  - `REASONING_MESSAGE_CONTENT`
+  - `REASONING_MESSAGE_END`
+  - `REASONING_END`
+- Preserved deterministic ordering and per-index phase grouping for reasoning content.
+- Added unit/integration coverage for reasoning migration mode and schema validation.
+- Upgraded `@ag-ui/core` to `^0.0.47` for current reasoning schemas and deprecation annotations.
+
 ## [1.1.1] - 2026-03-03
 
 ### Fixes

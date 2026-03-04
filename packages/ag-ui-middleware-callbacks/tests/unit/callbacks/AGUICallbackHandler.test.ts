@@ -511,6 +511,86 @@ describe("AGUICallbackHandler", () => {
 				);
 			});
 
+			test("detectAndEmitThinking emits REASONING events when reasoningEventMode=reasoning", async () => {
+				const mockCallback = createMockCallback();
+				const handler = new AGUICallbackHandler({
+					onEvent: mockCallback.emit,
+					reasoningEventMode: "reasoning",
+				});
+				const runId = "run-123";
+
+				await handler.handleLLMStart(null, ["prompt"], runId);
+
+				const output = {
+					generations: [
+						[
+							{
+								message: {
+									_getType: () => "ai",
+									contentBlocks: [
+										{
+											type: "reasoning",
+											reasoning: "I should inspect the constraints first.",
+											index: 0,
+										},
+										{
+											type: "reasoning",
+											reasoning: " Then I can answer with a concise plan.",
+											index: 0,
+										},
+									],
+								},
+							},
+						],
+					],
+				};
+
+				await handler.handleLLMEnd(output, runId);
+
+				const emitCalls = mockCallback.emit.mock.calls.map(
+					(call: any[]) => call[0],
+				);
+				const eventTypes = emitCalls.map((event: any) => event.type);
+
+				expect(eventTypes).toContain("REASONING_START");
+				expect(eventTypes).toContain("REASONING_MESSAGE_START");
+				expect(eventTypes).toContain("REASONING_MESSAGE_CONTENT");
+				expect(eventTypes).toContain("REASONING_MESSAGE_END");
+				expect(eventTypes).toContain("REASONING_END");
+
+				expect(eventTypes).not.toContain("THINKING_START");
+				expect(eventTypes).not.toContain("THINKING_TEXT_MESSAGE_CONTENT");
+
+				const reasoningStart = emitCalls.find(
+					(event: any) => event.type === "REASONING_START",
+				);
+				const reasoningMessageStart = emitCalls.find(
+					(event: any) => event.type === "REASONING_MESSAGE_START",
+				);
+				const reasoningContent = emitCalls.find(
+					(event: any) => event.type === "REASONING_MESSAGE_CONTENT",
+				);
+				const reasoningEnd = emitCalls.find(
+					(event: any) => event.type === "REASONING_END",
+				);
+				const textEndIndex = eventTypes.indexOf("TEXT_MESSAGE_END");
+				const reasoningStartIndex = eventTypes.indexOf("REASONING_START");
+
+				expect(typeof reasoningStart?.messageId).toBe("string");
+				expect(typeof reasoningMessageStart?.messageId).toBe("string");
+				expect(reasoningMessageStart?.role).toBe("reasoning");
+				expect(reasoningContent?.messageId).toBe(
+					reasoningMessageStart?.messageId,
+				);
+				expect(reasoningContent?.delta).toBe(
+					"I should inspect the constraints first. Then I can answer with a concise plan.",
+				);
+				expect(reasoningEnd?.messageId).toBe(reasoningStart?.messageId);
+
+				// Reasoning sequence should complete before assistant message closes.
+				expect(textEndIndex).toBeGreaterThan(reasoningStartIndex);
+			});
+
 			test("enabled can be toggled at runtime", async () => {
 				const mockCallback = createMockCallback();
 				const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
@@ -1083,6 +1163,7 @@ describe("AGUICallbackHandler", () => {
 					emitToolCalls: true,
 					emitToolResults: true,
 					emitThinking: true,
+					reasoningEventMode: "reasoning",
 				});
 
 				expect(handler.enabled).toBe(true);
@@ -1090,6 +1171,7 @@ describe("AGUICallbackHandler", () => {
 				expect(handler.emitToolCalls).toBe(true);
 				expect(handler.emitToolResults).toBe(true);
 				expect(handler.emitThinking).toBe(true);
+				expect(handler.reasoningEventMode).toBe("reasoning");
 			});
 
 			test("default values are all true", async () => {
@@ -1103,6 +1185,7 @@ describe("AGUICallbackHandler", () => {
 				expect(handler.emitToolCalls).toBe(true);
 				expect(handler.emitToolResults).toBe(true);
 				expect(handler.emitThinking).toBe(true);
+				expect(handler.reasoningEventMode).toBe("thinking");
 			});
 		});
 	});

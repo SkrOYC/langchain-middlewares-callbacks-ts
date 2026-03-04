@@ -102,6 +102,7 @@ const agent = createAGUIAgent({
     emitToolCalls: true,
     emitToolResults: true,
     emitThinking: true,
+    reasoningEventMode: "thinking", // "thinking" (default) | "reasoning"
     maxUIPayloadSize: 50 * 1024,
     chunkLargeResults: false,
   },
@@ -130,17 +131,24 @@ const agent = createAGUIAgent({
 | `TOOL_CALL_ARGS` | Callback | Tool call arguments chunk |
 | `TOOL_CALL_END` | Callback | Tool execution ended |
 | `TOOL_CALL_RESULT` | Callback | Tool execution result |
-| `THINKING_START` | Callback | Reasoning phase started |
-| `THINKING_TEXT_MESSAGE_START` | Callback | Thinking message started |
-| `THINKING_TEXT_MESSAGE_CONTENT` | Callback | Thinking content chunk |
-| `THINKING_TEXT_MESSAGE_END` | Callback | Thinking message ended |
-| `THINKING_END` | Callback | Reasoning phase completed |
+| `THINKING_START` | Callback | Legacy reasoning phase started (`reasoningEventMode: "thinking"`) |
+| `THINKING_TEXT_MESSAGE_START` | Callback | Legacy thinking message started |
+| `THINKING_TEXT_MESSAGE_CONTENT` | Callback | Legacy thinking content chunk |
+| `THINKING_TEXT_MESSAGE_END` | Callback | Legacy thinking message ended |
+| `THINKING_END` | Callback | Legacy reasoning phase completed |
+| `REASONING_START` | Callback | New reasoning phase started (`reasoningEventMode: "reasoning"`) |
+| `REASONING_MESSAGE_START` | Callback | New reasoning message started |
+| `REASONING_MESSAGE_CONTENT` | Callback | New reasoning content chunk |
+| `REASONING_MESSAGE_END` | Callback | New reasoning message ended |
+| `REASONING_END` | Callback | New reasoning phase completed |
 | `STATE_SNAPSHOT` | Middleware | State snapshot at run start/end (per `emitStateSnapshots` mode) |
 | `MESSAGES_SNAPSHOT` | Middleware | Messages snapshot |
 | `ACTIVITY_SNAPSHOT` | Middleware | New activity detected |
 | `ACTIVITY_DELTA` | Middleware | Activity update |
 
-> **Note on Thinking Events:** Thinking events are emitted after the complete response using LangChain V1's `contentBlocks` API. Concurrent streaming of thinking is not possible through callbacks alone (see [SPEC.md](./SPEC.md#47-thinking-events) for details).
+> **Reasoning Migration Note:** `THINKING_*` events are deprecated by AG-UI. This package defaults to `reasoningEventMode: "thinking"` for backward compatibility. Set `reasoningEventMode: "reasoning"` to emit `REASONING_*` events.
+>
+> **Emission Timing:** Reasoning/thinking events are emitted after the complete response using LangChain V1's `contentBlocks` API. Concurrent streaming is not possible through callbacks alone (see [SPEC.md](./SPEC.md#47-thinking-events) for details).
 
 ## Wire Formatting (Developer Responsibility)
 
@@ -168,6 +176,6 @@ const handleEvent = (event) => {
 
 ## Dependencies
 
-- `@ag-ui/core` (^0.0.42)
+- `@ag-ui/core` (^0.0.47)
 - `langchain` (^1.2.3)
-- `zod` (^3.22.4)
+- `zod` (^4.3.6)

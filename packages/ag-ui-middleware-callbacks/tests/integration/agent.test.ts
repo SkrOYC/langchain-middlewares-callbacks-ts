@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { AIMessage } from "@langchain/core/messages";
 import {
 	collectStreamChunks,
 	createErrorScenario,
@@ -460,7 +461,10 @@ describe("Run ID Correlation", () => {
 
 		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]), {
 			context: { run_id: "ctx-run-invoke", thread_id: "ctx-thread-invoke" },
-			configurable: { run_id: "cfg-run-invoke", thread_id: "cfg-thread-invoke" },
+			configurable: {
+				run_id: "cfg-run-invoke",
+				thread_id: "cfg-thread-invoke",
+			},
 		});
 
 		const runStarted = getEventsByType(callback, "RUN_STARTED")[0];
@@ -529,20 +533,15 @@ describe("Run ID Correlation", () => {
 		expect(runFinished.runId).toBe("ctx-run-stream-events");
 		expect(runFinished.threadId).toBe("ctx-thread-stream-events");
 	});
-
 });
 
 describe("Option Wiring", () => {
 	test("createAGUIAgent callbackOptions suppress TEXT_MESSAGE events", async () => {
 		const callback = createMockCallback();
 		const model = createTextModel(["Hello"]);
-		const { agent } = createTestAgent(
-			model,
-			[],
-			callback,
-			undefined,
-			{ emitTextMessages: false },
-		);
+		const { agent } = createTestAgent(model, [], callback, undefined, {
+			emitTextMessages: false,
+		});
 
 		const eventStream = await (agent as any).streamEvents(
 			formatAgentInput([{ role: "user", content: "Hi" }]),
@@ -563,12 +562,9 @@ describe("Option Wiring", () => {
 
 	test("legacy middleware emitToolResults=false suppresses TOOL_CALL_RESULT", async () => {
 		const { callback, model, tools } = createSingleToolScenario();
-		const { agent } = createTestAgent(
-			model,
-			tools,
-			callback,
-			{ emitToolResults: false },
-		);
+		const { agent } = createTestAgent(model, tools, callback, {
+			emitToolResults: false,
+		});
 
 		await agent.invoke(
 			formatAgentInput([{ role: "user", content: "Calculate 5+3" }]),
@@ -602,6 +598,37 @@ describe("Option Wiring", () => {
 		const eventTypes = getEventTypes(callback);
 		expect(eventTypes).toContain("TOOL_CALL_END");
 		expect(eventTypes).toContain("TOOL_CALL_RESULT");
+	});
+
+	test("callbackOptions.reasoningEventMode=reasoning emits REASONING_* events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel([
+			new AIMessage({
+				content: [
+					{
+						type: "reasoning",
+						reasoning: "Inspecting requirements first.",
+						index: 0,
+					},
+					{ type: "text", text: "Here is the response." },
+				] as any,
+			}),
+		]);
+		const { agent } = createTestAgent(model, [], callback, undefined, {
+			reasoningEventMode: "reasoning",
+		});
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]), {
+			context: { run_id: "option-wiring-reasoning" },
+		});
+
+		const eventTypes = getEventTypes(callback);
+		expect(eventTypes).toContain("REASONING_START");
+		expect(eventTypes).toContain("REASONING_MESSAGE_START");
+		expect(eventTypes).toContain("REASONING_MESSAGE_CONTENT");
+		expect(eventTypes).toContain("REASONING_MESSAGE_END");
+		expect(eventTypes).toContain("REASONING_END");
+		expect(eventTypes).not.toContain("THINKING_START");
 	});
 });
 

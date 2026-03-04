@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { AIMessage } from "@langchain/core/messages";
 import { AGUICallbackHandler } from "../../src/callbacks/AGUICallbackHandler";
 import { createAGUIAgent } from "../../src/createAGUIAgent";
 import {
@@ -84,6 +85,42 @@ describe("createAGUIAgent option wiring", () => {
 		const eventTypes = getEventTypes(callback);
 		expect(eventTypes).toContain("TOOL_CALL_END");
 		expect(eventTypes).toContain("TOOL_CALL_RESULT");
+	});
+
+	test("callbackOptions.reasoningEventMode is consumed by runtime callback handler", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel([
+			new AIMessage({
+				content: [
+					{
+						type: "reasoning",
+						reasoning: "Check assumptions first.",
+						index: 0,
+					},
+					{ type: "text", text: "Done." },
+				] as any,
+			}),
+		]);
+
+		const agent = createAGUIAgent({
+			model,
+			tools: [],
+			onEvent: callback.emit,
+			callbackOptions: {
+				reasoningEventMode: "reasoning",
+			},
+		});
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]), {
+			context: { run_id: "reasoning-mode-run" },
+		});
+
+		const eventTypes = getEventTypes(callback);
+		expect(eventTypes).toContain("REASONING_START");
+		expect(eventTypes).toContain("REASONING_MESSAGE_START");
+		expect(eventTypes).toContain("REASONING_MESSAGE_END");
+		expect(eventTypes).toContain("REASONING_END");
+		expect(eventTypes).not.toContain("THINKING_START");
 	});
 
 	test("runtime AGUI callback does not duplicate events", async () => {

@@ -154,7 +154,9 @@ class MockChatModel extends BaseChatModel {
 /**
  * Creates a mock model for simple text responses (no tools)
  */
-export function createTextModel(textResponses: string[]): MockChatModel {
+export function createTextModel(
+	textResponses: Array<string | AIMessage>,
+): MockChatModel {
 	return new MockChatModel(textResponses);
 }
 
