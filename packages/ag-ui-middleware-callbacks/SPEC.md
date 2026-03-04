@@ -1114,9 +1114,14 @@ interface AgentStepActivity {
 
 ---
 
-### 4.7 Thinking Events
+### 4.7 Reasoning/Thinking Events
 
-Thinking events emit model reasoning/thinking content using the AG-UI `THINKING_*` event types. This enables frontends to display the model's internal reasoning process.
+Reasoning events emit model reasoning/thinking content from LangChain `contentBlocks`.
+This package supports two compatibility modes:
+- `reasoningEventMode: "thinking"` (default) emits legacy `THINKING_*` events.
+- `reasoningEventMode: "reasoning"` emits `REASONING_*` events.
+
+`THINKING_*` events are deprecated in AG-UI and planned for removal in `1.0.0`.
 
 | AG-UI Event | Mechanism | LangChain Feature | Trigger |
 |-------------|-----------|-------------------|---------|
@@ -1125,13 +1130,19 @@ Thinking events emit model reasoning/thinking content using the AG-UI `THINKING_
 | THINKING_TEXT_MESSAGE_CONTENT | Callback | `AIMessage.contentBlocks` | Reasoning content |
 | THINKING_TEXT_MESSAGE_END | Callback | `AIMessage.contentBlocks` | Reasoning complete |
 | THINKING_END | Callback | `AIMessage.contentBlocks` | Reasoning phase complete |
+| REASONING_START | Callback | `AIMessage.contentBlocks` | Reasoning blocks detected |
+| REASONING_MESSAGE_START | Callback | `AIMessage.contentBlocks` | Reasoning blocks detected |
+| REASONING_MESSAGE_CONTENT | Callback | `AIMessage.contentBlocks` | Reasoning content |
+| REASONING_MESSAGE_END | Callback | `AIMessage.contentBlocks` | Reasoning complete |
+| REASONING_END | Callback | `AIMessage.contentBlocks` | Reasoning phase complete |
 
-**Enable Thinking:** Set `emitThinking: true` in callback options (default: `true`).
+**Enable Emission:** Set `emitThinking: true` in callback options (default: `true`).
+**Select Event Family:** Set `reasoningEventMode` in callback options (`"thinking"` by default).
 
 #### 4.7.1 Event Flow
 
 ```
-TEXT_MESSAGE_START → TEXT_MESSAGE_CONTENT* → THINKING_* → TEXT_MESSAGE_END
+TEXT_MESSAGE_START → TEXT_MESSAGE_CONTENT* → (THINKING_* or REASONING_*) → TEXT_MESSAGE_END
 ```
 
 Thinking events are emitted **after the complete response** using LangChain V1's `contentBlocks` API.
@@ -1155,9 +1166,9 @@ for await (const chunk of model.stream(messages)) {
     const blocks = chunk.contentBlocks;
     for (const block of blocks) {
       if (block.type === "reasoning") {
-        // Emit THINKING_* events directly
+        // Emit REASONING_* or THINKING_* events directly
         res.write(`data: ${JSON.stringify({
-          type: "THINKING_TEXT_MESSAGE_CONTENT",
+          type: "REASONING_MESSAGE_CONTENT",
           delta: block.reasoning
         })}\n\n`);
       }
@@ -1172,16 +1183,16 @@ This approach gives full access to `contentBlocks` during streaming but moves th
 
 Models may produce multiple reasoning phases (interleaved thinking pattern: think → respond → tool → think → respond). Each phase is identified by its `index` property.
 
-The callback handler emits one complete thinking cycle per unique index:
+The callback handler emits one complete cycle per unique index:
 
 ```
-Phase 0: THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT → THINKING_TEXT_MESSAGE_END → THINKING_END
-Phase 1: THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT → THINKING_TEXT_MESSAGE_END → THINKING_END
+Phase 0: (THINKING_* or REASONING_*) lifecycle
+Phase 1: (THINKING_* or REASONING_*) lifecycle
 ```
 
 #### 4.7.4 Thinking and Text Messages Coupling
 
-Thinking events are semantically coupled with text messages. When `emitTextMessages: false`, thinking events are also suppressed.
+Reasoning/thinking events are semantically coupled with text messages. When `emitTextMessages: false`, these events are also suppressed.
 
 ---
 

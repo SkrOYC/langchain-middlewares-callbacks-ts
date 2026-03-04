@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { AIMessage } from "@langchain/core/messages";
 import {
 	collectStreamChunks,
 	createErrorScenario,
@@ -602,6 +603,37 @@ describe("Option Wiring", () => {
 		const eventTypes = getEventTypes(callback);
 		expect(eventTypes).toContain("TOOL_CALL_END");
 		expect(eventTypes).toContain("TOOL_CALL_RESULT");
+	});
+
+	test("callbackOptions.reasoningEventMode=reasoning emits REASONING_* events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel([
+			new AIMessage({
+				content: [
+					{ type: "reasoning", reasoning: "Inspecting requirements first.", index: 0 },
+					{ type: "text", text: "Here is the response." },
+				] as any,
+			}),
+		]);
+		const { agent } = createTestAgent(
+			model,
+			[],
+			callback,
+			undefined,
+			{ reasoningEventMode: "reasoning" },
+		);
+
+		await agent.invoke(formatAgentInput([{ role: "user", content: "Hi" }]), {
+			context: { run_id: "option-wiring-reasoning" },
+		});
+
+		const eventTypes = getEventTypes(callback);
+		expect(eventTypes).toContain("REASONING_START");
+		expect(eventTypes).toContain("REASONING_MESSAGE_START");
+		expect(eventTypes).toContain("REASONING_MESSAGE_CONTENT");
+		expect(eventTypes).toContain("REASONING_MESSAGE_END");
+		expect(eventTypes).toContain("REASONING_END");
+		expect(eventTypes).not.toContain("THINKING_START");
 	});
 });
 

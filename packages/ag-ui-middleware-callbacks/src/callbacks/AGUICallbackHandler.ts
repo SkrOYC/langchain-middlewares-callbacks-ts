@@ -31,6 +31,12 @@ export interface AGUICallbackHandlerOptions {
 	emitToolResults?: boolean;
 	/** Emit THINKING events: START, TEXT_MESSAGE_*, END (default: true) */
 	emitThinking?: boolean;
+	/**
+	 * Reasoning migration mode.
+	 * - "thinking" (default): emit deprecated THINKING_* events for backward compatibility
+	 * - "reasoning": emit REASONING_* events
+	 */
+	reasoningEventMode?: "thinking" | "reasoning";
 	/** Maximum payload size in bytes for UI events (default: 50KB) */
 	maxUIPayloadSize?: number;
 	/** Whether to chunk large payloads instead of truncating */
@@ -60,6 +66,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 	private _emitToolCalls: boolean;
 	private _emitToolResults: boolean;
 	private _emitThinking: boolean;
+	private _reasoningEventMode: "thinking" | "reasoning";
 
 	private maxUIPayloadSize: number;
 	private chunkLargeResults: boolean;
@@ -72,6 +79,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 		this._emitToolCalls = options?.emitToolCalls ?? true;
 		this._emitToolResults = options?.emitToolResults ?? true;
 		this._emitThinking = options?.emitThinking ?? true;
+		this._reasoningEventMode = options?.reasoningEventMode ?? "thinking";
 		this.maxUIPayloadSize = options?.maxUIPayloadSize ?? 50 * 1024;
 		this.chunkLargeResults = options?.chunkLargeResults ?? false;
 	}
@@ -121,6 +129,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
 	set emitThinking(value: boolean) {
 		this._emitThinking = value;
+	}
+
+	/** Control reasoning event family: THINKING_* (legacy) or REASONING_* (new) */
+	get reasoningEventMode(): "thinking" | "reasoning" {
+		return this._reasoningEventMode;
+	}
+
+	set reasoningEventMode(value: "thinking" | "reasoning") {
+		this._reasoningEventMode = value;
 	}
 
 	dispose(): void {
@@ -396,12 +413,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 		try {
 			const generations = _output?.generations;
 			if (Array.isArray(generations) && generations.length > 0) {
-				const firstGeneration = generations[0]?.[0];
-				if (firstGeneration?.message) {
-					this.detectAndEmitThinking(firstGeneration.message);
+					const firstGeneration = generations[0]?.[0];
+					if (firstGeneration?.message) {
+						this.detectAndEmitThinking(
+							firstGeneration.message,
+							messageId ?? runId,
+						);
+					}
 				}
-			}
-		} catch {
+			} catch {
 			// Fail-safe
 		}
 
@@ -422,16 +442,19 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 	 * Detect and emit thinking events from reasoning content blocks.
 	 *
 	 * Uses LangChain V1's contentBlocks API to extract reasoning content
-	 * and emits the complete thinking event lifecycle:
-	 * THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT
-	 * → THINKING_TEXT_MESSAGE_END → THINKING_END
+	 * and emits either:
+	 * - THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT
+	 *   → THINKING_TEXT_MESSAGE_END → THINKING_END
+	 * - REASONING_START → REASONING_MESSAGE_START → REASONING_MESSAGE_CONTENT
+	 *   → REASONING_MESSAGE_END → REASONING_END
 	 *
 	 * Supports multiple reasoning phases via index-based grouping
 	 * (interleaved thinking pattern: think → respond → tool → think → respond).
 	 *
 	 * @param message - The final AIMessage containing reasoning blocks
+	 * @param idBase - Stable ID base for deterministic phase/message IDs
 	 */
-	private detectAndEmitThinking(message: BaseMessage): void {
+	private detectAndEmitThinking(message: BaseMessage, idBase: string): void {
 		// Thinking events are coupled with text messages
 		if (!this.emitThinking || !this.emitTextMessages) {
 			return;
@@ -450,17 +473,39 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
 		// Emit one complete thinking cycle per unique index
 		for (const [index, blocks] of groupedBlocks) {
-			// Emit THINKING_START
-			this.emitCallback({
-				type: EventType.THINKING_START,
-				timestamp: Date.now(),
-			} as BaseEvent);
+			const reasoningPhaseId = generateDeterministicId(
+				`${idBase}-reasoning-phase`,
+				index,
+			);
+			const reasoningMessageId = generateDeterministicId(
+				`${idBase}-reasoning-message`,
+				index,
+			);
 
-			// Emit THINKING_TEXT_MESSAGE_START (no messageId per AG-UI TypeScript SDK)
-			this.emitCallback({
-				type: EventType.THINKING_TEXT_MESSAGE_START,
-				timestamp: Date.now(),
-			} as BaseEvent);
+			if (this.reasoningEventMode === "reasoning") {
+				this.emitCallback({
+					type: EventType.REASONING_START,
+					messageId: reasoningPhaseId,
+					timestamp: Date.now(),
+				} as BaseEvent);
+				this.emitCallback({
+					type: EventType.REASONING_MESSAGE_START,
+					messageId: reasoningMessageId,
+					role: "reasoning",
+					timestamp: Date.now(),
+				} as BaseEvent);
+			} else {
+				// Emit THINKING_START
+				this.emitCallback({
+					type: EventType.THINKING_START,
+					timestamp: Date.now(),
+				} as BaseEvent);
+				// Emit THINKING_TEXT_MESSAGE_START (no messageId per AG-UI TypeScript SDK)
+				this.emitCallback({
+					type: EventType.THINKING_TEXT_MESSAGE_START,
+					timestamp: Date.now(),
+				} as BaseEvent);
+			}
 
 			// Aggregate all reasoning content for this phase into a single CONTENT event
 			const phaseContent = blocks
@@ -469,24 +514,44 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 				.join("");
 
 			if (phaseContent) {
+				if (this.reasoningEventMode === "reasoning") {
+					this.emitCallback({
+						type: EventType.REASONING_MESSAGE_CONTENT,
+						messageId: reasoningMessageId,
+						delta: phaseContent,
+						timestamp: Date.now(),
+					} as BaseEvent);
+				} else {
+					this.emitCallback({
+						type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
+						delta: phaseContent,
+						timestamp: Date.now(),
+					} as BaseEvent);
+				}
+			}
+			if (this.reasoningEventMode === "reasoning") {
 				this.emitCallback({
-					type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
-					delta: phaseContent,
+					type: EventType.REASONING_MESSAGE_END,
+					messageId: reasoningMessageId,
+					timestamp: Date.now(),
+				} as BaseEvent);
+				this.emitCallback({
+					type: EventType.REASONING_END,
+					messageId: reasoningPhaseId,
+					timestamp: Date.now(),
+				} as BaseEvent);
+			} else {
+				// Emit THINKING_TEXT_MESSAGE_END (no messageId)
+				this.emitCallback({
+					type: EventType.THINKING_TEXT_MESSAGE_END,
+					timestamp: Date.now(),
+				} as BaseEvent);
+				// Emit THINKING_END
+				this.emitCallback({
+					type: EventType.THINKING_END,
 					timestamp: Date.now(),
 				} as BaseEvent);
 			}
-
-			// Emit THINKING_TEXT_MESSAGE_END (no messageId)
-			this.emitCallback({
-				type: EventType.THINKING_TEXT_MESSAGE_END,
-				timestamp: Date.now(),
-			} as BaseEvent);
-
-			// Emit THINKING_END
-			this.emitCallback({
-				type: EventType.THINKING_END,
-				timestamp: Date.now(),
-			} as BaseEvent);
 		}
 	}
 
