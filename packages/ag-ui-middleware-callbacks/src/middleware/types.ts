@@ -20,6 +20,8 @@ export const AGUIMiddlewareOptionsSchema = z.object({
 	),
 
 	// Event control
+	// Deprecated: use callbackOptions.emitToolResults in createAGUIAgent.
+	// Kept for backward compatibility and transitional mapping.
 	emitToolResults: z.boolean().default(true),
 	emitStateSnapshots: z
 		.enum(["initial", "final", "all", "none"])

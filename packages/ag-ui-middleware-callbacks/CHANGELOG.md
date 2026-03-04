@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.1] - 2026-03-03
+
+### Fixes
+
+- Wired `callbackOptions` through `createAGUIAgent` via default `AGUICallbackHandler` binding.
+- Added explicit callback-level `emitToolResults` toggle.
+- Added compatibility mapping from legacy `middlewareOptions.emitToolResults` to callback behavior.
+- Added deprecation warning for `middlewareOptions.emitToolResults` (prefer `callbackOptions.emitToolResults`).
+- Added/updated tests for callback option wiring and tool-result emission policy.
+
 ## [1.1.0] - 2026-01-28
 
 ### Features

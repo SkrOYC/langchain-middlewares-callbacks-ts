@@ -40,7 +40,7 @@ bun install ag-ui-middleware-callbacks
 ## Quick Start
 
 ```typescript
-import { createAGUIAgent, AGUICallbackHandler } from "ag-ui-middleware-callbacks";
+import { createAGUIAgent } from "ag-ui-middleware-callbacks";
 import { EventType } from "@ag-ui/core";
 
 // Create callback to handle events
@@ -53,14 +53,16 @@ const agent = createAGUIAgent({
   model,
   tools,
   onEvent: handleEvent,
+  callbackOptions: {
+    emitToolResults: true,
+  },
 });
 
-// Stream events with callback handler
+// Stream events (AGUICallbackHandler is bound by createAGUIAgent)
 const eventStream = await agent.streamEvents(
   { messages },
   {
-    version: "v2",
-    callbacks: [new AGUICallbackHandler({ onEvent: handleEvent })]
+    version: "v2"
   }
 );
 
@@ -74,7 +76,7 @@ for await (const event of eventStream) {
 ```typescript
 const middleware = createAGUIMiddleware({
   onEvent: (event) => console.log(event),
-  emitToolResults: true,
+  emitToolResults: true,            // Deprecated: use createAGUIAgent({ callbackOptions: { emitToolResults }})
   emitStateSnapshots: "initial",  // "initial" | "final" | "all" | "none"
   emitActivities: false,
   maxUIPayloadSize: 50 * 1024,
@@ -84,6 +86,25 @@ const middleware = createAGUIMiddleware({
   stateMapper: (state) => state,
   resultMapper: (result) => result,
   activityMapper: (node) => node,
+});
+```
+
+`createAGUIAgent` callback options:
+
+```typescript
+const agent = createAGUIAgent({
+  model,
+  tools,
+  onEvent: handleEvent,
+  callbackOptions: {
+    enabled: true,
+    emitTextMessages: true,
+    emitToolCalls: true,
+    emitToolResults: true,
+    emitThinking: true,
+    maxUIPayloadSize: 50 * 1024,
+    chunkLargeResults: false,
+  },
 });
 ```
 

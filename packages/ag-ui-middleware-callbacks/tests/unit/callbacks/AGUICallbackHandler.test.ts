@@ -794,6 +794,67 @@ describe("AGUICallbackHandler", () => {
 			});
 		});
 
+		describe("emitToolResults toggle", () => {
+			test("when emitToolResults=false, TOOL_CALL_END is emitted and TOOL_CALL_RESULT is suppressed", async () => {
+				const mockCallback = createMockCallback();
+				const handler = new AGUICallbackHandler({
+					onEvent: mockCallback.emit,
+					emitToolCalls: true,
+					emitToolResults: false,
+				});
+				const toolRunId = "run-tool";
+				const parentRunId = "run-parent";
+
+				await handler.handleToolStart(
+					{ name: "weather_tool" },
+					JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
+					toolRunId,
+					parentRunId,
+				);
+				await handler.handleToolEnd('{"temp":72}', toolRunId, parentRunId);
+
+				const toolEndEvents = mockCallback.events.filter(
+					(e: any) => e.type === "TOOL_CALL_END",
+				);
+				const toolResultEvents = mockCallback.events.filter(
+					(e: any) => e.type === "TOOL_CALL_RESULT",
+				);
+
+				expect(toolEndEvents).toHaveLength(1);
+				expect(toolResultEvents).toHaveLength(0);
+			});
+
+			test("emitToolResults can be toggled at runtime", async () => {
+				const mockCallback = createMockCallback();
+				const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+				const parentRunId = "run-parent";
+
+				handler.emitToolResults = false;
+				await handler.handleToolStart(
+					{ name: "weather_tool" },
+					JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
+					"run-tool-1",
+					parentRunId,
+				);
+				await handler.handleToolEnd('{"temp":72}', "run-tool-1", parentRunId);
+
+				handler.emitToolResults = true;
+				await handler.handleToolStart(
+					{ name: "weather_tool" },
+					JSON.stringify({ id: "tc-2", name: "weather_tool", args: {} }),
+					"run-tool-2",
+					parentRunId,
+				);
+				await handler.handleToolEnd('{"temp":73}', "run-tool-2", parentRunId);
+
+				const toolResultEvents = mockCallback.events.filter(
+					(e: any) => e.type === "TOOL_CALL_RESULT",
+				);
+				expect(toolResultEvents).toHaveLength(1);
+				expect(toolResultEvents[0].toolCallId).toBe("tc-2");
+			});
+		});
+
 		describe("emitThinking toggle", () => {
 			test("when emitThinking=false, THINKING events are suppressed", async () => {
 				const mockCallback = createMockCallback();
@@ -1020,12 +1081,14 @@ describe("AGUICallbackHandler", () => {
 					enabled: true,
 					emitTextMessages: true,
 					emitToolCalls: true,
+					emitToolResults: true,
 					emitThinking: true,
 				});
 
 				expect(handler.enabled).toBe(true);
 				expect(handler.emitTextMessages).toBe(true);
 				expect(handler.emitToolCalls).toBe(true);
+				expect(handler.emitToolResults).toBe(true);
 				expect(handler.emitThinking).toBe(true);
 			});
 
@@ -1038,6 +1101,7 @@ describe("AGUICallbackHandler", () => {
 				expect(handler.enabled).toBe(true);
 				expect(handler.emitTextMessages).toBe(true);
 				expect(handler.emitToolCalls).toBe(true);
+				expect(handler.emitToolResults).toBe(true);
 				expect(handler.emitThinking).toBe(true);
 			});
 		});

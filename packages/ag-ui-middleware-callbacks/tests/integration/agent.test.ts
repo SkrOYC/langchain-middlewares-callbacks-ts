@@ -532,6 +532,79 @@ describe("Run ID Correlation", () => {
 
 });
 
+describe("Option Wiring", () => {
+	test("createAGUIAgent callbackOptions suppress TEXT_MESSAGE events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+		const { agent } = createTestAgent(
+			model,
+			[],
+			callback,
+			undefined,
+			{ emitTextMessages: false },
+		);
+
+		const eventStream = await (agent as any).streamEvents(
+			formatAgentInput([{ role: "user", content: "Hi" }]),
+			{
+				version: "v2",
+				context: { run_id: "option-wiring-text" },
+			},
+		);
+		for await (const _event of eventStream) {
+			// consume stream
+		}
+
+		const eventTypes = getEventTypes(callback);
+		expect(eventTypes).not.toContain("TEXT_MESSAGE_START");
+		expect(eventTypes).not.toContain("TEXT_MESSAGE_CONTENT");
+		expect(eventTypes).not.toContain("TEXT_MESSAGE_END");
+	});
+
+	test("legacy middleware emitToolResults=false suppresses TOOL_CALL_RESULT", async () => {
+		const { callback, model, tools } = createSingleToolScenario();
+		const { agent } = createTestAgent(
+			model,
+			tools,
+			callback,
+			{ emitToolResults: false },
+		);
+
+		await agent.invoke(
+			formatAgentInput([{ role: "user", content: "Calculate 5+3" }]),
+			{
+				context: { run_id: "option-wiring-tool-legacy" },
+			},
+		);
+
+		const eventTypes = getEventTypes(callback);
+		expect(eventTypes).toContain("TOOL_CALL_END");
+		expect(eventTypes).not.toContain("TOOL_CALL_RESULT");
+	});
+
+	test("callbackOptions.emitToolResults overrides legacy middleware emitToolResults", async () => {
+		const { callback, model, tools } = createSingleToolScenario();
+		const { agent } = createTestAgent(
+			model,
+			tools,
+			callback,
+			{ emitToolResults: false },
+			{ emitToolResults: true },
+		);
+
+		await agent.invoke(
+			formatAgentInput([{ role: "user", content: "Calculate 5+3" }]),
+			{
+				context: { run_id: "option-wiring-tool-override" },
+			},
+		);
+
+		const eventTypes = getEventTypes(callback);
+		expect(eventTypes).toContain("TOOL_CALL_END");
+		expect(eventTypes).toContain("TOOL_CALL_RESULT");
+	});
+});
+
 // Copy of Streaming section
 describe("Streaming", () => {
 	test("Streaming emits TEXT_MESSAGE_CONTENT events", async () => {

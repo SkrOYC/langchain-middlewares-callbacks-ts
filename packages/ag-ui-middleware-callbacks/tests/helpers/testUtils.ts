@@ -385,23 +385,15 @@ export function createTestAgent(
 	tools: ReturnType<typeof tool>[],
 	callback: MockCallback,
 	middlewareOptions?: Record<string, any>,
+	callbackOptions?: Record<string, any>,
 ): TestAgent {
 	let createAGUIAgentModule: typeof import("../../src/createAGUIAgent");
-	let AGUICallbackHandler: typeof import("../../src/callbacks/AGUICallbackHandler").AGUICallbackHandler;
 
 	async function getCreateAGUIAgent() {
 		if (!createAGUIAgentModule) {
 			createAGUIAgentModule = await import("../../src/createAGUIAgent");
 		}
 		return createAGUIAgentModule;
-	}
-
-	async function getAGUICallbackHandler() {
-		if (!AGUICallbackHandler) {
-			const module = await import("../../src/callbacks/AGUICallbackHandler");
-			AGUICallbackHandler = module.AGUICallbackHandler;
-		}
-		return AGUICallbackHandler;
 	}
 
 	const agent = {
@@ -412,6 +404,7 @@ export function createTestAgent(
 				tools,
 				onEvent: callback.emit,
 				middlewareOptions,
+				callbackOptions,
 			});
 			// Ensure a run_id is present for Middleware to satisfy ID coordination
 			const config = {
@@ -440,6 +433,7 @@ export function createTestAgent(
 				tools,
 				onEvent: callback.emit,
 				middlewareOptions,
+				callbackOptions,
 			});
 			// Ensure a run_id is present for Middleware to satisfy ID coordination
 			const config = {
@@ -463,12 +457,12 @@ export function createTestAgent(
 		},
 		streamEvents: async (input: any, options?: any) => {
 			const { createAGUIAgent } = await getCreateAGUIAgent();
-			const CallbackHandler = await getAGUICallbackHandler();
 			const aguiAgent = createAGUIAgent({
 				model,
 				tools,
 				onEvent: callback.emit,
 				middlewareOptions,
+				callbackOptions,
 			});
 			// Ensure a run_id is present for Middleware to satisfy ID coordination
 			const config = {
@@ -488,17 +482,7 @@ export function createTestAgent(
 					...options?.configurable,
 				},
 			};
-			// Create callback handler for streaming events
-			const handler = new CallbackHandler({ onEvent: callback.emit });
-			// Add callbacks to options if not present
-			const streamOptions = {
-				...config,
-				callbacks: [...(options?.callbacks || []), handler],
-			};
-			const stream = await (aguiAgent as any).streamEvents(
-				input,
-				streamOptions,
-			);
+			const stream = await (aguiAgent as any).streamEvents(input, config);
 			return stream;
 		},
 	};
