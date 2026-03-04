@@ -95,6 +95,49 @@ describe("createAGUIMiddleware", () => {
 			expect(snapshotCall).toBeDefined();
 			expect(snapshotCall![0].snapshot.messages).toBeUndefined();
 		});
+
+		test("preserves AG-UI structured user content in MESSAGES_SNAPSHOT", async () => {
+			const callback = createMockCallback();
+			const middleware = createAGUIMiddleware({ onEvent: callback.emit });
+			const state = {
+				messages: [
+					new HumanMessage({
+						content: [
+							{ type: "text", text: "hello" },
+							{
+								type: "binary",
+								mimeType: "image/png",
+								url: "https://example.com/image.png",
+							},
+						] as any,
+					}),
+				],
+			};
+			const runtime = {
+				context: { run_id: "run-123" },
+			};
+
+			const beforeAgent = middleware.beforeAgent as any;
+			await beforeAgent(state, runtime);
+
+			const snapshotCall = callback.events.find(
+				(event) => event.type === "MESSAGES_SNAPSHOT",
+			);
+			expect(snapshotCall).toBeDefined();
+			expect(snapshotCall!.messages).toEqual([
+				expect.objectContaining({
+					role: "user",
+					content: [
+						{ type: "text", text: "hello" },
+						{
+							type: "binary",
+							mimeType: "image/png",
+							url: "https://example.com/image.png",
+						},
+					],
+				}),
+			]);
+		});
 	});
 
 	describe("Step/Activity Correlation (Red Phase)", () => {

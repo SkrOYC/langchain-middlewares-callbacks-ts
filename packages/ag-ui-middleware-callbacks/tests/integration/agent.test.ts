@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { AIMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
 	collectStreamChunks,
 	createErrorScenario,
@@ -319,6 +319,47 @@ describe("State Management", () => {
 		// Snapshot should contain the state
 		expect(snapshotEvent.snapshot).toBeDefined();
 		expect(typeof snapshotEvent.snapshot).toBe("object");
+	});
+
+	test("MESSAGES_SNAPSHOT preserves structured user content fidelity", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const { agent } = createTestAgent(model, [], callback, {
+			emitStateSnapshots: "initial",
+		});
+
+		await agent.invoke({
+			messages: [
+				new HumanMessage({
+					content: [
+						{ type: "text", text: "See image" },
+						{
+							type: "binary",
+							mimeType: "image/png",
+							url: "https://example.com/image.png",
+						},
+					] as any,
+				}),
+			],
+		});
+
+		const messagesSnapshot = getEventsByType(callback, "MESSAGES_SNAPSHOT")[0];
+		expect(messagesSnapshot).toBeDefined();
+		expect(messagesSnapshot.messages).toHaveLength(1);
+		expect(messagesSnapshot.messages[0]).toEqual(
+			expect.objectContaining({
+				role: "user",
+				content: [
+					{ type: "text", text: "See image" },
+					{
+						type: "binary",
+						mimeType: "image/png",
+						url: "https://example.com/image.png",
+					},
+				],
+			}),
+		);
 	});
 
 	test("emitStateSnapshots='initial' emits one snapshot before steps", async () => {

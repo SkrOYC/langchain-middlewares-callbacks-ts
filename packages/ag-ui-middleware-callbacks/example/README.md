@@ -43,6 +43,8 @@ This demo uses `demo.tsx` as a universal entry point:
 - `TOOL_CALL_START` / `ARGS` / `END` / `RESULT`
 - `MESSAGES_SNAPSHOT` (for session resume)
 
+`MESSAGES_SNAPSHOT` preserves AG-UI-compatible structured user content (for example text/binary input blocks) to improve session reconstruction fidelity.
+
 ## Local Development
 
 ```bash
