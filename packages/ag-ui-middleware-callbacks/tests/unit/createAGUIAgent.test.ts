@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { AGUICallbackHandler } from "../../src/callbacks/AGUICallbackHandler";
 import { createAGUIAgent } from "../../src/createAGUIAgent";
 import {
 	createMockCallback,
@@ -83,5 +84,78 @@ describe("createAGUIAgent option wiring", () => {
 		const eventTypes = getEventTypes(callback);
 		expect(eventTypes).toContain("TOOL_CALL_END");
 		expect(eventTypes).toContain("TOOL_CALL_RESULT");
+	});
+
+	test("runtime AGUI callback does not duplicate events", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const agent = createAGUIAgent({
+			model,
+			tools: [],
+			onEvent: callback.emit,
+		});
+
+		const runtimeHandler = new AGUICallbackHandler({
+			onEvent: callback.emit,
+		});
+		const eventStream = await (agent as any).streamEvents(
+			formatAgentInput([{ role: "user", content: "Hi" }]),
+			{
+				version: "v2",
+				context: { run_id: "runtime-handler-run" },
+				callbacks: [runtimeHandler],
+			},
+		);
+		for await (const _ of eventStream) {
+			// consume stream
+		}
+
+		const textStartEvents = callback.events.filter(
+			(event: any) => event.type === "TEXT_MESSAGE_START",
+		);
+		expect(textStartEvents).toHaveLength(1);
+	});
+
+	test("per-run callback injection resets turn index across executions", async () => {
+		const callback = createMockCallback();
+		const model = createTextModel(["Hello"]);
+
+		const agent = createAGUIAgent({
+			model,
+			tools: [],
+			onEvent: callback.emit,
+		});
+
+		const runOptions = { context: { run_id: "stable-run-id" }, version: "v2" };
+
+		const stream1 = await (agent as any).streamEvents(
+			formatAgentInput([{ role: "user", content: "Hi" }]),
+			runOptions,
+		);
+		for await (const _ of stream1) {
+			// consume stream
+		}
+		const firstRunMessageId = callback.events.find(
+			(event: any) => event.type === "TEXT_MESSAGE_START",
+		)?.messageId;
+		expect(typeof firstRunMessageId).toBe("string");
+
+		callback.events.length = 0;
+
+		const stream2 = await (agent as any).streamEvents(
+			formatAgentInput([{ role: "user", content: "Hi again" }]),
+			runOptions,
+		);
+		for await (const _ of stream2) {
+			// consume stream
+		}
+		const secondRunMessageId = callback.events.find(
+			(event: any) => event.type === "TEXT_MESSAGE_START",
+		)?.messageId;
+		expect(typeof secondRunMessageId).toBe("string");
+
+		// Same run_id should start again at turn 0 with a fresh per-run handler.
+		expect(secondRunMessageId).toBe(firstRunMessageId);
 	});
 });
