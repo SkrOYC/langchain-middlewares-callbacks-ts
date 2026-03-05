@@ -110,9 +110,40 @@ function errorToolMessage(toolCallId: string, message: string): ToolMessage {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
+  if (isFileNotFoundError(error)) {
+    return "File not found";
   }
 
-  return String(error);
+  if (error instanceof Error) {
+    if (
+      error.name === "AccessDeniedError" ||
+      error.name === "PathTraversalError"
+    ) {
+      return error.message;
+    }
+
+    if (error.message.includes("File not found")) {
+      return "File not found";
+    }
+  }
+
+  return "Filesystem operation failed";
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  if (code === "ENOENT") {
+    return true;
+  }
+
+  if (error instanceof Error) {
+    return error.message.includes("ENOENT");
+  }
+
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" && message.includes("ENOENT");
 }

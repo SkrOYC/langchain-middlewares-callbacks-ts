@@ -51,6 +51,8 @@ describe("prompt-injector", () => {
 
     expect(firstContent).toContain(FILESYSTEM_MAP_MARKER);
     expect(firstContent).toContain("/alpha");
+    expect(firstContent).toContain("physical");
+    expect(firstContent).not.toContain("/tmp/alpha");
     expect(secondContent).toContain(FILESYSTEM_MAP_MARKER);
     expect(secondContent).toContain("/beta");
     expect(secondContent).not.toContain("/alpha");
@@ -100,5 +102,33 @@ describe("prompt-injector", () => {
     );
 
     expect(injectedSystemMaps).toHaveLength(1);
+  });
+
+  test("preserves foreign system messages that look like filesystem maps", () => {
+    const foreignSystemMessage = new SystemMessage({
+      content: `${FILESYSTEM_MAP_MARKER}\nFilesystem Map:\n- external replay`,
+    });
+
+    const nextMessages = injectFilesystemMap(
+      [foreignSystemMessage],
+      mountsTurnTwo
+    );
+
+    const foreignMessages = nextMessages.filter(
+      (message) =>
+        message instanceof SystemMessage &&
+        message.content ===
+          `${FILESYSTEM_MAP_MARKER}\nFilesystem Map:\n- external replay`
+    );
+
+    const injectedMaps = nextMessages.filter(
+      (message) =>
+        message instanceof SystemMessage &&
+        typeof message.content === "string" &&
+        message.additional_kwargs?.workspacesFilesystemMap === true
+    );
+
+    expect(foreignMessages).toHaveLength(1);
+    expect(injectedMaps).toHaveLength(1);
   });
 });

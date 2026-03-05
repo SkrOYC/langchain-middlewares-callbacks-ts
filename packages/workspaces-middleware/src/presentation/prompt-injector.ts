@@ -47,7 +47,7 @@ export function injectFilesystemMap(
 
 function formatStoreSummary(mount: MountConfig): string {
   if (mount.store.type === "physical") {
-    return `physical:${mount.store.rootDir}`;
+    return "physical";
   }
 
   return `virtual:${mount.store.namespace.join("/")}`;
@@ -59,12 +59,7 @@ function isInjectedFilesystemMapMessage(message: unknown): boolean {
   }
 
   const additionalKwargs = extractAdditionalKwargs(message);
-  if (additionalKwargs[FILESYSTEM_MAP_MESSAGE_FLAG] === true) {
-    return true;
-  }
-
-  const content = extractMessageContent(message);
-  return content.startsWith(`${FILESYSTEM_MAP_MARKER}\nFilesystem Map:`);
+  return additionalKwargs[FILESYSTEM_MAP_MESSAGE_FLAG] === true;
 }
 
 function isSystemRoleMessage(message: unknown): boolean {
@@ -109,43 +104,4 @@ function extractAdditionalKwargs(message: unknown): Record<string, unknown> {
   }
 
   return additionalKwargs as Record<string, unknown>;
-}
-
-function extractMessageContent(message: unknown): string {
-  if (typeof message !== "object" || message === null) {
-    return "";
-  }
-
-  if (!("content" in message)) {
-    return "";
-  }
-
-  const content = (message as { content?: unknown }).content;
-
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (!Array.isArray(content)) {
-    return "";
-  }
-
-  return content
-    .map((item) => {
-      if (typeof item === "string") {
-        return item;
-      }
-
-      if (
-        typeof item === "object" &&
-        item !== null &&
-        "text" in item &&
-        typeof (item as { text?: unknown }).text === "string"
-      ) {
-        return (item as { text: string }).text;
-      }
-
-      return "";
-    })
-    .join("\n");
 }

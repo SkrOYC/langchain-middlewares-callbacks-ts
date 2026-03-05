@@ -102,6 +102,43 @@ describe("createWorkspacesMiddleware", () => {
     expect(fallbackCalled).toBe(false);
   });
 
+  test("maps missing file errors to a safe File not found message", async () => {
+    const options: WorkspacesMiddlewareOptions = {
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_ONLY",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [createReadTool()],
+    };
+
+    const middleware = createWorkspacesMiddleware(options);
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-missing",
+          name: "read_workspace_file",
+          args: { path: "/project/docs/missing.txt" },
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toBe("Error: File not found");
+    expect((result as ToolMessage).content).not.toContain(workspaceRoot);
+  });
+
   test("converts thrown handler errors into graceful ToolMessage failures", async () => {
     const failingTool: RegisteredTool = {
       name: "failing_tool",
@@ -145,7 +182,9 @@ describe("createWorkspacesMiddleware", () => {
     );
 
     expect(result).toBeInstanceOf(ToolMessage);
-    expect((result as ToolMessage).content).toBe("Error: boom");
+    expect((result as ToolMessage).content).toBe(
+      "Error: Filesystem operation failed"
+    );
     expect((result as ToolMessage).status).toBe("error");
   });
 
