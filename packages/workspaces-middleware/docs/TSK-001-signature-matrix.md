@@ -6,9 +6,9 @@
   - `langchain`: `1.2.16`
   - `@langchain/core`: `1.1.29`
 - Installed typings (source of truth)
-  - `../../node_modules/langchain/dist/agents/middleware.d.ts`
-  - `../../node_modules/langchain/dist/agents/middleware/types.d.ts`
-  - `../../node_modules/@langchain/core/dist/messages/index.d.ts`
+  - `../../../node_modules/langchain/dist/agents/middleware.d.ts`
+  - `../../../node_modules/langchain/dist/agents/middleware/types.d.ts`
+  - `../../../node_modules/@langchain/core/dist/messages/index.d.ts`
 - External API reference
   - Librarian (`langchain-javascript`) query for middleware v1 signatures and ToolMessage usage
 
@@ -16,12 +16,12 @@
 
 | API | Verified Signature | Typings Evidence |
 | --- | --- | --- |
-| `createMiddleware` | `createMiddleware<TSchema, TContextSchema, TTools>(config: { name: string; stateSchema?; contextSchema?; tools?; wrapToolCall?; wrapModelCall?; beforeAgent?; beforeModel?; afterModel?; afterAgent? }): AgentMiddleware<...>` | `../../node_modules/langchain/dist/agents/middleware.d.ts:60` |
-| `beforeModel` | `BeforeModelHook = BeforeModelHandler | { hook; canJumpTo? }` where `BeforeModelHandler = (state, runtime) => PromiseOrValue<MiddlewareResult<Partial<state>>>` | `../../node_modules/langchain/dist/agents/middleware/types.d.ts:168` |
-| `wrapToolCall` | `WrapToolCallHook = (request, handler) => PromiseOrValue<ToolMessage | Command>` | `../../node_modules/langchain/dist/agents/middleware/types.d.ts:112` |
-| `ToolCallHandler` | `ToolCallHandler = (request: ToolCallRequest) => PromiseOrValue<ToolMessage | Command>` | `../../node_modules/langchain/dist/agents/middleware/types.d.ts:107` |
-| `ToolCallRequest` | Contains `toolCall`, `tool`, `state`, `runtime` (`tool` may be `undefined`) | `../../node_modules/langchain/dist/agents/middleware/types.d.ts:68` |
-| `ToolMessage` import | `ToolMessage` is exported from `@langchain/core/messages` | `../../node_modules/@langchain/core/dist/messages/index.d.ts:15` |
+| `createMiddleware` | `createMiddleware<TSchema, TContextSchema, TTools>(config: { name: string; stateSchema?; contextSchema?; tools?; wrapToolCall?; wrapModelCall?; beforeAgent?; beforeModel?; afterModel?; afterAgent? }): AgentMiddleware<...>` | `../../../node_modules/langchain/dist/agents/middleware.d.ts:60` |
+| `beforeModel` | `BeforeModelHook = BeforeModelHandler | { hook; canJumpTo? }` where `BeforeModelHandler = (state, runtime) => PromiseOrValue<MiddlewareResult<Partial<state>>>` | `../../../node_modules/langchain/dist/agents/middleware/types.d.ts:168` |
+| `wrapToolCall` | `WrapToolCallHook = (request, handler) => PromiseOrValue<ToolMessage | Command>` | `../../../node_modules/langchain/dist/agents/middleware/types.d.ts:112` |
+| `ToolCallHandler` | `ToolCallHandler = (request: ToolCallRequest) => PromiseOrValue<ToolMessage | Command>` | `../../../node_modules/langchain/dist/agents/middleware/types.d.ts:107` |
+| `ToolCallRequest` | Contains `toolCall`, `tool`, `state`, `runtime` (`tool` may be `undefined`) | `../../../node_modules/langchain/dist/agents/middleware/types.d.ts:68` |
+| `ToolMessage` import | `ToolMessage` is exported from `@langchain/core/messages` | `../../../node_modules/@langchain/core/dist/messages/index.d.ts:15` |
 
 ## Mismatch Log Captured During TSK-001
 
