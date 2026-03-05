@@ -1,0 +1,125 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  buildBaseStoreKey,
+  FILESYSTEM_UNRESPONSIVE_MESSAGE,
+  FilesystemUnresponsiveError,
+  VirtualStoreAdapter,
+} from "@/infrastructure/virtual-store";
+
+interface MemoryStore {
+  data: Map<string, string>;
+  mget: (keys: string[]) => Promise<(string | undefined)[]>;
+  mset: (pairs: [string, string][]) => Promise<void>;
+  mdelete: (keys: string[]) => Promise<void>;
+  yieldKeys: (prefix?: string) => AsyncGenerator<string, void, unknown>;
+}
+
+function createMemoryStore(): MemoryStore {
+  const data = new Map<string, string>();
+
+  return {
+    data,
+    mget(keys: string[]) {
+      return Promise.resolve(keys.map((key) => data.get(key)));
+    },
+    mset(pairs: [string, string][]) {
+      for (const [key, value] of pairs) {
+        data.set(key, value);
+      }
+
+      return Promise.resolve();
+    },
+    mdelete(keys: string[]) {
+      for (const key of keys) {
+        data.delete(key);
+      }
+
+      return Promise.resolve();
+    },
+    async *yieldKeys(prefix?: string) {
+      await Promise.resolve();
+
+      for (const key of data.keys()) {
+        if (prefix === undefined || key.startsWith(prefix)) {
+          yield key;
+        }
+      }
+    },
+  };
+}
+
+describe("VirtualStoreAdapter", () => {
+  test("persists and retrieves data by namespace tuple + key", async () => {
+    const store = createMemoryStore();
+    const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);
+
+    await adapter.write("docs/readme.md", "hello");
+
+    const content = await adapter.read("docs/readme.md");
+
+    expect(content).toBe("hello");
+  });
+
+  test("lists only entries that match namespace + prefix", async () => {
+    const store = createMemoryStore();
+    const namespaceA = ["workspaces", "agent-a"];
+    const namespaceB = ["workspaces", "agent-b"];
+
+    store.data.set(buildBaseStoreKey(namespaceA, "docs/a.md"), "A");
+    store.data.set(buildBaseStoreKey(namespaceA, "docs/b.md"), "B");
+    store.data.set(buildBaseStoreKey(namespaceA, "src/main.ts"), "C");
+    store.data.set(buildBaseStoreKey(namespaceB, "docs/foreign.md"), "D");
+
+    const adapter = new VirtualStoreAdapter(store, namespaceA);
+    const listed = await adapter.list("docs");
+
+    expect(listed).toEqual(["docs/a.md", "docs/b.md"]);
+  });
+
+  test("edits existing files and reports replacement count", async () => {
+    const store = createMemoryStore();
+    const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);
+
+    await adapter.write("file.txt", "alpha beta alpha");
+
+    const count = await adapter.edit("file.txt", "alpha", "ALPHA");
+    const content = await adapter.read("file.txt");
+
+    expect(count).toBe(1);
+    expect(content).toBe("ALPHA beta alpha");
+  });
+
+  test("times out list operations for unresponsive stores", async () => {
+    const delayedStore = {
+      mget() {
+        return Promise.resolve([undefined]);
+      },
+      mset() {
+        return Promise.resolve();
+      },
+      mdelete() {
+        return Promise.resolve();
+      },
+      async *yieldKeys() {
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 30));
+        yield "ignored";
+      },
+    };
+
+    const adapter = new VirtualStoreAdapter(
+      delayedStore,
+      ["workspaces", "agent-1"],
+      {
+        timeoutMs: 5,
+      }
+    );
+
+    await expect(adapter.list("docs")).rejects.toBeInstanceOf(
+      FilesystemUnresponsiveError
+    );
+    await expect(adapter.list("docs")).rejects.toThrow(
+      FILESYSTEM_UNRESPONSIVE_MESSAGE
+    );
+  });
+});
