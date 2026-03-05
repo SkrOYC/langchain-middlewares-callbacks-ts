@@ -102,6 +102,8 @@ describe("VirtualStoreAdapter", () => {
   });
 
   test("times out list operations for unresponsive stores", async () => {
+    let iteratorClosed = false;
+
     const delayedStore = {
       mget() {
         return Promise.resolve([undefined]);
@@ -113,8 +115,12 @@ describe("VirtualStoreAdapter", () => {
         return Promise.resolve();
       },
       async *yieldKeys() {
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, 30));
-        yield "ignored";
+        try {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 30));
+          yield "ignored";
+        } finally {
+          iteratorClosed = true;
+        }
       },
     };
 
@@ -132,5 +138,7 @@ describe("VirtualStoreAdapter", () => {
     await expect(adapter.list("docs")).rejects.toThrow(
       FILESYSTEM_UNRESPONSIVE_MESSAGE
     );
+
+    expect(iteratorClosed).toBe(true);
   });
 });

@@ -114,28 +114,38 @@ export class VirtualStoreAdapter implements StorePort {
     const collected = new Set<string>();
     const iterator = this.store.yieldKeys(mappedPrefix)[Symbol.asyncIterator]();
 
-    while (true) {
-      const nextItem = await this.withTimeout(iterator.next());
+    try {
+      while (true) {
+        const nextItem = await this.withTimeout(iterator.next());
 
-      if (nextItem.done) {
-        break;
+        if (nextItem.done) {
+          break;
+        }
+
+        const mappedKey = nextItem.value;
+
+        if (!mappedKey.startsWith(mappedPrefix)) {
+          continue;
+        }
+
+        const normalizedKey = splitBaseStoreKey(this.namespace, mappedKey);
+        const entry = toDirectChildEntry(normalizedPrefix, normalizedKey);
+
+        if (entry !== undefined) {
+          collected.add(entry);
+        }
       }
 
-      const mappedKey = nextItem.value;
-
-      if (!mappedKey.startsWith(mappedPrefix)) {
-        continue;
-      }
-
-      const normalizedKey = splitBaseStoreKey(this.namespace, mappedKey);
-      const entry = toDirectChildEntry(normalizedPrefix, normalizedKey);
-
-      if (entry !== undefined) {
-        collected.add(entry);
+      return [...collected].sort((left, right) => left.localeCompare(right));
+    } finally {
+      if (typeof iterator.return === "function") {
+        try {
+          await iterator.return();
+        } catch {
+          // ignore iterator cleanup failures
+        }
       }
     }
-
-    return [...collected].sort((left, right) => left.localeCompare(right));
   }
 
   private async withTimeout<T>(operation: Promise<T>): Promise<T> {

@@ -91,6 +91,14 @@ describe("PhysicalStoreAdapter", () => {
     expect(paged).toBe("fghijkl");
   });
 
+  test("uses character-window pagination for UTF-8 content", async () => {
+    await adapter.write("utf8.txt", "éa");
+
+    const paged = await adapter.read("utf8.txt", 1, 1);
+
+    expect(paged).toBe("a");
+  });
+
   test("returns paginated windows for large files without truncation warning", async () => {
     const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
       largeFileThresholdBytes: 16,

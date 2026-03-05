@@ -257,34 +257,129 @@ async function readPrefixWithChunkedReads(
 
 async function readWindow(
   fileHandle: Awaited<ReturnType<typeof open>>,
-  fileSizeBytes: number,
+  _fileSizeBytes: number,
   offset: number,
   limit: number | undefined,
   largeFileThresholdBytes: number
 ): Promise<{ content: string; truncated: boolean }> {
   const boundedOffset = Math.max(0, offset);
-  const availableBytes = Math.max(0, fileSizeBytes - boundedOffset);
+  const boundedLimit = limit === undefined ? undefined : Math.max(0, limit);
+  const effectiveLimit = boundedLimit ?? largeFileThresholdBytes;
 
-  const requestedBytes =
-    limit === undefined
-      ? Math.min(availableBytes, largeFileThresholdBytes)
-      : Math.min(Math.max(0, limit), availableBytes);
-
-  if (requestedBytes === 0) {
+  if (effectiveLimit === 0) {
     return { content: "", truncated: false };
   }
 
-  const buffer = Buffer.alloc(requestedBytes);
-  const { bytesRead } = await fileHandle.read(
-    buffer,
-    0,
-    requestedBytes,
-    boundedOffset
+  const decoder = new TextDecoder("utf-8");
+  const chunkSize = Math.min(
+    64 * 1024,
+    Math.max(1024, largeFileThresholdBytes)
   );
 
+  let position = 0;
+  let skippedChars = 0;
+  let collected = "";
+  let reachedCap = false;
+  let reachedEof = false;
+
+  while (true) {
+    const buffer = Buffer.alloc(chunkSize);
+    const { bytesRead } = await fileHandle.read(
+      buffer,
+      0,
+      buffer.length,
+      position
+    );
+
+    if (bytesRead === 0) {
+      reachedEof = true;
+      break;
+    }
+
+    position += bytesRead;
+
+    const decodedChunk = decoder.decode(buffer.subarray(0, bytesRead), {
+      stream: true,
+    });
+
+    const consumed = consumeDecodedChunk(
+      decodedChunk,
+      boundedOffset,
+      effectiveLimit,
+      skippedChars,
+      collected
+    );
+
+    skippedChars = consumed.skippedChars;
+    collected = consumed.collected;
+
+    if (consumed.reachedCap) {
+      reachedCap = true;
+      break;
+    }
+  }
+
+  if (!reachedCap) {
+    const tail = decoder.decode();
+    if (tail.length > 0) {
+      const consumed = consumeDecodedChunk(
+        tail,
+        boundedOffset,
+        effectiveLimit,
+        skippedChars,
+        collected
+      );
+
+      collected = consumed.collected;
+      reachedCap = consumed.reachedCap;
+    }
+  }
+
   return {
-    content: buffer.subarray(0, bytesRead).toString("utf8"),
-    truncated: limit === undefined && availableBytes > requestedBytes,
+    content: collected,
+    truncated: boundedLimit === undefined && reachedCap && !reachedEof,
+  };
+}
+
+function consumeDecodedChunk(
+  decodedChunk: string,
+  startOffsetChars: number,
+  limitChars: number,
+  skippedChars: number,
+  collected: string
+): { skippedChars: number; collected: string; reachedCap: boolean } {
+  let nextSkippedChars = skippedChars;
+  let cursor = 0;
+
+  if (nextSkippedChars < startOffsetChars) {
+    const toSkip = Math.min(
+      startOffsetChars - nextSkippedChars,
+      decodedChunk.length
+    );
+    nextSkippedChars += toSkip;
+    cursor += toSkip;
+  }
+
+  if (cursor >= decodedChunk.length) {
+    return {
+      skippedChars: nextSkippedChars,
+      collected,
+      reachedCap: collected.length >= limitChars,
+    };
+  }
+
+  const remaining = limitChars - collected.length;
+  if (remaining <= 0) {
+    return { skippedChars: nextSkippedChars, collected, reachedCap: true };
+  }
+
+  const toTake = Math.min(remaining, decodedChunk.length - cursor);
+  const nextCollected = `${collected}${decodedChunk.slice(cursor, cursor + toTake)}`;
+
+  return {
+    skippedChars: nextSkippedChars,
+    collected: nextCollected,
+    reachedCap: nextCollected.length >= limitChars,
   };
 }
 
