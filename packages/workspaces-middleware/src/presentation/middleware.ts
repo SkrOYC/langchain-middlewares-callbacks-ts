@@ -8,6 +8,7 @@ import {
   createInMemoryBaseStore,
   synthesizeSafeTools,
 } from "@/application/tool-synthesizer";
+import { FilesystemUnresponsiveError } from "@/infrastructure/virtual-store";
 import type {
   RegisteredTool,
   WorkspacesMiddlewareOptions,
@@ -49,30 +50,29 @@ export function createWorkspacesMiddleware(
 
     wrapToolCall: async (request, handler) => {
       const toolCallId = request.toolCall?.id ?? "unknown";
+      const toolName = request.toolCall?.name;
+
+      if (!toolName) {
+        return await handler(request);
+      }
+
+      const registeredTool = findRegisteredTool(options.tools, toolName);
+
+      if (registeredTool === undefined) {
+        return await handler(request);
+      }
+
+      const safeTools = synthesizeSafeTools(options.mounts, options.tools);
+      const safeTool = findRegisteredTool(safeTools, toolName);
+
+      if (safeTool === undefined) {
+        return errorToolMessage(
+          toolCallId,
+          `Tool '${toolName}' is not allowed by current workspace access scopes`
+        );
+      }
 
       try {
-        const toolName = request.toolCall?.name;
-
-        if (!toolName) {
-          return await handler(request);
-        }
-
-        const registeredTool = findRegisteredTool(options.tools, toolName);
-
-        if (registeredTool === undefined) {
-          return await handler(request);
-        }
-
-        const safeTools = synthesizeSafeTools(options.mounts, options.tools);
-        const safeTool = findRegisteredTool(safeTools, toolName);
-
-        if (safeTool === undefined) {
-          return errorToolMessage(
-            toolCallId,
-            `Tool '${toolName}' is not allowed by current workspace access scopes`
-          );
-        }
-
         const parsedParams = safeTool.parameters.parse(
           request.toolCall?.args ?? {}
         );
@@ -114,6 +114,10 @@ function getErrorMessage(error: unknown): string {
     return "File not found";
   }
 
+  if (isFilesystemUnresponsiveError(error)) {
+    return "Filesystem unresponsive";
+  }
+
   if (error instanceof Error) {
     if (
       error.name === "AccessDeniedError" ||
@@ -146,4 +150,19 @@ function isFileNotFoundError(error: unknown): boolean {
 
   const message = (error as { message?: unknown }).message;
   return typeof message === "string" && message.includes("ENOENT");
+}
+
+function isFilesystemUnresponsiveError(error: unknown): boolean {
+  if (error instanceof FilesystemUnresponsiveError) {
+    return true;
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const message = (error as { message?: unknown }).message;
+  return (
+    typeof message === "string" && message.includes("Filesystem unresponsive")
+  );
 }

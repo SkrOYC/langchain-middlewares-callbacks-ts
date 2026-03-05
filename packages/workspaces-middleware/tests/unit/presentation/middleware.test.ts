@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { z } from "zod";
+
+import { FilesystemUnresponsiveError } from "@/infrastructure/virtual-store";
 import type {
   RegisteredTool,
   WorkspacesMiddlewareOptions,
@@ -139,6 +141,40 @@ describe("createWorkspacesMiddleware", () => {
     expect((result as ToolMessage).content).not.toContain(workspaceRoot);
   });
 
+  test("does not swallow errors from unregistered tools", async () => {
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_ONLY",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [createReadTool()],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    await expect(
+      wrapToolCall(
+        {
+          toolCall: {
+            id: "call-unregistered",
+            name: "other_tool",
+            args: {},
+          },
+          runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+          state: { messages: [] },
+        } as never,
+        () => {
+          throw new Error("downstream failure");
+        }
+      )
+    ).rejects.toThrow("downstream failure");
+  });
+
   test("converts thrown handler errors into graceful ToolMessage failures", async () => {
     const failingTool: RegisteredTool = {
       name: "failing_tool",
@@ -184,6 +220,54 @@ describe("createWorkspacesMiddleware", () => {
     expect(result).toBeInstanceOf(ToolMessage);
     expect((result as ToolMessage).content).toBe(
       "Error: Filesystem operation failed"
+    );
+    expect((result as ToolMessage).status).toBe("error");
+  });
+
+  test("maps filesystem timeout errors to Filesystem unresponsive", async () => {
+    const timeoutTool: RegisteredTool = {
+      name: "timeout_tool",
+      description: "Simulate virtual store timeout",
+      parameters: z.object({}),
+      operations: ["read"],
+      handler: () => {
+        throw new FilesystemUnresponsiveError();
+      },
+    };
+
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_ONLY",
+          store: { type: "virtual", namespace: ["workspaces", "timeout"] },
+        },
+      ],
+      tools: [timeoutTool],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-timeout",
+          name: "timeout_tool",
+          args: {},
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toBe(
+      "Error: Filesystem unresponsive"
     );
     expect((result as ToolMessage).status).toBe("error");
   });
