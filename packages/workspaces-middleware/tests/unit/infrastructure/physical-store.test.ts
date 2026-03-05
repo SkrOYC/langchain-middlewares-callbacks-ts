@@ -101,18 +101,32 @@ describe("PhysicalStoreAdapter", () => {
 
   test("handles UTF-8 truncation and continuation without broken symbols", async () => {
     const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
-      largeFileThresholdBytes: 2,
+      largeFileThresholdBytes: 5,
     });
 
     await largeAdapter.write("emoji.txt", "🙂🙂🙂");
 
     const firstChunk = await largeAdapter.read("emoji.txt");
-    const continuation = await largeAdapter.read("emoji.txt", 2);
+    const continuation = await largeAdapter.read("emoji.txt", 1, 1);
 
     expect(firstChunk).toBe(
-      "🙂🙂[...truncated. File size: 12 bytes. Use offset/limit to read remaining content.]"
+      "🙂[...truncated. File size: 12 bytes. Use offset/limit to read remaining content.]"
     );
     expect(continuation).toBe("🙂");
+  });
+
+  test("enforces byte threshold for multibyte UTF-8 content", async () => {
+    const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
+      largeFileThresholdBytes: 4,
+    });
+
+    await largeAdapter.write("emoji-byte-threshold.txt", "🙂🙂");
+
+    const firstChunk = await largeAdapter.read("emoji-byte-threshold.txt");
+
+    expect(firstChunk).toBe(
+      "🙂[...truncated. File size: 8 bytes. Use offset/limit to read remaining content.]"
+    );
   });
 
   test("returns paginated windows for large files without truncation warning", async () => {

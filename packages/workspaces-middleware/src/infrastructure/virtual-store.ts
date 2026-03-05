@@ -139,11 +139,10 @@ export class VirtualStoreAdapter implements StorePort {
       return [...collected].sort((left, right) => left.localeCompare(right));
     } finally {
       if (typeof iterator.return === "function") {
-        try {
-          await iterator.return();
-        } catch {
+        const cleanupPromise = iterator.return();
+        cleanupPromise.catch(() => {
           // ignore iterator cleanup failures
-        }
+        });
       }
     }
   }

@@ -241,9 +241,8 @@ async function readWindow(
 ): Promise<{ content: string; truncated: boolean }> {
   const boundedOffset = Math.max(0, offset);
   const boundedLimit = limit === undefined ? undefined : Math.max(0, limit);
-  const effectiveLimit = boundedLimit ?? largeFileThresholdBytes;
 
-  if (effectiveLimit === 0) {
+  if (boundedLimit === 0) {
     return { content: "", truncated: false };
   }
 
@@ -256,6 +255,8 @@ async function readWindow(
   let position = 0;
   let skippedChars = 0;
   let collected = "";
+  let collectedChars = 0;
+  let collectedBytes = 0;
   let reachedCap = false;
   let reachedEof = false;
 
@@ -282,13 +283,18 @@ async function readWindow(
     const consumed = consumeDecodedChunk(
       decodedChunk,
       boundedOffset,
-      effectiveLimit,
+      boundedLimit,
+      largeFileThresholdBytes,
       skippedChars,
-      collected
+      collected,
+      collectedChars,
+      collectedBytes
     );
 
     skippedChars = consumed.skippedChars;
     collected = consumed.collected;
+    collectedChars = consumed.collectedChars;
+    collectedBytes = consumed.collectedBytes;
 
     if (consumed.reachedCap) {
       reachedCap = true;
@@ -302,9 +308,12 @@ async function readWindow(
       const consumed = consumeDecodedChunk(
         tail,
         boundedOffset,
-        effectiveLimit,
+        boundedLimit,
+        largeFileThresholdBytes,
         skippedChars,
-        collected
+        collected,
+        collectedChars,
+        collectedBytes
       );
 
       collected = consumed.collected;
@@ -321,15 +330,26 @@ async function readWindow(
 function consumeDecodedChunk(
   decodedChunk: string,
   startOffsetChars: number,
-  limitChars: number,
+  limitChars: number | undefined,
+  byteThreshold: number,
   skippedChars: number,
-  collected: string
-): { skippedChars: number; collected: string; reachedCap: boolean } {
+  collected: string,
+  collectedChars: number,
+  collectedBytes: number
+): {
+  skippedChars: number;
+  collected: string;
+  collectedChars: number;
+  collectedBytes: number;
+  reachedCap: boolean;
+} {
   const decodedCharacters = [...decodedChunk];
-  const collectedCharacters = [...collected];
 
   let nextSkippedChars = skippedChars;
   let cursor = 0;
+  let nextCollected = collected;
+  let nextCollectedChars = collectedChars;
+  let nextCollectedBytes = collectedBytes;
 
   if (nextSkippedChars < startOffsetChars) {
     const toSkip = Math.min(
@@ -343,25 +363,55 @@ function consumeDecodedChunk(
   if (cursor >= decodedCharacters.length) {
     return {
       skippedChars: nextSkippedChars,
-      collected,
-      reachedCap: collectedCharacters.length >= limitChars,
+      collected: nextCollected,
+      collectedChars: nextCollectedChars,
+      collectedBytes: nextCollectedBytes,
+      reachedCap:
+        limitChars === undefined
+          ? nextCollectedBytes >= byteThreshold
+          : nextCollectedChars >= limitChars,
     };
   }
 
-  const remaining = limitChars - collectedCharacters.length;
-  if (remaining <= 0) {
-    return { skippedChars: nextSkippedChars, collected, reachedCap: true };
-  }
+  for (const character of decodedCharacters.slice(cursor)) {
+    if (limitChars !== undefined) {
+      if (nextCollectedChars >= limitChars) {
+        return {
+          skippedChars: nextSkippedChars,
+          collected: nextCollected,
+          collectedChars: nextCollectedChars,
+          collectedBytes: nextCollectedBytes,
+          reachedCap: true,
+        };
+      }
+    } else {
+      const characterBytes = Buffer.byteLength(character, "utf8");
+      if (nextCollectedBytes + characterBytes > byteThreshold) {
+        return {
+          skippedChars: nextSkippedChars,
+          collected: nextCollected,
+          collectedChars: nextCollectedChars,
+          collectedBytes: nextCollectedBytes,
+          reachedCap: true,
+        };
+      }
 
-  const toTake = Math.min(remaining, decodedCharacters.length - cursor);
-  const nextCollected = `${collected}${decodedCharacters
-    .slice(cursor, cursor + toTake)
-    .join("")}`;
+      nextCollectedBytes += characterBytes;
+    }
+
+    nextCollected += character;
+    nextCollectedChars += 1;
+  }
 
   return {
     skippedChars: nextSkippedChars,
     collected: nextCollected,
-    reachedCap: [...nextCollected].length >= limitChars,
+    collectedChars: nextCollectedChars,
+    collectedBytes: nextCollectedBytes,
+    reachedCap:
+      limitChars === undefined
+        ? nextCollectedBytes >= byteThreshold
+        : nextCollectedChars >= limitChars,
   };
 }
 

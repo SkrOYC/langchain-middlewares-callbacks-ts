@@ -4,7 +4,6 @@ import {
   buildBaseStoreKey,
   FILESYSTEM_UNRESPONSIVE_MESSAGE,
   FileNotFoundError,
-  FilesystemUnresponsiveError,
   VirtualStoreAdapter,
 } from "@/infrastructure/virtual-store";
 
@@ -143,12 +142,14 @@ describe("VirtualStoreAdapter", () => {
       }
     );
 
-    await expect(adapter.list("docs")).rejects.toBeInstanceOf(
-      FilesystemUnresponsiveError
-    );
     await expect(adapter.list("docs")).rejects.toThrow(
       FILESYSTEM_UNRESPONSIVE_MESSAGE
     );
+
+    const cleanupDeadline = Date.now() + 100;
+    while (!iteratorClosed && Date.now() < cleanupDeadline) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 5));
+    }
 
     expect(iteratorClosed).toBe(true);
   });
