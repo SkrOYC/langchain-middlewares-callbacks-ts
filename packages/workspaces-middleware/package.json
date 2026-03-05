@@ -1,0 +1,51 @@
+{
+  "name": "@skroyc/workspaces-middleware",
+  "version": "0.1.0",
+  "description": "LangChain.js middleware for workspace-scoped virtual filesystem access",
+  "keywords": [
+    "langchain",
+    "middleware",
+    "filesystem",
+    "vfs",
+    "workspace"
+  ],
+  "author": "SkrOYC <oscar@ocmasesorias.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skrOYC/langchain-middlewares-callbacks-ts.git",
+    "directory": "packages/workspaces-middleware"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist/",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "type": "module",
+  "peerDependencies": {
+    "@langchain/core": "^1.1.29",
+    "langchain": "^1.2.16",
+    "typescript": "^5.0.0",
+    "zod": "^3.23.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "bun test",
+    "lint": "bunx --bun @biomejs/biome check .",
+    "format": "bunx --bun @biomejs/biome format --write .",
+    "typecheck": "tsc --noEmit"
+  }
+}

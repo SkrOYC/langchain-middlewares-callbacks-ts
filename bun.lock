@@ -64,6 +64,16 @@
         "zod": "^4.3.6",
       },
     },
+    "packages/workspaces-middleware": {
+      "name": "@skroyc/workspaces-middleware",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@langchain/core": "^1.1.29",
+        "langchain": "^1.2.16",
+        "typescript": "^5.0.0",
+        "zod": "^3.23.0",
+      },
+    },
   },
   "packages": {
     "@ag-ui/core": ["@ag-ui/core@0.0.47", "", { "dependencies": { "rxjs": "7.8.1", "zod": "^3.22.4" } }, "sha512-fHat7ZErAH028R90psYclTWaj6PdcvN2GJxzwWPF/j1c5ceqbF2+6xe+t06Psg+gCzZneI9QE3IkOkdJNplZ5A=="],
@@ -327,6 +337,8 @@
     "@skroyc/ag-ui-middleware-callbacks": ["@skroyc/ag-ui-middleware-callbacks@workspace:packages/ag-ui-middleware-callbacks"],
 
     "@skroyc/rmm-middleware": ["@skroyc/rmm-middleware@workspace:packages/rmm-middleware"],
+
+    "@skroyc/workspaces-middleware": ["@skroyc/workspaces-middleware@workspace:packages/workspaces-middleware"],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
@@ -919,6 +931,8 @@
     "@langchain/langgraph-sdk/p-queue": ["p-queue@9.1.0", "", { "dependencies": { "eventemitter3": "^5.0.1", "p-timeout": "^7.0.0" } }, "sha512-O/ZPaXuQV29uSLbxWBGGZO1mCQXV2BLIwUr59JUU9SoH76mnYvtms7aafH/isNSNGwuEfP6W/4xD0/TJXxrizw=="],
 
     "@langchain/langgraph-sdk/uuid": ["uuid@13.0.0", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w=="],
+
+    "@skroyc/workspaces-middleware/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
     "accepts/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
 
