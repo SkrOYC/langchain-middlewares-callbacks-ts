@@ -54,6 +54,12 @@ describe("PhysicalStoreAdapter", () => {
     );
   });
 
+  test("rejects Windows absolute paths", async () => {
+    await expect(adapter.write("C:/escape.txt", "nope")).rejects.toBeInstanceOf(
+      PathTraversalError
+    );
+  });
+
   test("writes real files under root directory", async () => {
     await adapter.write("nested/path.txt", "disk-check");
 

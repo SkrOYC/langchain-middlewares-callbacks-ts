@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,5 +69,20 @@ describe("PhysicalStoreAdapter symlink defense", () => {
     await expect(
       adapter.read("linked-dir/secret-nested.txt")
     ).rejects.toBeInstanceOf(PathTraversalError);
+  });
+
+  test("does not create external directories before rejecting symlinked parent writes", async () => {
+    const linkedDir = join(workspaceRoot, "linked-parent");
+    const outsideCreatedDir = join(outsideDir, "created-by-write");
+
+    await symlink(outsideDir, linkedDir);
+
+    await expect(
+      adapter.write("linked-parent/created-by-write/file.txt", "data")
+    ).rejects.toBeInstanceOf(PathTraversalError);
+
+    await expect(lstat(outsideCreatedDir)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });

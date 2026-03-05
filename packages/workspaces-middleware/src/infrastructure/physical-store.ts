@@ -53,8 +53,9 @@ export class PhysicalStoreAdapter implements StorePort {
   async write(path: string, content: string): Promise<void> {
     const hostPath = this.resolveHostPath(path);
 
+    await this.assertNoSymlinkInExistingPath(hostPath);
     await mkdir(dirname(hostPath), { recursive: true });
-    await this.assertNoSymlinkInPath(hostPath, true);
+    await this.assertNoSymlinkInPath(dirname(hostPath));
 
     const fileHandle = await open(hostPath, "w", 0o644);
 
@@ -125,10 +126,7 @@ export class PhysicalStoreAdapter implements StorePort {
     return hostPath;
   }
 
-  private async assertNoSymlinkInPath(
-    hostPath: string,
-    allowMissingLeaf = false
-  ): Promise<void> {
+  private async assertNoSymlinkInPath(hostPath: string): Promise<void> {
     const normalizedRoot = normalize(resolve(this.rootDir));
     const normalizedTarget = normalize(resolve(hostPath));
 
@@ -144,9 +142,34 @@ export class PhysicalStoreAdapter implements StorePort {
       .filter(Boolean);
     let currentPath = normalizedRoot;
 
-    for (const [index, segment] of segments.entries()) {
+    for (const segment of segments) {
       currentPath = resolve(currentPath, segment);
-      const isLeaf = index === segments.length - 1;
+      const metadata = await lstat(currentPath);
+
+      if (metadata.isSymbolicLink()) {
+        throw new PathTraversalError("Symlink targets are not allowed");
+      }
+    }
+  }
+
+  private async assertNoSymlinkInExistingPath(hostPath: string): Promise<void> {
+    const normalizedRoot = normalize(resolve(this.rootDir));
+    const normalizedTarget = normalize(resolve(hostPath));
+
+    this.assertWithinWorkspace(normalizedTarget);
+
+    const relativePath = relative(normalizedRoot, normalizedTarget);
+    if (relativePath === "") {
+      return;
+    }
+
+    const segments = relativePath
+      .split(DIRECTORY_SEPARATOR_REGEX)
+      .filter(Boolean);
+    let currentPath = normalizedRoot;
+
+    for (const segment of segments) {
+      currentPath = resolve(currentPath, segment);
 
       try {
         const metadata = await lstat(currentPath);
@@ -155,7 +178,7 @@ export class PhysicalStoreAdapter implements StorePort {
           throw new PathTraversalError("Symlink targets are not allowed");
         }
       } catch (error) {
-        if (allowMissingLeaf && isLeaf && isEnoentError(error)) {
+        if (isEnoentError(error)) {
           return;
         }
 

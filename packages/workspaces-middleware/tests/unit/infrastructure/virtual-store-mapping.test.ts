@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { PathTraversalError } from "@/domain/errors";
 import {
   buildBaseStoreKey,
   buildBaseStorePrefix,
@@ -43,5 +44,11 @@ describe("virtual store key mapping", () => {
     expect(splitBaseStoreKey(["workspaces", "agent-1"], mappedKey)).toBe(
       "project/docs/guide.md"
     );
+  });
+
+  test("rejects Windows absolute keys", () => {
+    expect(() =>
+      buildBaseStoreKey(["workspaces", "agent-1"], "C:/secret.txt")
+    ).toThrow(PathTraversalError);
   });
 });
