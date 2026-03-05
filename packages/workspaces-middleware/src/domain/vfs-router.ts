@@ -3,7 +3,7 @@ import { isAbsolute, normalize, relative } from "node:path/posix";
 import { AccessDeniedError, PathTraversalError } from "@/domain/errors";
 import type { AccessScope, Workspace } from "@/domain/models";
 
-const WINDOWS_ABSOLUTE_PATH_REGEX = /^[a-zA-Z]:[\\/]/;
+const WINDOWS_DRIVE_PREFIX_REGEX = /^[a-zA-Z]:/;
 
 export interface WorkspaceResolution {
   workspace: Workspace;
@@ -29,8 +29,14 @@ export function validateFilePath(
     throw new PathTraversalError();
   }
 
-  if (WINDOWS_ABSOLUTE_PATH_REGEX.test(requestPath)) {
-    throw new PathTraversalError("Absolute Windows paths not allowed");
+  if (requestPath.includes("\0")) {
+    throw new PathTraversalError("Null bytes are not allowed");
+  }
+
+  if (WINDOWS_DRIVE_PREFIX_REGEX.test(requestPath)) {
+    throw new PathTraversalError(
+      "Windows drive-prefixed paths are not allowed"
+    );
   }
 
   const normalizedRoot = normalizeWorkspacePrefix(rootPrefix);

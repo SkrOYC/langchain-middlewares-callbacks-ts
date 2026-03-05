@@ -82,4 +82,19 @@ describe("resolveWorkspace", () => {
       resolveWorkspace("C:/Windows/System32/drivers/etc/hosts", workspaces)
     ).toThrow(PathTraversalError);
   });
+  test("rejects Windows drive-prefixed paths without separator", () => {
+    const workspaces: Workspace[] = [createWorkspace("/", "READ_WRITE")];
+
+    expect(() => resolveWorkspace("C:users/file.txt", workspaces)).toThrow(
+      PathTraversalError
+    );
+  });
+
+  test("rejects null-byte payloads in resolveWorkspace", () => {
+    const workspaces: Workspace[] = [createWorkspace("/project", "READ_WRITE")];
+
+    expect(() =>
+      resolveWorkspace("/project/files/\0secrets.txt", workspaces)
+    ).toThrow(PathTraversalError);
+  });
 });

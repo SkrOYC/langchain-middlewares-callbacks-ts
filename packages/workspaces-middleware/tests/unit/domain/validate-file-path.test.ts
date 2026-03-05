@@ -22,6 +22,18 @@ describe("validateFilePath", () => {
     ).toThrow(PathTraversalError);
   });
 
+  test("rejects Windows drive-prefixed paths without separator", () => {
+    expect(() => validateFilePath("C:users/file.txt", "/project")).toThrow(
+      PathTraversalError
+    );
+  });
+
+  test("rejects null-byte payloads", () => {
+    expect(() => validateFilePath("/project/\0secret.txt", "/project")).toThrow(
+      PathTraversalError
+    );
+  });
+
   test("normalizes backslashes and returns a relative key", () => {
     const normalizedKey = validateFilePath(
       "/project\\docs\\api.ts",
