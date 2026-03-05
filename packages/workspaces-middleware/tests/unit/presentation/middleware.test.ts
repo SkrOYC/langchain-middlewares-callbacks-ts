@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
-import { FilesystemUnresponsiveError } from "@/infrastructure/virtual-store";
+import {
+  type BaseStoreLike,
+  buildBaseStoreKey,
+  FilesystemUnresponsiveError,
+} from "@/infrastructure/virtual-store";
 import type {
   RegisteredTool,
   WorkspacesMiddlewareOptions,
@@ -270,6 +274,135 @@ describe("createWorkspacesMiddleware", () => {
       "Error: Filesystem unresponsive"
     );
     expect((result as ToolMessage).status).toBe("error");
+  });
+
+  test("uses injected virtualStore for virtual mount operations", async () => {
+    const data = new Map<string, string>();
+    const injectedStore: BaseStoreLike = {
+      mget: async (keys) => keys.map((key) => data.get(key)),
+      mset: async (pairs) => {
+        for (const [key, value] of pairs) {
+          data.set(key, value);
+        }
+        await Promise.resolve();
+      },
+      mdelete: async (keys) => {
+        for (const key of keys) {
+          data.delete(key);
+        }
+        await Promise.resolve();
+      },
+      async *yieldKeys(prefix?: string) {
+        await Promise.resolve();
+        for (const key of data.keys()) {
+          if (prefix === undefined || key.startsWith(prefix)) {
+            yield key;
+          }
+        }
+      },
+    };
+
+    const writeVirtualTool: RegisteredTool = {
+      name: "write_virtual_file",
+      description: "Write into virtual mount",
+      parameters: z.object({ path: z.string(), content: z.string() }),
+      operations: ["write"],
+      handler: async (params, services) => {
+        const input = params as { path: string; content: string };
+        const resolved = services.resolve(input.path);
+        await services.write(resolved.normalizedKey, input.content);
+
+        return { content: "ok" };
+      },
+    };
+
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_WRITE",
+          store: { type: "virtual", namespace: ["workspaces", "agent-a"] },
+        },
+      ],
+      tools: [writeVirtualTool],
+      virtualStore: injectedStore,
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-virtual",
+          name: "write_virtual_file",
+          args: { path: "/project/docs/new.txt", content: "persisted" },
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    const mappedKey = buildBaseStoreKey(
+      ["workspaces", "agent-a"],
+      "docs/new.txt"
+    );
+    expect(data.get(mappedKey)).toBe("persisted");
+  });
+
+  test("rejects undeclared operations used by a registered tool", async () => {
+    const readOnlyDeclaredTool: RegisteredTool = {
+      name: "read_declared_tool",
+      description: "Declares read but writes",
+      parameters: z.object({ path: z.string(), content: z.string() }),
+      operations: ["read"],
+      handler: async (params, services) => {
+        const input = params as { path: string; content: string };
+        const resolved = services.resolve(input.path);
+        await services.write(resolved.normalizedKey, input.content);
+        return { content: "unexpected" };
+      },
+    };
+
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_WRITE",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [readOnlyDeclaredTool],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-undeclared-op",
+          name: "read_declared_tool",
+          args: { path: "/project/docs/new.txt", content: "blocked" },
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toContain(
+      "Tool operation is not declared"
+    );
   });
 
   test("blocks registered filesystem tools when mounts are empty", async () => {

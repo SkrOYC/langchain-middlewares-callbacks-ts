@@ -1,6 +1,7 @@
 import type { ZodSchema } from "zod";
 
 import type { AccessScope as DomainAccessScope } from "@/domain/models";
+import type { BaseStoreLike } from "@/infrastructure/virtual-store";
 import { createWorkspacesMiddleware as createWorkspacesMiddlewareImpl } from "@/presentation/middleware";
 
 export type AccessScope = DomainAccessScope;
@@ -66,6 +67,7 @@ export interface RegisteredTool {
 export interface WorkspacesMiddlewareOptions {
   mounts: MountConfig[];
   tools: RegisteredTool[];
+  virtualStore?: BaseStoreLike;
 }
 
 export const createWorkspacesMiddleware = createWorkspacesMiddlewareImpl;

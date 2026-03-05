@@ -8,9 +8,12 @@ import {
   createInMemoryBaseStore,
   synthesizeSafeTools,
 } from "@/application/tool-synthesizer";
+import { AccessDeniedError } from "@/domain/errors";
 import { FilesystemUnresponsiveError } from "@/infrastructure/virtual-store";
 import type {
+  OperationType,
   RegisteredTool,
+  VFSServices,
   WorkspacesMiddlewareOptions,
 } from "@/presentation/index";
 import { injectFilesystemMap } from "@/presentation/prompt-injector";
@@ -28,7 +31,7 @@ const workspacesContextSchema = z.object({
 export function createWorkspacesMiddleware(
   options: WorkspacesMiddlewareOptions
 ) {
-  const virtualStore = createInMemoryBaseStore();
+  const virtualStore = options.virtualStore ?? createInMemoryBaseStore();
 
   return createMiddleware({
     name: "workspaces-vfs",
@@ -79,8 +82,12 @@ export function createWorkspacesMiddleware(
         const services = buildVFSServices(options.mounts, {
           virtualStore,
         });
+        const scopedServices = createOperationScopedServices(
+          services,
+          safeTool.operations
+        );
 
-        const result = await safeTool.handler(parsedParams, services);
+        const result = await safeTool.handler(parsedParams, scopedServices);
 
         return new ToolMessage({
           tool_call_id: toolCallId,
@@ -107,6 +114,53 @@ function errorToolMessage(toolCallId: string, message: string): ToolMessage {
     content: `Error: ${message}`,
     status: "error",
   });
+}
+
+function createOperationScopedServices(
+  services: VFSServices,
+  operations: OperationType[]
+): VFSServices {
+  const allowedOperations = new Set<OperationType>(operations);
+
+  return {
+    resolve: (path) => services.resolve(path),
+    read: async (key) => {
+      ensureOperationAllowed(allowedOperations, ["read", "edit", "search"]);
+      return await services.read(key);
+    },
+    write: async (key, content) => {
+      ensureOperationAllowed(allowedOperations, ["write", "edit"]);
+      await services.write(key, content);
+    },
+    list: async (key) => {
+      ensureOperationAllowed(allowedOperations, ["list", "search"]);
+      return await services.list(key);
+    },
+    stat: async (key) => {
+      ensureOperationAllowed(allowedOperations, [
+        "read",
+        "list",
+        "edit",
+        "search",
+      ]);
+      return await services.stat(key);
+    },
+  };
+}
+
+function ensureOperationAllowed(
+  allowedOperations: Set<OperationType>,
+  acceptedOperations: OperationType[]
+): void {
+  const isAllowed = acceptedOperations.some((operation) =>
+    allowedOperations.has(operation)
+  );
+
+  if (!isAllowed) {
+    throw new AccessDeniedError(
+      `Tool operation is not declared. Expected one of: ${acceptedOperations.join(", ")}`
+    );
+  }
 }
 
 function getErrorMessage(error: unknown): string {
