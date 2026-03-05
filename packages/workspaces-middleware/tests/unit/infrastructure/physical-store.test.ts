@@ -144,6 +144,12 @@ describe("PhysicalStoreAdapter", () => {
     ).rejects.toBeInstanceOf(PathTraversalError);
   });
 
+  test("rejects UNC-style Windows absolute path bypass attempts", async () => {
+    await expect(
+      adapter.write("//./C:/escape.txt", "nope")
+    ).rejects.toBeInstanceOf(PathTraversalError);
+  });
+
   test("rejects slash-prefixed Windows absolute path bypass attempts", async () => {
     await expect(
       adapter.write("/C:/escape.txt", "nope")

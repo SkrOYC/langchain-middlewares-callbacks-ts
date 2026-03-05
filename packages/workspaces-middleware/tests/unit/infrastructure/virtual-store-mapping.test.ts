@@ -68,6 +68,12 @@ describe("virtual store key mapping", () => {
     ).toThrow(PathTraversalError);
   });
 
+  test("rejects UNC-style Windows absolute key bypass attempts", () => {
+    expect(() =>
+      buildBaseStoreKey(["workspaces", "agent-1"], "//./C:/secret.txt")
+    ).toThrow(PathTraversalError);
+  });
+
   test("rejects slash-prefixed Windows absolute key bypass attempts", () => {
     expect(() =>
       buildBaseStoreKey(["workspaces", "agent-1"], "/C:/secret.txt")

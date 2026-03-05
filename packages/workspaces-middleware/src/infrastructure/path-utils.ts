@@ -18,7 +18,13 @@ export function normalizeStoreKey(path: string, allowEmpty = false): string {
     throw new PathTraversalError("Absolute Windows paths not allowed");
   }
 
-  const normalized = normalizePosix(slashNormalized)
+  const posixNormalized = normalizePosix(slashNormalized);
+
+  if (WINDOWS_ABSOLUTE_PREFIX_REGEX.test(posixNormalized)) {
+    throw new PathTraversalError("Absolute Windows paths not allowed");
+  }
+
+  const normalized = posixNormalized
     .replace(LEADING_SLASHES_REGEX, "")
     .replace(TRAILING_SLASHES_REGEX, "");
 
