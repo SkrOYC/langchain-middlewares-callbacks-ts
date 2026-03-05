@@ -129,6 +129,12 @@ describe("PhysicalStoreAdapter", () => {
     );
   });
 
+  test("rejects normalized Windows absolute path bypass attempts", async () => {
+    await expect(
+      adapter.write("C:/../escape.txt", "nope")
+    ).rejects.toBeInstanceOf(PathTraversalError);
+  });
+
   test("returns paginated windows for large files without truncation warning", async () => {
     const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
       largeFileThresholdBytes: 16,
@@ -154,6 +160,19 @@ describe("PhysicalStoreAdapter", () => {
     expect(paged).toBe(
       "fghijklmnopqrstu[...truncated. File size: 26 bytes. Use offset/limit to read remaining content.]"
     );
+  });
+
+  test("does not append warning when offset-only read exactly matches remaining bytes", async () => {
+    const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
+      largeFileThresholdBytes: 16,
+    });
+
+    await largeAdapter.write("window-exact.txt", "abcdefghijklmnopqrstuvwxyz");
+
+    const paged = await largeAdapter.read("window-exact.txt", 10);
+
+    expect(paged).toBe("klmnopqrstuvwxyz");
+    expect(paged.includes("...truncated")).toBe(false);
   });
 
   test("rejects edit operations for files above threshold", async () => {

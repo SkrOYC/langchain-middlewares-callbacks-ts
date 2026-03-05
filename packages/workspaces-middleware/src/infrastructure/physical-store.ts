@@ -259,6 +259,7 @@ async function readWindow(
   let collectedBytes = 0;
   let reachedCap = false;
   let reachedEof = false;
+  let stoppedWithDecodedRemainder = false;
 
   while (true) {
     const buffer = Buffer.alloc(chunkSize);
@@ -298,6 +299,7 @@ async function readWindow(
 
     if (consumed.reachedCap) {
       reachedCap = true;
+      stoppedWithDecodedRemainder = !consumed.consumedAllDecoded;
       break;
     }
   }
@@ -318,12 +320,26 @@ async function readWindow(
 
       collected = consumed.collected;
       reachedCap = consumed.reachedCap;
+      stoppedWithDecodedRemainder = !consumed.consumedAllDecoded;
     }
+  }
+
+  if (
+    boundedLimit === undefined &&
+    reachedCap &&
+    !stoppedWithDecodedRemainder
+  ) {
+    const probe = Buffer.alloc(1);
+    const { bytesRead } = await fileHandle.read(probe, 0, 1, position);
+    reachedEof = bytesRead === 0;
   }
 
   return {
     content: collected,
-    truncated: boundedLimit === undefined && reachedCap && !reachedEof,
+    truncated:
+      boundedLimit === undefined &&
+      reachedCap &&
+      (stoppedWithDecodedRemainder || !reachedEof),
   };
 }
 
@@ -342,6 +358,7 @@ function consumeDecodedChunk(
   collectedChars: number;
   collectedBytes: number;
   reachedCap: boolean;
+  consumedAllDecoded: boolean;
 } {
   const decodedCharacters = [...decodedChunk];
 
@@ -370,6 +387,7 @@ function consumeDecodedChunk(
         limitChars === undefined
           ? nextCollectedBytes >= byteThreshold
           : nextCollectedChars >= limitChars,
+      consumedAllDecoded: true,
     };
   }
 
@@ -382,6 +400,7 @@ function consumeDecodedChunk(
           collectedChars: nextCollectedChars,
           collectedBytes: nextCollectedBytes,
           reachedCap: true,
+          consumedAllDecoded: false,
         };
       }
     } else {
@@ -393,6 +412,7 @@ function consumeDecodedChunk(
           collectedChars: nextCollectedChars,
           collectedBytes: nextCollectedBytes,
           reachedCap: true,
+          consumedAllDecoded: false,
         };
       }
 
@@ -412,6 +432,7 @@ function consumeDecodedChunk(
       limitChars === undefined
         ? nextCollectedBytes >= byteThreshold
         : nextCollectedChars >= limitChars,
+    consumedAllDecoded: true,
   };
 }
 
