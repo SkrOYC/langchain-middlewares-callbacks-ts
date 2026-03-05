@@ -35,6 +35,16 @@ describe("virtual store key mapping", () => {
     expect(outsidePath.startsWith(prefix)).toBe(false);
   });
 
+  test("canonicalizes trailing slashes in prefix keys", () => {
+    const canonical = buildBaseStorePrefix(["workspaces", "agent-1"], "docs");
+    const withTrailingSlash = buildBaseStorePrefix(
+      ["workspaces", "agent-1"],
+      "docs/"
+    );
+
+    expect(withTrailingSlash).toBe(canonical);
+  });
+
   test("extracts the normalized key from mapped BaseStore keys", () => {
     const mappedKey = buildBaseStoreKey(
       ["workspaces", "agent-1"],

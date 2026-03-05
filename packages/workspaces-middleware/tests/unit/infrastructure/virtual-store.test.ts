@@ -98,6 +98,18 @@ describe("VirtualStoreAdapter", () => {
     expect(listed).toEqual(["docs/a.md", "docs/b.md", "docs/nested"]);
   });
 
+  test("treats trailing-slash list paths as canonical prefixes", async () => {
+    const store = createMemoryStore();
+    const namespace = ["workspaces", "agent-a"];
+
+    store.data.set(buildBaseStoreKey(namespace, "docs/a.md"), "A");
+    store.data.set(buildBaseStoreKey(namespace, "docs/nested/c.md"), "C");
+
+    const adapter = new VirtualStoreAdapter(store, namespace);
+    const listed = await adapter.list("docs/");
+
+    expect(listed).toEqual(["docs/a.md", "docs/nested"]);
+  });
   test("edits existing files and reports replacement count", async () => {
     const store = createMemoryStore();
     const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);

@@ -48,6 +48,15 @@ describe("PhysicalStoreAdapter", () => {
     expect(entries).toEqual(["docs/a.txt", "docs/b.txt"]);
   });
 
+  test("treats trailing-slash list paths as canonical directory paths", async () => {
+    await adapter.write("docs/a.txt", "A");
+    await adapter.write("docs/b.txt", "B");
+
+    const entries = await adapter.list("docs/");
+
+    expect(entries).toEqual(["docs/a.txt", "docs/b.txt"]);
+  });
+
   test("rejects traversal keys that escape the workspace root", async () => {
     await expect(adapter.write("../escape.txt", "nope")).rejects.toBeInstanceOf(
       PathTraversalError
