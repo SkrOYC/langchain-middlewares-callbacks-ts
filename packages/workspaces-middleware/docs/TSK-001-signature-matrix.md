@@ -23,19 +23,19 @@
 | `ToolCallRequest` | Contains `toolCall`, `tool`, `state`, `runtime` (`tool` may be `undefined`) | `../../node_modules/langchain/dist/agents/middleware/types.d.ts:68` |
 | `ToolMessage` import | `ToolMessage` is exported from `@langchain/core/messages` | `../../node_modules/@langchain/core/dist/messages/index.d.ts:15` |
 
-## Mismatch Log Against Current TechSpec Snippet
+## Mismatch Log Captured During TSK-001
 
-1. `wrapToolCall` pass-through call
-   - TechSpec pseudo-code uses `return handler();`
-   - Verified signature requires `handler(request)`.
+1. `wrapToolCall` pass-through call (**resolved in TechSpec**)
+   - Original TechSpec pseudo-code used `return handler();`.
+   - Reconciled TechSpec now uses `handler(request)`.
 
-2. `wrapToolCall` return type
-   - TechSpec acceptance text focuses on returning `ToolMessage`.
-   - Verified type allows `ToolMessage | Command`; implementation can still return `ToolMessage` for this project.
+2. `wrapToolCall` return type (**intentional project constraint**)
+   - Verified type allows `ToolMessage | Command`.
+   - Project contract intentionally restricts behavior to graceful `ToolMessage` returns and no filesystem state-channel mutation.
 
-3. `ToolCallRequest.tool`
+3. `ToolCallRequest.tool` optionality (**implementation note**)
    - Verified type allows `tool` to be `undefined` for dynamic tools.
-   - Middleware should not assume `request.tool` is always present.
+   - Middleware implementation must not assume `request.tool` is always present.
 
 ## Implementation Decision for Epic 1+
 
