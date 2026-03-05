@@ -1,3 +1,10 @@
+import {
+  O_CREAT,
+  O_NOFOLLOW,
+  O_RDONLY,
+  O_TRUNC,
+  O_WRONLY,
+} from "node:constants";
 import { lstat, mkdir, open, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 
@@ -7,6 +14,8 @@ import { normalizeStoreKey } from "@/infrastructure/path-utils";
 
 const DEFAULT_LARGE_FILE_THRESHOLD_BYTES = 256 * 1024;
 const DIRECTORY_SEPARATOR_REGEX = /[\\/]/;
+const READ_NOFOLLOW_FLAGS = O_RDONLY + O_NOFOLLOW;
+const WRITE_NOFOLLOW_FLAGS = O_WRONLY + O_CREAT + O_TRUNC + O_NOFOLLOW;
 
 export interface PhysicalStoreAdapterOptions {
   largeFileThresholdBytes?: number;
@@ -26,13 +35,25 @@ export class PhysicalStoreAdapter implements StorePort {
     const hostPath = this.resolveHostPath(path);
     await this.assertNoSymlinkInPath(hostPath);
 
-    const fileHandle = await open(hostPath, "r");
+    const fileHandle = await openReadNoFollow(hostPath);
 
     try {
       const metadata = await fileHandle.stat();
 
       if (offset > 0 || limit !== undefined) {
-        return await readWindow(fileHandle, metadata.size, offset, limit);
+        const windowResult = await readWindow(
+          fileHandle,
+          metadata.size,
+          offset,
+          limit,
+          this.largeFileThresholdBytes
+        );
+
+        if (windowResult.truncated) {
+          return `${windowResult.content}${formatTruncationWarning(metadata.size)}`;
+        }
+
+        return windowResult.content;
       }
 
       if (metadata.size > this.largeFileThresholdBytes) {
@@ -57,7 +78,7 @@ export class PhysicalStoreAdapter implements StorePort {
     await mkdir(dirname(hostPath), { recursive: true });
     await this.assertNoSymlinkInPath(dirname(hostPath));
 
-    const fileHandle = await open(hostPath, "w", 0o644);
+    const fileHandle = await openWriteNoFollow(hostPath);
 
     try {
       await fileHandle.writeFile(content, "utf8");
@@ -70,7 +91,7 @@ export class PhysicalStoreAdapter implements StorePort {
     const hostPath = this.resolveHostPath(path);
     await this.assertNoSymlinkInPath(hostPath);
 
-    const fileHandle = await open(hostPath, "r");
+    const fileHandle = await openReadNoFollow(hostPath);
 
     try {
       const metadata = await fileHandle.stat();
@@ -238,18 +259,19 @@ async function readWindow(
   fileHandle: Awaited<ReturnType<typeof open>>,
   fileSizeBytes: number,
   offset: number,
-  limit?: number
-): Promise<string> {
+  limit: number | undefined,
+  largeFileThresholdBytes: number
+): Promise<{ content: string; truncated: boolean }> {
   const boundedOffset = Math.max(0, offset);
   const availableBytes = Math.max(0, fileSizeBytes - boundedOffset);
 
   const requestedBytes =
     limit === undefined
-      ? availableBytes
+      ? Math.min(availableBytes, largeFileThresholdBytes)
       : Math.min(Math.max(0, limit), availableBytes);
 
   if (requestedBytes === 0) {
-    return "";
+    return { content: "", truncated: false };
   }
 
   const buffer = Buffer.alloc(requestedBytes);
@@ -260,7 +282,42 @@ async function readWindow(
     boundedOffset
   );
 
-  return buffer.subarray(0, bytesRead).toString("utf8");
+  return {
+    content: buffer.subarray(0, bytesRead).toString("utf8"),
+    truncated: limit === undefined && availableBytes > requestedBytes,
+  };
+}
+
+async function openReadNoFollow(
+  hostPath: string
+): Promise<Awaited<ReturnType<typeof open>>> {
+  try {
+    return await open(hostPath, READ_NOFOLLOW_FLAGS);
+  } catch (error) {
+    throw coerceToPathTraversalError(error);
+  }
+}
+
+async function openWriteNoFollow(
+  hostPath: string
+): Promise<Awaited<ReturnType<typeof open>>> {
+  try {
+    return await open(hostPath, WRITE_NOFOLLOW_FLAGS, 0o644);
+  } catch (error) {
+    throw coerceToPathTraversalError(error);
+  }
+}
+
+function coerceToPathTraversalError(error: unknown): unknown {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ELOOP"
+  ) {
+    return new PathTraversalError("Symlink targets are not allowed");
+  }
+
+  return error;
 }
 
 function formatTruncationWarning(fileSizeBytes: number): string {

@@ -104,6 +104,20 @@ describe("PhysicalStoreAdapter", () => {
     expect(paged.includes("...truncated")).toBe(false);
   });
 
+  test("caps offset-only reads and appends truncation warning", async () => {
+    const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
+      largeFileThresholdBytes: 16,
+    });
+
+    await largeAdapter.write("window-offset.txt", "abcdefghijklmnopqrstuvwxyz");
+
+    const paged = await largeAdapter.read("window-offset.txt", 5);
+
+    expect(paged).toBe(
+      "fghijklmnopqrstu[...truncated. File size: 26 bytes. Use offset/limit to read remaining content.]"
+    );
+  });
+
   test("rejects edit operations for files above threshold", async () => {
     const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
       largeFileThresholdBytes: 16,
