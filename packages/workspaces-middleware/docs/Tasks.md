@@ -89,13 +89,14 @@ flowchart LR
 > - **Type:** Spike
 > - **Effort:** 2
 > - **Dependencies:** None
-> - **Description:** Verify current API signatures for `createMiddleware`, `beforeModel`, `wrapToolCall`, and `ToolMessage` against installed library versions before implementation starts.
+> - **Description:** Verify current API signatures for `createMiddleware`, `beforeModel`, `wrapToolCall`, and `ToolMessage` against installed library versions before implementation starts, and reconcile any mismatch back into TechSpec.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
 > Given the middleware APIs declared in TechSpec
 > When signatures are checked against current package typings and docs
 > Then a verified signature matrix exists for implementation
 > And any mismatch is documented before coding begins
+> And TechSpec middleware examples are updated to match verified signatures before TSK-002 starts
 > ```
 
 ### EPIC 1: Foundation

@@ -322,8 +322,8 @@ Following LangChain's `createMiddleware` API (circa 2025/2026), the middleware w
 
 ```typescript
 import { createMiddleware } from "langchain";
+import { ToolMessage } from "@langchain/core/messages";
 import { z } from "zod";
-
 export const workspacesMiddleware = createMiddleware({
   name: "workspaces-vfs",
   
@@ -349,7 +349,7 @@ export const workspacesMiddleware = createMiddleware({
     const registeredTool = this.registeredTools.get(toolName);
     if (!registeredTool) {
       // Not our tool - pass through to default handler
-      return handler();
+      return handler(request);
     }
 
     // 2. Validate params against tool's Zod schema
