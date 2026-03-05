@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,6 +48,19 @@ describe("PhysicalStoreAdapter symlink defense", () => {
 
     await expect(
       adapter.write("linked-write.txt", "overwrite")
+    ).rejects.toBeInstanceOf(PathTraversalError);
+  });
+
+  test("rejects reads through intermediate symlink directories", async () => {
+    const outsideFile = join(outsideDir, "secret-nested.txt");
+    const linkedDir = join(workspaceRoot, "linked-dir");
+
+    await mkdir(join(outsideDir, "nested"), { recursive: true });
+    await writeFile(outsideFile, "nested-secret", "utf8");
+    await symlink(outsideDir, linkedDir);
+
+    await expect(
+      adapter.read("linked-dir/secret-nested.txt")
     ).rejects.toBeInstanceOf(PathTraversalError);
   });
 });

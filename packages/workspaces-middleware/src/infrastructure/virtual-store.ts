@@ -1,11 +1,8 @@
-import { normalize as normalizePosix } from "node:path/posix";
-
 import { PathTraversalError } from "@/domain/errors";
 import type { StorePort } from "@/domain/store-port";
+import { normalizeStoreKey, sliceByWindow } from "@/infrastructure/path-utils";
 
 const MAPPED_KEY_SEPARATOR = "#";
-const BACKSLASH_REGEX = /\\/g;
-const LEADING_SLASHES_REGEX = /^\/+/;
 
 export const FILESYSTEM_UNRESPONSIVE_MESSAGE = "Filesystem unresponsive";
 
@@ -27,15 +24,22 @@ export class FilesystemUnresponsiveError extends Error {
   }
 }
 
+export class FileNotFoundError extends Error {
+  constructor(message = "File not found") {
+    super(message);
+    this.name = "FileNotFoundError";
+  }
+}
+
 export function buildBaseStoreKey(namespace: string[], key: string): string {
-  return `${serializeNamespace(namespace)}${MAPPED_KEY_SEPARATOR}${normalizeVirtualKey(key)}`;
+  return `${serializeNamespace(namespace)}${MAPPED_KEY_SEPARATOR}${normalizeStoreKey(key)}`;
 }
 
 export function buildBaseStorePrefix(
   namespace: string[],
   keyPrefix: string
 ): string {
-  const normalizedKeyPrefix = normalizeVirtualKey(keyPrefix, true);
+  const normalizedKeyPrefix = normalizeStoreKey(keyPrefix, true);
   const namespacePrefix = `${serializeNamespace(namespace)}${MAPPED_KEY_SEPARATOR}`;
 
   if (normalizedKeyPrefix === "") {
@@ -79,7 +83,7 @@ export class VirtualStoreAdapter implements StorePort {
     const value = values[0];
 
     if (value === undefined) {
-      throw new Error("File not found");
+      throw new FileNotFoundError();
     }
 
     return sliceByWindow(value, offset, limit);
@@ -105,7 +109,7 @@ export class VirtualStoreAdapter implements StorePort {
   }
 
   async list(path: string): Promise<string[]> {
-    const normalizedPrefix = normalizeVirtualKey(path, true);
+    const normalizedPrefix = normalizeStoreKey(path, true);
     const mappedPrefix = buildBaseStorePrefix(this.namespace, normalizedPrefix);
     const collected = new Set<string>();
     const iterator = this.store.yieldKeys(mappedPrefix)[Symbol.asyncIterator]();
@@ -124,13 +128,10 @@ export class VirtualStoreAdapter implements StorePort {
       }
 
       const normalizedKey = splitBaseStoreKey(this.namespace, mappedKey);
+      const entry = toDirectChildEntry(normalizedPrefix, normalizedKey);
 
-      if (
-        normalizedPrefix === "" ||
-        normalizedKey === normalizedPrefix ||
-        normalizedKey.startsWith(`${normalizedPrefix}/`)
-      ) {
-        collected.add(normalizedKey);
+      if (entry !== undefined) {
+        collected.add(entry);
       }
     }
 
@@ -176,38 +177,25 @@ function serializeNamespace(namespace: string[]): string {
     .join("|");
 }
 
-function normalizeVirtualKey(path: string, allowEmpty = false): string {
-  if (path.includes("\0") || path.includes("~")) {
-    throw new PathTraversalError();
+function toDirectChildEntry(
+  normalizedPrefix: string,
+  normalizedKey: string
+): string | undefined {
+  if (normalizedPrefix === "") {
+    const [head] = normalizedKey.split("/");
+    return head;
   }
 
-  const normalized = normalizePosix(path.replace(BACKSLASH_REGEX, "/")).replace(
-    LEADING_SLASHES_REGEX,
-    ""
-  );
-
-  if (normalized === "." || normalized === "") {
-    if (allowEmpty) {
-      return "";
-    }
-
-    throw new PathTraversalError("Empty paths are not allowed");
+  if (!normalizedKey.startsWith(`${normalizedPrefix}/`)) {
+    return undefined;
   }
 
-  if (normalized.startsWith("../") || normalized === "..") {
-    throw new PathTraversalError();
+  const remainder = normalizedKey.slice(normalizedPrefix.length + 1);
+  const [head] = remainder.split("/");
+
+  if (head === undefined || head === "") {
+    return undefined;
   }
 
-  return normalized;
-}
-
-function sliceByWindow(content: string, offset = 0, limit?: number): string {
-  const boundedOffset = Math.max(0, offset);
-
-  if (limit === undefined) {
-    return content.slice(boundedOffset);
-  }
-
-  const boundedLimit = Math.max(0, limit);
-  return content.slice(boundedOffset, boundedOffset + boundedLimit);
+  return `${normalizedPrefix}/${head}`;
 }

@@ -1,13 +1,12 @@
 import { lstat, mkdir, open, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
-import { normalize as normalizePosix } from "node:path/posix";
 
 import { PathTraversalError } from "@/domain/errors";
 import type { StorePort } from "@/domain/store-port";
+import { normalizeStoreKey } from "@/infrastructure/path-utils";
 
 const DEFAULT_LARGE_FILE_THRESHOLD_BYTES = 256 * 1024;
-const BACKSLASH_REGEX = /\\/g;
-const LEADING_SLASHES_REGEX = /^\/+/;
+const DIRECTORY_SEPARATOR_REGEX = /[\\/]/;
 
 export interface PhysicalStoreAdapterOptions {
   largeFileThresholdBytes?: number;
@@ -25,9 +24,7 @@ export class PhysicalStoreAdapter implements StorePort {
 
   async read(path: string, offset = 0, limit?: number): Promise<string> {
     const hostPath = this.resolveHostPath(path);
-    await this.assertNotSymlink(hostPath);
-
-    this.assertWithinWorkspace(hostPath);
+    await this.assertNoSymlinkInPath(hostPath);
 
     const fileHandle = await open(hostPath, "r");
 
@@ -35,8 +32,7 @@ export class PhysicalStoreAdapter implements StorePort {
       const metadata = await fileHandle.stat();
 
       if (offset > 0 || limit !== undefined) {
-        const content = await fileHandle.readFile("utf8");
-        return sliceByWindow(content, offset, limit);
+        return await readWindow(fileHandle, metadata.size, offset, limit);
       }
 
       if (metadata.size > this.largeFileThresholdBytes) {
@@ -58,7 +54,7 @@ export class PhysicalStoreAdapter implements StorePort {
     const hostPath = this.resolveHostPath(path);
 
     await mkdir(dirname(hostPath), { recursive: true });
-    await this.assertNotSymlink(hostPath, true);
+    await this.assertNoSymlinkInPath(hostPath, true);
 
     const fileHandle = await open(hostPath, "w", 0o644);
 
@@ -70,24 +66,42 @@ export class PhysicalStoreAdapter implements StorePort {
   }
 
   async edit(path: string, oldStr: string, newStr: string): Promise<number> {
-    const current = await this.read(path);
-    const index = current.indexOf(oldStr);
+    const hostPath = this.resolveHostPath(path);
+    await this.assertNoSymlinkInPath(hostPath);
 
-    if (index < 0) {
-      return 0;
+    const fileHandle = await open(hostPath, "r");
+
+    try {
+      const metadata = await fileHandle.stat();
+
+      if (metadata.size > this.largeFileThresholdBytes) {
+        throw new Error("File too large for edit operation");
+      }
+
+      const current = await fileHandle.readFile("utf8");
+      const index = current.indexOf(oldStr);
+
+      if (index < 0) {
+        return 0;
+      }
+
+      const next = `${current.slice(0, index)}${newStr}${current.slice(index + oldStr.length)}`;
+      await this.write(path, next);
+
+      return 1;
+    } finally {
+      await fileHandle.close();
     }
-
-    const next = `${current.slice(0, index)}${newStr}${current.slice(index + oldStr.length)}`;
-    await this.write(path, next);
-
-    return 1;
   }
 
   async list(path: string): Promise<string[]> {
-    const normalizedDirectory = normalizeRelativeKey(path, true);
-    const hostPath = this.resolveHostPath(normalizedDirectory);
+    const normalizedDirectory = normalizeStoreKey(path, true);
+    const hostPath =
+      normalizedDirectory === ""
+        ? normalize(resolve(this.rootDir))
+        : this.resolveHostPath(normalizedDirectory);
 
-    await this.assertNotSymlink(hostPath);
+    await this.assertNoSymlinkInPath(hostPath);
 
     const directoryEntries = await readdir(hostPath);
 
@@ -103,7 +117,7 @@ export class PhysicalStoreAdapter implements StorePort {
   }
 
   private resolveHostPath(path: string): string {
-    const normalizedKey = normalizeRelativeKey(path);
+    const normalizedKey = normalizeStoreKey(path);
     const hostPath = resolve(this.rootDir, normalizedKey);
 
     this.assertWithinWorkspace(hostPath);
@@ -111,26 +125,42 @@ export class PhysicalStoreAdapter implements StorePort {
     return hostPath;
   }
 
-  private async assertNotSymlink(
+  private async assertNoSymlinkInPath(
     hostPath: string,
-    allowMissing = false
+    allowMissingLeaf = false
   ): Promise<void> {
-    try {
-      const metadata = await lstat(hostPath);
-      if (metadata.isSymbolicLink()) {
-        throw new PathTraversalError("Symlink targets are not allowed");
-      }
-    } catch (error) {
-      if (
-        allowMissing &&
-        error instanceof Error &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        return;
-      }
+    const normalizedRoot = normalize(resolve(this.rootDir));
+    const normalizedTarget = normalize(resolve(hostPath));
 
-      throw error;
+    this.assertWithinWorkspace(normalizedTarget);
+
+    const relativePath = relative(normalizedRoot, normalizedTarget);
+    if (relativePath === "") {
+      return;
+    }
+
+    const segments = relativePath
+      .split(DIRECTORY_SEPARATOR_REGEX)
+      .filter(Boolean);
+    let currentPath = normalizedRoot;
+
+    for (const [index, segment] of segments.entries()) {
+      currentPath = resolve(currentPath, segment);
+      const isLeaf = index === segments.length - 1;
+
+      try {
+        const metadata = await lstat(currentPath);
+
+        if (metadata.isSymbolicLink()) {
+          throw new PathTraversalError("Symlink targets are not allowed");
+        }
+      } catch (error) {
+        if (allowMissingLeaf && isLeaf && isEnoentError(error)) {
+          return;
+        }
+
+        throw error;
+      }
     }
   }
 
@@ -149,42 +179,6 @@ export class PhysicalStoreAdapter implements StorePort {
       throw new PathTraversalError("Path escapes workspace boundary");
     }
   }
-}
-
-function normalizeRelativeKey(path: string, allowEmpty = false): string {
-  if (path.includes("\0") || path.includes("~")) {
-    throw new PathTraversalError();
-  }
-
-  const normalized = normalizePosix(path.replace(BACKSLASH_REGEX, "/")).replace(
-    LEADING_SLASHES_REGEX,
-    ""
-  );
-
-  if (normalized === "." || normalized === "") {
-    if (allowEmpty) {
-      return "";
-    }
-
-    throw new PathTraversalError("Empty paths are not allowed");
-  }
-
-  if (normalized.startsWith("../") || normalized === "..") {
-    throw new PathTraversalError();
-  }
-
-  return normalized;
-}
-
-function sliceByWindow(content: string, offset = 0, limit?: number): string {
-  const boundedOffset = Math.max(0, offset);
-
-  if (limit === undefined) {
-    return content.slice(boundedOffset);
-  }
-
-  const boundedLimit = Math.max(0, limit);
-  return content.slice(boundedOffset, boundedOffset + boundedLimit);
 }
 
 async function readPrefixWithChunkedReads(
@@ -217,6 +211,43 @@ async function readPrefixWithChunkedReads(
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function readWindow(
+  fileHandle: Awaited<ReturnType<typeof open>>,
+  fileSizeBytes: number,
+  offset: number,
+  limit?: number
+): Promise<string> {
+  const boundedOffset = Math.max(0, offset);
+  const availableBytes = Math.max(0, fileSizeBytes - boundedOffset);
+
+  const requestedBytes =
+    limit === undefined
+      ? availableBytes
+      : Math.min(Math.max(0, limit), availableBytes);
+
+  if (requestedBytes === 0) {
+    return "";
+  }
+
+  const buffer = Buffer.alloc(requestedBytes);
+  const { bytesRead } = await fileHandle.read(
+    buffer,
+    0,
+    requestedBytes,
+    boundedOffset
+  );
+
+  return buffer.subarray(0, bytesRead).toString("utf8");
+}
+
 function formatTruncationWarning(fileSizeBytes: number): string {
   return `[...truncated. File size: ${fileSizeBytes} bytes. Use offset/limit to read remaining content.]`;
+}
+
+function isEnoentError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }

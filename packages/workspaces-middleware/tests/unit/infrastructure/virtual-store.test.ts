@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildBaseStoreKey,
   FILESYSTEM_UNRESPONSIVE_MESSAGE,
+  FileNotFoundError,
   FilesystemUnresponsiveError,
   VirtualStoreAdapter,
 } from "@/infrastructure/virtual-store";
@@ -61,20 +62,30 @@ describe("VirtualStoreAdapter", () => {
     expect(content).toBe("hello");
   });
 
-  test("lists only entries that match namespace + prefix", async () => {
+  test("throws FileNotFoundError when key is missing", async () => {
+    const store = createMemoryStore();
+    const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);
+
+    await expect(adapter.read("missing.txt")).rejects.toBeInstanceOf(
+      FileNotFoundError
+    );
+  });
+
+  test("lists only direct children that match namespace + prefix", async () => {
     const store = createMemoryStore();
     const namespaceA = ["workspaces", "agent-a"];
     const namespaceB = ["workspaces", "agent-b"];
 
     store.data.set(buildBaseStoreKey(namespaceA, "docs/a.md"), "A");
     store.data.set(buildBaseStoreKey(namespaceA, "docs/b.md"), "B");
-    store.data.set(buildBaseStoreKey(namespaceA, "src/main.ts"), "C");
-    store.data.set(buildBaseStoreKey(namespaceB, "docs/foreign.md"), "D");
+    store.data.set(buildBaseStoreKey(namespaceA, "docs/nested/c.md"), "C");
+    store.data.set(buildBaseStoreKey(namespaceA, "src/main.ts"), "D");
+    store.data.set(buildBaseStoreKey(namespaceB, "docs/foreign.md"), "E");
 
     const adapter = new VirtualStoreAdapter(store, namespaceA);
     const listed = await adapter.list("docs");
 
-    expect(listed).toEqual(["docs/a.md", "docs/b.md"]);
+    expect(listed).toEqual(["docs/a.md", "docs/b.md", "docs/nested"]);
   });
 
   test("edits existing files and reports replacement count", async () => {

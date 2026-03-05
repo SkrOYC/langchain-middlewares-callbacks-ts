@@ -85,6 +85,34 @@ describe("PhysicalStoreAdapter", () => {
     expect(paged).toBe("fghijkl");
   });
 
+  test("returns paginated windows for large files without truncation warning", async () => {
+    const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
+      largeFileThresholdBytes: 16,
+    });
+
+    await largeAdapter.write("window-large.txt", "abcdefghijklmnopqrstuvwxyz");
+
+    const paged = await largeAdapter.read("window-large.txt", 5, 7);
+
+    expect(paged).toBe("fghijkl");
+    expect(paged.includes("...truncated")).toBe(false);
+  });
+
+  test("rejects edit operations for files above threshold", async () => {
+    const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
+      largeFileThresholdBytes: 16,
+    });
+
+    await largeAdapter.write("edit-large.txt", "abcdefghijklmnopqrstuvwxyz");
+
+    await expect(
+      largeAdapter.edit("edit-large.txt", "abc", "ABC")
+    ).rejects.toThrow("File too large for edit operation");
+
+    const current = await largeAdapter.read("edit-large.txt", 0, 26);
+    expect(current).toBe("abcdefghijklmnopqrstuvwxyz");
+  });
+
   test("reads full content when below threshold", async () => {
     const smallAdapter = new PhysicalStoreAdapter(workspaceRoot, {
       largeFileThresholdBytes: 1024,
