@@ -8,7 +8,22 @@ import type {
   RegisteredTool,
   WorkspacesMiddlewareOptions,
 } from "@/presentation/index";
-import { createWorkspacesMiddleware } from "@/presentation/middleware";
+import {
+  createWorkspacesMiddleware,
+  type WorkspacesMiddlewareContext,
+} from "@/presentation/middleware";
+
+type IsNever<T> = [T] extends [never] ? true : false;
+type MiddlewareContextType = Parameters<
+  NonNullable<ReturnType<typeof createWorkspacesMiddleware>["wrapToolCall"]>
+>[0]["runtime"]["context"];
+type ContextHasExpectedShape =
+  MiddlewareContextType extends WorkspacesMiddlewareContext ? true : false;
+
+const _contextTypingInvariant: [
+  IsNever<MiddlewareContextType>,
+  ContextHasExpectedShape,
+] = [false, true];
 
 let workspaceRoot = "";
 

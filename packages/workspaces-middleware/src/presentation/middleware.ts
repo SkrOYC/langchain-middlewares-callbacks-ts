@@ -1,6 +1,7 @@
 import { ToolMessage } from "@langchain/core/messages";
+import type { InteropZodObject } from "@langchain/core/utils/types";
 import { createMiddleware } from "langchain";
-import { z } from "zod/v3";
+import { z } from "zod";
 
 import {
   buildVFSServices,
@@ -13,6 +14,16 @@ import type {
 } from "@/presentation/index";
 import { injectFilesystemMap } from "@/presentation/prompt-injector";
 
+export interface WorkspacesMiddlewareContext {
+  threadId?: string;
+  runId?: string;
+}
+
+const workspacesContextSchema = z.object({
+  threadId: z.string().optional(),
+  runId: z.string().optional(),
+}) as unknown as InteropZodObject;
+
 export function createWorkspacesMiddleware(
   options: WorkspacesMiddlewareOptions
 ) {
@@ -20,10 +31,7 @@ export function createWorkspacesMiddleware(
 
   return createMiddleware({
     name: "workspaces-vfs",
-    contextSchema: z.object({
-      threadId: z.string().optional(),
-      runId: z.string().optional(),
-    }) as never,
+    contextSchema: workspacesContextSchema,
 
     beforeModel: (state) => {
       const stateMessages =
