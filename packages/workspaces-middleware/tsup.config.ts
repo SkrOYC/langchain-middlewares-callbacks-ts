@@ -14,5 +14,5 @@ export default defineConfig({
   outExtension: ({ format }) => ({
     js: format === "esm" ? ".js" : ".cjs",
   }),
-  external: ["langchain", "@langchain/core", "@langchain/langgraph", "zod"],
+  external: ["langchain", "@langchain/core", "zod"],
 });

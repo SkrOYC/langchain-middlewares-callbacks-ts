@@ -1,15 +1,14 @@
-# workspaces-middleware
+# @skroyc/workspaces-middleware
 
-To install dependencies:
+Stateless LangChain middleware package for workspace-scoped virtual filesystem access.
+
+## Development
 
 ```bash
 bun install
+bun run lint
+bun run build
+bun run typecheck
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.3.5. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Epic 1 provides the foundation scaffold and public/domain contracts.
