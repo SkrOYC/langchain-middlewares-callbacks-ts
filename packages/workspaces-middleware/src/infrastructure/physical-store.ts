@@ -9,7 +9,7 @@ import { lstat, mkdir, open, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 
 import { PathTraversalError } from "@/domain/errors";
-import type { StorePort } from "@/domain/store-port";
+import type { StoreMetadata, StorePort } from "@/domain/store-port";
 import { normalizeStoreKey } from "@/infrastructure/path-utils";
 
 const DEFAULT_LARGE_FILE_THRESHOLD_BYTES = 256 * 1024;
@@ -143,6 +143,39 @@ export class PhysicalStoreAdapter implements StorePort {
         return `${normalizedDirectory}/${entry}`;
       })
       .sort((left, right) => left.localeCompare(right));
+  }
+
+  async stat(path: string): Promise<StoreMetadata> {
+    const normalizedPath = normalizeStoreKey(path, true);
+    const hostPath =
+      normalizedPath === ""
+        ? normalize(resolve(this.rootDir))
+        : this.resolveHostPath(normalizedPath);
+
+    try {
+      await this.assertNoSymlinkInPath(hostPath);
+      const metadata = await lstat(hostPath);
+
+      if (metadata.isSymbolicLink()) {
+        throw new PathTraversalError("Symlink targets are not allowed");
+      }
+
+      return {
+        exists: true,
+        isDirectory: metadata.isDirectory(),
+        size: metadata.isDirectory() ? undefined : metadata.size,
+        modified: metadata.mtime,
+      };
+    } catch (error) {
+      if (isEnoentError(error)) {
+        return {
+          exists: false,
+          isDirectory: false,
+        };
+      }
+
+      throw error;
+    }
   }
 
   private resolveHostPath(path: string): string {

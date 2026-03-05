@@ -10,6 +10,10 @@ const noopStore: StorePort = {
   write: async () => undefined,
   edit: async () => 0,
   list: async () => [],
+  stat: async () => ({
+    exists: false,
+    isDirectory: false,
+  }),
 };
 
 function createWorkspace(prefix: string, scope: Workspace["scope"]): Workspace {

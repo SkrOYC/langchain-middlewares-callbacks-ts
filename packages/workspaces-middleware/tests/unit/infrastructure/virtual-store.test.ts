@@ -110,6 +110,49 @@ describe("VirtualStoreAdapter", () => {
 
     expect(listed).toEqual(["docs/a.md", "docs/nested"]);
   });
+
+  test("returns file metadata with stat", async () => {
+    const store = createMemoryStore();
+    const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);
+
+    await adapter.write("docs/meta.txt", "metadata");
+
+    const metadata = await adapter.stat("docs/meta.txt");
+
+    expect(metadata).toEqual({
+      exists: true,
+      isDirectory: false,
+      size: 8,
+    });
+  });
+
+  test("returns directory metadata with stat", async () => {
+    const store = createMemoryStore();
+    const namespace = ["workspaces", "agent-1"];
+
+    store.data.set(buildBaseStoreKey(namespace, "docs/meta.txt"), "metadata");
+
+    const adapter = new VirtualStoreAdapter(store, namespace);
+    const metadata = await adapter.stat("docs");
+
+    expect(metadata).toEqual({
+      exists: true,
+      isDirectory: true,
+    });
+  });
+
+  test("returns missing metadata when key does not exist", async () => {
+    const store = createMemoryStore();
+    const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);
+
+    const metadata = await adapter.stat("docs/missing.txt");
+
+    expect(metadata).toEqual({
+      exists: false,
+      isDirectory: false,
+    });
+  });
+
   test("edits existing files and reports replacement count", async () => {
     const store = createMemoryStore();
     const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);

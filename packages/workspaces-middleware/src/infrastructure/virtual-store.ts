@@ -1,5 +1,5 @@
 import { PathTraversalError } from "@/domain/errors";
-import type { StorePort } from "@/domain/store-port";
+import type { StoreMetadata, StorePort } from "@/domain/store-port";
 import { normalizeStoreKey, sliceByWindow } from "@/infrastructure/path-utils";
 
 const MAPPED_KEY_SEPARATOR = "#";
@@ -137,6 +137,54 @@ export class VirtualStoreAdapter implements StorePort {
       }
 
       return [...collected].sort((left, right) => left.localeCompare(right));
+    } finally {
+      if (typeof iterator.return === "function") {
+        const cleanupPromise = iterator.return();
+        cleanupPromise.catch(() => {
+          // ignore iterator cleanup failures
+        });
+      }
+    }
+  }
+
+  async stat(path: string): Promise<StoreMetadata> {
+    const normalizedPath = normalizeStoreKey(path, true);
+
+    if (normalizedPath === "") {
+      return {
+        exists: true,
+        isDirectory: true,
+      };
+    }
+
+    const mappedKey = buildBaseStoreKey(this.namespace, normalizedPath);
+    const values = await this.withTimeout(this.store.mget([mappedKey]));
+    const value = values[0];
+
+    if (value !== undefined) {
+      return {
+        exists: true,
+        isDirectory: false,
+        size: new TextEncoder().encode(value).length,
+      };
+    }
+
+    const mappedPrefix = buildBaseStorePrefix(this.namespace, normalizedPath);
+    const iterator = this.store.yieldKeys(mappedPrefix)[Symbol.asyncIterator]();
+
+    try {
+      const nextItem = await this.withTimeout(iterator.next());
+      if (!nextItem.done && nextItem.value.startsWith(mappedPrefix)) {
+        return {
+          exists: true,
+          isDirectory: true,
+        };
+      }
+
+      return {
+        exists: false,
+        isDirectory: false,
+      };
     } finally {
       if (typeof iterator.return === "function") {
         const cleanupPromise = iterator.return();
