@@ -135,6 +135,12 @@ describe("PhysicalStoreAdapter", () => {
     ).rejects.toBeInstanceOf(PathTraversalError);
   });
 
+  test("rejects slash-prefixed Windows absolute path bypass attempts", async () => {
+    await expect(
+      adapter.write("/C:/escape.txt", "nope")
+    ).rejects.toBeInstanceOf(PathTraversalError);
+  });
+
   test("returns paginated windows for large files without truncation warning", async () => {
     const largeAdapter = new PhysicalStoreAdapter(workspaceRoot, {
       largeFileThresholdBytes: 16,

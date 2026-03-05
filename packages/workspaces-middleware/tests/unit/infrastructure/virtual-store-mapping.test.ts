@@ -57,4 +57,10 @@ describe("virtual store key mapping", () => {
       buildBaseStoreKey(["workspaces", "agent-1"], "C:/../secret.txt")
     ).toThrow(PathTraversalError);
   });
+
+  test("rejects slash-prefixed Windows absolute key bypass attempts", () => {
+    expect(() =>
+      buildBaseStoreKey(["workspaces", "agent-1"], "/C:/secret.txt")
+    ).toThrow(PathTraversalError);
+  });
 });
