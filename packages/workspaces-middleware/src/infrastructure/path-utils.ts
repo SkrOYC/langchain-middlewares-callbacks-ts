@@ -40,12 +40,13 @@ export function sliceByWindow(
   offset = 0,
   limit?: number
 ): string {
+  const characters = [...content];
   const boundedOffset = Math.max(0, offset);
 
   if (limit === undefined) {
-    return content.slice(boundedOffset);
+    return characters.slice(boundedOffset).join("");
   }
 
   const boundedLimit = Math.max(0, limit);
-  return content.slice(boundedOffset, boundedOffset + boundedLimit);
+  return characters.slice(boundedOffset, boundedOffset + boundedLimit).join("");
 }

@@ -71,6 +71,17 @@ describe("VirtualStoreAdapter", () => {
     );
   });
 
+  test("uses character-window pagination for UTF-8 content", async () => {
+    const store = createMemoryStore();
+    const adapter = new VirtualStoreAdapter(store, ["workspaces", "agent-1"]);
+
+    await adapter.write("utf8.txt", "🙂🙂🙂");
+
+    const paged = await adapter.read("utf8.txt", 2, 1);
+
+    expect(paged).toBe("🙂");
+  });
+
   test("lists only direct children that match namespace + prefix", async () => {
     const store = createMemoryStore();
     const namespaceA = ["workspaces", "agent-a"];

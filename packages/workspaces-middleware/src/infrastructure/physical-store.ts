@@ -57,12 +57,19 @@ export class PhysicalStoreAdapter implements StorePort {
       }
 
       if (metadata.size > this.largeFileThresholdBytes) {
-        const truncated = await readPrefixWithChunkedReads(
+        const windowResult = await readWindow(
           fileHandle,
+          metadata.size,
+          0,
+          undefined,
           this.largeFileThresholdBytes
         );
 
-        return `${truncated}${formatTruncationWarning(metadata.size)}`;
+        if (windowResult.truncated) {
+          return `${windowResult.content}${formatTruncationWarning(metadata.size)}`;
+        }
+
+        return windowResult.content;
       }
 
       return await fileHandle.readFile("utf8");
@@ -225,36 +232,6 @@ export class PhysicalStoreAdapter implements StorePort {
   }
 }
 
-async function readPrefixWithChunkedReads(
-  fileHandle: Awaited<ReturnType<typeof open>>,
-  byteLimit: number
-): Promise<string> {
-  const chunkSize = Math.min(64 * 1024, Math.max(1, byteLimit));
-  const chunks: Buffer[] = [];
-  let remaining = byteLimit;
-  let position = 0;
-
-  while (remaining > 0) {
-    const buffer = Buffer.alloc(Math.min(chunkSize, remaining));
-    const { bytesRead } = await fileHandle.read(
-      buffer,
-      0,
-      buffer.length,
-      position
-    );
-
-    if (bytesRead === 0) {
-      break;
-    }
-
-    chunks.push(buffer.subarray(0, bytesRead));
-    remaining -= bytesRead;
-    position += bytesRead;
-  }
-
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 async function readWindow(
   fileHandle: Awaited<ReturnType<typeof open>>,
   _fileSizeBytes: number,
@@ -348,38 +325,43 @@ function consumeDecodedChunk(
   skippedChars: number,
   collected: string
 ): { skippedChars: number; collected: string; reachedCap: boolean } {
+  const decodedCharacters = [...decodedChunk];
+  const collectedCharacters = [...collected];
+
   let nextSkippedChars = skippedChars;
   let cursor = 0;
 
   if (nextSkippedChars < startOffsetChars) {
     const toSkip = Math.min(
       startOffsetChars - nextSkippedChars,
-      decodedChunk.length
+      decodedCharacters.length
     );
     nextSkippedChars += toSkip;
     cursor += toSkip;
   }
 
-  if (cursor >= decodedChunk.length) {
+  if (cursor >= decodedCharacters.length) {
     return {
       skippedChars: nextSkippedChars,
       collected,
-      reachedCap: collected.length >= limitChars,
+      reachedCap: collectedCharacters.length >= limitChars,
     };
   }
 
-  const remaining = limitChars - collected.length;
+  const remaining = limitChars - collectedCharacters.length;
   if (remaining <= 0) {
     return { skippedChars: nextSkippedChars, collected, reachedCap: true };
   }
 
-  const toTake = Math.min(remaining, decodedChunk.length - cursor);
-  const nextCollected = `${collected}${decodedChunk.slice(cursor, cursor + toTake)}`;
+  const toTake = Math.min(remaining, decodedCharacters.length - cursor);
+  const nextCollected = `${collected}${decodedCharacters
+    .slice(cursor, cursor + toTake)
+    .join("")}`;
 
   return {
     skippedChars: nextSkippedChars,
     collected: nextCollected,
-    reachedCap: nextCollected.length >= limitChars,
+    reachedCap: [...nextCollected].length >= limitChars,
   };
 }
 
