@@ -28,6 +28,12 @@ describe("validateFilePath", () => {
     );
   });
 
+  test("rejects embedded Windows drive-prefixed segments", () => {
+    expect(() =>
+      validateFilePath("/project/C:/Windows/System32", "/project")
+    ).toThrow(PathTraversalError);
+  });
+
   test("rejects null-byte payloads", () => {
     expect(() => validateFilePath("/project/\0secret.txt", "/project")).toThrow(
       PathTraversalError

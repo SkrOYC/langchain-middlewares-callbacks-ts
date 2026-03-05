@@ -3,7 +3,7 @@ import { isAbsolute, normalize, relative } from "node:path/posix";
 import { AccessDeniedError, PathTraversalError } from "@/domain/errors";
 import type { AccessScope, Workspace } from "@/domain/models";
 
-const WINDOWS_DRIVE_PREFIX_REGEX = /^[a-zA-Z]:/;
+const WINDOWS_DRIVE_PREFIX_REGEX = /(?:^|[\\/])[a-zA-Z]:/;
 
 export interface WorkspaceResolution {
   workspace: Workspace;

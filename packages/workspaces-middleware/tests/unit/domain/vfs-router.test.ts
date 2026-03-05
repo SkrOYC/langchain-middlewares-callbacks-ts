@@ -82,6 +82,14 @@ describe("resolveWorkspace", () => {
       resolveWorkspace("C:/Windows/System32/drivers/etc/hosts", workspaces)
     ).toThrow(PathTraversalError);
   });
+  test("rejects embedded Windows drive-prefixed segments", () => {
+    const workspaces: Workspace[] = [createWorkspace("/project", "READ_WRITE")];
+
+    expect(() =>
+      resolveWorkspace("/project/C:/Windows/System32", workspaces)
+    ).toThrow(PathTraversalError);
+  });
+
   test("rejects Windows drive-prefixed paths without separator", () => {
     const workspaces: Workspace[] = [createWorkspace("/", "READ_WRITE")];
 
