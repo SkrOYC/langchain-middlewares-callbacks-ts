@@ -57,6 +57,25 @@ describe("PhysicalStoreAdapter", () => {
     expect(entries).toEqual(["docs/a.txt", "docs/b.txt"]);
   });
 
+  test("returns file metadata with stat", async () => {
+    await adapter.write("docs/meta.txt", "metadata");
+
+    const metadata = await adapter.stat("docs/meta.txt");
+
+    expect(metadata.exists).toBe(true);
+    expect(metadata.isDirectory).toBe(false);
+    expect(metadata.size).toBe(8);
+  });
+
+  test("returns non-existent metadata for missing paths", async () => {
+    const metadata = await adapter.stat("docs/missing.txt");
+
+    expect(metadata).toEqual({
+      exists: false,
+      isDirectory: false,
+    });
+  });
+
   test("rejects traversal keys that escape the workspace root", async () => {
     await expect(adapter.write("../escape.txt", "nope")).rejects.toBeInstanceOf(
       PathTraversalError
