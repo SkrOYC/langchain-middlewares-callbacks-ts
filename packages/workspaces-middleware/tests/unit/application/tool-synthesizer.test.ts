@@ -97,4 +97,51 @@ describe("tool-synthesizer", () => {
       AccessDeniedError
     );
   });
+
+  test("rejects ambiguous normalized keys across workspaces", async () => {
+    const workspaceRootA = join(workspaceRoot, "workspace-a");
+    const workspaceRootB = join(workspaceRoot, "workspace-b");
+
+    await mkdir(join(workspaceRootA, "docs"), { recursive: true });
+    await mkdir(join(workspaceRootB, "docs"), { recursive: true });
+    await writeFile(
+      join(workspaceRootA, "docs", "readme.md"),
+      "from-a",
+      "utf8"
+    );
+    await writeFile(
+      join(workspaceRootB, "docs", "readme.md"),
+      "from-b",
+      "utf8"
+    );
+
+    const mounts: MountConfig[] = [
+      {
+        prefix: "/workspace-a",
+        scope: "READ_WRITE",
+        store: { type: "physical", rootDir: workspaceRootA },
+      },
+      {
+        prefix: "/workspace-b",
+        scope: "READ_WRITE",
+        store: { type: "physical", rootDir: workspaceRootB },
+      },
+    ];
+
+    const services = buildVFSServices(mounts);
+
+    const resolvedA = services.resolve("/workspace-a/docs/readme.md");
+    expect(await services.read(resolvedA.normalizedKey)).toBe("from-a");
+
+    const resolvedB = services.resolve("/workspace-b/docs/readme.md");
+    await expect(services.read(resolvedA.normalizedKey)).rejects.toBeInstanceOf(
+      AccessDeniedError
+    );
+    await expect(services.read(resolvedB.normalizedKey)).rejects.toBeInstanceOf(
+      AccessDeniedError
+    );
+
+    expect(await services.read("/workspace-a/docs/readme.md")).toBe("from-a");
+    expect(await services.read("/workspace-b/docs/readme.md")).toBe("from-b");
+  });
 });

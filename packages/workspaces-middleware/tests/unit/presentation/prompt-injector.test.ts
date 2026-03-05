@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { MountConfig } from "@/presentation/index";
 import {
   FILESYSTEM_MAP_MARKER,
@@ -71,5 +71,34 @@ describe("prompt-injector", () => {
     }).length;
 
     expect(mapMessageCount).toBe(1);
+  });
+
+  test("preserves non-system messages that include the marker text", () => {
+    const userMessage = new HumanMessage(
+      `${FILESYSTEM_MAP_MARKER} keep this user message`
+    );
+
+    const firstTurnMessages = injectFilesystemMap([userMessage], mountsTurnOne);
+    const secondTurnMessages = injectFilesystemMap(
+      firstTurnMessages,
+      mountsTurnTwo
+    );
+
+    const preservedUserMessage = secondTurnMessages.find(
+      (message) =>
+        message instanceof HumanMessage &&
+        message.content === `${FILESYSTEM_MAP_MARKER} keep this user message`
+    );
+
+    expect(preservedUserMessage).toBeDefined();
+
+    const injectedSystemMaps = secondTurnMessages.filter(
+      (message) =>
+        message instanceof SystemMessage &&
+        typeof message.content === "string" &&
+        message.content.startsWith(`${FILESYSTEM_MAP_MARKER}\n`)
+    );
+
+    expect(injectedSystemMaps).toHaveLength(1);
   });
 });

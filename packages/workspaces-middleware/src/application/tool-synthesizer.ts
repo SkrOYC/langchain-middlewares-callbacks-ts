@@ -66,7 +66,9 @@ export function buildVFSServices(
   }
 
   const workspaceList = prepared.map((item) => item.workspace);
-  const resolutionCache = new Map<string, CachedResolution>();
+  const logicalPathCache = new Map<string, CachedResolution>();
+  const normalizedKeyCache = new Map<string, CachedResolution>();
+  const ambiguousNormalizedKeys = new Set<string>();
 
   const resolveFromPath = (path: string): CachedResolution => {
     const resolved = resolveWorkspace(path, workspaceList);
@@ -84,14 +86,30 @@ export function buildVFSServices(
       workspace: resolved.workspace,
     };
 
-    cacheResolution(resolutionCache, cached);
+    cacheResolution(
+      logicalPathCache,
+      normalizedKeyCache,
+      ambiguousNormalizedKeys,
+      cached
+    );
     return cached;
   };
 
   const resolveForOperation = (pathOrKey: string): CachedResolution => {
-    const cached = resolutionCache.get(pathOrKey);
-    if (cached !== undefined) {
-      return cached;
+    const cachedByLogicalPath = logicalPathCache.get(pathOrKey);
+    if (cachedByLogicalPath !== undefined) {
+      return cachedByLogicalPath;
+    }
+
+    if (ambiguousNormalizedKeys.has(pathOrKey)) {
+      throw new AccessDeniedError(
+        `Normalized key '${pathOrKey}' maps to multiple workspaces; use a logical path to disambiguate`
+      );
+    }
+
+    const cachedByKey = normalizedKeyCache.get(pathOrKey);
+    if (cachedByKey !== undefined) {
+      return cachedByKey;
     }
 
     return resolveFromPath(pathOrKey);
@@ -174,11 +192,25 @@ function prepareWorkspaces(
 }
 
 function cacheResolution(
-  cache: Map<string, CachedResolution>,
+  logicalPathCache: Map<string, CachedResolution>,
+  normalizedKeyCache: Map<string, CachedResolution>,
+  ambiguousNormalizedKeys: Set<string>,
   resolution: CachedResolution
 ): void {
-  cache.set(resolution.normalizedLogicalPath, resolution);
-  cache.set(resolution.normalizedKey, resolution);
+  logicalPathCache.set(resolution.normalizedLogicalPath, resolution);
+
+  if (ambiguousNormalizedKeys.has(resolution.normalizedKey)) {
+    return;
+  }
+
+  const existing = normalizedKeyCache.get(resolution.normalizedKey);
+  if (existing !== undefined && existing.workspace !== resolution.workspace) {
+    normalizedKeyCache.delete(resolution.normalizedKey);
+    ambiguousNormalizedKeys.add(resolution.normalizedKey);
+    return;
+  }
+
+  normalizedKeyCache.set(resolution.normalizedKey, resolution);
 }
 
 export function createInMemoryBaseStore(): BaseStoreLike {

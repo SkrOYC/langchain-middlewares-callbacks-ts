@@ -3,6 +3,7 @@ import { SystemMessage } from "@langchain/core/messages";
 import type { MountConfig } from "@/presentation/index";
 
 export const FILESYSTEM_MAP_MARKER = "[WORKSPACES_FILESYSTEM_MAP]";
+const FILESYSTEM_MAP_MESSAGE_FLAG = "workspacesFilesystemMap";
 
 export function generateFilesystemMap(mounts: MountConfig[]): string {
   const normalizedMounts = [...mounts].sort((left, right) =>
@@ -36,6 +37,9 @@ export function injectFilesystemMap(
   );
   const filesystemMapMessage = new SystemMessage({
     content: `${FILESYSTEM_MAP_MARKER}\n${generateFilesystemMap(mounts)}`,
+    additional_kwargs: {
+      [FILESYSTEM_MAP_MESSAGE_FLAG]: true,
+    },
   });
 
   return [filesystemMapMessage, ...withoutPreviousMap];
@@ -50,8 +54,61 @@ function formatStoreSummary(mount: MountConfig): string {
 }
 
 function isInjectedFilesystemMapMessage(message: unknown): boolean {
+  if (!isSystemRoleMessage(message)) {
+    return false;
+  }
+
+  const additionalKwargs = extractAdditionalKwargs(message);
+  if (additionalKwargs[FILESYSTEM_MAP_MESSAGE_FLAG] === true) {
+    return true;
+  }
+
   const content = extractMessageContent(message);
-  return content.includes(FILESYSTEM_MAP_MARKER);
+  return content.startsWith(`${FILESYSTEM_MAP_MARKER}\nFilesystem Map:`);
+}
+
+function isSystemRoleMessage(message: unknown): boolean {
+  if (SystemMessage.isInstance(message)) {
+    return true;
+  }
+
+  if (typeof message !== "object" || message === null) {
+    return false;
+  }
+
+  if ((message as { type?: unknown }).type === "system") {
+    return true;
+  }
+
+  if ((message as { role?: unknown }).role === "system") {
+    return true;
+  }
+
+  const getType = (message as { _getType?: unknown })._getType;
+  if (typeof getType === "function") {
+    try {
+      return getType() === "system";
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function extractAdditionalKwargs(message: unknown): Record<string, unknown> {
+  if (typeof message !== "object" || message === null) {
+    return {};
+  }
+
+  const additionalKwargs = (message as { additional_kwargs?: unknown })
+    .additional_kwargs;
+
+  if (typeof additionalKwargs !== "object" || additionalKwargs === null) {
+    return {};
+  }
+
+  return additionalKwargs as Record<string, unknown>;
 }
 
 function extractMessageContent(message: unknown): string {
