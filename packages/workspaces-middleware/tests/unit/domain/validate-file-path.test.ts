@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { PathTraversalError } from "../../../src/domain/errors";
-import { validateFilePath } from "../../../src/domain/vfs-router";
+import { PathTraversalError } from "@/domain/errors";
+import { validateFilePath } from "@/domain/vfs-router";
 
 describe("validateFilePath", () => {
   test("rejects traversal sequences", () => {

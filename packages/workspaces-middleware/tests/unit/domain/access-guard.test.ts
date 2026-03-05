@@ -4,8 +4,8 @@ import {
   authorizeOperation,
   isOperationAllowed,
   type OperationType,
-} from "../../../src/domain/access-guard";
-import { AccessDeniedError } from "../../../src/domain/errors";
+} from "@/domain/access-guard";
+import { AccessDeniedError } from "@/domain/errors";
 
 describe("access guard", () => {
   test("allows only read-like operations in READ_ONLY scope", () => {

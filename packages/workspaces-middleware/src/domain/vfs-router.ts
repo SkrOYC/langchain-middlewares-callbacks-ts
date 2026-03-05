@@ -79,7 +79,7 @@ export function resolveWorkspace(
   }
 
   const normalizedKey = validateFilePath(
-    normalizedLogicalPath,
+    requestPath,
     bestMatch.normalizedPrefix
   );
 

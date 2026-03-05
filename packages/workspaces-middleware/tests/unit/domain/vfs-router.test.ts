@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { AccessDeniedError } from "../../../src/domain/errors";
-import type { Workspace } from "../../../src/domain/models";
-import type { StorePort } from "../../../src/domain/store-port";
-import { resolveWorkspace } from "../../../src/domain/vfs-router";
+import { AccessDeniedError, PathTraversalError } from "@/domain/errors";
+import type { Workspace } from "@/domain/models";
+import type { StorePort } from "@/domain/store-port";
+import { resolveWorkspace } from "@/domain/vfs-router";
 
 const noopStore: StorePort = {
   read: async () => "",
@@ -65,5 +65,21 @@ describe("resolveWorkspace", () => {
 
     expect(resolution.normalizedLogicalPath).toBe("/home/src/file.ts");
     expect(resolution.workspace.prefix).toBe("/home/src");
+  });
+
+  test("rejects traversal markers before normalization side effects", () => {
+    const workspaces: Workspace[] = [createWorkspace("/project", "READ_WRITE")];
+
+    expect(() =>
+      resolveWorkspace("/project/docs/../secrets.txt", workspaces)
+    ).toThrow(PathTraversalError);
+  });
+
+  test("rejects raw Windows absolute paths in resolveWorkspace", () => {
+    const workspaces: Workspace[] = [createWorkspace("/", "READ_WRITE")];
+
+    expect(() =>
+      resolveWorkspace("C:/Windows/System32/drivers/etc/hosts", workspaces)
+    ).toThrow(PathTraversalError);
   });
 });

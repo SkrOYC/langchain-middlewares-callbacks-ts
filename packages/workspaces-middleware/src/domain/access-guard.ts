@@ -6,11 +6,8 @@ export type OperationType = "read" | "write" | "edit" | "list" | "search";
 const READ_ONLY_OPERATIONS = new Set<OperationType>(["read", "list", "search"]);
 const WRITE_ONLY_OPERATIONS = new Set<OperationType>(["write", "edit"]);
 const READ_WRITE_OPERATIONS = new Set<OperationType>([
-  "read",
-  "write",
-  "edit",
-  "list",
-  "search",
+  ...READ_ONLY_OPERATIONS,
+  ...WRITE_ONLY_OPERATIONS,
 ]);
 
 export function isOperationAllowed(
