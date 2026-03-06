@@ -2,6 +2,31 @@ import { describe, expect, test } from "bun:test";
 
 import { PathTraversalError } from "@/domain/errors";
 import { validateFilePath } from "@/domain/vfs-router";
+import { normalizeStoreKey } from "@/infrastructure/path-utils";
+
+describe("normalizeStoreKey", () => {
+  test("rejects null-byte in path", () => {
+    expect(() => normalizeStoreKey("/project/secret\0.txt")).toThrow(
+      PathTraversalError
+    );
+  });
+
+  test("rejects tilde in path", () => {
+    expect(() => normalizeStoreKey("~/config.json")).toThrow(
+      PathTraversalError
+    );
+  });
+
+  test("allows empty path when allowEmpty is true", () => {
+    const result = normalizeStoreKey(".", true);
+    expect(result).toBe("");
+  });
+
+  test("allows empty string when allowEmpty is true", () => {
+    const result = normalizeStoreKey("", true);
+    expect(result).toBe("");
+  });
+});
 
 describe("validateFilePath", () => {
   test("rejects traversal sequences", () => {

@@ -131,4 +131,100 @@ describe("prompt-injector", () => {
     expect(foreignMessages).toHaveLength(1);
     expect(injectedMaps).toHaveLength(1);
   });
+
+  test("handles undefined messages array", () => {
+    const result = injectFilesystemMap(undefined, mountsTurnOne);
+
+    expect(result).toHaveLength(1);
+    const systemMessage = result[0] as SystemMessage;
+    expect(systemMessage.content).toContain("/alpha");
+  });
+
+  test("handles non-array messages input", () => {
+    const result = injectFilesystemMap("not an array" as never, mountsTurnOne);
+
+    expect(result).toHaveLength(1);
+  });
+
+  test("handles null messages array element", () => {
+    const messages = [null] as unknown[];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    // Should still inject the filesystem map
+    expect(result).toHaveLength(2);
+  });
+
+  test("handles messages with string type property", () => {
+    const messages = [
+      {
+        type: "system",
+        content: "system message with type property",
+      },
+    ];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    expect(result).toHaveLength(2);
+  });
+
+  test("handles messages with role property", () => {
+    const messages = [
+      {
+        role: "system",
+        content: "system message with role property",
+      },
+    ];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    expect(result).toHaveLength(2);
+  });
+
+  test("handles messages with _getType function", () => {
+    const messages = [
+      {
+        _getType: () => "system",
+        content: "system message with _getType",
+      },
+    ];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    expect(result).toHaveLength(2);
+  });
+
+  test("handles messages with _getType that throws", () => {
+    const messages = [
+      {
+        _getType: () => {
+          throw new Error("getType failed");
+        },
+        content: "message with throwing _getType",
+      },
+    ];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    // Should treat as non-system and preserve the message
+    expect(result).toHaveLength(2);
+  });
+
+  test("handles message without additional_kwargs", () => {
+    const messages = [
+      {
+        content: "simple message without additional_kwargs",
+      },
+    ];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    expect(result).toHaveLength(2);
+  });
+
+  test("handles message with null additional_kwargs", () => {
+    const messages = [
+      {
+        content: "message with null additional_kwargs",
+        additional_kwargs: null,
+      },
+    ];
+    const result = injectFilesystemMap(messages, mountsTurnOne);
+
+    expect(result).toHaveLength(2);
+  });
 });

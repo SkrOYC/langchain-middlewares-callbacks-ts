@@ -502,4 +502,188 @@ describe("createWorkspacesMiddleware", () => {
     expect(secondMap).toContain("/beta");
     expect(secondMap).not.toContain("/alpha");
   });
+
+  test("passes through to handler when toolName is undefined", async () => {
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_ONLY",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [createReadTool()],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    let fallbackCalled = false;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-no-name",
+          name: undefined,
+          args: {},
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        fallbackCalled = true;
+        return new ToolMessage({
+          tool_call_id: "call-no-name",
+          content: "fallback result",
+        });
+      }
+    );
+
+    expect(fallbackCalled).toBe(true);
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toBe("fallback result");
+  });
+
+  test("handles list operation with allowed list/search scope", async () => {
+    const listTool: RegisteredTool = {
+      name: "list_files",
+      description: "List files in workspace",
+      parameters: z.object({ path: z.string() }),
+      operations: ["list"],
+      handler: async (params, services) => {
+        const input = params as { path: string };
+        const resolved = services.resolve(input.path);
+        const files = await services.list(resolved.normalizedKey);
+        return { content: files.join(",") };
+      },
+    };
+
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_WRITE",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [listTool],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-list",
+          name: "list_files",
+          args: { path: "/project" },
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toContain("docs");
+  });
+
+  test("handles stat operation with various allowed scopes", async () => {
+    const statTool: RegisteredTool = {
+      name: "stat_file",
+      description: "Get file stats",
+      parameters: z.object({ path: z.string() }),
+      operations: ["read", "list", "edit", "search"],
+      handler: async (params, services) => {
+        const input = params as { path: string };
+        const resolved = services.resolve(input.path);
+        const stat = await services.stat(resolved.normalizedKey);
+        return { content: JSON.stringify(stat) };
+      },
+    };
+
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_WRITE",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [statTool],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-stat",
+          name: "stat_file",
+          args: { path: "/project/docs/readme.md" },
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toContain("exists");
+  });
+
+  test("maps error with message containing 'File not found' to safe message", async () => {
+    const customErrorTool: RegisteredTool = {
+      name: "custom_error_tool",
+      description: "Throws custom error with File not found message",
+      parameters: z.object({}),
+      operations: ["read"],
+      handler: () => {
+        const error = new Error("Custom error: File not found in storage");
+        throw error;
+      },
+    };
+
+    const middleware = createWorkspacesMiddleware({
+      mounts: [
+        {
+          prefix: "/project",
+          scope: "READ_ONLY",
+          store: { type: "physical", rootDir: workspaceRoot },
+        },
+      ],
+      tools: [customErrorTool],
+    });
+
+    const wrapToolCall = middleware.wrapToolCall as NonNullable<
+      typeof middleware.wrapToolCall
+    >;
+
+    const result = await wrapToolCall(
+      {
+        toolCall: {
+          id: "call-custom-error",
+          name: "custom_error_tool",
+          args: {},
+        },
+        runtime: { context: { threadId: "thread-1", runId: "run-1" } },
+        state: { messages: [] },
+      } as never,
+      () => {
+        throw new Error("fallback should not run");
+      }
+    );
+
+    expect(result).toBeInstanceOf(ToolMessage);
+    expect((result as ToolMessage).content).toBe("Error: File not found");
+  });
 });
