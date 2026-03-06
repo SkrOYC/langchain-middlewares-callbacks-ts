@@ -249,9 +249,9 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 - `handleToolStart` → TOOL_CALL_START, TOOL_CALL_ARGS
 - `handleToolEnd` → TOOL_CALL_END, TOOL_CALL_RESULT
 
-### Implemented Events (22/26)
+### Implemented Events
 
-> **Note:** REASONING_* events are Draft/Experimental in AG-UI protocol (subject to change). THINKING_* events are stable but deprecated in favor of REASONING_*.
+> **Note:** Per latest AG-UI skill, REASONING_* events are the NEW standard that replaces deprecated THINKING_* events. Both are implemented for backward compatibility.
 
 | Event Type | Source | Payload |
 |------------|--------|---------|
@@ -284,15 +284,14 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 | THINKING_TEXT_MESSAGE_END | Callback | `{ messageId }` |
 | THINKING_END | Callback | `{ messageId }` |
 
-### Missing Events (5/26) - Future
+### Missing Events - Future Implementation
+
+> **Note:** Per latest AG-UI skill, STATE_DELTA, CUSTOM, and RAW are stable events in the protocol. These are not implemented but are stable, not experimental.
 
 | Event Type | Purpose | Priority |
 |------------|---------|----------|
-| STATE_DELTA | JSON Patch for incremental state | High |
-| CUSTOM | User-defined events | High |
-| REASONING_MESSAGE_CHUNK | Convenience event | Medium |
-| REASONING_ENCRYPTED_VALUE | Encrypted reasoning | Low |
-| RAW | Passthrough events | Low |
+| REASONING_MESSAGE_CHUNK | Convenience chunk for reasoning | Medium |
+| REASONING_ENCRYPTED_VALUE | Encrypted chain-of-thought | Low |
 
 ---
 

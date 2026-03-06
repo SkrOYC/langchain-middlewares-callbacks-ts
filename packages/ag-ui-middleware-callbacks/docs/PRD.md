@@ -92,8 +92,8 @@ LangChain.js agents lack native support for the AG-UI protocol. Developers build
 
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
-| Legacy Thinking Mode | Emit THINKING_* events (deprecated) | Supported for backward compatibility |
-| Modern Reasoning Mode | Emit REASONING_* events | Aligns with AG-UI protocol v1 |
+| Legacy Thinking Mode | Emit THINKING_* events | Supported for backward compatibility |
+| Modern Reasoning Mode | Emit REASONING_* events (NEW) | Replaces deprecated THINKING_* in AG-UI protocol |
 | Reasoning Content | Emit REASONING_MESSAGE_* events | Streams reasoning content |
 
 ### Epic 4: State Management (P1)
