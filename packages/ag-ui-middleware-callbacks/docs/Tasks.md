@@ -76,7 +76,7 @@ And event includes path, op, value fields per RFC 6902
 - **Type:** Feature
 - **Effort:** 3 story points
 - **Dependencies:** None
-- **Description:** Allow users to emit custom application-specific events. Currently used internally for LARGE_RESULT_CHUNK but not exposed via public API.
+- **Description:** Allow users to emit custom application-specific events as AG-UI CUSTOM events.
 
 - **Acceptance Criteria:**
 ```gherkin
@@ -150,13 +150,13 @@ Required to fully align with langchain-callbacks-mastery skill patterns.
 - **Type:** Feature
 - **Effort:** 2 story points
 - **Dependencies:** None
-- **Description:** Add ignoreLLM, ignoreChain, ignoreTool, ignoreRetriever options to AGUICallbackHandler for event filtering.
+- **Description:** Add ignoreLLM, ignoreChain, ignoreAgent, ignoreRetriever options to AGUICallbackHandler for event filtering.
 
 - **Acceptance Criteria:**
 ```gherkin
-Given a callback handler configured with ignoreTool: true
-When tool events are emitted
-Then the handler does not process tool events
+Given a callback handler configured with ignoreAgent: true
+When agent events are emitted
+Then the handler does not process agent events
 And performance is improved by skipping unnecessary events
 ```
 
@@ -229,24 +229,26 @@ Required to fully align with implementing-langchain-middleware skill patterns.
 ```gherkin
 Given middleware documentation
 When reader understands hook order
-Then they know beforeAgent runs before afterAgent in forward order
-And afterModel runs before beforeModel in reverse order
+Then they know beforeAgent runs in forward order (middleware[0] → middleware[n])
+And they know afterAgent runs in reverse order (middleware[n] → middleware[0])
+And they know beforeModel runs in forward order
+And they know afterModel runs in reverse order
 ```
 
 ---
 
-#### [M-2] Implement JumpTo Control Flow
+#### [M-2] Implement JumpTo Control Flow (Technical Debt)
 
-- **Type:** Feature
+- **Type:** Feature (Technical Debt)
 - **Effort:** 5 story points
 - **Dependencies:** None
-- **Description:** Implement jumpTo functionality for controlling agent execution flow (end, tools, model).
+- **Description:** Add canJumpTo declarations to middleware hooks to enable JumpTo functionality. This is a LangChain runtime feature - the package would declare `canJumpTo` targets to enable conditional routing, rate limiting, and early exit patterns.
 
 - **Acceptance Criteria:**
 ```gherkin
-Given middleware configured with jumpTo
-When agent reaches the hook with jumpTo
-Then execution jumps to the specified target (end/tools/model)
+Given middleware configured with canJumpTo: ["end"]
+When hook returns { jumpTo: "end" }
+Then execution skips to afterAgent
 ```
 
 ---

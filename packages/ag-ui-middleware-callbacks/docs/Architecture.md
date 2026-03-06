@@ -64,7 +64,10 @@ beforeAgent (forward) → beforeModel → wrapModelCall → model
 - **Forward order:** `beforeAgent`, `beforeModel` run middleware[0] → middleware[n]
 - **Reverse order:** `afterAgent`, `afterModel` run middleware[n] → middleware[0]
 
-This package uses only simple hooks (`beforeAgent`, `afterAgent`, `beforeModel`, `afterModel`). The `wrapModelCall` and `wrapToolCall` hooks are not used.
+> **Design Decision:** This package uses only simple hooks (`beforeAgent`, `afterAgent`, `beforeModel`, `afterModel`). The `wrapModelCall` and `wrapToolCall` hooks are intentionally not used because:
+> - They require calling `handler(request)` to continue execution, adding complexity
+> - The package's purpose is event emission (observability), not execution control
+> - Simple hooks are sufficient for emitting lifecycle and state events
 
 #### JumpTo Control Flow
 
@@ -76,7 +79,7 @@ LangChain middleware supports `jumpTo` for controlling execution flow:
 
 Requires `canJumpTo` declaration in middleware configuration.
 
-**This package does not implement jumpTo functionality.**
+> **Technical Debt:** JumpTo is not implemented. This is tracked as future work (M-2) for advanced control flow patterns like rate limiting and conditional routing.
 
 #### Private State
 
