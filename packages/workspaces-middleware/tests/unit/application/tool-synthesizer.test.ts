@@ -64,7 +64,89 @@ describe("tool-synthesizer", () => {
     expect(safe).toHaveLength(0);
   });
 
-  test("enforces resolution and authorization before store access", async () => {
+  test("enforces write operation with READ_WRITE scope", async () => {
+    await mkdir(join(workspaceRoot, "docs"), { recursive: true });
+
+    const mounts: MountConfig[] = [
+      {
+        prefix: "/project",
+        scope: "READ_WRITE",
+        store: { type: "physical", rootDir: workspaceRoot },
+      },
+    ];
+
+    const services = buildVFSServices(mounts);
+
+    const resolved = services.resolve("/project/docs/new.txt");
+    await services.write(resolved.normalizedKey, "new content");
+
+    const content = await readFile(
+      join(workspaceRoot, "docs", "new.txt"),
+      "utf8"
+    );
+    expect(content).toBe("new content");
+  });
+
+  test("enforces list operation with READ_ONLY scope", async () => {
+    await mkdir(join(workspaceRoot, "docs"), { recursive: true });
+    await writeFile(join(workspaceRoot, "docs", "readme.md"), "hello", "utf8");
+    await writeFile(join(workspaceRoot, "docs", "guide.md"), "guide", "utf8");
+
+    const mounts: MountConfig[] = [
+      {
+        prefix: "/project",
+        scope: "READ_ONLY",
+        store: { type: "physical", rootDir: workspaceRoot },
+      },
+    ];
+
+    const services = buildVFSServices(mounts);
+
+    const resolved = services.resolve("/project/docs");
+    const files = await services.list(resolved.normalizedKey);
+
+    expect(files).toContain("docs/readme.md");
+    expect(files).toContain("docs/guide.md");
+  });
+
+  test("enforces stat operation with READ_ONLY scope", async () => {
+    await mkdir(join(workspaceRoot, "docs"), { recursive: true });
+    await writeFile(join(workspaceRoot, "docs", "readme.md"), "hello", "utf8");
+
+    const mounts: MountConfig[] = [
+      {
+        prefix: "/project",
+        scope: "READ_ONLY",
+        store: { type: "physical", rootDir: workspaceRoot },
+      },
+    ];
+
+    const services = buildVFSServices(mounts);
+
+    const resolved = services.resolve("/project/docs/readme.md");
+    const stat = await services.stat(resolved.normalizedKey);
+
+    expect(stat.exists).toBe(true);
+  });
+
+  test("uses in-memory base store for virtual mounts", async () => {
+    const mounts: MountConfig[] = [
+      {
+        prefix: "/virtual",
+        scope: "READ_WRITE",
+        store: { type: "virtual", namespace: ["test", "namespace"] },
+      },
+    ];
+
+    const services = buildVFSServices(mounts);
+
+    await services.write("/virtual/test.txt", "virtual content");
+    const content = await services.read("/virtual/test.txt");
+
+    expect(content).toBe("virtual content");
+  });
+
+  test("rejects ambiguous normalized keys across workspaces", async () => {
     await mkdir(join(workspaceRoot, "docs"), { recursive: true });
     await writeFile(join(workspaceRoot, "docs", "readme.md"), "hello", "utf8");
 
