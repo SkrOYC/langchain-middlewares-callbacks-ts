@@ -110,7 +110,6 @@ stateSchema = z.object({
 | `handleChainStart` | CHAIN_STARTED |
 | `handleChainEnd` | CHAIN_FINISHED |
 | `handleChainError` | CHAIN_ERROR |
-| `handleCustomEvent` | CUSTOM |
 
 **Capabilities:**
 - ✅ Access to streaming tokens

@@ -195,22 +195,6 @@ Then TOOL_CALL_ERROR event is emitted with error details
 
 ---
 
-#### [C-4] Add Custom Event Handler
-
-- **Type:** Feature
-- **Effort:** 3 story points
-- **Dependencies:** None
-- **Description:** Implement handleCustomEvent to forward custom events as AG-UI CUSTOM events.
-
-- **Acceptance Criteria:**
-```gherkin
-Given a custom event emitted in LangChain
-When handleCustomEvent is called
-Then CUSTOM event is forwarded with event name and data
-```
-
----
-
 #### [C-5] Add Serialization Support
 
 - **Type:** Feature

@@ -10,7 +10,7 @@
 
 | Component | Technology | Version |
 |-----------|------------|---------|
-| Runtime | Node.js | node >=20.0.0 |
+| Runtime | Bun / Node.js | bun >=1.0.0 / node >=20.0.0 |
 | Language | TypeScript | 5.x |
 | Build | tsup | 8.x |
 | Output | ESM Only | - |
@@ -252,7 +252,6 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 - `handleChainStart` → CHAIN_STARTED
 - `handleChainEnd` → CHAIN_FINISHED
 - `handleChainError` → CHAIN_ERROR
-- `handleCustomEvent` → CUSTOM
 
 ### Implemented Events
 
@@ -279,23 +278,14 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 | ACTIVITY_SNAPSHOT | Middleware | `{ messageId, activityType, content, replace? }` |
 | ACTIVITY_DELTA | Middleware | `{ messageId, activityType, patch }` |
 | REASONING_START | Callback | `{ messageId }` |
-| REASONING_MESSAGE_START | Callback | `{ messageId }` |
+| REASONING_MESSAGE_START | Callback | `{ messageId, role }` |
 | REASONING_MESSAGE_CONTENT | Callback | `{ messageId, delta }` |
 | REASONING_MESSAGE_END | Callback | `{ messageId }` |
 | REASONING_END | Callback | `{ messageId }` |
-| THINKING_START | Callback | `{ messageId }` |
-| THINKING_TEXT_MESSAGE_START | Callback | `{ messageId }` |
-| THINKING_TEXT_MESSAGE_CONTENT | Callback | `{ messageId, delta }` |
-| THINKING_TEXT_MESSAGE_END | Callback | `{ messageId }` |
-| THINKING_END | Callback | `{ messageId }` |
-| TOOL_CALL_ERROR | Callback | `{ toolCallId, error, parentRunId? }` |
-| CHAIN_STARTED | Callback | `{ runId, parentRunId?, chainType, chainName }` |
-| CHAIN_FINISHED | Callback | `{ runId, parentRunId? }` |
-| CHAIN_ERROR | Callback | `{ runId, parentRunId?, error }` |
 
 ### Missing Events - Future Implementation
 
-> **Note:** Per latest AG-UI skill, STATE_DELTA and RAW are stable events in the protocol. Only the following remain unimplemented:
+> **Note:** Per latest AG-UI skill, STATE_DELTA and RAW are stable events in the protocol. THINKING_* events are deprecated (use REASONING_* instead). Chain events require handleChain* callbacks which are not yet standardized in LangChain.
 
 | Event Type | Purpose | Priority |
 |------------|---------|----------|
@@ -303,11 +293,18 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 | RAW | Passthrough events | Low |
 | REASONING_MESSAGE_CHUNK | Convenience chunk for reasoning | Medium |
 | REASONING_ENCRYPTED_VALUE | Encrypted chain-of-thought | Low |
-
+| TOOL_CALL_ERROR | Tool execution error | Medium |
+| CHAIN_STARTED | Chain started | Low |
+| CHAIN_FINISHED | Chain finished | Low |
+| CHAIN_ERROR | Chain error | Low |
+| THINKING_START | Deprecated: use REASONING_START | Deprecated |
+| THINKING_TEXT_MESSAGE_START | Deprecated: use REASONING_MESSAGE_START | Deprecated |
+| THINKING_TEXT_MESSAGE_CONTENT | Deprecated: use REASONING_MESSAGE_CONTENT | Deprecated |
+| THINKING_TEXT_MESSAGE_END | Deprecated: use REASONING_MESSAGE_END | Deprecated |
+| THINKING_END | Deprecated: use REASONING_END | Deprecated |
 ---
 
 ## 5. Project Structure
-
 ```
 src/
 ├── callbacks/
