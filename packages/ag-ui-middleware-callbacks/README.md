@@ -154,8 +154,7 @@ const agent = createAGUIAgent({
 
 > **Reasoning Migration Note:** `THINKING_*` events are deprecated by AG-UI. This package defaults to `reasoningEventMode: "thinking"` for backward compatibility. Set `reasoningEventMode: "reasoning"` to emit `REASONING_*` events.
 >
-> **Emission Timing:** Reasoning/thinking events are emitted after the complete response using LangChain V1's `contentBlocks` API. Concurrent streaming is not possible through callbacks alone (see [SPEC.md](./SPEC.md#47-thinking-events) for details).
-
+> **Emission Timing:** Reasoning/thinking events are emitted after the complete response using LangChain V1's `contentBlocks` API. Concurrent streaming is not possible through callbacks alone (see [docs/Architecture.md](./docs/Architecture.md) for middleware hooks and callback patterns).
 ## Wire Formatting (Developer Responsibility)
 
 Developers must implement their own transport/wire formatting:
