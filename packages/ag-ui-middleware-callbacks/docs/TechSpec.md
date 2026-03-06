@@ -248,6 +248,11 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 - `handleLLMEnd` → TEXT_MESSAGE_END
 - `handleToolStart` → TOOL_CALL_START, TOOL_CALL_ARGS
 - `handleToolEnd` → TOOL_CALL_END, TOOL_CALL_RESULT
+- `handleToolError` → TOOL_CALL_ERROR
+- `handleChainStart` → CHAIN_STARTED
+- `handleChainEnd` → CHAIN_FINISHED
+- `handleChainError` → CHAIN_ERROR
+- `handleCustomEvent` → CUSTOM
 
 ### Implemented Events
 
@@ -283,13 +288,19 @@ Each AG-UI event is emitted via a specific LangChain mechanism:
 | THINKING_TEXT_MESSAGE_CONTENT | Callback | `{ messageId, delta }` |
 | THINKING_TEXT_MESSAGE_END | Callback | `{ messageId }` |
 | THINKING_END | Callback | `{ messageId }` |
+| TOOL_CALL_ERROR | Callback | `{ toolCallId, error, parentRunId? }` |
+| CHAIN_STARTED | Callback | `{ runId, parentRunId?, chainType, chainName }` |
+| CHAIN_FINISHED | Callback | `{ runId, parentRunId? }` |
+| CHAIN_ERROR | Callback | `{ runId, parentRunId?, error }` |
 
 ### Missing Events - Future Implementation
 
-> **Note:** Per latest AG-UI skill, STATE_DELTA, CUSTOM, and RAW are stable events in the protocol. These are not implemented but are stable, not experimental.
+> **Note:** Per latest AG-UI skill, STATE_DELTA and RAW are stable events in the protocol. Only the following remain unimplemented:
 
 | Event Type | Purpose | Priority |
 |------------|---------|----------|
+| STATE_DELTA | JSON Patch for incremental state | High |
+| RAW | Passthrough events | Low |
 | REASONING_MESSAGE_CHUNK | Convenience chunk for reasoning | Medium |
 | REASONING_ENCRYPTED_VALUE | Encrypted chain-of-thought | Low |
 

@@ -35,6 +35,8 @@ LangChain.js agents lack native support for the AG-UI protocol. Developers build
 | **Event** | AG-UI protocol message conforming to the 26 event types | Message, Payload, Notification |
 | **Agent** | LangChain.js agent created via `createAgent()` | Bot, Assistant, Worker |
 | **State** | Agent's mutable state managed via `runtime.state` | Context, Memory, Storage |
+| **Private State** | State fields prefixed with `_` that are excluded from invoke results | Internal fields |
+| **Built-in Middleware** | LangChain-provided middleware (retry, rate limiting, HITL, summarization) for common patterns | - |
 
 ---
 
@@ -181,6 +183,8 @@ LangChain.js agents lack native support for the AG-UI protocol. Developers build
 | Frontend implementation | AG-UI frontend libraries handle this |
 | Agent persistence | LangChain handles state, we just observe |
 | Authentication/Authorization | Outside protocol scope |
+| Built-in Middleware (retry, rate limiting, HITL) | Use LangChain's built-in middleware directly |
+| JumpTo control flow | Not implemented - advanced middleware pattern |
 
 ---
 

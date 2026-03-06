@@ -8,12 +8,12 @@
 
 ### Project Status
 - **Current Implementation:** 22/26 AG-UI events implemented
-- **Total Estimated Effort:** 23 story points
+- **Total Estimated Effort:** 43 story points (35 + 8 from middleware compliance)
 
 ### Critical Path
 
 ```
-[G-1] → [G-2] → [G-3] → [T-1] → [T-2]
+[G-1] → [G-2] → [G-3] → [C-1] → [C-2] → [T-1] → [T-2]
 ```
 
 ### Build Order
@@ -135,6 +135,151 @@ Given a spike investigation
 When research is complete
 Then document use cases identified
 And recommend: implement, defer, or reject
+```
+
+---
+
+### Epic: LangChain Callback Compliance
+
+Required to fully align with langchain-callbacks-mastery skill patterns.
+
+---
+
+#### [C-1] Add Event Filtering Configuration
+
+- **Type:** Feature
+- **Effort:** 2 story points
+- **Dependencies:** None
+- **Description:** Add ignoreLLM, ignoreChain, ignoreTool, ignoreRetriever options to AGUICallbackHandler for event filtering.
+
+- **Acceptance Criteria:**
+```gherkin
+Given a callback handler configured with ignoreTool: true
+When tool events are emitted
+Then the handler does not process tool events
+And performance is improved by skipping unnecessary events
+```
+
+---
+
+#### [C-2] Add Chain Event Handlers
+
+- **Type:** Feature
+- **Effort:** 3 story points
+- **Dependencies:** C-1
+- **Description:** Implement handleChainStart, handleChainEnd, handleChainError to emit CHAIN_STARTED, CHAIN_FINISHED, CHAIN_ERROR events.
+
+- **Acceptance Criteria:**
+```gherkin
+Given an agent execution
+When chain starts, ends, or errors
+Then CHAIN_STARTED/CHAIN_FINISHED/CHAIN_ERROR events are emitted
+And runId parent chain correlation is preserved
+```
+
+---
+
+#### [C-3] Add Tool Error Handler
+
+- **Type:** Feature
+- **Effort:** 2 story points
+- **Dependencies:** C-1
+- **Description:** Implement handleToolError to emit TOOL_CALL_ERROR events.
+
+- **Acceptance Criteria:**
+```gherkin
+Given a tool execution that fails
+When handleToolError is called
+Then TOOL_CALL_ERROR event is emitted with error details
+```
+
+---
+
+#### [C-4] Add Custom Event Handler
+
+- **Type:** Feature
+- **Effort:** 3 story points
+- **Dependencies:** None
+- **Description:** Implement handleCustomEvent to forward custom events as AG-UI CUSTOM events.
+
+- **Acceptance Criteria:**
+```gherkin
+Given a custom event emitted in LangChain
+When handleCustomEvent is called
+Then CUSTOM event is forwarded with event name and data
+```
+
+---
+
+#### [C-5] Add Serialization Support
+
+- **Type:** Feature
+- **Effort:** 2 story points
+- **Dependencies:** None
+- **Description:** Add lc_namespace to AGUICallbackHandler for proper LangChain serialization.
+
+- **Acceptance Criteria:**
+```gherkin
+Given a serialized AGUICallbackHandler
+When deserialized
+Then handler is reconstructed with all configuration
+And handler is functional
+```
+
+---
+
+### Epic: LangChain Middleware Compliance
+
+Required to fully align with implementing-langchain-middleware skill patterns.
+
+---
+
+#### [M-1] Document Execution Order
+
+- **Type:** Chore
+- **Effort:** 1 story point
+- **Dependencies:** None
+- **Description:** Document the middleware execution order (forward for before*, reverse for after*).
+
+- **Acceptance Criteria:**
+```gherkin
+Given middleware documentation
+When reader understands hook order
+Then they know beforeAgent runs before afterAgent in forward order
+And afterModel runs before beforeModel in reverse order
+```
+
+---
+
+#### [M-2] Implement JumpTo Control Flow
+
+- **Type:** Feature
+- **Effort:** 5 story points
+- **Dependencies:** None
+- **Description:** Implement jumpTo functionality for controlling agent execution flow (end, tools, model).
+
+- **Acceptance Criteria:**
+```gherkin
+Given middleware configured with jumpTo
+When agent reaches the hook with jumpTo
+Then execution jumps to the specified target (end/tools/model)
+```
+
+---
+
+#### [M-3] Implement Private State Support
+
+- **Type:** Feature
+- **Effort:** 2 story points
+- **Dependencies:** None
+- **Description:** Add support for private state fields (prefixed with _) that are excluded from invoke results.
+
+- **Acceptance Criteria:**
+```gherkin
+Given middleware with private state fields (prefixed _)
+When state is returned from middleware
+Then private fields are excluded from results
+And only public fields are exposed
 ```
 
 ---

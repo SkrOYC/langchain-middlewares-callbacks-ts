@@ -52,6 +52,43 @@ This package uses two distinct LangChain mechanisms because no single mechanism 
 | `beforeModel` | STEP_STARTED, ACTIVITY_SNAPSHOT |
 | `afterModel` | STEP_FINISHED, ACTIVITY_DELTA |
 
+#### Execution Order
+
+LangChain middleware hooks execute in a predictable sequence:
+
+```
+beforeAgent (forward) → beforeModel → wrapModelCall → model
+    → afterModel (reverse) → wrapToolCall → tool(s) → repeat → afterAgent (reverse)
+```
+
+- **Forward order:** `beforeAgent`, `beforeModel` run middleware[0] → middleware[n]
+- **Reverse order:** `afterAgent`, `afterModel` run middleware[n] → middleware[0]
+
+This package uses only simple hooks (`beforeAgent`, `afterAgent`, `beforeModel`, `afterModel`). The `wrapModelCall` and `wrapToolCall` hooks are not used.
+
+#### JumpTo Control Flow
+
+LangChain middleware supports `jumpTo` for controlling execution flow:
+
+- `jumpTo: "end"` - Skip to afterAgent (exit the run)
+- `jumpTo: "tools"` - Skip afterModel, go directly to tool execution
+- `jumpTo: "model"` - Skip tools, go to next model call
+
+Requires `canJumpTo` declaration in middleware configuration.
+
+**This package does not implement jumpTo functionality.**
+
+#### Private State
+
+Fields prefixed with `_` are internal and excluded from invoke results:
+
+```typescript
+stateSchema = z.object({
+  publicCounter: z.number().default(0),
+  _internalFlag: z.boolean().default(false), // Private - not exposed
+})
+```
+
 **Capabilities:**
 - ✅ Full access to agent state
 - ✅ Full access to runtime
@@ -69,6 +106,11 @@ This package uses two distinct LangChain mechanisms because no single mechanism 
 | `handleLLMEnd` | TEXT_MESSAGE_END |
 | `handleToolStart` | TOOL_CALL_START, TOOL_CALL_ARGS |
 | `handleToolEnd` | TOOL_CALL_END, TOOL_CALL_RESULT |
+| `handleToolError` | TOOL_CALL_ERROR |
+| `handleChainStart` | CHAIN_STARTED |
+| `handleChainEnd` | CHAIN_FINISHED |
+| `handleChainError` | CHAIN_ERROR |
+| `handleCustomEvent` | CUSTOM |
 
 **Capabilities:**
 - ✅ Access to streaming tokens
