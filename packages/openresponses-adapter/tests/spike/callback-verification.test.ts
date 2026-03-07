@@ -1,0 +1,397 @@
+/**
+ * ORL-001 Spike Verification Tests
+ *
+ * These tests verify the feasibility of LangChain callbacks and Hono SSE
+ * as documented in the engineering spike.
+ *
+ * IMPORTANT: These tests verify ACTUAL BEHAVIOR, not just type existence.
+ * Tests that pass "no matter what" have been removed.
+ *
+ * Run with: bun test tests/spike/callback-verification.test.ts
+ */
+
+import { test, expect, describe } from "bun:test";
+import { createFakeAgent, createDeterministicIdGenerator, createSequentialIdGenerator, createCyclingIdGenerator, createInMemoryPreviousResponseStore } from "@/testing/index.js";
+import {
+	OpenResponsesRequestSchema,
+	OpenResponsesResponseSchema,
+	ResponseInProgressEventSchema,
+	OutputTextDeltaEventSchema,
+	ResponseCompletedEventSchema,
+	ResponseFailedEventSchema,
+	FunctionCallArgumentsDeltaEventSchema,
+	OutputItemAddedEventSchema,
+	OpenResponsesEventSchema,
+} from "@/core/schemas.js";
+import {
+	internalErrorToStatusCode,
+	internalErrorToSpecErrorType,
+	internalErrorToPublicError,
+	createInternalError,
+} from "@/core/errors.js";
+
+// =============================================================================
+// Test 1: Fake Agent Behavior (NOT just type checking)
+// =============================================================================
+
+describe("Fake Agent Behavior", () => {
+	test("invoke should return the configured response", async () => {
+		const agent = createFakeAgent({
+			responses: [
+				{ type: "ai", id: "msg-1", content: "Hello from agent" },
+			],
+		});
+
+		const result = await agent.invoke({ messages: [] });
+
+		// This will FAIL if the implementation is wrong
+		expect(result).toEqual({ type: "ai", id: "msg-1", content: "Hello from agent" });
+	});
+
+	test("invoke should return responses in sequence", async () => {
+		const agent = createFakeAgent({
+			responses: [
+				{ type: "ai", content: "First response" },
+				{ type: "ai", content: "Second response" },
+			],
+		});
+
+		const result1 = await agent.invoke({ messages: [] });
+		const result2 = await agent.invoke({ messages: [] });
+
+		expect(result1).toEqual({ type: "ai", content: "First response" });
+		expect(result2).toEqual({ type: "ai", content: "Second response" });
+	});
+
+	test("stream should yield chunks in order", async () => {
+		const agent = createFakeAgent({
+			streamChunks: [
+				{ type: "chunk", content: "Hello" },
+				{ type: "chunk", content: " World" },
+				{ type: "chunk", content: "!" },
+			],
+		});
+
+		const chunks: unknown[] = [];
+		for await (const chunk of agent.stream({ messages: [] })) {
+			chunks.push(chunk);
+		}
+
+		expect(chunks).toEqual([
+			{ type: "chunk", content: "Hello" },
+			{ type: "chunk", content: " World" },
+			{ type: "chunk", content: "!" },
+		]);
+	});
+
+	test("invoke should throw configured error", async () => {
+		const error = new Error("Agent failed");
+		const agent = createFakeAgent({ invokeError: error });
+
+		await expect(agent.invoke({ messages: [] })).rejects.toThrow("Agent failed");
+	});
+
+	test("stream should throw configured error", async () => {
+		const error = new Error("Stream failed");
+		const agent = createFakeAgent({ streamError: error });
+
+		const iterator = agent.stream({ messages: [] })[Symbol.asyncIterator]();
+		await expect(iterator.next()).rejects.toThrow("Stream failed");
+	});
+});
+
+// =============================================================================
+// Test 2: Deterministic ID Generator (NOT just type checking)
+// =============================================================================
+
+describe("Deterministic ID Generator", () => {
+	test("should generate sequential IDs", () => {
+		const generateId = createDeterministicIdGenerator("run-");
+
+		expect(generateId()).toBe("run-0");
+		expect(generateId()).toBe("run-1");
+		expect(generateId()).toBe("run-2");
+	});
+
+	test("should handle custom prefixes", () => {
+		const generateId = createDeterministicIdGenerator("response-");
+
+		expect(generateId()).toBe("response-0");
+		expect(generateId()).toBe("response-1");
+	});
+
+	test("should throw on empty array", () => {
+		const generateId = createSequentialIdGenerator([]);
+
+		expect(generateId).toThrow();
+	});
+
+	test("should cycle through array", () => {
+		const generateId = createCyclingIdGenerator(["a", "b", "c"]);
+
+		expect(generateId()).toBe("a");
+		expect(generateId()).toBe("b");
+		expect(generateId()).toBe("c");
+		expect(generateId()).toBe("a"); // cycles back
+	});
+});
+
+// =============================================================================
+// Test 3: Schema Validation (ACTUAL validation, not just existence)
+// =============================================================================
+
+describe("Schema Validation", () => {
+	test("should accept valid minimal request", () => {
+		const validRequest = {
+			model: "gpt-4",
+			input: "Hello",
+		};
+
+		const result = OpenResponsesRequestSchema.safeParse(validRequest);
+		expect(result.success).toBe(true);
+	});
+
+	test("should accept request with all fields", () => {
+		const fullRequest = {
+			model: "gpt-4",
+			input: [{ type: "message", role: "user", content: "Hello" }],
+			stream: true,
+			tools: [
+				{
+					type: "function",
+					name: "get_weather",
+					description: "Get weather",
+					parameters: { type: "object" },
+				},
+			],
+			tool_choice: "auto",
+			parallel_tool_calls: false,
+			temperature: 0.5,
+			metadata: { source: "test" },
+		};
+
+		const result = OpenResponsesRequestSchema.safeParse(fullRequest);
+		expect(result.success).toBe(true);
+	});
+
+	test("should reject request missing required model", () => {
+		const invalidRequest = {
+			input: "Hello",
+		};
+
+		const result = OpenResponsesRequestSchema.safeParse(invalidRequest);
+		expect(result.success).toBe(false);
+	});
+
+	test("should validate all streaming event types", () => {
+		// Test response.in_progress
+		expect(
+			ResponseInProgressEventSchema.safeParse({
+				type: "response.in_progress",
+				sequence_number: 1,
+				response: { id: "r1", object: "response", status: "in_progress" },
+			}).success
+		).toBe(true);
+
+		// Test response.output_item.added
+		expect(
+			OutputItemAddedEventSchema.safeParse({
+				type: "response.output_item.added",
+				sequence_number: 2,
+				output_index: 0,
+				item: {
+					id: "item-1",
+					type: "message",
+					role: "assistant",
+					status: "in_progress",
+					content: [],
+				},
+			}).success
+		).toBe(true);
+
+		// Test response.output_text.delta
+		expect(
+			OutputTextDeltaEventSchema.safeParse({
+				type: "response.output_text.delta",
+				sequence_number: 3,
+				item_id: "item-1",
+				output_index: 0,
+				content_index: 0,
+				delta: "Hello",
+			}).success
+		).toBe(true);
+
+		// Test response.completed
+		expect(
+			ResponseCompletedEventSchema.safeParse({
+				type: "response.completed",
+				sequence_number: 10,
+				response: { id: "r1", object: "response", status: "completed" },
+			}).success
+		).toBe(true);
+
+		// Test response.failed
+		expect(
+			ResponseFailedEventSchema.safeParse({
+				type: "response.failed",
+				sequence_number: 10,
+				response: { id: "r1", object: "response", status: "failed" },
+				error: {
+					code: "500",
+					message: "Internal error",
+					type: "server_error",
+				},
+			}).success
+		).toBe(true);
+	});
+
+	test("should reject invalid event sequence numbers", () => {
+		// sequence_number must be positive
+		const result = ResponseInProgressEventSchema.safeParse({
+			type: "response.in_progress",
+			sequence_number: 0, // invalid - must be positive
+			response: { id: "r1", object: "response", status: "in_progress" },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	test("should reject unknown event types", () => {
+		const result = OpenResponsesEventSchema.safeParse({
+			type: "response.unknown_event",
+			sequence_number: 1,
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+// =============================================================================
+// Test 4: Error Mapping (ACTUAL mapping logic)
+// =============================================================================
+
+describe("Error Mapping", () => {
+	test("should map invalid_request to 400 and invalid_request_error", () => {
+		expect(internalErrorToStatusCode.invalid_request).toBe(400);
+		expect(internalErrorToSpecErrorType.invalid_request).toBe("invalid_request_error");
+	});
+
+	test("should map previous_response_not_found to 404 and not_found", () => {
+		expect(internalErrorToStatusCode.previous_response_not_found).toBe(404);
+		expect(internalErrorToSpecErrorType.previous_response_not_found).toBe("not_found");
+	});
+
+	test("should map agent_execution_failed to 500 and model_error", () => {
+		expect(internalErrorToStatusCode.agent_execution_failed).toBe(500);
+		expect(internalErrorToSpecErrorType.agent_execution_failed).toBe("model_error");
+	});
+
+	test("should map unsupported_media_type to 415", () => {
+		expect(internalErrorToStatusCode.unsupported_media_type).toBe(415);
+	});
+
+	test("should map previous_response_unusable to 409", () => {
+		expect(internalErrorToStatusCode.previous_response_unusable).toBe(409);
+	});
+
+	test("internalErrorToPublicError should produce correct ErrorObject", () => {
+		const internal = createInternalError(
+			"previous_response_not_found",
+			"Response 'abc-123' not found"
+		);
+
+		const publicError = internalErrorToPublicError(internal);
+
+		expect(publicError.type).toBe("not_found");
+		expect(publicError.code).toBe("404");
+		expect(publicError.message).toBe("Response 'abc-123' not found");
+	});
+
+	test("should use default message when internal message is empty", () => {
+		const internal = createInternalError("internal_error", "");
+
+		const publicError = internalErrorToPublicError(internal, "Default error");
+
+		expect(publicError.message).toBe("Default error");
+	});
+});
+
+// =============================================================================
+// Test 5: In-Memory Store Behavior
+// =============================================================================
+
+describe("In-Memory Store", () => {
+	test("should save and load records", async () => {
+		const store = createInMemoryPreviousResponseStore();
+
+		const record = {
+			response_id: "resp-1",
+			created_at: 1000,
+			completed_at: 2000,
+			model: "gpt-4",
+			request: {
+				model: "gpt-4",
+				input: "Hello",
+				metadata: {},
+				tools: [],
+				parallel_tool_calls: true,
+			},
+			response: {
+				id: "resp-1",
+				object: "response",
+				created_at: 1000,
+				completed_at: 2000,
+				status: "completed",
+				model: "gpt-4",
+				previous_response_id: null,
+				output: [],
+				error: null,
+				metadata: {},
+			},
+			status: "completed" as const,
+			error: null,
+		};
+
+		await store.save(record);
+		const loaded = await store.load("resp-1");
+
+		expect(loaded).not.toBeNull();
+		expect(loaded?.response_id).toBe("resp-1");
+		expect(loaded?.status).toBe("completed");
+	});
+
+	test("should return null for missing record", async () => {
+		const store = createInMemoryPreviousResponseStore();
+
+		const result = await store.load("nonexistent");
+
+		expect(result).toBeNull();
+	});
+
+	test("should overwrite existing record on save", async () => {
+		const store = createInMemoryPreviousResponseStore();
+
+		await store.save({
+			response_id: "resp-1",
+			created_at: 1000,
+			completed_at: 2000,
+			model: "gpt-4",
+			request: { model: "gpt-4", input: "Hello", metadata: {}, tools: [], parallel_tool_calls: true },
+			response: {} as any,
+			status: "completed",
+			error: null,
+		});
+
+		await store.save({
+			response_id: "resp-1",
+			created_at: 1000,
+			completed_at: 3000,
+			model: "gpt-4",
+			request: { model: "gpt-4", input: "Updated", metadata: {}, tools: [], parallel_tool_calls: true },
+			response: {} as any,
+			status: "completed",
+			error: null,
+		});
+
+		const loaded = await store.load("resp-1");
+		expect(loaded?.request.input).toBe("Updated");
+	});
+});

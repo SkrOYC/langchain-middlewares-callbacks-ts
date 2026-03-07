@@ -1,0 +1,66 @@
+{
+	"name": "@skroyc/openresponses-adapter",
+	"version": "0.0.1",
+	"description": "Open Responses protocol adapter for LangChain agents - exposes spec-minimal MVP surface over existing createAgent() runtime",
+	"keywords": [
+		"langchain",
+		"open-responses",
+		"adapter",
+		"middleware",
+		"callbacks",
+		"agent",
+		"streaming",
+		"sse"
+	],
+	"author": "SkrOYC <oscar@ocmasesorias.com>",
+	"license": "MIT",
+	"type": "module",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist/",
+		"package.json",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "tsup",
+		"test": "bun test",
+		"lint": "bun lint",
+		"typecheck": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"langchain": "^1.2.0",
+		"@langchain/core": "^1.1.0",
+		"typescript": "^5.0.0"
+	},
+	"peerDependenciesMeta": {
+		"langchain": {
+			"optional": false
+		},
+		"@langchain/core": {
+			"optional": false
+		}
+	},
+	"dependencies": {
+		"hono": "^4.12.0",
+		"zod": "^4.0.0"
+	},
+	"devDependencies": {
+		"@hono/node-server": "^1.19.0",
+		"@types/bun": "^1.3.0",
+		"tsup": "^8.5.0",
+		"typescript": "^5.9.0"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}
