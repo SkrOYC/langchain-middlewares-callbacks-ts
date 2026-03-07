@@ -266,6 +266,8 @@ export function rmmMiddleware(config: RmmConfig = {}) {
             updateMemory,
             llm: parsedConfig.llm as BaseChatModel,
             embeddings: parsedConfig.embeddings as Embeddings,
+            extractionModel: parsedConfig.extractionModel as BaseChatModel,
+            updateModel: parsedConfig.updateModel as BaseChatModel,
           }
         : undefined,
   };

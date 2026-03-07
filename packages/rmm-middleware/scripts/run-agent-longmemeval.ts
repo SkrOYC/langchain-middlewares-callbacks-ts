@@ -33,6 +33,37 @@ import {
 } from "./utils/rate-limit-retry-model";
 
 const NO_CITE_TAG_REGEX = /\[NO_CITE\]/i;
+const DEFAULT_LONGMEMEVAL_DATASET =
+  "./data/longmemeval/longmemeval_s_cleaned.json";
+const DEFAULT_LONGMEMEVAL_OUT_DIR = "./artifacts/longmemeval-s-gemma";
+const DEFAULT_LONGMEMEVAL_CONFIG = {
+  allowRawFallback: false,
+  embeddingCache: true,
+  embeddingCachePath: "./data/longmemeval/cache/embeddings",
+  embeddingDimension: 384,
+  embeddingsAdapter: "./scripts/adapters/huggingface-embeddings-adapter.ts",
+  evalConcurrency: 20,
+  methods: "rmm",
+  mode: "all",
+  modelAdapter: "./scripts/adapters/google-gemma-model-adapter.ts",
+  paperStrict: true,
+  prebuildAllBeforeEvaluation: true,
+  prebuildConcurrency: 20,
+  prebuildMethods: "rmm",
+  prebuildSpeaker2: false,
+  prebuildTopicBank: true,
+  prebuildZeroMemoryRetries: 2,
+  reflectionCache: true,
+  reflectionCachePath: "./data/longmemeval/cache/reflection-cache.jsonl",
+  reflectionModelAdapter: "./scripts/adapters/google-gemma-model-adapter.ts",
+  requirePrebuild: true,
+  resume: true,
+  retrievalMetricSource: "topm",
+  saveArtifacts: true,
+  strictPrebuildCoverage: 1,
+  vectorStoreCache: true,
+  vectorStoreCacheDir: "./data/longmemeval/cache/vector-stores.s1only.c20",
+} as const;
 
 interface CliArgs {
   mode: "prebuild" | "eval" | "all";
@@ -165,48 +196,53 @@ async function main() {
       scope: `generation:${method}:${instance.question_id}`,
     });
 
-  const reflectionModelFactoryWithCache =
-    baseReflectionModelFactory && reflectionCache
-      ? (
-          method: AgentEvalMethod,
-          instance: (typeof dataset)[number]
-        ): BaseChatModel =>
-          wrapModelWithInvokeCache(
-            wrapModelWithRateLimitRetry(baseReflectionModelFactory(method), {
-              coordinator: rateLimitCoordinator,
-              scope: `reflection:${method}:${instance.question_id}`,
-            }),
-            {
-              cache: reflectionCache,
-              namespace: [
-                "longmemeval-reflection",
+  let reflectionModelFactoryWithCache:
+    | ((
+        method: AgentEvalMethod,
+        instance: (typeof dataset)[number]
+      ) => BaseChatModel)
+    | undefined;
+  if (baseReflectionModelFactory && reflectionCache) {
+    reflectionModelFactoryWithCache = (
+      method: AgentEvalMethod,
+      instance: (typeof dataset)[number]
+    ): BaseChatModel =>
+      wrapModelWithInvokeCache(
+        wrapModelWithRateLimitRetry(baseReflectionModelFactory(method), {
+          coordinator: rateLimitCoordinator,
+          scope: `reflection:${method}:${instance.question_id}`,
+        }),
+        {
+          cache: reflectionCache,
+          namespace: [
+            "longmemeval-reflection",
+            method,
+            args.reflectionModelAdapter ?? args.modelAdapter ?? "default",
+          ].join("|"),
+          emptyResponseRetryCount: 1,
+          onEvent: async (event) => {
+            await writeLog({
+              event: "reflection_cache",
+              details: {
                 method,
-                args.reflectionModelAdapter ?? args.modelAdapter ?? "default",
-              ].join("|"),
-              emptyResponseRetryCount: 1,
-              onEvent: async (event) => {
-                await writeLog({
-                  event: "reflection_cache",
-                  details: {
-                    method,
-                    questionId: instance.question_id,
-                    questionType: instance.question_type,
-                    ...event,
-                  },
-                });
+                questionId: instance.question_id,
+                questionType: instance.question_type,
+                ...event,
               },
-            },
-          )
-      : baseReflectionModelFactory
-        ? (
-            method: AgentEvalMethod,
-            instance: (typeof dataset)[number]
-          ): BaseChatModel =>
-            wrapModelWithRateLimitRetry(baseReflectionModelFactory(method), {
-              coordinator: rateLimitCoordinator,
-              scope: `reflection:${method}:${instance.question_id}`,
-            })
-        : undefined;
+            });
+          },
+        }
+      );
+  } else if (baseReflectionModelFactory) {
+    reflectionModelFactoryWithCache = (
+      method: AgentEvalMethod,
+      instance: (typeof dataset)[number]
+    ): BaseChatModel =>
+      wrapModelWithRateLimitRetry(baseReflectionModelFactory(method), {
+        coordinator: rateLimitCoordinator,
+        scope: `reflection:${method}:${instance.question_id}`,
+      });
+  }
 
   const writeProgressSnapshot = async (force = false): Promise<void> => {
     if (!args.saveArtifacts) {
@@ -560,67 +596,52 @@ async function main() {
 
 function parseArgs(argv: string[]): CliArgs {
   const kv = parseCliKeyValueArgs(argv);
-
-  const methods = parseMethods(kv.get("methods"));
-  const prebuildMethods = parseMethods(kv.get("prebuild-methods") ?? "rmm");
-  const mode = parseMode(kv.get("mode"));
-  const paperStrict = parseBoolean(kv.get("paper-strict"), false);
+  const methods = parseMethods(
+    readCliEnvOrDefault(
+      kv,
+      "methods",
+      "EVAL_METHODS",
+      DEFAULT_LONGMEMEVAL_CONFIG.methods
+    )
+  );
+  const prebuildMethods = parseMethods(
+    readCliEnvOrDefault(
+      kv,
+      "prebuild-methods",
+      "EVAL_PREBUILD_METHODS",
+      DEFAULT_LONGMEMEVAL_CONFIG.prebuildMethods
+    )
+  );
+  const mode = parseMode(
+    readCliEnvOrDefault(
+      kv,
+      "mode",
+      "EVAL_MODE",
+      DEFAULT_LONGMEMEVAL_CONFIG.mode
+    )
+  );
+  const paperStrict = parseBoolean(
+    readCliEnvOrDefault(
+      kv,
+      "paper-strict",
+      "EVAL_PAPER_STRICT",
+      String(DEFAULT_LONGMEMEVAL_CONFIG.paperStrict)
+    ),
+    DEFAULT_LONGMEMEVAL_CONFIG.paperStrict
+  );
   const outDir = resolve(
-    kv.get("out-dir") ??
-      `./artifacts/agent-longmemeval-${new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-")}`
+    readCliEnvOrDefault(
+      kv,
+      "out-dir",
+      "EVAL_OUT_DIR",
+      DEFAULT_LONGMEMEVAL_OUT_DIR
+    )
   );
-
-  const defaultEmbeddingDimension = parseIntWithDefault(
-    process.env.EVAL_EMBEDDING_DIMENSION,
-    1536
-  );
-  const defaultPrebuildConcurrency = parseIntWithDefault(
-    process.env.EVAL_PREBUILD_CONCURRENCY,
-    1
-  );
-  const defaultEvalConcurrency = parseIntWithDefault(
-    process.env.EVAL_CONCURRENCY,
-    1
-  );
-  const hasExplicitPrebuildFlag = kv.has("prebuild-topic-bank");
-  const resolvedPrebuildTopicMemoryBank = hasExplicitPrebuildFlag
-    ? parseBoolean(kv.get("prebuild-topic-bank"), true)
-    : mode !== "eval";
-  const resolvedRequirePrebuild = parseBoolean(
-    kv.get("require-prebuild"),
-    mode === "eval" || mode === "all"
-  );
-  const resolvedAllowRawFallback = parseBoolean(
-    kv.get("allow-raw-fallback"),
-    !paperStrict
-  );
-  const resolvedRetrievalMetricSource = parseRetrievalMetricSource(
-    kv.get("metrics-retrieval-source") ?? kv.get("retrieval-metric-source"),
-    paperStrict ? "topm" : "topk"
-  );
-  const resolvedTopK = paperStrict
-    ? 20
-    : parseIntWithDefault(kv.get("top-k"), 20);
-  const resolvedTopM = paperStrict
-    ? 5
-    : parseIntWithDefault(kv.get("top-m"), 5);
-  const resolvedStrictCoverage = parseCoverageWithDefault(
-    kv.get("strict-prebuild-coverage"),
-    resolvedRequirePrebuild ? 1 : 0
-  );
-  const resolvedPrebuildZeroMemoryRetries = parseIntWithDefault(
-    kv.get("prebuild-zero-memory-retries"),
-    parseIntWithDefault(process.env.EVAL_PREBUILD_ZERO_MEMORY_RETRIES, 2)
-  );
-  const embeddingDimension = parseIntWithDefault(
-    kv.get("embedding-dimension"),
-    defaultEmbeddingDimension
-  );
+  const profile = resolveCliProfile(kv, mode, paperStrict);
+  const runtimeOptions = resolveRuntimeOptions(kv, outDir);
   const defaultEmbeddingCacheNamespace = [
     process.env.EVAL_EMBEDDINGS_MODEL ?? "embeddings-model",
-    `dim=${embeddingDimension}`,
+    `dim=${profile.embeddingDimension}`,
     `dtype=${process.env.EVAL_EMBEDDING_DTYPE ?? "default"}`,
     `encoding=${process.env.EVAL_EMBEDDING_ENCODING ?? "default"}`,
   ].join("|");
@@ -628,59 +649,274 @@ function parseArgs(argv: string[]): CliArgs {
   return {
     mode,
     paperStrict,
-    dataset: kv.get("dataset"),
+    dataset: readCliEnvOrDefault(
+      kv,
+      "dataset",
+      "EVAL_DATASET",
+      DEFAULT_LONGMEMEVAL_DATASET
+    ),
     methods,
     outDir,
-    saveArtifacts: parseBoolean(kv.get("save-artifacts"), true),
-    topK: resolvedTopK,
-    topM: resolvedTopM,
-    embeddingDimension,
-    modelAdapter: kv.get("model-adapter"),
-    judgeAdapter: kv.get("judge-adapter"),
-    embeddingsAdapter: kv.get("embeddings-adapter"),
-    embeddingCache: parseBoolean(kv.get("embedding-cache"), true),
-    embeddingCachePath: resolve(
-      kv.get("embedding-cache-path") ?? "./data/longmemeval/cache/embeddings"
-    ),
+    saveArtifacts: runtimeOptions.saveArtifacts,
+    topK: profile.topK,
+    topM: profile.topM,
+    embeddingDimension: profile.embeddingDimension,
+    modelAdapter: runtimeOptions.modelAdapter,
+    judgeAdapter: runtimeOptions.judgeAdapter,
+    embeddingsAdapter: runtimeOptions.embeddingsAdapter,
+    embeddingCache: runtimeOptions.embeddingCache,
+    embeddingCachePath: runtimeOptions.embeddingCachePath,
     embeddingCacheNamespace:
-      kv.get("embedding-cache-namespace") ?? defaultEmbeddingCacheNamespace,
-    resume: parseBoolean(kv.get("resume"), true),
-    logFile: resolve(kv.get("log-file") ?? `${outDir}/run.log`),
-    prebuildTopicMemoryBank: resolvedPrebuildTopicMemoryBank,
+      readCliOrEnv(
+        kv,
+        "embedding-cache-namespace",
+        "EVAL_EMBEDDING_CACHE_NAMESPACE"
+      ) ?? defaultEmbeddingCacheNamespace,
+    resume: runtimeOptions.resume,
+    logFile: runtimeOptions.logFile,
+    prebuildTopicMemoryBank: profile.prebuildTopicMemoryBank,
     prebuildMethods,
-    includeSpeaker2InPrebuild: parseBoolean(kv.get("prebuild-speaker2"), true),
+    includeSpeaker2InPrebuild: runtimeOptions.includeSpeaker2InPrebuild,
     prebuildMaxSessions: parseOptionalPositiveInt(
-      kv.get("prebuild-max-sessions")
+      readCliOrEnv(kv, "prebuild-max-sessions", "EVAL_PREBUILD_MAX_SESSIONS")
     ),
-    reflectionModelAdapter: kv.get("reflection-model-adapter"),
-    reflectionCache: parseBoolean(kv.get("reflection-cache"), true),
-    reflectionCachePath: resolve(
-      kv.get("reflection-cache-path") ??
-        "./data/longmemeval/cache/reflection-cache.jsonl"
+    reflectionModelAdapter: runtimeOptions.reflectionModelAdapter,
+    reflectionCache: runtimeOptions.reflectionCache,
+    reflectionCachePath: runtimeOptions.reflectionCachePath,
+    prebuildAllBeforeEvaluation: runtimeOptions.prebuildAllBeforeEvaluation,
+    vectorStoreCache: runtimeOptions.vectorStoreCache,
+    vectorStoreCacheDir: runtimeOptions.vectorStoreCacheDir,
+    prebuildConcurrency: profile.prebuildConcurrency,
+    evalConcurrency: profile.evalConcurrency,
+    requirePrebuild: profile.requirePrebuild,
+    allowRawFallback: profile.allowRawFallback,
+    strictPrebuildCoverage: profile.strictPrebuildCoverage,
+    retrievalMetricSource: profile.retrievalMetricSource,
+    prebuildZeroMemoryRetries: profile.prebuildZeroMemoryRetries,
+  };
+}
+
+function resolveCliProfile(
+  kv: Map<string, string>,
+  _mode: "prebuild" | "eval" | "all",
+  paperStrict: boolean
+): Pick<
+  CliArgs,
+  | "allowRawFallback"
+  | "embeddingDimension"
+  | "evalConcurrency"
+  | "prebuildConcurrency"
+  | "prebuildTopicMemoryBank"
+  | "prebuildZeroMemoryRetries"
+  | "requirePrebuild"
+  | "retrievalMetricSource"
+  | "strictPrebuildCoverage"
+  | "topK"
+  | "topM"
+> {
+  const defaultEmbeddingDimension = parseIntWithDefault(
+    process.env.EVAL_EMBEDDING_DIMENSION,
+    DEFAULT_LONGMEMEVAL_CONFIG.embeddingDimension
+  );
+  const defaultPrebuildConcurrency = parseIntWithDefault(
+    process.env.EVAL_PREBUILD_CONCURRENCY,
+    DEFAULT_LONGMEMEVAL_CONFIG.prebuildConcurrency
+  );
+  const defaultEvalConcurrency = parseIntWithDefault(
+    process.env.EVAL_CONCURRENCY,
+    DEFAULT_LONGMEMEVAL_CONFIG.evalConcurrency
+  );
+  const hasExplicitPrebuildFlag = kv.has("prebuild-topic-bank");
+  const prebuildTopicMemoryBank = hasExplicitPrebuildFlag
+    ? parseBoolean(kv.get("prebuild-topic-bank"), true)
+    : parseBoolean(
+        process.env.EVAL_PREBUILD_TOPIC_BANK,
+        DEFAULT_LONGMEMEVAL_CONFIG.prebuildTopicBank
+      );
+  const requirePrebuild = parseBoolean(
+    readCliEnvOrDefault(
+      kv,
+      "require-prebuild",
+      "EVAL_REQUIRE_PREBUILD",
+      String(DEFAULT_LONGMEMEVAL_CONFIG.requirePrebuild)
     ),
-    prebuildAllBeforeEvaluation: parseBoolean(
-      kv.get("prebuild-all-before-evaluation"),
-      true
+    DEFAULT_LONGMEMEVAL_CONFIG.requirePrebuild
+  );
+  const allowRawFallback = parseBoolean(
+    readCliEnvOrDefault(
+      kv,
+      "allow-raw-fallback",
+      "EVAL_ALLOW_RAW_FALLBACK",
+      String(DEFAULT_LONGMEMEVAL_CONFIG.allowRawFallback)
     ),
-    vectorStoreCache: parseBoolean(kv.get("vector-store-cache"), true),
-    vectorStoreCacheDir: resolve(
-      kv.get("vector-store-cache-dir") ??
-        "./data/longmemeval/cache/vector-stores"
-    ),
-    prebuildConcurrency: parseIntWithDefault(
-      kv.get("prebuild-concurrency"),
-      defaultPrebuildConcurrency
+    DEFAULT_LONGMEMEVAL_CONFIG.allowRawFallback
+  );
+  const retrievalMetricSource = parseRetrievalMetricSource(
+    readCliEnvOrDefault(
+      kv,
+      "metrics-retrieval-source",
+      "EVAL_RETRIEVAL_METRIC_SOURCE",
+      DEFAULT_LONGMEMEVAL_CONFIG.retrievalMetricSource
+    ) ??
+      readCliOrEnv(
+        kv,
+        "retrieval-metric-source",
+        "EVAL_RETRIEVAL_METRIC_SOURCE"
+      ),
+    paperStrict ? "topm" : "topk"
+  );
+
+  return {
+    allowRawFallback,
+    embeddingDimension: parseIntWithDefault(
+      readCliOrEnv(kv, "embedding-dimension", "EVAL_EMBEDDING_DIMENSION"),
+      defaultEmbeddingDimension
     ),
     evalConcurrency: parseIntWithDefault(
-      kv.get("eval-concurrency"),
+      readCliOrEnv(kv, "eval-concurrency", "EVAL_CONCURRENCY"),
       defaultEvalConcurrency
     ),
-    requirePrebuild: resolvedRequirePrebuild,
-    allowRawFallback: resolvedAllowRawFallback,
-    strictPrebuildCoverage: resolvedStrictCoverage,
-    retrievalMetricSource: resolvedRetrievalMetricSource,
-    prebuildZeroMemoryRetries: resolvedPrebuildZeroMemoryRetries,
+    prebuildConcurrency: parseIntWithDefault(
+      readCliOrEnv(kv, "prebuild-concurrency", "EVAL_PREBUILD_CONCURRENCY"),
+      defaultPrebuildConcurrency
+    ),
+    prebuildTopicMemoryBank,
+    prebuildZeroMemoryRetries: parseIntWithDefault(
+      readCliEnvOrDefault(
+        kv,
+        "prebuild-zero-memory-retries",
+        "EVAL_PREBUILD_ZERO_MEMORY_RETRIES",
+        String(DEFAULT_LONGMEMEVAL_CONFIG.prebuildZeroMemoryRetries)
+      ),
+      parseIntWithDefault(
+        process.env.EVAL_PREBUILD_ZERO_MEMORY_RETRIES,
+        DEFAULT_LONGMEMEVAL_CONFIG.prebuildZeroMemoryRetries
+      )
+    ),
+    requirePrebuild,
+    retrievalMetricSource,
+    strictPrebuildCoverage: parseCoverageWithDefault(
+      readCliOrEnv(
+        kv,
+        "strict-prebuild-coverage",
+        "EVAL_STRICT_PREBUILD_COVERAGE"
+      ),
+      requirePrebuild ? 1 : 0
+    ),
+    topK: paperStrict
+      ? 20
+      : parseIntWithDefault(readCliOrEnv(kv, "top-k", "EVAL_TOP_K"), 20),
+    topM: paperStrict
+      ? 5
+      : parseIntWithDefault(readCliOrEnv(kv, "top-m", "EVAL_TOP_M"), 5),
   };
+}
+
+function resolveRuntimeOptions(
+  kv: Map<string, string>,
+  outDir: string
+): Pick<
+  CliArgs,
+  | "embeddingsAdapter"
+  | "embeddingCache"
+  | "embeddingCachePath"
+  | "includeSpeaker2InPrebuild"
+  | "judgeAdapter"
+  | "logFile"
+  | "modelAdapter"
+  | "prebuildAllBeforeEvaluation"
+  | "reflectionCache"
+  | "reflectionCachePath"
+  | "reflectionModelAdapter"
+  | "resume"
+  | "saveArtifacts"
+  | "vectorStoreCache"
+  | "vectorStoreCacheDir"
+> {
+  return {
+    embeddingsAdapter:
+      readCliOrEnv(kv, "embeddings-adapter", "EVAL_EMBEDDINGS_ADAPTER") ??
+      DEFAULT_LONGMEMEVAL_CONFIG.embeddingsAdapter,
+    embeddingCache: parseBoolean(
+      readCliOrEnv(kv, "embedding-cache", "EVAL_EMBEDDING_CACHE"),
+      DEFAULT_LONGMEMEVAL_CONFIG.embeddingCache
+    ),
+    embeddingCachePath: resolve(
+      readCliOrEnv(kv, "embedding-cache-path", "EVAL_EMBEDDING_CACHE_PATH") ??
+        DEFAULT_LONGMEMEVAL_CONFIG.embeddingCachePath
+    ),
+    includeSpeaker2InPrebuild: parseBoolean(
+      readCliOrEnv(kv, "prebuild-speaker2", "EVAL_PREBUILD_SPEAKER2"),
+      DEFAULT_LONGMEMEVAL_CONFIG.prebuildSpeaker2
+    ),
+    judgeAdapter:
+      readCliOrEnv(kv, "judge-adapter", "EVAL_JUDGE_ADAPTER") ??
+      "./scripts/adapters/google-gemma-judge-adapter.ts",
+    logFile: resolve(
+      readCliOrEnv(kv, "log-file", "EVAL_LOG_FILE") ?? `${outDir}/run.log`
+    ),
+    modelAdapter:
+      readCliOrEnv(kv, "model-adapter", "EVAL_MODEL_ADAPTER") ??
+      DEFAULT_LONGMEMEVAL_CONFIG.modelAdapter,
+    prebuildAllBeforeEvaluation: parseBoolean(
+      readCliOrEnv(
+        kv,
+        "prebuild-all-before-evaluation",
+        "EVAL_PREBUILD_ALL_BEFORE_EVALUATION"
+      ),
+      DEFAULT_LONGMEMEVAL_CONFIG.prebuildAllBeforeEvaluation
+    ),
+    reflectionCache: parseBoolean(
+      readCliOrEnv(kv, "reflection-cache", "EVAL_REFLECTION_CACHE"),
+      DEFAULT_LONGMEMEVAL_CONFIG.reflectionCache
+    ),
+    reflectionCachePath: resolve(
+      readCliOrEnv(kv, "reflection-cache-path", "EVAL_REFLECTION_CACHE_PATH") ??
+        DEFAULT_LONGMEMEVAL_CONFIG.reflectionCachePath
+    ),
+    reflectionModelAdapter:
+      readCliOrEnv(
+        kv,
+        "reflection-model-adapter",
+        "EVAL_REFLECTION_MODEL_ADAPTER"
+      ) ?? DEFAULT_LONGMEMEVAL_CONFIG.reflectionModelAdapter,
+    resume: parseBoolean(
+      readCliOrEnv(kv, "resume", "EVAL_RESUME"),
+      DEFAULT_LONGMEMEVAL_CONFIG.resume
+    ),
+    saveArtifacts: parseBoolean(
+      readCliOrEnv(kv, "save-artifacts", "EVAL_SAVE_ARTIFACTS"),
+      DEFAULT_LONGMEMEVAL_CONFIG.saveArtifacts
+    ),
+    vectorStoreCache: parseBoolean(
+      readCliOrEnv(kv, "vector-store-cache", "EVAL_VECTOR_STORE_CACHE"),
+      DEFAULT_LONGMEMEVAL_CONFIG.vectorStoreCache
+    ),
+    vectorStoreCacheDir: resolve(
+      readCliOrEnv(
+        kv,
+        "vector-store-cache-dir",
+        "EVAL_VECTOR_STORE_CACHE_DIR"
+      ) ?? DEFAULT_LONGMEMEVAL_CONFIG.vectorStoreCacheDir
+    ),
+  };
+}
+
+function readCliOrEnv(
+  kv: Map<string, string>,
+  cliKey: string,
+  envKey: string
+): string | undefined {
+  return kv.get(cliKey) ?? process.env[envKey];
+}
+
+function readCliEnvOrDefault(
+  kv: Map<string, string>,
+  cliKey: string,
+  envKey: string,
+  fallback: string
+): string {
+  return kv.get(cliKey) ?? process.env[envKey] ?? fallback;
 }
 
 async function loadExistingRecords(

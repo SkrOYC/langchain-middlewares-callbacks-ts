@@ -136,6 +136,18 @@ export interface BeforeAgentOptions {
      */
     llm: BaseChatModel;
     /**
+     * LLM for memory extraction (Prospective Reflection).
+     * Defaults to llm if not set.
+     * Use a smaller/faster model for simpler extraction tasks.
+     */
+    extractionModel?: BaseChatModel;
+    /**
+     * LLM for memory update decisions (Add vs Merge).
+     * Defaults to llm if not set.
+     * Use a larger model for more complex reasoning tasks.
+     */
+    updateModel?: BaseChatModel;
+    /**
      * Embeddings for encoding extracted memories
      * Required for generating memory vectors in VectorStore
      */
@@ -290,9 +302,11 @@ async function processReflection(
 
     // EXTRACT: Use LLM to extract memories from both speaker perspectives
     // Paper Appendix D.1.1: separate prompts for SPEAKER_1 and SPEAKER_2
+    // Use extractionModel if provided, otherwise fall back to llm
+    const extractionModel = deps.extractionModel ?? deps.llm;
     const speaker1Memories = await extractMemories(
       sessionHistory,
-      deps.llm,
+      extractionModel,
       deps.embeddings,
       deps.extractSpeaker1,
       userId
@@ -302,7 +316,7 @@ async function processReflection(
     if (deps.extractSpeaker2) {
       speaker2Memories = await extractMemories(
         sessionHistory,
-        deps.llm,
+        extractionModel,
         deps.embeddings,
         deps.extractSpeaker2,
         userId
@@ -324,11 +338,13 @@ async function processReflection(
 
     // STORE: Process each memory through the merge/add decision pipeline
     // (Algorithm 1 lines 9-11: similarity search → LLM decides Add/Merge → execute)
+    // Use updateModel if provided, otherwise fall back to llm
+    const updateModel = deps.updateModel ?? deps.llm;
     for (const memory of memories) {
       await processMemoryUpdate(
         memory,
         deps.vectorStore as VectorStoreInterface,
-        deps.llm,
+        updateModel,
         deps.updateMemory
       );
     }

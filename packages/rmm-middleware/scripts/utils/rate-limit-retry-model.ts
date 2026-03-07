@@ -2,6 +2,11 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 
 const DEFAULT_BACKOFF_MINUTES = [5, 15, 30, 60];
 const RATE_LIMIT_WRAPPED = Symbol.for("rmm.rate_limit_wrapped");
+const RETRY_DELAY_PATTERNS: RegExp[] = [
+  /retry(?:ing)?\s+in\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|secs|seconds?|m|mins?|minutes?)/i,
+  /retryDelay["']?\s*[:=]\s*["']?(\d+(?:\.\d+)?)(ms|s|m)?/i,
+  /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)(s|m|ms)"/i,
+];
 const MODEL_FACTORY_METHODS = new Set([
   "bindTools",
   "withConfig",
@@ -22,6 +27,7 @@ export interface RateLimitRetryEvent {
   delayMinutes?: number;
   waitMs?: number;
   nextRetryAt?: string;
+  source?: "provider_hint" | "fallback_schedule";
 }
 
 export interface SharedRateLimitCoordinatorOptions {
@@ -104,18 +110,31 @@ export class SharedRateLimitCoordinator {
       const delayMinutes =
         this.backoffMinutes[
           Math.min(this.nextBackoffIndex, this.backoffMinutes.length - 1)
-        ] ?? this.backoffMinutes[this.backoffMinutes.length - 1] ?? 60;
+        ] ??
+        this.backoffMinutes.at(-1) ??
+        60;
+      const providerHintWaitMs = extractRetryDelayMs(options.error);
+      const waitMs =
+        providerHintWaitMs && providerHintWaitMs > 0
+          ? providerHintWaitMs
+          : delayMinutes * 60_000;
 
-      this.nextAllowedAtMs = now + delayMinutes * 60_000;
-      this.nextBackoffIndex += 1;
+      this.nextAllowedAtMs = now + waitMs;
+      if (!(providerHintWaitMs && providerHintWaitMs > 0)) {
+        this.nextBackoffIndex += 1;
+      }
 
       await this.onEvent?.({
         kind: "backoff_scheduled",
         scope: options.scope,
         attempt: options.attempt,
-        delayMinutes,
-        waitMs: this.nextAllowedAtMs - now,
+        delayMinutes: Number((waitMs / 60_000).toFixed(3)),
+        waitMs,
         nextRetryAt: new Date(this.nextAllowedAtMs).toISOString(),
+        source:
+          providerHintWaitMs && providerHintWaitMs > 0
+            ? "provider_hint"
+            : "fallback_schedule",
       });
     });
   }
@@ -151,9 +170,9 @@ export function wrapModelWithRateLimitRetry(
     scope?: string;
   }
 ): BaseChatModel {
-  const wrappedFlag = (
-    model as unknown as Record<string | symbol, unknown>
-  )[RATE_LIMIT_WRAPPED];
+  const wrappedFlag = (model as unknown as Record<string | symbol, unknown>)[
+    RATE_LIMIT_WRAPPED
+  ];
   if (wrappedFlag === true) {
     return model;
   }
@@ -222,7 +241,7 @@ export function wrapModelWithRateLimitRetry(
   }) as unknown as BaseChatModel;
 }
 
-function isRateLimitError(error: unknown): boolean {
+export function isRateLimitError(error: unknown): boolean {
   const message = stringifyError(error).toLowerCase();
 
   if (
@@ -263,6 +282,112 @@ function stringifyError(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+export function extractRetryDelayMs(error: unknown): number | null {
+  const candidate = error as {
+    response?: { headers?: unknown };
+    headers?: unknown;
+    cause?: unknown;
+  };
+
+  const headerValue =
+    readHeaderValue(candidate?.response?.headers, "retry-after") ??
+    readHeaderValue(candidate?.headers, "retry-after");
+  const fromHeader = parseRetryAfterHeaderMs(headerValue);
+  if (fromHeader && fromHeader > 0) {
+    return fromHeader;
+  }
+
+  const message = stringifyError(error);
+  const fromMessage = parseRetryDelayFromText(message);
+  if (fromMessage && fromMessage > 0) {
+    return fromMessage;
+  }
+
+  let causeMessage = "";
+  if (candidate?.cause instanceof Error) {
+    causeMessage = candidate.cause.message;
+  } else if (candidate?.cause) {
+    causeMessage = String(candidate.cause);
+  }
+  const fromCause = parseRetryDelayFromText(causeMessage);
+  if (fromCause && fromCause > 0) {
+    return fromCause;
+  }
+
+  return null;
+}
+
+function readHeaderValue(headers: unknown, name: string): string | null {
+  if (!headers || typeof headers !== "object") {
+    return null;
+  }
+
+  if (typeof (headers as { get?: unknown }).get === "function") {
+    const value = (headers as { get: (key: string) => unknown }).get(name);
+    return typeof value === "string" ? value : null;
+  }
+
+  const record = headers as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
+    if (key.toLowerCase() !== name.toLowerCase()) {
+      continue;
+    }
+    return typeof value === "string" ? value : null;
+  }
+
+  return null;
+}
+
+function parseRetryAfterHeaderMs(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const absoluteMs = Date.parse(trimmed);
+  if (Number.isFinite(absoluteMs)) {
+    return Math.max(0, absoluteMs - Date.now());
+  }
+
+  return null;
+}
+
+function parseRetryDelayFromText(message: string): number | null {
+  if (!message) {
+    return null;
+  }
+
+  for (const pattern of RETRY_DELAY_PATTERNS) {
+    const match = message.match(pattern);
+    if (!match) {
+      continue;
+    }
+    const rawValue = Number(match[1]);
+    if (!Number.isFinite(rawValue) || rawValue < 0) {
+      continue;
+    }
+    const unit = (match[2] ?? "s").toLowerCase();
+    return convertToMs(rawValue, unit);
+  }
+
+  return null;
+}
+
+function convertToMs(value: number, unit: string): number {
+  if (unit.startsWith("ms")) {
+    return Math.ceil(value);
+  }
+  if (unit.startsWith("m")) {
+    return Math.ceil(value * 60_000);
+  }
+  return Math.ceil(value * 1000);
 }
 
 function delay(ms: number): Promise<void> {

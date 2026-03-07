@@ -8,6 +8,7 @@
 
 import type { Embeddings } from "@langchain/core/embeddings";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
 import { z } from "zod";
 import type {
@@ -72,6 +73,20 @@ export const rmmConfigSchema = z.object({
    * Optional - if not provided, prospective reflection is skipped.
    */
   llm: z.custom<BaseLanguageModel>().optional(),
+
+  /**
+   * LLM for memory extraction (Prospective Reflection).
+   * Defaults to llm if not set.
+   * Use a smaller/faster model for simpler extraction tasks.
+   */
+  extractionModel: z.custom<BaseChatModel>().optional(),
+
+  /**
+   * LLM for memory update decisions (Add vs Merge).
+   * Defaults to llm if not set.
+   * Use a larger model for more complex reasoning tasks.
+   */
+  updateModel: z.custom<BaseChatModel>().optional(),
 
   /**
    * Number of memories to retrieve from vector store.

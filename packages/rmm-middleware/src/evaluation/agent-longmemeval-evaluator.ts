@@ -748,6 +748,17 @@ export class AgentLongMemEvalEvaluator {
     });
 
     if (method === "rmm") {
+      // Get the model for agent runtime
+      const model = this.modelFactory(method, instance);
+
+      // Get separate models for extraction and update if reflectionModelFactory is configured
+      const extractionModel = this.reflectionModelFactory
+        ? this.reflectionModelFactory(method, instance)
+        : undefined;
+      const updateModel = this.reflectionModelFactory
+        ? this.reflectionModelFactory(method, instance)
+        : undefined;
+
       return [
         rmmMiddleware({
           enabled: true,
@@ -756,6 +767,9 @@ export class AgentLongMemEvalEvaluator {
           embeddingDimension: this.embeddingDimension,
           topK: this.topK,
           topM: this.topM,
+          llm: model,
+          extractionModel,
+          updateModel,
         }),
         probe,
       ];
@@ -907,7 +921,7 @@ async function defaultVectorStoreFactory(
           reflectionModel,
           includeSpeaker2: options?.includeSpeaker2 ?? true,
           maxPrebuildSessions: options?.maxPrebuildSessions,
-          resumeState: attempt === 1 ? resumeState ?? undefined : undefined,
+          resumeState: attempt === 1 ? (resumeState ?? undefined) : undefined,
           onSessionCheckpoint: async (checkpoint) => {
             if (!persistentStore) {
               return;
@@ -1400,10 +1414,7 @@ function normalizePrebuildResumeState(
       0,
       Math.floor(Number(marker.extractedMemories ?? 0))
     ),
-    storedMemories: Math.max(
-      0,
-      Math.floor(Number(marker.storedMemories ?? 0))
-    ),
+    storedMemories: Math.max(0, Math.floor(Number(marker.storedMemories ?? 0))),
   };
 }
 
