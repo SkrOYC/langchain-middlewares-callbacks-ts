@@ -336,10 +336,10 @@ describe("In-Memory Store", () => {
 			},
 			response: {
 				id: "resp-1",
-				object: "response",
+				object: "response" as const,
 				created_at: 1000,
 				completed_at: 2000,
-				status: "completed",
+				status: "completed" as const,
 				model: "gpt-4",
 				previous_response_id: null,
 				output: [],

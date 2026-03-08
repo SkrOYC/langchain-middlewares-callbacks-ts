@@ -33,10 +33,10 @@ export function createOpenResponsesHandler<E extends Env = Env>(
  * @param options - Handler configuration options
  * @returns Configured Hono app
  */
-export function buildOpenResponsesApp<E extends Env = Env>(
+export async function buildOpenResponsesApp<E extends Env = Env>(
 	options: OpenResponsesHandlerOptions
 ) {
-	const { Hono } = require("hono");
+	const { Hono } = await import("hono");
 	const app = new Hono();
 	app.post("/v1/responses", createOpenResponsesHandler(options));
 	return app;

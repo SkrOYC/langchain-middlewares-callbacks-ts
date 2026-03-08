@@ -83,9 +83,9 @@ export declare function createOpenResponsesAdapter(
  */
 export declare function buildOpenResponsesApp<E extends Env = Env>(
 	options: OpenResponsesHandlerOptions
-): {
+): Promise<{
 	fetch(request: Request, env: E, ctx?: { waitUntil(promise: Promise<void>): void }): Promise<Response>;
-};
+}>;
 
 // =============================================================================
 // Callback Handler Type

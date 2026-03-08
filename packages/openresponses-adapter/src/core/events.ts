@@ -6,8 +6,6 @@
  * and map to Open Responses public events.
  */
 
-import type { ErrorObject } from "./schemas.js";
-
 /**
  * Union of all internal semantic events.
  * These derive from LangChain callbacks and are transformed into

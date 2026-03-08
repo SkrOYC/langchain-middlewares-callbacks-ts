@@ -53,17 +53,6 @@ export function createInMemoryPreviousResponseStore(): InMemoryPreviousResponseS
 }
 
 /**
- * In-memory store with additional testing utilities.
- */
-export interface InMemoryPreviousResponseStore extends PreviousResponseStore {
-	__getStore(): Map<string, StoredResponseRecord>;
-	__clear(): void;
-	__size(): number;
-	__has(responseId: string): boolean;
-	__delete(responseId: string): boolean;
-}
-
-/**
  * Creates a pre-populated in-memory store for testing.
  */
 export function createPopulatedInMemoryStore(
