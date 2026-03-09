@@ -45,6 +45,9 @@ export function createDeterministicIdGenerator(prefix = "test-"): () => string {
 
 /**
  * Creates an ID generator that returns fixed IDs in sequence.
+ * 
+ * Note: The non-null assertions are safe because we check for empty array
+ * at the start of the function and return early if empty.
  */
 export function createSequentialIdGenerator(
 	ids: string[]
@@ -59,12 +62,16 @@ export function createSequentialIdGenerator(
 		if (index >= ids.length) {
 			throw new Error(`ID generator exhausted: no more IDs at index ${index}`);
 		}
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 		return ids[index++]!;
 	};
 }
 
 /**
  * Creates an ID generator that cycles through a list of IDs.
+ * 
+ * Note: The non-null assertion is safe because we check for empty array
+ * at the start of the function and return early if empty.
  */
 export function createCyclingIdGenerator(ids: string[]): () => string {
 	if (ids.length === 0) {
@@ -74,8 +81,7 @@ export function createCyclingIdGenerator(ids: string[]): () => string {
 	}
 	let index = 0;
 	return () => {
-		const id = ids[index % ids.length];
-		index++;
-		return id!;
+		// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+		return ids[index++ % ids.length]!;
 	};
 }

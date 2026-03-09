@@ -9,11 +9,9 @@ import type {
 	OpenResponsesRequest,
 	OpenResponsesResponse,
 	OpenResponsesEvent,
-	OpenResponsesStreamChunk,
-	ErrorObject,
 	FunctionTool,
 	ToolChoice,
-	Metadata,
+	ErrorObject,
 } from "./schemas.js";
 
 // =============================================================================

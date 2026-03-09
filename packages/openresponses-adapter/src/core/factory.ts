@@ -14,7 +14,7 @@ import type {
 	StoredResponseRecord,
 } from "./types.js";
 
-import type { OpenResponsesRequest, OpenResponsesResponse, ErrorObject } from "./schemas.js";
+import type { OpenResponsesRequest, OpenResponsesResponse } from "./schemas.js";
 
 import type { OpenResponsesEvent } from "./schemas.js";
 
