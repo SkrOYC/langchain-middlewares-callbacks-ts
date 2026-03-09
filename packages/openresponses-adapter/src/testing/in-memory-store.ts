@@ -9,6 +9,10 @@ import type {
   PreviousResponseStore,
   StoredResponseRecord,
 } from "../core/types.js";
+import {
+  parseStoredResponseRecord,
+  synchronizeStoredResponseRecord,
+} from "../server/previous-response.js";
 
 /**
  * In-memory store with additional testing utilities.
@@ -34,11 +38,18 @@ export function createInMemoryPreviousResponseStore(): InMemoryPreviousResponseS
       responseId: string,
       _signal?: AbortSignal
     ): Promise<StoredResponseRecord | null> {
-      return Promise.resolve(store.get(responseId) ?? null);
+      const record = store.get(responseId);
+
+      if (record === undefined) {
+        return Promise.resolve(null);
+      }
+
+      return Promise.resolve(parseStoredResponseRecord(record, responseId));
     },
 
     save(record: StoredResponseRecord, _signal?: AbortSignal): Promise<void> {
-      store.set(record.response_id, record);
+      const synchronizedRecord = synchronizeStoredResponseRecord(record);
+      store.set(synchronizedRecord.response_id, synchronizedRecord);
       return Promise.resolve();
     },
 
@@ -60,8 +71,12 @@ export function createPopulatedInMemoryStore(
   records: StoredResponseRecord[]
 ): InMemoryPreviousResponseStore {
   const store = createInMemoryPreviousResponseStore();
+  const backingStore = store.__getStore();
+
   for (const record of records) {
-    store.save(record);
+    const synchronizedRecord = synchronizeStoredResponseRecord(record);
+    backingStore.set(synchronizedRecord.response_id, synchronizedRecord);
   }
+
   return store;
 }

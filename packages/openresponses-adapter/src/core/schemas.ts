@@ -7,6 +7,10 @@
 
 import { z } from "zod";
 
+const jsonValuesMatch = (left: unknown, right: unknown): boolean => {
+  return JSON.stringify(left) === JSON.stringify(right);
+};
+
 // =============================================================================
 // Metadata Schema
 // =============================================================================
@@ -163,9 +167,8 @@ export const InputItemSchema = z.union([
 export const FunctionToolSchema = z.object({
   type: z.literal("function"),
   name: z.string().min(1).max(64),
-  description: z.string().min(1), // Required per Open Responses spec
-  parameters: z.record(z.string(), z.unknown()), // Required per Open Responses spec
-  // Response schema marks strict as required with default true; request parameter allows omission (defaults to true)
+  description: z.string().min(1),
+  parameters: z.record(z.string(), z.unknown()),
   strict: z.boolean().default(true),
 });
 
@@ -276,6 +279,94 @@ export const OpenResponsesResponseSchema = z.object({
   error: ErrorObjectSchema.nullable(),
   metadata: MetadataSchema.default({}),
 });
+
+export const StoredResponseRequestSchema = z.object({
+  model: z.string().min(1),
+  input: z.array(InputItemSchema),
+  metadata: MetadataSchema.default({}),
+  tools: z.array(FunctionToolSchema),
+  tool_choice: ToolChoiceSchema.optional(),
+  parallel_tool_calls: z.boolean(),
+});
+
+export const StoredResponseRecordSchema = z
+  .object({
+    response_id: z.string().min(1),
+    created_at: z.number().int().nonnegative(),
+    completed_at: z.number().int().nonnegative().nullable(),
+    model: z.string().min(1),
+    request: StoredResponseRequestSchema,
+    response: OpenResponsesResponseSchema,
+    status: z.enum(["completed", "failed", "incomplete"]),
+    error: ErrorObjectSchema.nullable(),
+  })
+  .superRefine((record, ctx) => {
+    if (
+      !["completed", "failed", "incomplete"].includes(record.response.status)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stored response must reference a terminal response resource",
+        path: ["response", "status"],
+      });
+    }
+
+    if (record.response_id !== record.response.id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "response_id must match response.id",
+        path: ["response_id"],
+      });
+    }
+
+    if (record.created_at !== record.response.created_at) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "created_at must match response.created_at",
+        path: ["created_at"],
+      });
+    }
+
+    if (record.completed_at !== record.response.completed_at) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "completed_at must match response.completed_at",
+        path: ["completed_at"],
+      });
+    }
+
+    if (record.model !== record.response.model) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "model must match response.model",
+        path: ["model"],
+      });
+    }
+
+    if (record.request.model !== record.model) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "request.model must match model",
+        path: ["request", "model"],
+      });
+    }
+
+    if (record.status !== record.response.status) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "status must match response.status",
+        path: ["status"],
+      });
+    }
+
+    if (!jsonValuesMatch(record.error, record.response.error)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "error must match response.error",
+        path: ["error"],
+      });
+    }
+  });
 
 // =============================================================================
 // Streaming Event Schemas
@@ -405,6 +496,10 @@ export const OpenResponsesEventSchema = z.union([
 // Request/Response types
 export type OpenResponsesRequest = z.infer<typeof OpenResponsesRequestSchema>;
 export type OpenResponsesResponse = z.infer<typeof OpenResponsesResponseSchema>;
+export type StoredResponseRequest = z.infer<typeof StoredResponseRequestSchema>;
+export type StoredResponseRecordShape = z.infer<
+  typeof StoredResponseRecordSchema
+>;
 
 // Input types
 export type InputTextPart = z.infer<typeof InputTextPartSchema>;
