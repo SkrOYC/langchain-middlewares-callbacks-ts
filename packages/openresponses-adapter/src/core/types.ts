@@ -9,6 +9,7 @@ import type { CallbackHandlerMethods } from "@langchain/core/callbacks/base";
 import type {
   ErrorObject,
   FunctionTool,
+  InputItem,
   OpenResponsesEvent,
   OpenResponsesRequest,
   OpenResponsesResponse,
@@ -31,10 +32,10 @@ export interface StoredResponseRecord {
   model: string;
   request: {
     model: string;
-    input: OpenResponsesRequest["input"];
+    input: InputItem[];
     metadata: Record<string, string>;
     tools: FunctionTool[];
-    tool_choice?: ToolChoice;
+    tool_choice?: ToolChoice | undefined;
     parallel_tool_calls: boolean;
   };
   response: OpenResponsesResponse;
@@ -124,6 +125,7 @@ export type NormalizedToolPolicy =
  * Normalized request after input transformation.
  */
 export interface NormalizedRequest {
+  inputItems: InputItem[];
   messages: LangChainMessageLike[];
   original: OpenResponsesRequest;
   toolPolicy: NormalizedToolPolicy;

@@ -27,6 +27,7 @@ import {
   ResponseFailedEventSchema,
   ResponseInProgressEventSchema,
 } from "@/core/schemas.js";
+import type { StoredResponseRecord } from "@/core/types.js";
 import {
   createCyclingIdGenerator,
   createDeterministicIdGenerator,
@@ -49,9 +50,13 @@ describe("Fake Agent Behavior", () => {
 
     // This will FAIL if the implementation is wrong
     expect(result).toEqual({
-      type: "ai",
-      id: "msg-1",
-      content: "Hello from agent",
+      messages: [
+        {
+          type: "ai",
+          id: "msg-1",
+          content: "Hello from agent",
+        },
+      ],
     });
   });
 
@@ -66,8 +71,12 @@ describe("Fake Agent Behavior", () => {
     const result1 = await agent.invoke({ messages: [] });
     const result2 = await agent.invoke({ messages: [] });
 
-    expect(result1).toEqual({ type: "ai", content: "First response" });
-    expect(result2).toEqual({ type: "ai", content: "Second response" });
+    expect(result1).toEqual({
+      messages: [{ type: "ai", content: "First response" }],
+    });
+    expect(result2).toEqual({
+      messages: [{ type: "ai", content: "Second response" }],
+    });
   });
 
   test("stream should yield chunks in order", async () => {
@@ -518,14 +527,20 @@ describe("In-Memory Store", () => {
   test("should save and load records", async () => {
     const store = createInMemoryPreviousResponseStore();
 
-    const record = {
+    const record: StoredResponseRecord = {
       response_id: "resp-1",
       created_at: 1000,
       completed_at: 2000,
       model: "gpt-4",
       request: {
         model: "gpt-4",
-        input: "Hello",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: "Hello",
+          },
+        ],
         metadata: {},
         tools: [],
         parallel_tool_calls: true,
@@ -585,7 +600,13 @@ describe("In-Memory Store", () => {
       model: "gpt-4",
       request: {
         model: "gpt-4",
-        input: "Hello",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: "Hello",
+          },
+        ],
         metadata: {},
         tools: [],
         parallel_tool_calls: true,
@@ -602,7 +623,13 @@ describe("In-Memory Store", () => {
       model: "gpt-4",
       request: {
         model: "gpt-4",
-        input: "Updated",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: "Updated",
+          },
+        ],
         metadata: {},
         tools: [],
         parallel_tool_calls: true,
@@ -616,6 +643,12 @@ describe("In-Memory Store", () => {
     });
 
     const loaded = await store.load("resp-1");
-    expect(loaded?.request.input).toBe("Updated");
+    expect(loaded?.request.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: "Updated",
+      },
+    ]);
   });
 });

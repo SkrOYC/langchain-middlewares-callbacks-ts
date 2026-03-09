@@ -7,6 +7,42 @@
 
 import { z } from "zod";
 
+const jsonValuesMatch = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((value, index) => jsonValuesMatch(value, right[index]));
+  }
+
+  if (
+    typeof left === "object" &&
+    left !== null &&
+    typeof right === "object" &&
+    right !== null
+  ) {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord).sort();
+    const rightKeys = Object.keys(rightRecord).sort();
+
+    if (!jsonValuesMatch(leftKeys, rightKeys)) {
+      return false;
+    }
+
+    return leftKeys.every((key) =>
+      jsonValuesMatch(leftRecord[key], rightRecord[key])
+    );
+  }
+
+  return false;
+};
+
 // =============================================================================
 // Metadata Schema
 // =============================================================================
@@ -163,9 +199,8 @@ export const InputItemSchema = z.union([
 export const FunctionToolSchema = z.object({
   type: z.literal("function"),
   name: z.string().min(1).max(64),
-  description: z.string().min(1), // Required per Open Responses spec
-  parameters: z.record(z.string(), z.unknown()), // Required per Open Responses spec
-  // Response schema marks strict as required with default true; request parameter allows omission (defaults to true)
+  description: z.string().min(1),
+  parameters: z.record(z.string(), z.unknown()),
   strict: z.boolean().default(true),
 });
 
@@ -276,6 +311,76 @@ export const OpenResponsesResponseSchema = z.object({
   error: ErrorObjectSchema.nullable(),
   metadata: MetadataSchema.default({}),
 });
+
+export const StoredResponseRequestSchema = z.object({
+  model: z.string().min(1),
+  input: z.array(InputItemSchema),
+  metadata: MetadataSchema.default({}),
+  tools: z.array(FunctionToolSchema),
+  tool_choice: ToolChoiceSchema.optional(),
+  parallel_tool_calls: z.boolean(),
+});
+
+export const StoredResponseRecordSchema = z
+  .object({
+    response_id: z.string().min(1),
+    created_at: z.number().int().nonnegative(),
+    completed_at: z.number().int().nonnegative().nullable(),
+    model: z.string().min(1),
+    request: StoredResponseRequestSchema,
+    response: OpenResponsesResponseSchema,
+    status: z.enum(["completed", "failed", "incomplete"]),
+    error: ErrorObjectSchema.nullable(),
+  })
+  .superRefine((record, ctx) => {
+    const addIssue = (path: Array<string | number>, message: string) => {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message,
+        path,
+      });
+    };
+
+    if (
+      !["completed", "failed", "incomplete"].includes(record.response.status)
+    ) {
+      addIssue(
+        ["response", "status"],
+        "stored response must reference a terminal response resource"
+      );
+    }
+
+    if (record.response_id !== record.response.id) {
+      addIssue(["response_id"], "response_id must match response.id");
+    }
+
+    if (record.created_at !== record.response.created_at) {
+      addIssue(["created_at"], "created_at must match response.created_at");
+    }
+
+    if (record.completed_at !== record.response.completed_at) {
+      addIssue(
+        ["completed_at"],
+        "completed_at must match response.completed_at"
+      );
+    }
+
+    if (record.model !== record.response.model) {
+      addIssue(["model"], "model must match response.model");
+    }
+
+    if (record.request.model !== record.model) {
+      addIssue(["request", "model"], "request.model must match model");
+    }
+
+    if (record.status !== record.response.status) {
+      addIssue(["status"], "status must match response.status");
+    }
+
+    if (!jsonValuesMatch(record.error, record.response.error)) {
+      addIssue(["error"], "error must match response.error");
+    }
+  });
 
 // =============================================================================
 // Streaming Event Schemas
@@ -405,6 +510,10 @@ export const OpenResponsesEventSchema = z.union([
 // Request/Response types
 export type OpenResponsesRequest = z.infer<typeof OpenResponsesRequestSchema>;
 export type OpenResponsesResponse = z.infer<typeof OpenResponsesResponseSchema>;
+export type StoredResponseRequest = z.infer<typeof StoredResponseRequestSchema>;
+export type StoredResponseRecordShape = z.infer<
+  typeof StoredResponseRecordSchema
+>;
 
 // Input types
 export type InputTextPart = z.infer<typeof InputTextPartSchema>;

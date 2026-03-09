@@ -11,7 +11,7 @@ export interface FakeAgentConfig {
   /**
    * Response messages to return in order.
    */
-  responses?: LangChainMessageLike[];
+  responses?: Array<LangChainMessageLike | LangChainMessageLike[]>;
 
   /**
    * Stream chunks to yield for streaming responses.
@@ -39,7 +39,9 @@ export interface FakeAgentConfig {
  */
 export interface FakeAgent extends OpenResponsesCompatibleAgent {
   __getInvokeCount(): number;
+  __getLastInvokeInput(): { messages: LangChainMessageLike[] } | null;
   __getStreamCount(): number;
+  __getLastStreamInput(): { messages: LangChainMessageLike[] } | null;
   __resetCounts(): void;
 }
 
@@ -49,6 +51,13 @@ export interface FakeAgent extends OpenResponsesCompatibleAgent {
  * @param config - Configuration for fake behavior
  * @returns Fake agent implementing OpenResponsesCompatibleAgent
  */
+
+const toResponseBatch = (
+  response: LangChainMessageLike | LangChainMessageLike[]
+): LangChainMessageLike[] => {
+  return Array.isArray(response) ? response : [response];
+};
+
 export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
   const {
     responses = [
@@ -66,12 +75,16 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
 
   let invokeCount = 0;
   let streamCount = 0;
+  let lastInvokeInput: { messages: LangChainMessageLike[] } | null = null;
+  let lastStreamInput: { messages: LangChainMessageLike[] } | null = null;
 
   return {
     async invoke(
-      _input: { messages: LangChainMessageLike[] },
+      input: { messages: LangChainMessageLike[] },
       _config?: Record<string, unknown>
     ): Promise<unknown> {
+      lastInvokeInput = structuredClone(input);
+
       if (invokeError) {
         throw invokeError;
       }
@@ -87,14 +100,29 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
       }
 
       const index = Math.min(invokeCount, responses.length - 1);
+      const response = responses[index];
+      if (response === undefined) {
+        throw new Error(
+          "FakeAgent misconfigured: response for invoke index is undefined"
+        );
+      }
+
       invokeCount++;
-      return responses[index];
+
+      return {
+        messages: [
+          ...structuredClone(input.messages),
+          ...structuredClone(toResponseBatch(response)),
+        ],
+      };
     },
 
     async *stream(
-      _input: { messages: LangChainMessageLike[] },
+      input: { messages: LangChainMessageLike[] },
       _config?: Record<string, unknown>
     ): AsyncIterable<unknown> {
+      lastStreamInput = structuredClone(input);
+
       if (streamError) {
         throw streamError;
       }
@@ -110,10 +138,14 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
 
     // Expose for testing
     __getInvokeCount: () => invokeCount,
+    __getLastInvokeInput: () => lastInvokeInput,
     __getStreamCount: () => streamCount,
+    __getLastStreamInput: () => lastStreamInput,
     __resetCounts: () => {
       invokeCount = 0;
       streamCount = 0;
+      lastInvokeInput = null;
+      lastStreamInput = null;
     },
   };
 }
