@@ -90,10 +90,9 @@ export function internalErrorToPublicError(
   defaultMessage = "An unexpected error occurred"
 ): ErrorObject {
   const specType = internalErrorToSpecErrorType[internal.code];
-  const statusCode = internalErrorToStatusCode[internal.code];
 
   return {
-    code: String(statusCode),
+    code: internal.code,
     message: internal.message || defaultMessage,
     type: specType,
   };

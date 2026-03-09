@@ -337,7 +337,7 @@ describe("Error Mapping", () => {
     const publicError = internalErrorToPublicError(internal);
 
     expect(publicError.type).toBe("not_found");
-    expect(publicError.code).toBe("404");
+    expect(publicError.code).toBe("previous_response_not_found");
     expect(publicError.message).toBe("Response 'abc-123' not found");
   });
 
