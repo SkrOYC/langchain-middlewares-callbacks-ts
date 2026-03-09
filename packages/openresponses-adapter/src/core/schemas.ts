@@ -8,7 +8,39 @@
 import { z } from "zod";
 
 const jsonValuesMatch = (left: unknown, right: unknown): boolean => {
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((value, index) => jsonValuesMatch(value, right[index]));
+  }
+
+  if (
+    typeof left === "object" &&
+    left !== null &&
+    typeof right === "object" &&
+    right !== null
+  ) {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord).sort();
+    const rightKeys = Object.keys(rightRecord).sort();
+
+    if (!jsonValuesMatch(leftKeys, rightKeys)) {
+      return false;
+    }
+
+    return leftKeys.every((key) =>
+      jsonValuesMatch(leftRecord[key], rightRecord[key])
+    );
+  }
+
+  return false;
 };
 
 // =============================================================================
@@ -301,70 +333,52 @@ export const StoredResponseRecordSchema = z
     error: ErrorObjectSchema.nullable(),
   })
   .superRefine((record, ctx) => {
+    const addIssue = (path: Array<string | number>, message: string) => {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message,
+        path,
+      });
+    };
+
     if (
       !["completed", "failed", "incomplete"].includes(record.response.status)
     ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "stored response must reference a terminal response resource",
-        path: ["response", "status"],
-      });
+      addIssue(
+        ["response", "status"],
+        "stored response must reference a terminal response resource"
+      );
     }
 
     if (record.response_id !== record.response.id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "response_id must match response.id",
-        path: ["response_id"],
-      });
+      addIssue(["response_id"], "response_id must match response.id");
     }
 
     if (record.created_at !== record.response.created_at) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "created_at must match response.created_at",
-        path: ["created_at"],
-      });
+      addIssue(["created_at"], "created_at must match response.created_at");
     }
 
     if (record.completed_at !== record.response.completed_at) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "completed_at must match response.completed_at",
-        path: ["completed_at"],
-      });
+      addIssue(
+        ["completed_at"],
+        "completed_at must match response.completed_at"
+      );
     }
 
     if (record.model !== record.response.model) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "model must match response.model",
-        path: ["model"],
-      });
+      addIssue(["model"], "model must match response.model");
     }
 
     if (record.request.model !== record.model) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "request.model must match model",
-        path: ["request", "model"],
-      });
+      addIssue(["request", "model"], "request.model must match model");
     }
 
     if (record.status !== record.response.status) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "status must match response.status",
-        path: ["status"],
-      });
+      addIssue(["status"], "status must match response.status");
     }
 
     if (!jsonValuesMatch(record.error, record.response.error)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "error must match response.error",
-        path: ["error"],
-      });
+      addIssue(["error"], "error must match response.error");
     }
   });
 

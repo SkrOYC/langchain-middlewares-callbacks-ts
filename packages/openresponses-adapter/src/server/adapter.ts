@@ -55,6 +55,22 @@ const toInternalServerError = (message: string, error: unknown): never => {
   throw internalError(message, error);
 };
 
+const materializeResponseOrThrow = (params: {
+  request: OpenResponsesRequest;
+  responseId: string;
+  result: unknown;
+  inputMessageCount: number;
+  createdAt: number;
+  completedAt: number;
+  generateId: () => string;
+}): OpenResponsesResponse => {
+  try {
+    return materializeInvokeResponse(params);
+  } catch (error) {
+    return toInternalServerError("Failed to materialize response", error);
+  }
+};
+
 /**
  * Creates an Open Responses adapter without HTTP transport.
  *
@@ -102,20 +118,15 @@ export function createOpenResponsesAdapter(
 
       const completedAt = clock();
 
-      let response: OpenResponsesResponse;
-      try {
-        response = materializeInvokeResponse({
-          request: normalizedRequest.original,
-          responseId,
-          result: agentResult,
-          inputMessageCount: normalizedRequest.messages.length,
-          createdAt,
-          completedAt,
-          generateId,
-        });
-      } catch (error) {
-        return toInternalServerError("Failed to materialize response", error);
-      }
+      const response = materializeResponseOrThrow({
+        request: normalizedRequest.original,
+        responseId,
+        result: agentResult,
+        inputMessageCount: normalizedRequest.messages.length,
+        createdAt,
+        completedAt,
+        generateId,
+      });
 
       if (options.previousResponseStore) {
         try {
@@ -126,10 +137,7 @@ export function createOpenResponsesAdapter(
           });
           await options.previousResponseStore.save(storedRecord, signal);
         } catch (error) {
-          return toInternalServerError(
-            "Failed to save previous response",
-            error
-          );
+          toInternalServerError("Failed to save previous response", error);
         }
       }
 
