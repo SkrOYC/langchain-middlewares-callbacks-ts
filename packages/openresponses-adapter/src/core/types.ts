@@ -5,6 +5,7 @@
  * Most types are inferred from schemas, but some need explicit definitions.
  */
 
+import type { CallbackHandlerMethods } from "@langchain/core/callbacks/base";
 import type {
   ErrorObject,
   FunctionTool,
@@ -98,7 +99,7 @@ export interface OpenResponsesCompatibleAgent {
  */
 export interface OpenResponsesHandlerOptions {
   agent: OpenResponsesCompatibleAgent;
-  callbacks?: unknown[];
+  callbacks?: CallbackHandlerMethods[];
   middleware?: unknown[];
   previousResponseStore?: PreviousResponseStore;
   onError?: (error: unknown) => ErrorObject;
