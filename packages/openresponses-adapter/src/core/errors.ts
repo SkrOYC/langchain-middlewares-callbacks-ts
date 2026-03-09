@@ -108,12 +108,20 @@ export function createInternalError(
   details?: Record<string, unknown>,
   cause?: unknown
 ): InternalError {
-  return {
+  const error: InternalError = {
     code,
     message,
-    details,
-    cause,
   };
+
+  if (details !== undefined) {
+    error.details = details;
+  }
+
+  if (cause !== undefined) {
+    error.cause = cause;
+  }
+
+  return error;
 }
 
 // =============================================================================
