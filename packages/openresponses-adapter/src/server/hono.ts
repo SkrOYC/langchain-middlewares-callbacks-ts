@@ -14,17 +14,17 @@ import type { OpenResponsesHandlerOptions } from "../core/index.js";
  * @returns Hono handler function
  */
 export function createOpenResponsesHandler<E extends Env = Env>(
-	_options: OpenResponsesHandlerOptions
+  _options: OpenResponsesHandlerOptions
 ): (c: Context<E>) => Promise<Response> {
-	// TODO: Implement in ORL-017
-	return (_c: Context<E>): Promise<Response> => {
-		return Promise.resolve(
-			new Response(JSON.stringify({ error: "Not implemented yet" }), {
-				status: 501,
-				headers: { "Content-Type": "application/json" },
-			})
-		);
-	};
+  // TODO: Implement in ORL-017
+  return (_c: Context<E>): Promise<Response> => {
+    return Promise.resolve(
+      new Response(JSON.stringify({ error: "Not implemented yet" }), {
+        status: 501,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+  };
 }
 
 /**
@@ -34,10 +34,10 @@ export function createOpenResponsesHandler<E extends Env = Env>(
  * @returns Configured Hono app
  */
 export async function buildOpenResponsesApp<_E extends Env = Env>(
-	options: OpenResponsesHandlerOptions
+  options: OpenResponsesHandlerOptions
 ) {
-	const { Hono } = await import("hono");
-	const app = new Hono();
-	app.post("/v1/responses", createOpenResponsesHandler(options));
-	return app;
+  const { Hono } = await import("hono");
+  const app = new Hono();
+  app.post("/v1/responses", createOpenResponsesHandler(options));
+  return app;
 }

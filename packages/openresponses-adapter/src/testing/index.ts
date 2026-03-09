@@ -6,36 +6,34 @@
 
 // Clock utilities
 export {
-	deterministicClock,
-	createDeterministicClock,
-	createFixedClock,
-	resetClock,
-	setTime,
-	advanceTime,
+  advanceTime,
+  createDeterministicClock,
+  createFixedClock,
+  deterministicClock,
+  resetClock,
+  setTime,
 } from "./deterministic-clock.js";
 
 // ID generator utilities
 export {
-	deterministicId,
-	createDeterministicIdGenerator,
-	createSequentialIdGenerator,
-	createCyclingIdGenerator,
-	resetIdCounter,
-	setIdCounter,
+  createCyclingIdGenerator,
+  createDeterministicIdGenerator,
+  createSequentialIdGenerator,
+  deterministicId,
+  resetIdCounter,
+  setIdCounter,
 } from "./deterministic-id.js";
-
+export type { FakeAgentConfig } from "./fake-agent.js";
 // Fake agent
 export {
-	createFakeAgent,
-	createTextFakeAgent,
-	createStreamingFakeAgent,
-	createErrorFakeAgent,
+  createErrorFakeAgent,
+  createFakeAgent,
+  createStreamingFakeAgent,
+  createTextFakeAgent,
 } from "./fake-agent.js";
-export type { FakeAgentConfig } from "./fake-agent.js";
-
+export type { InMemoryPreviousResponseStore } from "./in-memory-store.js";
 // In-memory store
 export {
-	createInMemoryPreviousResponseStore,
-	createPopulatedInMemoryStore,
+  createInMemoryPreviousResponseStore,
+  createPopulatedInMemoryStore,
 } from "./in-memory-store.js";
-export type { InMemoryPreviousResponseStore } from "./in-memory-store.js";

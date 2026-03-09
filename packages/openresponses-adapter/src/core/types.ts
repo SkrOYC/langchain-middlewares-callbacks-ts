@@ -6,12 +6,12 @@
  */
 
 import type {
-	OpenResponsesRequest,
-	OpenResponsesResponse,
-	OpenResponsesEvent,
-	FunctionTool,
-	ToolChoice,
-	ErrorObject,
+  ErrorObject,
+  FunctionTool,
+  OpenResponsesEvent,
+  OpenResponsesRequest,
+  OpenResponsesResponse,
+  ToolChoice,
 } from "./schemas.js";
 
 // =============================================================================
@@ -24,21 +24,21 @@ import type {
  * but the required logical record shape.
  */
 export interface StoredResponseRecord {
-	response_id: string;
-	created_at: number;
-	completed_at: number | null;
-	model: string;
-	request: {
-		model: string;
-		input: OpenResponsesRequest["input"];
-		metadata: Record<string, string>;
-		tools: FunctionTool[];
-		tool_choice?: ToolChoice;
-		parallel_tool_calls: boolean;
-	};
-	response: OpenResponsesResponse;
-	status: "completed" | "failed" | "incomplete";
-	error: ErrorObject | null;
+  response_id: string;
+  created_at: number;
+  completed_at: number | null;
+  model: string;
+  request: {
+    model: string;
+    input: OpenResponsesRequest["input"];
+    metadata: Record<string, string>;
+    tools: FunctionTool[];
+    tool_choice?: ToolChoice;
+    parallel_tool_calls: boolean;
+  };
+  response: OpenResponsesResponse;
+  status: "completed" | "failed" | "incomplete";
+  error: ErrorObject | null;
 }
 
 /**
@@ -46,11 +46,11 @@ export interface StoredResponseRecord {
  * Builders must implement this to enable previous_response_id continuation.
  */
 export interface PreviousResponseStore {
-	load(
-		responseId: string,
-		signal?: AbortSignal
-	): Promise<StoredResponseRecord | null>;
-	save(record: StoredResponseRecord, signal?: AbortSignal): Promise<void>;
+  load(
+    responseId: string,
+    signal?: AbortSignal
+  ): Promise<StoredResponseRecord | null>;
+  save(record: StoredResponseRecord, signal?: AbortSignal): Promise<void>;
 }
 
 // =============================================================================
@@ -62,8 +62,8 @@ export interface PreviousResponseStore {
  * Used for internal message representation.
  */
 export interface LangChainMessageLike {
-	type: string;
-	[key: string]: unknown;
+  type: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -79,14 +79,14 @@ export interface LangChainMessageLike {
  * Callback handlers can be used with both methods, but actual streaming requires stream().
  */
 export interface OpenResponsesCompatibleAgent {
-	invoke(
-		input: { messages: LangChainMessageLike[] },
-		config?: Record<string, unknown>
-	): Promise<unknown>;
-	stream(
-		input: { messages: LangChainMessageLike[] },
-		config?: Record<string, unknown>
-	): AsyncIterable<unknown>;
+  invoke(
+    input: { messages: LangChainMessageLike[] },
+    config?: Record<string, unknown>
+  ): Promise<unknown>;
+  stream(
+    input: { messages: LangChainMessageLike[] },
+    config?: Record<string, unknown>
+  ): AsyncIterable<unknown>;
 }
 
 // =============================================================================
@@ -97,13 +97,13 @@ export interface OpenResponsesCompatibleAgent {
  * Options for creating an Open Responses handler.
  */
 export interface OpenResponsesHandlerOptions {
-	agent: OpenResponsesCompatibleAgent;
-	callbacks?: unknown[];
-	middleware?: unknown[];
-	previousResponseStore?: PreviousResponseStore;
-	onError?: (error: unknown) => ErrorObject;
-	clock?: () => number;
-	generateId?: () => string;
+  agent: OpenResponsesCompatibleAgent;
+  callbacks?: unknown[];
+  middleware?: unknown[];
+  previousResponseStore?: PreviousResponseStore;
+  onError?: (error: unknown) => ErrorObject;
+  clock?: () => number;
+  generateId?: () => string;
 }
 
 // =============================================================================
@@ -114,18 +114,18 @@ export interface OpenResponsesHandlerOptions {
  * Tool policy derived from request normalization.
  */
 export type NormalizedToolPolicy =
-	| { mode: "none" }
-	| { mode: "auto" }
-	| { mode: "required" }
-	| { mode: "specific"; tools: string[] };
+  | { mode: "none" }
+  | { mode: "auto" }
+  | { mode: "required" }
+  | { mode: "specific"; tools: string[] };
 
 /**
  * Normalized request after input transformation.
  */
 export interface NormalizedRequest {
-	messages: LangChainMessageLike[];
-	original: OpenResponsesRequest;
-	toolPolicy: NormalizedToolPolicy;
+  messages: LangChainMessageLike[];
+  original: OpenResponsesRequest;
+  toolPolicy: NormalizedToolPolicy;
 }
 
 // =============================================================================
@@ -136,36 +136,36 @@ export interface NormalizedRequest {
  * Item state within the accumulator.
  */
 export interface CanonicalItemState {
-	id: string;
-	type: "message" | "function_call";
-	status: "in_progress" | "completed" | "incomplete";
-	role?: "assistant";
-	name?: string;
-	call_id?: string;
-	content: CanonicalContentPart[];
+  id: string;
+  type: "message" | "function_call";
+  status: "in_progress" | "completed" | "incomplete";
+  role?: "assistant";
+  name?: string;
+  call_id?: string;
+  content: CanonicalContentPart[];
 }
 
 /**
  * Content part state within an item.
  */
 export interface CanonicalContentPart {
-	type: "output_text";
-	status: "in_progress" | "completed";
-	delta: string;
-	final: string;
+  type: "output_text";
+  status: "in_progress" | "completed";
+  delta: string;
+  final: string;
 }
 
 /**
  * Complete canonical response state.
  */
 export interface CanonicalResponseState {
-	responseId: string;
-	model: string;
-	createdAt: number;
-	completedAt: number | null;
-	status: "queued" | "in_progress" | "completed" | "failed" | "incomplete";
-	items: CanonicalItemState[];
-	error: ErrorObject | null;
+  responseId: string;
+  model: string;
+  createdAt: number;
+  completedAt: number | null;
+  status: "queued" | "in_progress" | "completed" | "failed" | "incomplete";
+  items: CanonicalItemState[];
+  error: ErrorObject | null;
 }
 
 // =============================================================================
@@ -176,14 +176,14 @@ export interface CanonicalResponseState {
  * SSE frame structure.
  */
 export interface SSEFrame {
-	event: OpenResponsesEvent["type"];
-	data: string;
+  event: OpenResponsesEvent["type"];
+  data: string;
 }
 
 /**
  * Sequence number generator.
  */
 export interface SequenceGenerator {
-	next(): number;
-	current(): number;
+  next(): number;
+  current(): number;
 }
