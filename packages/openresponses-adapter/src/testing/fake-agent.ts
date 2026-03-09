@@ -76,6 +76,12 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
         throw invokeError;
       }
 
+      if (responses.length === 0) {
+        throw new Error(
+          "FakeAgent misconfigured: responses array cannot be empty"
+        );
+      }
+
       if (delay > 0) {
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -97,8 +103,8 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
         if (delay > 0) {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
-        yield chunk;
         streamCount++;
+        yield chunk;
       }
     },
 

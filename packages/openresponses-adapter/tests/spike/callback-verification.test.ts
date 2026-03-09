@@ -106,6 +106,28 @@ describe("Fake Agent Behavior", () => {
     const iterator = agent.stream({ messages: [] })[Symbol.asyncIterator]();
     await expect(iterator.next()).rejects.toThrow("Stream failed");
   });
+  test("stream count should increment even with partial consumption", async () => {
+    const agent = createFakeAgent({
+      streamChunks: [
+        { type: "chunk", content: "first" },
+        { type: "chunk", content: "second" },
+      ],
+    });
+
+    const iterator = agent.stream({ messages: [] })[Symbol.asyncIterator]();
+    const first = await iterator.next();
+
+    expect(first.value).toEqual({ type: "chunk", content: "first" });
+    expect(agent.__getStreamCount()).toBe(1);
+  });
+
+  test("invoke should fail fast on empty responses", async () => {
+    const agent = createFakeAgent({ responses: [] });
+
+    await expect(agent.invoke({ messages: [] })).rejects.toThrow(
+      "FakeAgent misconfigured: responses array cannot be empty"
+    );
+  });
 });
 
 // =============================================================================
