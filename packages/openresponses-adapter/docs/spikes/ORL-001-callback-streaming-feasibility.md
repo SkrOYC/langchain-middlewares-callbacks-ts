@@ -18,7 +18,7 @@ Validate that LangChain callbacks and Hono SSE can support the Open Responses ad
 
 **Verification:** See `tests/spike/callback-verification.test.ts`
 
-All required callback methods are available and implementable:
+All required callback methods are available and exercised via executable tests (including text generation, tool invocation, and failure callbacks):
 
 | Callback Method | Verified | Test |
 |----------------|----------|------|
@@ -56,7 +56,7 @@ app.get("/sse", (c) => {
 
 ### 3. Schema Validation
 
-**Verification:** 25 passing tests validate all schemas.
+**Verification:** 30 passing tests validate schemas and spike feasibility behaviors.
 
 | Schema | Test Coverage |
 |--------|---------------|
@@ -108,6 +108,21 @@ app.get("/sse", (c) => {
    - Flush stream
    - Write `[DONE]`
    - Close stream
+
+## Acceptance Criteria Traceability
+
+`docs/Tasks.md` ORL-001 Gherkin requires exercising text generation, tool invocation, and failures before/after stream start.
+
+Implemented executable evidence in `tests/spike/callback-verification.test.ts`:
+
+- `should exercise callback richness for text, tool, and failures`
+  - exercises token callbacks (`handleLLMNewToken`), tool callbacks (`handleToolStart`/`handleToolEnd`), and error callbacks (`handleChainError`, `handleLLMError`)
+- `should model pre-start failure as HTTP error response`
+  - verifies failure behavior before SSE starts
+- `should model post-start failure as response.failed then [DONE]`
+  - verifies terminal post-stream failure rule (`response.failed` followed by `[DONE]`)
+
+---
 
 ---
 

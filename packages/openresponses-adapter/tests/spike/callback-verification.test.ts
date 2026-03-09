@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { CallbackHandlerMethods } from "@langchain/core/callbacks/base";
 import {
   createInternalError,
   internalErrorToPublicError,
@@ -129,9 +130,168 @@ describe("Fake Agent Behavior", () => {
     );
   });
 });
+// =============================================================================
+// Test 2: ORL-001 Spike Acceptance Scenarios
+// =============================================================================
+
+describe("ORL-001 Spike Acceptance", () => {
+  test("should exercise callback richness for text, tool, and failures", async () => {
+    const observed: string[] = [];
+
+    const callbacks: CallbackHandlerMethods = {
+      handleChatModelStart: () => {
+        observed.push("chat_model.start");
+      },
+      handleLLMNewToken: (token) => {
+        observed.push(`llm.new_token:${token}`);
+      },
+      handleToolStart: () => {
+        observed.push("tool.start");
+      },
+      handleToolEnd: () => {
+        observed.push("tool.end");
+      },
+      handleChainError: () => {
+        observed.push("chain.error");
+      },
+      handleLLMError: () => {
+        observed.push("llm.error");
+      },
+    };
+
+    const invokeCallbacks = callbacks as Record<
+      string,
+      (...args: unknown[]) => unknown
+    >;
+
+    await Promise.resolve(
+      invokeCallbacks.handleChatModelStart?.([], {}, "run-1")
+    );
+    await Promise.resolve(
+      invokeCallbacks.handleLLMNewToken?.(
+        "Hello",
+        { prompt: 0, completion: 0 },
+        "run-1"
+      )
+    );
+    await Promise.resolve(
+      invokeCallbacks.handleLLMNewToken?.(
+        " world",
+        { prompt: 0, completion: 1 },
+        "run-1"
+      )
+    );
+    await Promise.resolve(
+      invokeCallbacks.handleToolStart?.({}, "tool-input", "run-2")
+    );
+    await Promise.resolve(
+      invokeCallbacks.handleToolEnd?.("tool-output", "run-2")
+    );
+
+    // Failure before stream start
+    await Promise.resolve(
+      invokeCallbacks.handleChainError?.(
+        new Error("pre-start failure"),
+        "run-1"
+      )
+    );
+
+    // Failure after stream started
+    await Promise.resolve(
+      invokeCallbacks.handleLLMError?.(new Error("post-start failure"), "run-1")
+    );
+
+    expect(observed).toContain("chat_model.start");
+    expect(observed).toContain("llm.new_token:Hello");
+    expect(observed).toContain("llm.new_token: world");
+    expect(observed).toContain("tool.start");
+    expect(observed).toContain("tool.end");
+    expect(observed).toContain("chain.error");
+    expect(observed).toContain("llm.error");
+  });
+
+  test("should model pre-start failure as HTTP error response", async () => {
+    const { Hono } = await import("hono");
+
+    const app = new Hono();
+    app.get("/pre-start-fail", () => {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "invalid_request",
+            message: "Bad input",
+            type: "invalid_request_error",
+          },
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }
+      );
+    });
+
+    const res = await app.request("/pre-start-fail");
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body).toEqual({
+      error: {
+        code: "invalid_request",
+        message: "Bad input",
+        type: "invalid_request_error",
+      },
+    });
+  });
+
+  test("should model post-start failure as response.failed then [DONE]", async () => {
+    const { Hono } = await import("hono");
+    const { streamSSE } = await import("hono/streaming");
+
+    const app = new Hono();
+    app.get("/post-start-fail", (c) => {
+      return streamSSE(c, async (stream) => {
+        await stream.writeSSE({
+          event: "response.in_progress",
+          data: JSON.stringify({
+            type: "response.in_progress",
+            sequence_number: 1,
+          }),
+        });
+
+        await stream.writeSSE({
+          event: "response.failed",
+          data: JSON.stringify({
+            type: "response.failed",
+            sequence_number: 2,
+            response: {
+              id: "resp-1",
+              object: "response",
+              status: "failed",
+            },
+            error: {
+              code: "internal_error",
+              message: "post-start failure",
+              type: "server_error",
+            },
+          }),
+        });
+
+        await stream.write("data: [DONE]\n\n");
+      });
+    });
+
+    const res = await app.request("/post-start-fail");
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain("event: response.failed");
+    expect(body).toContain('"type":"response.failed"');
+    expect(body).toContain("data: [DONE]");
+  });
+});
 
 // =============================================================================
-// Test 2: Deterministic ID Generator (NOT just type checking)
+// Test 3: Deterministic ID Generator (NOT just type checking)
 // =============================================================================
 
 describe("Deterministic ID Generator", () => {
