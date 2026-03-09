@@ -2,7 +2,9 @@ import type { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { getLogger } from "../../src/utils/logger";
 import {
   extractRetryDelayMs,
+  isNonRetryableRateLimitLikeError,
   isRateLimitError,
+  summarizeErrorForLog,
 } from "../utils/rate-limit-retry-model";
 
 const MODEL_FACTORY_METHODS = new Set([
@@ -74,15 +76,16 @@ function parseApiKeys(): string[] {
   );
 }
 
-function getPoolId(apiKeys: string[]): string {
-  return apiKeys.join("\n");
+function getPoolId(apiKeys: string[], poolTag?: string): string {
+  return [poolTag ?? "", ...apiKeys].join("\n");
 }
 
 function getOrCreatePoolState(
   apiKeys: string[],
-  factory: (apiKey: string) => ChatGoogleGenerativeAI
+  factory: (apiKey: string) => ChatGoogleGenerativeAI,
+  poolTag?: string
 ): PoolState {
-  const poolId = getPoolId(apiKeys);
+  const poolId = getPoolId(apiKeys, poolTag);
   const existing = sharedPools.get(poolId);
   if (existing) {
     return existing;
@@ -219,12 +222,35 @@ function releaseRateLimited(state: KeyState, error: unknown): number {
   state.cooldownStartedAtMs = now;
   state.cooldownUntilMs = now + waitMs;
   state.lastError = stringifyError(error);
+  const errorSummary = summarizeErrorForLog(error);
   logger.warn(
     `[gemma-key-pool] key_cooled_down slot=${state.slot + 1} key=${fingerprintKey(
       state.apiKey
-    )} waitMs=${waitMs} consecutiveRateLimits=${state.consecutiveRateLimits}`
+    )} waitMs=${waitMs} consecutiveRateLimits=${state.consecutiveRateLimits} error=${JSON.stringify(
+      errorSummary
+    )}`
   );
   return waitMs;
+}
+
+function shouldRetryAfterError(state: KeyState, error: unknown): boolean {
+  if (!isRateLimitError(error)) {
+    releaseNonRateLimit(state, error);
+    return false;
+  }
+
+  if (isNonRetryableRateLimitLikeError(error)) {
+    releaseNonRateLimit(state, error);
+    logger.warn(
+      `[gemma-key-pool] non_retryable_rate_limit_like_error slot=${state.slot + 1} key=${fingerprintKey(
+        state.apiKey
+      )} error=${JSON.stringify(summarizeErrorForLog(error))}`
+    );
+    return false;
+  }
+
+  releaseRateLimited(state, error);
+  return true;
 }
 
 function delay(ms: number): Promise<void> {
@@ -249,10 +275,11 @@ export function __resetGoogleGemmaKeyPoolsForTests(): void {
 }
 
 export function createRotatingGemmaModel(
-  factory: (apiKey: string) => ChatGoogleGenerativeAI
+  factory: (apiKey: string) => ChatGoogleGenerativeAI,
+  options?: { poolTag?: string }
 ): ChatGoogleGenerativeAI {
   const apiKeys = getGoogleApiKeys();
-  const pool = getOrCreatePoolState(apiKeys, factory);
+  const pool = getOrCreatePoolState(apiKeys, factory, options?.poolTag);
   const logSelection = shouldLogKeyRotation(apiKeys);
 
   const wrap = (states: KeyState[]): ChatGoogleGenerativeAI => {
@@ -280,12 +307,9 @@ export function createRotatingGemmaModel(
                 releaseSuccess(state);
                 return result;
               } catch (error) {
-                if (!isRateLimitError(error)) {
-                  releaseNonRateLimit(state, error);
+                if (!shouldRetryAfterError(state, error)) {
                   throw error;
                 }
-
-                releaseRateLimited(state, error);
               }
             }
           };

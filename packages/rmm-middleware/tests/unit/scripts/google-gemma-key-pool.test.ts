@@ -123,4 +123,65 @@ describe("google gemma key pool", () => {
 
     expect(usedKeys).toEqual(["key-a:1", "key-b:1", "key-b:2", "key-a:2"]);
   });
+
+  test("separates pool state by poolTag to avoid model cross-reuse", async () => {
+    process.env.GOOGLE_API_KEYS = "key-a,key-b";
+
+    const modelASelections: string[] = [];
+    const modelBSelections: string[] = [];
+
+    const modelA = createRotatingGemmaModel(
+      (apiKey) =>
+        ({
+          invoke: async () => {
+            await Promise.resolve();
+            modelASelections.push(apiKey);
+            return { content: "ok-a" };
+          },
+        }) as never,
+      { poolTag: "model-a" }
+    );
+
+    const modelB = createRotatingGemmaModel(
+      (apiKey) =>
+        ({
+          invoke: async () => {
+            await Promise.resolve();
+            modelBSelections.push(apiKey);
+            return { content: "ok-b" };
+          },
+        }) as never,
+      { poolTag: "model-b" }
+    );
+
+    await modelA.invoke("a1");
+    await modelB.invoke("b1");
+
+    // Independent pools should both start from first key.
+    expect(modelASelections).toEqual(["key-a"]);
+    expect(modelBSelections).toEqual(["key-a"]);
+  });
+
+  test("fails fast on non-retryable context overflow errors", async () => {
+    process.env.GOOGLE_API_KEYS = "key-a,key-b";
+
+    const usedKeys: string[] = [];
+    const model = createRotatingGemmaModel(
+      (apiKey) =>
+        ({
+          invoke: async () => {
+            await Promise.resolve();
+            usedKeys.push(apiKey);
+            throw new Error(
+              "400 INVALID_ARGUMENT: Input token count 300000 exceeds the maximum number of tokens 262144"
+            );
+          },
+        }) as never
+    );
+
+    await expect(model.invoke("first")).rejects.toThrow(
+      "Input token count 300000 exceeds the maximum number of tokens 262144"
+    );
+    expect(usedKeys).toEqual(["key-a"]);
+  });
 });

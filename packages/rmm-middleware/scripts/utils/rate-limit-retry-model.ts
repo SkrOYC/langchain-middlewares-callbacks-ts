@@ -7,6 +7,19 @@ const RETRY_DELAY_PATTERNS: RegExp[] = [
   /retryDelay["']?\s*[:=]\s*["']?(\d+(?:\.\d+)?)(ms|s|m)?/i,
   /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)(s|m|ms)"/i,
 ];
+const NON_RETRYABLE_SIZE_PATTERNS: string[] = [
+  "input token count",
+  "maximum number of tokens",
+  "context length",
+  "context window",
+  "prompt is too long",
+  "prompt too long",
+  "request is too large",
+  "request too large",
+  "payload too large",
+  "token limit exceeded",
+  "input too long",
+];
 const MODEL_FACTORY_METHODS = new Set([
   "bindTools",
   "withConfig",
@@ -199,7 +212,8 @@ export function wrapModelWithRateLimitRetry(
         await options.coordinator.resetAfterSuccess(options.scope);
         return result;
       } catch (error) {
-        if (!isRateLimitError(error)) {
+        const rateLimited = isRateLimitError(error);
+        if (!rateLimited || isNonRetryableRateLimitLikeError(error)) {
           throw error;
         }
         await options.coordinator.registerRateLimit({
@@ -277,11 +291,66 @@ export function isRateLimitError(error: unknown): boolean {
   return code.includes("rate") || code.includes("quota") || code === "429";
 }
 
+export function isNonRetryableRateLimitLikeError(error: unknown): boolean {
+  const message = stringifyError(error).toLowerCase();
+  const hasPayloadSignal = NON_RETRYABLE_SIZE_PATTERNS.some((pattern) =>
+    message.includes(pattern)
+  );
+  if (hasPayloadSignal) {
+    return true;
+  }
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { status?: unknown; statusCode?: unknown };
+  };
+  const statuses = [
+    candidate?.status,
+    candidate?.statusCode,
+    candidate?.response?.status,
+    candidate?.response?.statusCode,
+  ];
+  const statusCodes = statuses
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+
+  // 413 Payload Too Large should always fail fast.
+  if (statusCodes.some((status) => status === 413)) {
+    return true;
+  }
+
+  // Some providers emit 400 INVALID_ARGUMENT for context/payload overflow.
+  if (
+    statusCodes.some((status) => status === 400) &&
+    (message.includes("invalid argument") ||
+      message.includes("invalid request") ||
+      message.includes("bad request")) &&
+    (message.includes("token") ||
+      message.includes("context") ||
+      message.includes("prompt") ||
+      message.includes("payload") ||
+      message.includes("length"))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function stringifyError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
   return String(error);
+}
+
+export function summarizeErrorForLog(error: unknown, maxLength = 220): string {
+  const message = stringifyError(error).replaceAll(/\s+/g, " ").trim();
+  if (message.length <= maxLength) {
+    return message;
+  }
+  return `${message.slice(0, maxLength - 1)}…`;
 }
 
 export function extractRetryDelayMs(error: unknown): number | null {
