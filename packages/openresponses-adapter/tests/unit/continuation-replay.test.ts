@@ -31,6 +31,19 @@ const createPriorRecord = (): StoredResponseRecord => {
           role: "user",
           content: "Tell me a joke",
         },
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "lookup_fact",
+          arguments: '{"topic":"road"}',
+          status: "completed",
+        },
+        {
+          type: "function_call_output",
+          call_id: "call-1",
+          output: '{"result":"because tests do that"}',
+          status: "completed",
+        },
       ],
       metadata: {},
       tools: [],
@@ -58,14 +71,6 @@ const createPriorRecord = (): StoredResponseRecord => {
             },
           ],
         },
-        {
-          id: "fc-prev",
-          type: "function_call",
-          status: "completed",
-          name: "lookup_fact",
-          call_id: "call-1",
-          arguments: '{"topic":"road"}',
-        },
       ],
       error: null,
       metadata: {},
@@ -88,6 +93,7 @@ const createMalformedStore = (): PreviousResponseStore => {
     },
   };
 };
+
 const createLoadFailingStore = (): PreviousResponseStore => {
   return {
     load(): Promise<StoredResponseRecord | null> {
@@ -147,9 +153,8 @@ describe("continuation replay", () => {
       stream: false,
     });
 
-    const invokeInput = agent.__getLastInvokeInput();
     expect(response.previous_response_id).toBe("resp-prev");
-    expect(invokeInput?.messages).toEqual([
+    expect(agent.__getLastInvokeInput()?.messages).toEqual([
       {
         type: "system",
         role: "system",
@@ -163,17 +168,6 @@ describe("continuation replay", () => {
       {
         type: "ai",
         role: "assistant",
-        content: [
-          {
-            type: "output_text",
-            text: "Why did the test cross the road?",
-            annotations: [],
-          },
-        ],
-      },
-      {
-        type: "ai",
-        role: "assistant",
         content: [],
         tool_calls: [
           {
@@ -181,6 +175,23 @@ describe("continuation replay", () => {
             type: "tool_call",
             name: "lookup_fact",
             args: { topic: "road" },
+          },
+        ],
+      },
+      {
+        type: "tool",
+        role: "tool",
+        tool_call_id: "call-1",
+        content: '{"result":"because tests do that"}',
+      },
+      {
+        type: "ai",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: "Why did the test cross the road?",
+            annotations: [],
           },
         ],
       },
@@ -292,6 +303,7 @@ describe("continuation replay", () => {
   });
 
   test("materializes output from LangChain-style state messages including tool calls", async () => {
+    const store = createInMemoryPreviousResponseStore();
     const adapter = createOpenResponsesAdapter({
       agent: createFakeAgent({
         responses: [
@@ -322,6 +334,7 @@ describe("continuation replay", () => {
           ],
         ],
       }),
+      previousResponseStore: store,
       generateId: (() => {
         let counter = 0;
         return () => `resp-tool-${++counter}`;
@@ -339,14 +352,6 @@ describe("continuation replay", () => {
 
     expect(response.output).toEqual([
       {
-        id: "tool-call-1",
-        type: "function_call",
-        status: "completed",
-        name: "lookup_fact",
-        call_id: "tool-call-1",
-        arguments: '{"topic":"road"}',
-      },
-      {
         id: "ai-final",
         type: "message",
         role: "assistant",
@@ -358,6 +363,130 @@ describe("continuation replay", () => {
             annotations: [],
           },
         ],
+      },
+    ]);
+
+    const stored = await store.load(response.id);
+    expect(stored?.request.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: "Tell me a joke",
+      },
+      {
+        type: "function_call",
+        call_id: "tool-call-1",
+        name: "lookup_fact",
+        arguments: '{"topic":"road"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "tool-call-1",
+        output: '{"result":"because tests do that"}',
+      },
+    ]);
+  });
+
+  test("continues immediately after a tool-backed final answer", async () => {
+    const store = createInMemoryPreviousResponseStore();
+    const agent = createFakeAgent({
+      responses: [
+        [
+          {
+            type: "ai",
+            id: "ai-call",
+            content: "",
+            tool_calls: [
+              {
+                id: "tool-call-1",
+                name: "lookup_fact",
+                args: { topic: "road" },
+              },
+            ],
+          },
+          {
+            type: "tool",
+            id: "tool-result-1",
+            content: '{"result":"because tests do that"}',
+            tool_call_id: "tool-call-1",
+          },
+          {
+            type: "ai",
+            id: "ai-final",
+            content: "Because it is a testing pun.",
+          },
+        ],
+        { type: "ai", id: "ai-next", content: "Here is the follow-up." },
+      ],
+    });
+    const adapter = createOpenResponsesAdapter({
+      agent,
+      previousResponseStore: store,
+      generateId: (() => {
+        let counter = 0;
+        return () => `resp-follow-${++counter}`;
+      })(),
+    });
+
+    const firstResponse = await adapter.invoke({
+      model: "gpt-4.1-mini",
+      input: "Tell me a joke",
+      metadata: {},
+      tools: [],
+      parallel_tool_calls: true,
+      stream: false,
+    });
+
+    await adapter.invoke({
+      model: "gpt-4.1-mini",
+      previous_response_id: firstResponse.id,
+      input: "Explain it.",
+      metadata: {},
+      tools: [],
+      parallel_tool_calls: true,
+      stream: false,
+    });
+
+    expect(agent.__getLastInvokeInput()?.messages).toEqual([
+      {
+        type: "human",
+        role: "user",
+        content: "Tell me a joke",
+      },
+      {
+        type: "ai",
+        role: "assistant",
+        content: [],
+        tool_calls: [
+          {
+            id: "tool-call-1",
+            type: "tool_call",
+            name: "lookup_fact",
+            args: { topic: "road" },
+          },
+        ],
+      },
+      {
+        type: "tool",
+        role: "tool",
+        tool_call_id: "tool-call-1",
+        content: '{"result":"because tests do that"}',
+      },
+      {
+        type: "ai",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: "Because it is a testing pun.",
+            annotations: [],
+          },
+        ],
+      },
+      {
+        type: "human",
+        role: "user",
+        content: "Explain it.",
       },
     ]);
   });
@@ -408,6 +537,19 @@ describe("continuation replay", () => {
         content: "Tell me a joke",
       },
       {
+        type: "function_call",
+        call_id: "call-1",
+        name: "lookup_fact",
+        arguments: '{"topic":"road"}',
+        status: "completed",
+      },
+      {
+        type: "function_call_output",
+        call_id: "call-1",
+        output: '{"result":"because tests do that"}',
+        status: "completed",
+      },
+      {
         type: "message",
         role: "assistant",
         content: [
@@ -417,13 +559,6 @@ describe("continuation replay", () => {
             annotations: [],
           },
         ],
-      },
-      {
-        type: "function_call",
-        call_id: "call-1",
-        name: "lookup_fact",
-        arguments: '{"topic":"road"}',
-        status: "completed",
       },
       {
         type: "message",
@@ -456,17 +591,6 @@ describe("continuation replay", () => {
       {
         type: "ai",
         role: "assistant",
-        content: [
-          {
-            type: "output_text",
-            text: "Why did the test cross the road?",
-            annotations: [],
-          },
-        ],
-      },
-      {
-        type: "ai",
-        role: "assistant",
         content: [],
         tool_calls: [
           {
@@ -474,6 +598,23 @@ describe("continuation replay", () => {
             type: "tool_call",
             name: "lookup_fact",
             args: { topic: "road" },
+          },
+        ],
+      },
+      {
+        type: "tool",
+        role: "tool",
+        tool_call_id: "call-1",
+        content: '{"result":"because tests do that"}',
+      },
+      {
+        type: "ai",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: "Why did the test cross the road?",
+            annotations: [],
           },
         ],
       },

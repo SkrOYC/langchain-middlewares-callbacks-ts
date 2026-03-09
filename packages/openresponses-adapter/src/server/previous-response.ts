@@ -243,6 +243,7 @@ const createAssistantOutputItem = (params: {
     content,
   };
 };
+
 const createFunctionCallOutputItem = (params: {
   item: Record<string, unknown>;
   generateId: () => string;
@@ -262,6 +263,153 @@ const createFunctionCallOutputItem = (params: {
     call_id: callId,
     arguments: argumentsText,
   };
+};
+
+const toOptionalInputStatus = (
+  status: unknown
+): "in_progress" | "completed" | "incomplete" | undefined => {
+  if (
+    status === "in_progress" ||
+    status === "completed" ||
+    status === "incomplete"
+  ) {
+    return status;
+  }
+
+  return undefined;
+};
+
+const toAssistantInputContent = (
+  content: unknown
+): string | OutputTextPart[] | null => {
+  if (typeof content === "string") {
+    return content.length > 0 ? content : null;
+  }
+
+  const outputTextParts = contentToOutputTextParts(content);
+  return outputTextParts.length > 0 ? outputTextParts : null;
+};
+
+const createAssistantInputItem = (content: unknown): InputItem | null => {
+  const normalizedContent = toAssistantInputContent(content);
+  if (normalizedContent === null) {
+    return null;
+  }
+
+  return {
+    type: "message",
+    role: "assistant",
+    content: normalizedContent,
+  };
+};
+
+const toFunctionCallOutputValue = (
+  value: unknown
+): string | Record<string, unknown>[] => {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value) && value.every(isRecord)) {
+    return safeStructuredClone(value);
+  }
+
+  if (value === undefined) {
+    return "";
+  }
+
+  return JSON.stringify(value);
+};
+
+const createToolResultInputItems = (
+  value: Record<string, unknown>
+): InputItem[] => {
+  const callId =
+    getStringProperty(value, "tool_call_id") ??
+    getStringProperty(value, "call_id");
+  if (!callId) {
+    return [];
+  }
+
+  const status = toOptionalInputStatus(value.status);
+  return [
+    {
+      type: "function_call_output",
+      call_id: callId,
+      output: toFunctionCallOutputValue(value.content),
+      ...(status === undefined ? {} : { status }),
+    },
+  ];
+};
+
+const createStandaloneFunctionCallInputItems = (
+  value: Record<string, unknown>
+): InputItem[] => {
+  const callId =
+    getStringProperty(value, "call_id") ?? getStringProperty(value, "id");
+  if (!callId) {
+    return [];
+  }
+
+  const status = toOptionalInputStatus(value.status);
+  return [
+    {
+      type: "function_call",
+      call_id: callId,
+      name: getStringProperty(value, "name") ?? "function_call",
+      arguments: stringifyFunctionCallArguments(
+        value.arguments ?? value.args ?? ""
+      ),
+      ...(status === undefined ? {} : { status }),
+    },
+  ];
+};
+
+const createAssistantHistoryInputItems = (
+  value: Record<string, unknown>
+): InputItem[] => {
+  const inputItems: InputItem[] = [];
+  const assistantItem = createAssistantInputItem(value.content);
+  if (assistantItem) {
+    inputItems.push(assistantItem);
+  }
+
+  for (const toolCall of getToolCalls(value)) {
+    inputItems.push(...createStandaloneFunctionCallInputItems(toolCall));
+  }
+
+  return inputItems;
+};
+
+const resultValueToInputItems = (value: unknown): InputItem[] => {
+  if (!isRecord(value)) {
+    const assistantItem = createAssistantInputItem(value);
+    return assistantItem ? [assistantItem] : [];
+  }
+
+  const directType = getStringProperty(value, "type");
+  if (directType === "tool") {
+    return createToolResultInputItems(value);
+  }
+
+  if (directType === "function_call") {
+    return createStandaloneFunctionCallInputItems(value);
+  }
+
+  const shouldTreatAsAssistantMessage =
+    directType === "ai" ||
+    directType === "assistant" ||
+    (directType === "message" &&
+      getStringProperty(value, "role") === "assistant");
+
+  if (shouldTreatAsAssistantMessage) {
+    return createAssistantHistoryInputItems(value);
+  }
+
+  const fallbackAssistantItem = createAssistantInputItem(
+    value.content ?? value
+  );
+  return fallbackAssistantItem ? [fallbackAssistantItem] : [];
 };
 
 const resultValueToOutputItems = (
@@ -303,8 +451,7 @@ const resultValueToOutputItems = (
       outputItems.push(assistantItem);
     }
 
-    const toolCalls = getToolCalls(value);
-    for (const toolCall of toolCalls) {
+    for (const toolCall of getToolCalls(value)) {
       outputItems.push(
         createFunctionCallOutputItem({ item: toolCall, generateId })
       );
@@ -337,6 +484,37 @@ const getResultMessages = (
   }
 
   return messages.slice(inputMessageCount);
+};
+
+const splitResultMessagesForPersistence = (
+  messages: unknown[]
+): { replayValues: unknown[]; responseValues: unknown[] } => {
+  let lastToolIndex = -1;
+
+  for (const [index, value] of messages.entries()) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    if (
+      getStringProperty(value, "type") === "tool" ||
+      getStringProperty(value, "role") === "tool"
+    ) {
+      lastToolIndex = index;
+    }
+  }
+
+  if (lastToolIndex < 0) {
+    return {
+      replayValues: [],
+      responseValues: messages,
+    };
+  }
+
+  return {
+    replayValues: messages.slice(0, lastToolIndex + 1),
+    responseValues: messages.slice(lastToolIndex + 1),
+  };
 };
 
 const toStoredTerminalStatus = (
@@ -548,9 +726,18 @@ const asOutputItems = (params: {
   result: unknown;
   generateId: () => string;
 }): OutputItem[] => {
-  const values =
-    getResultMessages(params.result, params.inputMessageCount) ??
-    (Array.isArray(params.result) ? params.result : [params.result]);
+  const resultMessages = getResultMessages(
+    params.result,
+    params.inputMessageCount
+  );
+  let values: unknown[];
+  if (resultMessages) {
+    values = splitResultMessagesForPersistence(resultMessages).responseValues;
+  } else if (Array.isArray(params.result)) {
+    values = params.result;
+  } else {
+    values = [params.result];
+  }
 
   const outputItems: OutputItem[] = [];
   for (const value of values) {
@@ -558,6 +745,31 @@ const asOutputItems = (params: {
   }
 
   return outputItems;
+};
+
+export const buildStoredRequestInputItems = (params: {
+  normalizedInputItems: InputItem[];
+  result: unknown;
+  inputMessageCount: number;
+}): InputItem[] => {
+  const resultMessages = getResultMessages(
+    params.result,
+    params.inputMessageCount
+  );
+  if (!resultMessages) {
+    return safeStructuredClone(params.normalizedInputItems);
+  }
+
+  const replayInputItems: InputItem[] = [];
+  for (const value of splitResultMessagesForPersistence(resultMessages)
+    .replayValues) {
+    replayInputItems.push(...resultValueToInputItems(value));
+  }
+
+  return [
+    ...safeStructuredClone(params.normalizedInputItems),
+    ...replayInputItems,
+  ];
 };
 
 export const materializeInvokeResponse = (params: {

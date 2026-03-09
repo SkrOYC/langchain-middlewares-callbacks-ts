@@ -18,6 +18,7 @@ import type {
 } from "../core/index.js";
 import type { OpenResponsesEvent } from "../core/schemas.js";
 import {
+  buildStoredRequestInputItems,
   createStoredResponseRecord,
   isInternalError,
   materializeInvokeResponse,
@@ -132,7 +133,11 @@ export function createOpenResponsesAdapter(
         try {
           const storedRecord = createStoredResponseRecord({
             request: normalizedRequest.original,
-            normalizedInputItems: normalizedRequest.inputItems,
+            normalizedInputItems: buildStoredRequestInputItems({
+              normalizedInputItems: normalizedRequest.inputItems,
+              result: agentResult,
+              inputMessageCount: normalizedRequest.messages.length,
+            }),
             response,
           });
           await options.previousResponseStore.save(storedRecord, signal);
