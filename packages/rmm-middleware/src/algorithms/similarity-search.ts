@@ -13,6 +13,7 @@ const logger = getLogger("similarity-search");
 interface MemoryDocumentMetadata {
   id: string;
   sessionId: string;
+  sessionDate?: string;
   turnReferences: number[];
   timestamp: number;
   rawDialogue: string;
@@ -64,6 +65,10 @@ export async function findSimilarMemories(
           rawDialogue: metadata.rawDialogue,
           timestamp: metadata.timestamp,
           sessionId: metadata.sessionId,
+          sessionDate:
+            typeof metadata.sessionDate === "string"
+              ? metadata.sessionDate
+              : undefined,
           // embedding omitted - not returned by VectorStore.similaritySearch
           turnReferences: metadata.turnReferences || [],
           // relevanceScore: Not available from standard VectorStoreInterface

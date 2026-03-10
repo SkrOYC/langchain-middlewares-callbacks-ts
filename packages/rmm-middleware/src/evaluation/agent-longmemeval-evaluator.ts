@@ -510,13 +510,16 @@ export class AgentLongMemEvalEvaluator {
             },
             {
               store: methodStore,
-              context:
-                method === "rmm"
+              context: {
+                ...(method === "rmm"
                   ? {
                       userId: runtimeUserId,
                       sessionId: runtimeUserId,
                     }
-                  : undefined,
+                  : {}),
+                questionDate: instance.question_date,
+                haystackDateBySessionId: buildHaystackDateBySessionId(instance),
+              },
             }
           )) as {
             messages?: Array<{ content?: unknown }>;
@@ -1054,6 +1057,7 @@ function buildRawSessionDocuments(instance: LongMemEvalInstance): Document[] {
   return instance.haystack_sessions.map((session, index) => {
     const pageContent = formatSessionPageContent(session);
     const sessionId = getSessionId(instance, index);
+    const sessionDate = getSessionDate(instance, index);
 
     return new Document({
       pageContent,
@@ -1062,6 +1066,7 @@ function buildRawSessionDocuments(instance: LongMemEvalInstance): Document[] {
         rawDialogue: pageContent,
         timestamp: Date.now(),
         sessionId,
+        sessionDate,
         turnReferences: [],
         questionId: instance.question_id,
         relevanceScore: 1,
@@ -1121,6 +1126,7 @@ async function buildTopicMemoryBank(input: {
     }
 
     const sessionId = getSessionId(instance, index);
+    const sessionDate = getSessionDate(instance, index);
     const sessionHistory = sessionTurnsToMessages(session);
     sessionsProcessed += 1;
 
@@ -1129,7 +1135,8 @@ async function buildTopicMemoryBank(input: {
       reflectionModel,
       embeddings,
       extractSpeaker1,
-      sessionId
+      sessionId,
+      sessionDate
     );
     const speaker2Memories = includeSpeaker2
       ? await extractMemories(
@@ -1137,7 +1144,8 @@ async function buildTopicMemoryBank(input: {
           reflectionModel,
           embeddings,
           extractSpeaker2,
-          sessionId
+          sessionId,
+          sessionDate
         )
       : [];
 
@@ -1206,6 +1214,29 @@ function formatSessionPageContent(
 
 function getSessionId(instance: LongMemEvalInstance, index: number): string {
   return instance.haystack_session_ids?.[index] ?? `session-${index}`;
+}
+
+function getSessionDate(
+  instance: LongMemEvalInstance,
+  index: number
+): string | undefined {
+  const date = instance.haystack_dates?.[index];
+  return typeof date === "string" && date.trim() !== "" ? date : undefined;
+}
+
+function buildHaystackDateBySessionId(
+  instance: LongMemEvalInstance
+): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  const sessionCount = instance.haystack_sessions.length;
+  for (let index = 0; index < sessionCount; index++) {
+    const date = getSessionDate(instance, index);
+    if (!date) {
+      continue;
+    }
+    mapping[getSessionId(instance, index)] = date;
+  }
+  return mapping;
 }
 
 function createSimpleInMemoryVectorStore(

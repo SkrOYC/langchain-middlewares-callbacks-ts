@@ -162,4 +162,27 @@ describe("formatCitationPromptContent", () => {
     expect(result).toContain("&lt;brackets&gt;");
     expect(result).toContain("&amp; stuff?");
   });
+
+  test("should include current date when provided", () => {
+    const result = formatCitationPromptContent(
+      "What hobbies do I enjoy?",
+      [testMemory],
+      {
+        questionDate: "2024-08-12",
+      }
+    );
+
+    expect(result).toContain("Current Date: 2024-08-12");
+  });
+
+  test("should include memory session date when available", () => {
+    const result = formatCitationPromptContent("What hobbies do I enjoy?", [
+      {
+        ...testMemory,
+        sessionDate: "2024-08-10",
+      },
+    ]);
+
+    expect(result).toContain("Session Date: 2024-08-10");
+  });
 });

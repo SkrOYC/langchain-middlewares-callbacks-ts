@@ -33,6 +33,7 @@ export async function addMemory(
       id: memory.id,
       sessionId: memory.sessionId,
       timestamp: memory.timestamp,
+      sessionDate: memory.sessionDate,
       turnReferences: memory.turnReferences,
       rawDialogue: memory.rawDialogue,
     },
@@ -79,6 +80,7 @@ export async function mergeMemory(
     // rawDialogue should be preserved from the memory object
     rawDialogue: (existingMemory as MemoryEntry).rawDialogue || mergedSummary,
     turnReferences: existingMemory.turnReferences,
+    sessionDate: (existingMemory as MemoryEntry).sessionDate,
     timestamp: Date.now(), // Update timestamp on merge
   };
 

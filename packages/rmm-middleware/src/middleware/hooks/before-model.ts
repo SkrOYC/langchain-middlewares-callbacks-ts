@@ -111,6 +111,10 @@ function transformDocsToMemories(
         existingMemory?.timestamp ??
         Date.now(),
       sessionId: (metadata?.sessionId as string) ?? "unknown",
+      sessionDate:
+        typeof metadata?.sessionDate === "string"
+          ? (metadata.sessionDate as string)
+          : existingMemory?.sessionDate,
       turnReferences: (metadata?.turnReferences as number[]) ?? [],
       relevanceScore:
         (metadata?.score as number) ?? (doc as { score?: number }).score ?? -1,

@@ -75,6 +75,7 @@ interface ParsedExtractionResult {
  * @param embeddings - Embeddings model for generating memory vectors
  * @param speakerPrompt - Prompt template function for memory extraction
  * @param sessionId - Optional session identifier for tracking
+ * @param sessionDate - Optional session date (LongMemEval haystack date)
  * @returns Array of MemoryEntry objects or null on failure
  *
  * @example
@@ -93,7 +94,8 @@ export async function extractMemories(
   summarizationModel: BaseChatModel,
   embeddings: Embeddings,
   speakerPrompt: (dialogueSession: string) => string,
-  sessionId?: string
+  sessionId?: string,
+  sessionDate?: string
 ): Promise<MemoryEntry[] | null> {
   // Handle empty session
   if (sessionHistory.length === 0) {
@@ -172,6 +174,7 @@ export async function extractMemories(
         rawDialogue: rawDialogueTurns || extracted.summary,
         timestamp,
         sessionId: effectiveSessionId,
+        sessionDate,
         embedding,
         turnReferences: extracted.reference,
       };

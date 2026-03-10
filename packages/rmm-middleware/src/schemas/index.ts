@@ -41,6 +41,7 @@ export function createMemoryEntrySchema(
     rawDialogue: z.string().min(1),
     timestamp: z.number().int().positive(),
     sessionId: z.string().min(1),
+    sessionDate: z.string().min(1).optional(),
     embedding: z.array(z.number()).length(embeddingDimension),
     turnReferences: z.array(z.number().int().nonnegative()),
   });
@@ -66,6 +67,7 @@ const RetrievedMemoryBaseSchema = z.object({
   rawDialogue: z.string().min(1),
   timestamp: z.number().int().positive(),
   sessionId: z.string().min(1),
+  sessionDate: z.string().min(1).optional(),
   turnReferences: z.array(z.number().int().nonnegative()),
 });
 
@@ -601,6 +603,10 @@ export interface RmmRuntimeContext {
   sessionId?: string;
   /** Whether this is the end of a session */
   isSessionEnd?: boolean;
+  /** LongMemEval question date used as the "current date" reference */
+  questionDate?: string;
+  /** Session date map keyed by LongMemEval haystack session ID */
+  haystackDateBySessionId?: Record<string, string>;
 
   // Internal RMM context set by hooks
   /** Citation records extracted from LLM response (set by beforeModel) */

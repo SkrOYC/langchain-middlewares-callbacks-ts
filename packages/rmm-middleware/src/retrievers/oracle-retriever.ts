@@ -215,6 +215,7 @@ export class OracleVectorStore {
         pageContent,
         metadata: {
           sessionId: instance.haystack_session_ids?.[sessionIndex] ?? sessionId,
+          sessionDate: instance.haystack_dates?.[sessionIndex],
           questionId: instance.question_id,
           relevanceScore: 1.0, // Oracle has perfect relevance
         },

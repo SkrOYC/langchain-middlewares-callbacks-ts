@@ -120,12 +120,17 @@ export function formatMemoriesBlock(memories: RetrievedMemory[]): string {
 
   const formattedMemories = memories
     .map((memory, index) => {
+      const sessionDateLine =
+        typeof memory.sessionDate === "string" &&
+        memory.sessionDate.trim() !== ""
+          ? `\n    Session Date: ${escapeXml(memory.sessionDate)}`
+          : "";
       // Format dialogue turns with XML escaping
       const dialogueBlock = memory.rawDialogue
         ? `\n    ${escapeXml(memory.rawDialogue)}`
         : "";
 
-      return `Memory [${index}]: ${escapeXml(memory.topicSummary)}${dialogueBlock}`;
+      return `Memory [${index}]: ${escapeXml(memory.topicSummary)}${sessionDateLine}${dialogueBlock}`;
     })
     .join("\n");
 
@@ -149,9 +154,17 @@ export function formatMemoriesBlock(memories: RetrievedMemory[]): string {
  */
 export function formatCitationPromptContent(
   query: string,
-  memories: RetrievedMemory[]
+  memories: RetrievedMemory[],
+  options?: {
+    questionDate?: string;
+  }
 ): string {
   const memoriesBlock = formatMemoriesBlock(memories);
+  const currentDateLine =
+    typeof options?.questionDate === "string" &&
+    options.questionDate.trim() !== ""
+      ? `Current Date: ${escapeXml(options.questionDate)}\n`
+      : "";
 
   return `<system-reminder>
 Given the user query and the list of memories consisting of personal summaries with their corresponding original turns, generate a natural and fluent response while adhering to the following guidelines:
@@ -162,7 +175,7 @@ Given the user query and the list of memories consisting of personal summaries w
 * If the response relies on multiple memories, list all corresponding indices, e.g., [i, j, k].
 * The citation is evaluated based on whether the response references the original turns, not the summaries.
 
-User Query: ${escapeXml(query)}
+${currentDateLine}User Query: ${escapeXml(query)}
 
 <examples>
 Case 1: Useful Memories Found

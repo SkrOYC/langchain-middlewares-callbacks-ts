@@ -194,6 +194,14 @@ export function createRetrospectiveWrapModelCall(
       const selectedMemories = samplingResult.selectedMemories;
       const allProbabilities = samplingResult.allProbabilities;
       const selectedIndices = samplingResult.selectedIndices;
+      const {
+        selectedMemories: orderedSelectedMemories,
+        selectedIndices: orderedSelectedIndices,
+      } = sortSelectedMemoriesBySessionDate(
+        selectedMemories,
+        selectedIndices,
+        runtime.context
+      );
 
       // Store embeddings and probabilities for exact REINFORCE in afterModel
       const ctx = runtime.context;
@@ -244,14 +252,17 @@ export function createRetrospectiveWrapModelCall(
       ctx._samplingProbabilities = allProbabilities;
 
       // Store selected indices
-      ctx._selectedIndices = selectedIndices;
+      ctx._selectedIndices = orderedSelectedIndices;
 
       // Step 5: Create ephemeral HumanMessage with citation prompt and memories
       // Per Appendix D.2: Explicit instructions for citing useful memories
       // Per Appendix F.8: Use HumanMessage, NOT system message
       const promptContent = formatCitationPromptContent(
         query,
-        selectedMemories
+        orderedSelectedMemories,
+        {
+          questionDate: runtime.context.questionDate,
+        }
       );
       const ephemeralMessage = new HumanMessage({
         content: promptContent,
@@ -285,9 +296,9 @@ export function createRetrospectiveWrapModelCall(
       })();
       const citations = extractCitationsFromResponse(
         responseContent,
-        selectedMemories,
+        orderedSelectedMemories,
         memories,
-        selectedIndices
+        orderedSelectedIndices
       );
 
       // Step 8: Store citations in runtime context for afterModel
@@ -362,6 +373,82 @@ function buildGlobalToSelectedMapping(
     }
   }
   return mapping;
+}
+
+function parseDateMs(input: string | undefined): number | null {
+  if (typeof input !== "string" || input.trim() === "") {
+    return null;
+  }
+  const parsed = Date.parse(input);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function resolveSessionDateForMemory(
+  memory: RetrievedMemory,
+  runtimeContext: RmmRuntimeContext
+): string | undefined {
+  if (memory.sessionDate) {
+    return memory.sessionDate;
+  }
+
+  const sessionDateMap = runtimeContext.haystackDateBySessionId;
+  if (!sessionDateMap) {
+    return undefined;
+  }
+  return sessionDateMap[memory.sessionId];
+}
+
+function sortSelectedMemoriesBySessionDate(
+  selectedMemories: RetrievedMemory[],
+  selectedIndices: number[],
+  runtimeContext: RmmRuntimeContext
+): {
+  selectedMemories: RetrievedMemory[];
+  selectedIndices: number[];
+} {
+  if (selectedMemories.length !== selectedIndices.length) {
+    return { selectedMemories, selectedIndices };
+  }
+
+  const zipped = selectedMemories.map((memory, position) => {
+    const globalIndex = selectedIndices[position] ?? position;
+    const resolvedDate = resolveSessionDateForMemory(memory, runtimeContext);
+    const dateMs = parseDateMs(resolvedDate);
+    const enrichedMemory =
+      resolvedDate && !memory.sessionDate
+        ? {
+            ...memory,
+            sessionDate: resolvedDate,
+          }
+        : memory;
+    return {
+      memory: enrichedMemory,
+      globalIndex,
+      originalPosition: position,
+      dateMs,
+    };
+  });
+
+  zipped.sort((a, b) => {
+    if (a.dateMs !== null && b.dateMs !== null) {
+      if (a.dateMs !== b.dateMs) {
+        return a.dateMs - b.dateMs;
+      }
+      return a.originalPosition - b.originalPosition;
+    }
+    if (a.dateMs !== null) {
+      return -1;
+    }
+    if (b.dateMs !== null) {
+      return 1;
+    }
+    return a.originalPosition - b.originalPosition;
+  });
+
+  return {
+    selectedMemories: zipped.map((item) => item.memory),
+    selectedIndices: zipped.map((item) => item.globalIndex),
+  };
 }
 
 /**
