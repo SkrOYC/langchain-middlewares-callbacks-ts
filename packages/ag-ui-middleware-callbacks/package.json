@@ -37,8 +37,8 @@
 		}
 	},
 	"peerDependencies": {
-		"langchain": "1.2.3",
-		"typescript": ">=5"
+		"langchain": "catalog:peer",
+		"typescript": "catalog:peer"
 	},
 	"peerDependenciesMeta": {
 		"langchain": {
@@ -47,14 +47,14 @@
 	},
 	"dependencies": {
 		"@ag-ui/core": "^0.0.47",
-		"@langchain/core": "^1.0.0",
+		"@langchain/core": "catalog:",
 		"fast-json-patch": "^3.1.1",
-		"zod": "^4.3.6"
+		"zod": "catalog:"
 	},
 	"devDependencies": {},
 	"scripts": {
 		"build": "tsup",
 		"test": "bun test",
-		"lint": "bun lint"
+		"lint": "bunx --bun @biomejs/biome check src tests"
 	}
 }

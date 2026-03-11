@@ -1,0 +1,7 @@
+[run]
+bun = true
+shell = "system"
+
+[install]
+linkWorkspacePackages = true
+linker = "hoisted"

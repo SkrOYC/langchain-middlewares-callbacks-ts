@@ -38,18 +38,18 @@
 		}
 	},
 	"peerDependencies": {
-		"typescript": ">=5"
+		"typescript": "catalog:peer"
 	},
 	"dependencies": {
 		"@agentclientprotocol/sdk": "^0.14.0",
 		"@langchain/mcp-adapters": "^1.1.2",
-		"langchain": "^1.2.17",
-		"zod": "^4.3.6"
+		"langchain": "catalog:",
+		"zod": "catalog:"
 	},
 	"devDependencies": {},
 	"scripts": {
 		"build": "tsup",
 		"test": "bun test",
-		"lint": "bun lint"
+		"lint": "bunx --bun @biomejs/biome check src tests"
 	}
 }
