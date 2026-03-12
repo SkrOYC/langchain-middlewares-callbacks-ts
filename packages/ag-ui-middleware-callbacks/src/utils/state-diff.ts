@@ -6,7 +6,7 @@
  */
 
 import type { Operation } from "fast-json-patch";
-import * as jsonpatch from "fast-json-patch";
+import { compare } from "fast-json-patch";
 
 /**
  * Compute the delta between two state objects using JSON Patch (RFC 6902).
@@ -16,8 +16,11 @@ import * as jsonpatch from "fast-json-patch";
  * @returns An array of JSON Patch operations describing the changes
  */
 export function computeStateDelta(
-	oldState: unknown,
-	newState: unknown,
+  oldState: unknown,
+  newState: unknown
 ): Operation[] {
-	return jsonpatch.compare(oldState as any, newState as any);
+  return compare(
+    oldState as Record<string, unknown>,
+    newState as Record<string, unknown>
+  );
 }

@@ -1,5 +1,13 @@
 # AG-UI Middleware Callbacks Example
 
+## Status
+
+This demo still reflects the pre-backend low-level wiring model. It is useful
+for local experimentation, but it is **not** the frozen MVP package contract.
+
+See [../docs/ContractFreeze.md](../docs/ContractFreeze.md) for the authoritative
+package/export and serving decisions.
+
 A minimal working example demonstrating the `ag-ui-middleware-callbacks` package with AG-UI protocol compliance. This example uses a single-file architecture powered by Bun's native support for JSX/TSX and server-side rendering.
 
 ## Prerequisites

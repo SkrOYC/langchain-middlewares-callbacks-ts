@@ -126,8 +126,8 @@ while still exposing lower-level building blocks for custom hosts.
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
 | Publisher API | Expose the publication layer separately for custom hosts | Advanced user can subscribe to canonical per-run events directly |
-| Raw Middleware Export | Continue exposing lower-level middleware for advanced composition | Existing advanced users are not trapped in the high-level API |
-| Raw Callback Export | Continue exposing callback handler for advanced composition | Existing advanced users can opt into low-level integration |
+| Producer Middleware Export | Continue exposing lower-level middleware for advanced composition | Advanced users can publish lifecycle and state signals without the high-level handler |
+| Producer Callback Export | Continue exposing callback handler for advanced composition | Advanced users can publish observation signals without the high-level handler |
 
 ### Epic 6: Extensibility (P2)
 
