@@ -234,4 +234,34 @@ describe("extractMemories", () => {
     expect(captured).toContain("SPEAKER_1");
     expect(captured).toContain("SPEAKER_2");
   });
+
+  test("stores raw dialogue with speaker labels for referenced turns", async () => {
+    const { extractMemories } = await import("@/algorithms/memory-extraction");
+
+    const llm = {
+      invoke: async () => ({
+        text: JSON.stringify({
+          extracted_memories: [
+            { summary: "User likes hiking", reference: [0] },
+          ],
+        }),
+      }),
+    };
+
+    const result = await extractMemories(
+      createSessionHistory(),
+      llm as never,
+      createMockEmbeddings(),
+      promptBuilder,
+      "session-1"
+    );
+
+    expect(result?.[0]?.rawDialogue).toContain(
+      "Speaker 1: Hello, I went hiking this weekend"
+    );
+    expect(result?.[0]?.rawDialogue).toContain("Speaker 2: That sounds great!");
+    expect(result?.[0]?.rawDialogue).not.toContain(
+      "Hello, I went hiking this weekend That sounds great!"
+    );
+  });
 });

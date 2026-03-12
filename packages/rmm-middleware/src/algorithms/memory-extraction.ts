@@ -48,6 +48,39 @@ function normalizeSpeakerLabel(type: string | undefined): string {
   return "SPEAKER_2";
 }
 
+function normalizeRawDialogueSpeakerLabel(type: string | undefined): string {
+  if (type === "human" || type === "humanmessage") {
+    return "Speaker 1";
+  }
+  if (type === "ai" || type === "aimessage" || type === "assistant") {
+    return "Speaker 2";
+  }
+  return "Speaker 2";
+}
+
+function formatReferencedTurn(
+  sessionHistory: BaseMessage[],
+  turnIndex: number
+): string {
+  const turnMessages = sessionHistory.filter(
+    (_, messageIndex) => Math.floor(messageIndex / 2) === turnIndex
+  );
+
+  const formattedMessages = turnMessages
+    .map((message, messageIndex) => {
+      const content = String(message.content ?? "").trim();
+      if (content.length === 0) {
+        return null;
+      }
+      const prefix = messageIndex === 0 ? "* " : "  ";
+      const speaker = normalizeRawDialogueSpeakerLabel(message.type);
+      return `${prefix}${speaker}: ${content}`;
+    })
+    .filter((line): line is string => line !== null);
+
+  return formattedMessages.join("\n");
+}
+
 /**
  * Interface for the extraction output from LLM
  */
@@ -146,18 +179,13 @@ export async function extractMemories(
       }
 
       // Build raw dialogue from turn references
+      // Store the original dialogue with explicit speaker labels so later
+      // generation can ground answers in the same evidence format used by
+      // the paper's citation prompt.
       const rawDialogueTurns = extracted.reference
-        .map((turnIndex) => {
-          const turnMessages = sessionHistory
-            .filter(
-              (_, messageIndex) => Math.floor(messageIndex / 2) === turnIndex
-            )
-            .map((message) => String(message.content ?? "").trim())
-            .filter((content) => content.length > 0);
-          return turnMessages.join(" ");
-        })
+        .map((turnIndex) => formatReferencedTurn(sessionHistory, turnIndex))
         .filter((content) => content !== "")
-        .join(" | ");
+        .join("\n");
 
       const embedding = embeddingVectors[i];
       if (!embedding) {

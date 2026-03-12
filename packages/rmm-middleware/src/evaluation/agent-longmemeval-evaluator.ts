@@ -1045,7 +1045,7 @@ async function defaultVectorStoreFactory(
     return vectorStore;
   }
 
-  const docs = buildRawSessionDocuments(instance);
+  const docs = buildRawTurnDocuments(instance);
   if (docs.length > 0) {
     await vectorStore.addDocuments(docs);
   }
@@ -1053,24 +1053,31 @@ async function defaultVectorStoreFactory(
   return vectorStore;
 }
 
-function buildRawSessionDocuments(instance: LongMemEvalInstance): Document[] {
-  return instance.haystack_sessions.map((session, index) => {
-    const pageContent = formatSessionPageContent(session);
-    const sessionId = getSessionId(instance, index);
-    const sessionDate = getSessionDate(instance, index);
+function buildRawTurnDocuments(instance: LongMemEvalInstance): Document[] {
+  return instance.haystack_sessions.flatMap((session, sessionIndex) => {
+    const sessionId = getSessionId(instance, sessionIndex);
+    const sessionDate = getSessionDate(instance, sessionIndex);
 
-    return new Document({
-      pageContent,
-      metadata: {
-        id: `${instance.question_id}-${sessionId}`,
-        rawDialogue: pageContent,
-        timestamp: Date.now(),
-        sessionId,
-        sessionDate,
-        turnReferences: [],
-        questionId: instance.question_id,
-        relevanceScore: 1,
-      },
+    return session.map((turn, turnIndex) => {
+      // LongMemEval baseline retrieval should use turn granularity so the raw
+      // RAG comparison is not diluted by full-session embeddings.
+      const pageContent = formatTurnPageContent(turn);
+
+      return new Document({
+        pageContent,
+        metadata: {
+          id: `${instance.question_id}-${sessionId}-turn-${turnIndex}`,
+          rawDialogue: pageContent,
+          timestamp: Date.now(),
+          sessionId,
+          sessionDate,
+          turnIndex,
+          turnReferences: [turnIndex],
+          questionId: instance.question_id,
+          relevanceScore: 1,
+          hasAnswer: turn.has_answer === true,
+        },
+      });
     });
   });
 }
@@ -1206,10 +1213,10 @@ function sessionTurnsToMessages(
   return messages;
 }
 
-function formatSessionPageContent(
-  session: LongMemEvalInstance["haystack_sessions"][number]
+function formatTurnPageContent(
+  turn: LongMemEvalInstance["haystack_sessions"][number][number]
 ): string {
-  return session.map((turn) => `${turn.role}: ${turn.content}`).join("\n");
+  return `${turn.role}: ${turn.content}`;
 }
 
 function getSessionId(instance: LongMemEvalInstance, index: number): string {

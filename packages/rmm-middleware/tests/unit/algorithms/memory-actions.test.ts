@@ -20,6 +20,17 @@ describe("Memory Actions", () => {
     turnReferences: [0, 2],
   };
 
+  const createIncomingMemory = (overrides: Record<string, unknown> = {}) => ({
+    id: "new-memory-123",
+    topicSummary: "User enjoys mountain trails",
+    rawDialogue: "* Speaker 1: I hiked a new trail yesterday.",
+    timestamp: Date.now(),
+    sessionId: "session-789",
+    embedding: [],
+    turnReferences: [1, 2],
+    ...overrides,
+  });
+
   describe("addMemory", () => {
     test("should export addMemory function", async () => {
       const { addMemory } = await import("@/algorithms/memory-actions");
@@ -140,12 +151,13 @@ describe("Memory Actions", () => {
       const existingMemory = {
         id: existingId,
         topicSummary: "Old content",
-        rawDialogue: "Test raw dialogue",
+        rawDialogue: "* Speaker 1: Original dialogue",
         timestamp: Date.now() - 100_000,
         sessionId: "session-123",
         embedding: [],
         turnReferences: [0],
       };
+      const newMemory = createIncomingMemory();
 
       const addedDocuments: Array<{
         pageContent: string;
@@ -172,7 +184,12 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
+      await mergeMemory(
+        existingMemory,
+        newMemory as any,
+        mergedSummary,
+        mockVectorStore as any
+      );
 
       expect(addedDocuments.length).toBe(1);
       const firstDoc = addedDocuments[0];
@@ -188,7 +205,7 @@ describe("Memory Actions", () => {
         sessionId: "session-123",
         timestamp: Date.now() - 100_000,
         turnReferences: [0],
-        rawDialogue: "Test raw dialogue",
+        rawDialogue: "* Speaker 1: Original dialogue",
       };
       const mergedSummary = "Updated summary";
 
@@ -196,12 +213,13 @@ describe("Memory Actions", () => {
       const existingMemory = {
         id: existingId,
         topicSummary: "Old content",
-        rawDialogue: "Test raw dialogue",
+        rawDialogue: "* Speaker 1: Original dialogue",
         timestamp: existingMetadata.timestamp,
         sessionId: "session-123",
         embedding: [],
         turnReferences: [0],
       };
+      const newMemory = createIncomingMemory();
 
       // similaritySearch is no longer used - keeping for reference only
       const mockSimilaritySearch = () => {
@@ -239,14 +257,21 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
+      await mergeMemory(
+        existingMemory,
+        newMemory as any,
+        mergedSummary,
+        mockVectorStore as any
+      );
 
-      // The updated document should preserve metadata
+      // The updated document should preserve existing metadata while appending
+      // the new evidence used to justify the merge.
       expect(addedMetadata.length).toBe(1);
       const firstMetadata = addedMetadata[0];
       expect(firstMetadata?.sessionId).toBe(existingMetadata.sessionId);
-      expect(firstMetadata?.turnReferences).toEqual(
-        existingMetadata.turnReferences
+      expect(firstMetadata?.turnReferences).toEqual([0, 1, 2]);
+      expect(firstMetadata?.rawDialogue).toBe(
+        [existingMemory.rawDialogue, newMemory.rawDialogue].join("\n")
       );
     });
 
@@ -263,6 +288,7 @@ describe("Memory Actions", () => {
         embedding: [],
         turnReferences: [0],
       };
+      const newMemory = createIncomingMemory();
 
       // Mock VectorStore that throws error on addDocuments
       const mockVectorStoreError = {
@@ -278,6 +304,7 @@ describe("Memory Actions", () => {
       await expect(
         mergeMemory(
           existingMemory,
+          newMemory as any,
           "merged summary",
           mockVectorStoreError as any
         )
@@ -300,6 +327,7 @@ describe("Memory Actions", () => {
         embedding: [],
         turnReferences: [0],
       };
+      const newMemory = createIncomingMemory();
 
       const deletedIds: string[][] = [];
 
@@ -334,7 +362,12 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
+      await mergeMemory(
+        existingMemory,
+        newMemory as any,
+        mergedSummary,
+        mockVectorStore as any
+      );
 
       expect(deletedIds.length).toBe(1);
       expect(deletedIds[0]?.[0]).toBe(existingId);
@@ -356,6 +389,7 @@ describe("Memory Actions", () => {
         embedding: [],
         turnReferences: [0],
       };
+      const newMemory = createIncomingMemory();
 
       const addedContent: string[] = [];
 
@@ -382,7 +416,12 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
+      await mergeMemory(
+        existingMemory,
+        newMemory as any,
+        mergedSummary,
+        mockVectorStore as any
+      );
 
       expect(addedContent.length).toBe(1);
       expect(addedContent[0]).toBe(mergedSummary);
@@ -401,6 +440,10 @@ describe("Memory Actions", () => {
         embedding: [],
         turnReferences: [0],
       };
+      const newMemory = createIncomingMemory({
+        rawDialogue: "Fresh raw dialogue",
+        turnReferences: [3],
+      });
 
       const mergedSummary = "Updated summary content";
 
@@ -430,11 +473,64 @@ describe("Memory Actions", () => {
         addDocuments: mockAddDocuments,
       };
 
-      await mergeMemory(existingMemory, mergedSummary, mockVectorStore as any);
+      await mergeMemory(
+        existingMemory,
+        newMemory as any,
+        mergedSummary,
+        mockVectorStore as any
+      );
 
       // With the new signature, we always merge when given a memory object
       expect(addDocumentsCalled).toBe(true);
       expect(addedContent[0]).toBe(mergedSummary);
+    });
+
+    test("deduplicates repeated raw dialogue blocks and turn references", async () => {
+      const { mergeMemory } = await import("@/algorithms/memory-actions");
+
+      const existingMemory = {
+        id: "memory-dedupe",
+        topicSummary: "Original summary",
+        rawDialogue: "* Speaker 1: I run every morning.",
+        timestamp: Date.now(),
+        sessionId: "session-123",
+        embedding: [],
+        turnReferences: [0, 1],
+      };
+      const newMemory = createIncomingMemory({
+        rawDialogue: "* Speaker 1: I run every morning.",
+        turnReferences: [1, 2],
+      });
+
+      const addedDocuments: Array<{
+        pageContent: string;
+        metadata: Record<string, unknown>;
+      }> = [];
+
+      const mockVectorStore = {
+        delete: (_options: { ids: string[] }) => {
+          // intentionally empty mock
+        },
+        addDocuments: (
+          docs: Array<{
+            pageContent: string;
+            metadata: Record<string, unknown>;
+          }>
+        ) => {
+          addedDocuments.push(...docs);
+        },
+      };
+
+      await mergeMemory(
+        existingMemory as any,
+        newMemory as any,
+        "Merged summary",
+        mockVectorStore as any
+      );
+
+      const metadata = addedDocuments[0]?.metadata;
+      expect(metadata?.rawDialogue).toBe(existingMemory.rawDialogue);
+      expect(metadata?.turnReferences).toEqual([0, 1, 2]);
     });
   });
 });

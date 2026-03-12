@@ -1,8 +1,9 @@
 /**
- * LongMemEval Benchmark Evaluator
+ * LongMemEval retrieval-only evaluator
  *
- * Provides evaluation capabilities for the LongMemEval benchmark,
- * reproducing Table 1 results from the paper.
+ * Provides retrieval metrics for LongMemEval without running answer generation
+ * or an LLM judge. This evaluator is useful for debugging retrievers, but it
+ * does not reproduce the paper's QA Accuracy numbers.
  */
 
 import type { VectorStoreInterface } from "@langchain/core/vectorstores";
@@ -24,6 +25,7 @@ import {
 export interface EvaluationResult {
   recallAt5: number;
   ndcgAt5: number;
+  /** @deprecated Legacy alias for recallAtTurnK. Not QA Accuracy. */
   accuracy: number;
   sessionAccuracy: number;
   recallAtTurnK: number;
@@ -37,12 +39,13 @@ export interface EvaluationResult {
 }
 
 /**
- * Table 1 format metrics for comparison
+ * Retrieval-focused metric bundle for comparison
  */
 export interface Table1Metrics {
   retriever: string;
   recallAt5: number;
   ndcgAt5: number;
+  /** @deprecated Legacy alias for recallAtTurnK. Not QA Accuracy. */
   accuracy: number;
   sessionAccuracy: number;
   recallAtTurnK: number;
@@ -59,10 +62,11 @@ export interface LongMemEvalEvaluatorConfig {
 }
 
 /**
- * LongMemEval Benchmark Evaluator
+ * LongMemEval retrieval-only evaluator
  *
- * Evaluates retrieval systems on the LongMemEval benchmark,
- * providing metrics that can be compared against Table 1 results.
+ * Evaluates retrieval systems on the LongMemEval benchmark and reports
+ * retrieval metrics only. Use AgentLongMemEvalEvaluator for paper-aligned
+ * end-to-end generation plus judged QA accuracy.
  */
 export class LongMemEvalEvaluator {
   private readonly dataset: LongMemEvalInstance[];
@@ -154,15 +158,15 @@ export class LongMemEvalEvaluator {
       questionCount++;
     }
 
-    // accuracy = turn-level recall (proportion of answer-containing turns retrieved)
-    // This matches the paper's Table 1 "Accuracy" metric
+    // Keep `accuracy` as a backwards-compatible alias for turn-level recall.
+    // This evaluator does not run the LLM judge, so it cannot report QA Accuracy.
     const avgRecallAtTurnK =
       questionCount > 0 ? totalRecallAtTurnK / questionCount : 0;
 
     this.lastResults = {
       recallAt5: questionCount > 0 ? totalRecall5 / questionCount : 0,
       ndcgAt5: questionCount > 0 ? totalNdcg5 / questionCount : 0,
-      accuracy: avgRecallAtTurnK, // Turn-level recall per paper definition
+      accuracy: avgRecallAtTurnK,
       sessionAccuracy:
         questionCount > 0 ? totalSessionAccuracy / questionCount : 0,
       recallAtTurnK: avgRecallAtTurnK,
@@ -177,9 +181,10 @@ export class LongMemEvalEvaluator {
   }
 
   /**
-   * Gets metrics in Table 1 format
+   * Gets retrieval-focused metrics in the legacy table format
    *
    * Requires that evaluate() has been called first to generate metrics.
+   * Note: `accuracy` here is a legacy alias for turn-level recall.
    *
    * @param retrieverName - Name of the retriever for display
    * @returns Table1Metrics ready for comparison

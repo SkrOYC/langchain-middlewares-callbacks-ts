@@ -111,7 +111,7 @@ describe("LongMemEval Evaluator", () => {
       expect(results.recallAt5).toBe(1.0);
     });
 
-    test("Oracle retriever achieves high accuracy", async () => {
+    test("Oracle retriever maps legacy accuracy alias to turn-level recall", async () => {
       const evaluator = new LongMemEvalEvaluator({
         dataset: [
           createInstance({
@@ -220,7 +220,7 @@ describe("LongMemEval Evaluator", () => {
       expect(results.sessionAccuracy).toBe(1.0);
     });
 
-    test("computes turn-level accuracy", async () => {
+    test("computes turn-level recall", async () => {
       const evaluator = new LongMemEvalEvaluator({
         dataset: [
           createInstance({

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Document } from "@langchain/core/documents";
@@ -128,6 +128,78 @@ describe("AgentLongMemEvalEvaluator", () => {
     expect(extractInvocations).toBeGreaterThan(0);
     expect(output.records).toHaveLength(1);
     expect(output.records[0]?.retrievedSessionIds).toEqual(["answer-session"]);
+  });
+
+  test("builds raw RAG baseline documents at turn granularity", async () => {
+    const dataset: LongMemEvalInstance[] = [
+      {
+        question_id: "q-rag-turns",
+        question_type: "single-session-user",
+        question: "What did the user say?",
+        answer: "They love hiking.",
+        answer_session_ids: ["session-a"],
+        haystack_session_ids: ["session-a"],
+        haystack_dates: ["2024-08-10"],
+        haystack_sessions: [
+          [
+            { role: "user", content: "I love hiking." },
+            { role: "assistant", content: "That sounds fun." },
+          ],
+        ],
+      },
+    ];
+
+    const cacheDir = await mkdtemp(resolve(tmpdir(), "rmm-rag-turns-"));
+
+    try {
+      const evaluator = new AgentLongMemEvalEvaluator({
+        dataset,
+        methods: ["rag"],
+        judge: createMockJudge(() => true),
+        embeddings: createMockEmbeddings(32),
+        embeddingDimension: 32,
+        topK: 2,
+        topM: 1,
+        modelFactory: () => new FakeToolCallingModel(),
+        vectorStoreCacheDir: cacheDir,
+      });
+
+      await evaluator.evaluate();
+
+      const hash = createHash("sha256")
+        .update("q-rag-turns")
+        .digest("hex")
+        .slice(0, 12);
+      const journalPath = resolve(
+        cacheDir,
+        "rag",
+        `q-rag-turns-${hash}.journal.jsonl`
+      );
+      const journal = await readFile(journalPath, "utf8");
+      const upserts = journal
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((record) => record.op === "upsert");
+
+      expect(upserts).toHaveLength(2);
+      expect(upserts[0]?.pageContent).toBe("user: I love hiking.");
+      expect(upserts[1]?.pageContent).toBe("assistant: That sounds fun.");
+      expect(upserts[0]?.metadata).toMatchObject({
+        sessionId: "session-a",
+        turnIndex: 0,
+        turnReferences: [0],
+        sessionDate: "2024-08-10",
+      });
+      expect(upserts[1]?.metadata).toMatchObject({
+        sessionId: "session-a",
+        turnIndex: 1,
+        turnReferences: [1],
+        sessionDate: "2024-08-10",
+      });
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
   });
 
   test("runs full prebuild phase before evaluation when enabled", async () => {

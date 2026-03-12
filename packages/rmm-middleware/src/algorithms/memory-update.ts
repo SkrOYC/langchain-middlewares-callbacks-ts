@@ -138,7 +138,7 @@ export async function processMemoryUpdate(
       await addMemory(memory, vectorStore);
       return;
     }
-    await mergeMemory(targetMemory, action.merged_summary, vectorStore);
+    await mergeMemory(targetMemory, memory, action.merged_summary, vectorStore);
     return;
   }
 
