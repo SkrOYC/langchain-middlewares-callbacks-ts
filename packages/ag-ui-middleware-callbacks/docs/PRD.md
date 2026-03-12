@@ -7,21 +7,38 @@
 ## 1. Executive Summary
 
 ### The Vision
-A plug-and-play LangChain.js integration that enables any agent created with `createAgent()` to emit AG-UI protocol events, making it fully compatible with any AG-UI protocol frontend for real-time agent-to-UI communication.
+A batteries-included backend adapter that lets a LangChain.js agent created with `createAgent()` behave like an AG-UI-compatible backend with minimal developer code.
 
 ### The Problem
-LangChain.js agents lack native support for the AG-UI protocol. Developers building real-time AI interfaces must manually wire up event emission, handling lifecycle events, streaming tokens, tool executions, and state synchronization. This boilerplate is repetitive and error-prone.
+The current package shape is too thin for the product goal. Emitting AG-UI-compatible event objects is useful, but it does not by itself guarantee:
+- truthful token streaming
+- deterministic event ordering
+- correct terminal behavior, meaning the package truthfully decides how a run ends across success, failure, disconnect, final lifecycle events, and stream closure
+- disconnect and abort propagation
+- plug-and-play backend setup
 
-### Jobs to be Done
+This creates the exact failure mode we want to avoid: too much protocol logic leaks into LangChain internals, while too much serving logic is left to every consuming app.
+
+### Product Goal
+Provide a default backend path that is as close as possible to:
+
+```typescript
+const backend = createAGUIBackend({ agent });
+return backend.handle(request);
+```
+
+while still exposing lower-level building blocks for custom hosts.
+
+### Jobs To Be Done
 
 | # | Job Statement | Priority |
-|---|--------------|----------|
-| 1 | "I want my LangChain agent to emit AG-UI events without writing boilerplate" | P0 |
-| 2 | "I need real-time token streaming to display live typing in my UI" | P0 |
-| 3 | "I want tool executions to appear in my UI with progress indicators" | P0 |
-| 4 | "I need my UI to stay in sync with agent state without full refreshes" | P1 |
-| 5 | "I want visibility into the agent's reasoning/thinking process" | P1 |
-| 6 | "I want to extend the protocol with custom events for my app" | P2 |
+|:---:|:---------------|:----------:|
+| 1 | "I want my `createAgent()` backend to become AG-UI-compatible without building the serving pipeline myself." | P0 |
+| 2 | "I need token and tool-call streaming to be published truthfully to the frontend." | P0 |
+| 3 | "I want one package to own ordering, IDs, and terminal behavior so my frontend can trust the stream." | P0 |
+| 4 | "I need a low-level escape hatch when my app has custom transport or auth requirements." | P1 |
+| 5 | "I want state and activity updates to remain available without conflating them with token delivery." | P1 |
+| 6 | "I want extensibility for custom events and future transports without rewriting the core bridge." | P2 |
 
 ---
 
@@ -29,97 +46,96 @@ LangChain.js agents lack native support for the AG-UI protocol. Developers build
 
 | Term | Definition | Do Not Use |
 |------|------------|------------|
-| **Middleware** | LangChain `createMiddleware` hook for intercepting agent lifecycle (beforeAgent, afterAgent, beforeModel, afterModel) | Hooks, Interceptors |
-| **Callback** | LangChain `BaseCallbackHandler` for observing streaming events (handleLLMNewToken, handleToolStart, etc.) | Handler, Listener |
-| **Transport** | User-provided function to dispatch events to the frontend (SSE, WebSocket, Protobuf) | Socket, Connection, Emitter |
-| **Event** | AG-UI protocol message conforming to the 26 event types | Message, Payload, Notification |
-| **Agent** | LangChain.js agent created via `createAgent()` | Bot, Assistant, Worker |
-| **State** | Agent's mutable state managed via `runtime.state` | Context, Memory, Storage |
-| **Private State** | State fields prefixed with `_` that are excluded from invoke results | Internal fields |
-| **Built-in Middleware** | LangChain-provided middleware (retry, rate limiting, HITL, summarization) for common patterns | - |
+| **Execution Layer** | The LangChain `createAgent()` runtime that performs model and tool work | Protocol, Transport |
+| **Control Layer** | LangChain middleware responsible for execution policy, state, and lifecycle boundaries | Streaming Layer |
+| **Observation Layer** | LangChain callbacks responsible for observing token, tool, and runtime events | Transport |
+| **Publication Layer** | The run-scoped component that merges control and observation signals into one canonical AG-UI event stream | Callback Transport |
+| **Serving Layer** | The HTTP or connection-facing layer that accepts AG-UI input and delivers the canonical event stream | Business Logic |
+| **Backend Adapter** | The full package surface that exposes a `createAgent()` runtime as an AG-UI-compatible backend | Event Emitter |
+| **Transport Helper** | A concrete delivery helper such as SSE, WebSocket, or binary framing | Core Protocol |
+| **Event Producer** | A component that emits internal semantic events into the publication layer | Publisher |
+| **Single Writer** | The only component allowed to decide public event order and terminal behavior for one run | Global Emitter |
 
 ---
 
 ## 3. Actors & Personas
 
-### Primary Actor: The LangChain Developer
+### Primary Actor: The Solo Builder
 
-- **Profile:** Full-stack developer building AI-powered applications
+- **Profile:** Maintains their own app backend and wants AG-UI compatibility quickly
 - **Psychographics:**
-  - Values "just works" integrations over configuration
-  - Prioritizes time-to-market over fine-grained control
-  - Familiar with LangChain but not protocol internals
+  - Optimizes for momentum and correctness
+  - Prefers a package that owns the boring transport details
+  - Wants low ceremony but not hidden magic
 - **Goals:**
-  - Connect LangChain agent to AG-UI frontend with minimal code
-  - Get streaming working without debugging token pipelines
-  - Deploy to production with confidence
+  - Mount a working AG-UI backend with minimal code
+  - Trust the event stream in production
+  - Avoid per-project reinvention of SSE and ordering rules
 
 ### Secondary Actor: The Framework Integrator
 
-- **Profile:** Developer building a reusable component library
+- **Profile:** Wants to embed the bridge into a custom backend or platform
 - **Psychographics:**
-  - Needs low-level control for advanced features
-  - Willing to configure for specific requirements
+  - Accepts more configuration in exchange for control
+  - Needs reusable primitives rather than one rigid server
 - **Goals:**
-  - Customize event emission for specific use cases
-  - Add custom event types for application-specific needs
+  - Reuse the publication pipeline with custom routing/auth
+  - Swap transports without rewriting LangChain integration
 
 ---
 
 ## 4. Functional Capabilities
 
-### Epic 1: Core Integration (P0)
+### Epic 1: Batteries-Included Backend Path (P0)
 
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
-| Middleware Factory | Create middleware that intercepts agent lifecycle | `createAGUIMiddleware(opts)` returns middleware |
-| Callback Handler | Callback handler for streaming events | `AGUICallbackHandler` extends `BaseCallbackHandler` |
-| Agent Factory | Unified factory combining middleware + callbacks | `createAGUIAgent(config)` returns configured agent |
-| Lifecycle Events | Emit RUN_STARTED, RUN_FINISHED, RUN_ERROR | Events fire at correct agent lifecycle points |
-| Step Events | Emit STEP_STARTED, STEP_FINISHED | Events fire around each model invocation |
+| Backend Factory | Create a high-level backend adapter around an existing `createAgent()` runtime | `createAGUIBackend(config)` returns a backend object |
+| Request Handling | Accept AG-UI-compatible input over HTTP | Backend exposes a `handle(request)` or equivalent request entrypoint |
+| Minimal Setup | Require minimal host code to publish a working AG-UI backend | User can mount one handler without building a publisher manually |
 
-### Epic 2: Streaming Events (P0)
+### Epic 2: Publication Layer (P0)
 
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
-| Text Message Start | Emit TEXT_MESSAGE_START with messageId and role | Fires on LLM invocation start |
-| Text Message Content | Emit TEXT_MESSAGE_CONTENT with token delta | Fires for each token during streaming |
-| Text Message End | Emit TEXT_MESSAGE_END | Fires when LLM stream completes |
-| Tool Call Start | Emit TOOL_CALL_START with tool name | Fires when tool execution begins |
-| Tool Call Args | Emit TOOL_CALL_ARGS with JSON fragments | Fires during tool argument streaming |
-| Tool Call End | Emit TOOL_CALL_END | Fires when tool execution completes |
-| Tool Call Result | Emit TOOL_CALL_RESULT with tool output | Fires after tool returns |
+| Single Writer | Use one response-scoped publisher per run | No public event is written directly from middleware or callbacks |
+| Canonical Ordering | Merge control and observation signals deterministically | Public event order is stable and testable |
+| ID Management | Normalize run, thread, message, and tool call identifiers | IDs remain consistent across lifecycle, text, and tool events |
+| Terminal Semantics | Own completion and failure termination rules | Stream ends truthfully on success, failure, or disconnect |
+| Degraded Fidelity Rules | Publish only events supported by upstream runtime fidelity | Missing token deltas degrade honestly rather than being fabricated |
 
-### Epic 3: Reasoning/Thinking (P1)
+### Epic 3: LangChain Integration Layers (P0)
 
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
-| Legacy Thinking Mode | Emit THINKING_* events | Supported for backward compatibility |
-| Modern Reasoning Mode | Emit REASONING_* events (NEW) | Replaces deprecated THINKING_* in AG-UI protocol |
-| Reasoning Content | Emit REASONING_MESSAGE_* events | Streams reasoning content |
+| Control Layer | Use middleware for lifecycle, state, activity, and execution metadata | Middleware never claims token visibility |
+| Observation Layer | Use callbacks for token, tool, and runtime observation | Callbacks capture token/tool richness without becoming transport writers |
+| Per-Run State | Keep run-scoped state out of shared middleware closure state | Concurrent runs do not corrupt each other's publication state |
 
-### Epic 4: State Management (P1)
-
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| State Snapshot | Emit STATE_SNAPSHOT with full state | Configurable timing (initial/final/all) |
-| Messages Snapshot | Emit MESSAGES_SNAPSHOT with history | Provides conversation context |
-| State Delta | Emit STATE_DELTA with JSON Patch | **Not yet implemented** - Future |
-
-### Epic 5: Activity Events (P1)
+### Epic 4: Serving & Transport (P0)
 
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
-| Activity Snapshot | Emit ACTIVITY_SNAPSHOT | Shows "thinking" state in UI |
-| Activity Delta | Emit ACTIVITY_DELTA with JSON Patch | Updates activity in real-time |
+| HTTP Serving | Expose an AG-UI-compatible HTTP entrypoint | Accepts POST body matching AG-UI run input and returns streamed response |
+| SSE Delivery | Ship a default SSE writer for broad compatibility | SSE output flushes lifecycle/text/tool events in canonical order |
+| Abort Propagation | Stop work when the client disconnects or aborts | Disconnect reaches the execution path through cancellation wiring |
+| Transport Safety | Map post-start transport failures into safe terminal behavior | Public stream closes predictably |
+
+### Epic 5: Low-Level Escape Hatches (P1)
+
+| Capability | Description | Acceptance Criteria |
+|------------|-------------|-------------------|
+| Publisher API | Expose the publication layer separately for custom hosts | Advanced user can subscribe to canonical per-run events directly |
+| Raw Middleware Export | Continue exposing lower-level middleware for advanced composition | Existing advanced users are not trapped in the high-level API |
+| Raw Callback Export | Continue exposing callback handler for advanced composition | Existing advanced users can opt into low-level integration |
 
 ### Epic 6: Extensibility (P2)
 
 | Capability | Description | Acceptance Criteria |
 |------------|-------------|-------------------|
-| Custom Events | Allow users to emit CUSTOM events | **Not exposed** - Future |
-| Raw Events | Passthrough for external protocols | **Not implemented** - Future |
-| Encrypted Reasoning | Support REASONING_ENCRYPTED_VALUE | **Not implemented** - Future |
+| Custom Events | Allow application-specific events without bypassing the publisher | Custom events flow through the same publication guarantees |
+| Alternative Transports | Support future binary or WebSocket helpers | Core publication semantics are reused across transports |
+| Protocol Evolution | Leave room for additional AG-UI events without re-architecting serving | New event families slot into the publication layer cleanly |
 
 ---
 
@@ -127,28 +143,33 @@ LangChain.js agents lack native support for the AG-UI protocol. Developers build
 
 ### Performance
 
-- **Latency:** Event emission must not add measurable latency to agent execution
-- **Payload Size:** Configurable max payload size (default 50KB) to prevent UI overwhelm
+- Event publication must not materially slow agent execution.
+- The serving layer must support progressive delivery rather than buffering full responses.
 
 ### Reliability
 
-- **Fail-Safe:** Middleware must not crash agent execution; errors must be caught and logged
-- **Event Ordering:** Middleware events must emit before callback events for proper lifecycle ordering
+- Middleware and callbacks must be fail-safe producers.
+- Only the publication layer may decide public ordering and termination.
+- Per-run state must be isolated to support concurrent requests safely.
 
 ### Architectural Separation
 
-- **Middleware vs Callbacks:** This package uses LangChain's middleware for lifecycle/state/activity events and callbacks for streaming events. This separation is mandated by LangChain's API architecture (middleware has state access, callbacks have token access), not an arbitrary choice.
-- **AG-UI Scope:** This package handles event emission only. Transport (SSE, WebSocket), HTTP server setup, and wire formatting are developer responsibilities.
+- **Execution Layer:** LangChain runtime only
+- **Control Layer:** Middleware only
+- **Observation Layer:** Callbacks only
+- **Publication Layer:** Canonical AG-UI event stream only
+- **Serving Layer:** Request parsing and transport delivery only
 
 ### Compatibility
 
-- **LangChain:** Must work with LangChain.js agents created via `createAgent()`
-- **AG-UI Protocol:** Event types must conform to `@ag-ui/core` definitions exactly
+- Must work with LangChain.js agents created with `createAgent()`.
+- Must emit AG-UI-compatible `BaseEvent` objects.
+- Must preserve an advanced path for custom hosts, not only the default server path.
 
 ### Usability
 
-- **Zero Config Mode:** Adding middleware to agent must work without configuration
-- **Progressive Disclosure:** Complex options available but not required
+- Default path should feel plug-and-play from the backend side.
+- Low-level APIs should remain available for deliberate customization.
 
 ---
 
@@ -156,99 +177,73 @@ LangChain.js agents lack native support for the AG-UI protocol. Developers build
 
 ### What This Package IS
 
-- An event emission layer that transforms LangChain execution into AG-UI events
-- Uses LangChain middleware for lifecycle/state/activity events
-- Uses LangChain callbacks for streaming events
+- An AG-UI backend adapter for LangChain `createAgent()`
+- A package that owns the publication boundary between LangChain internals and frontend delivery
+- A package that includes a default serving path and lower-level extension points
 
 ### What This Package IS NOT
 
-- AG-UI protocol middleware (event transformation layer - e.g., filtering, enriching)
-- Transport implementation (SSE, WebSocket)
-- HTTP server
+- A frontend package
+- A generic LangChain middleware collection
+- A promise that callbacks alone define the public protocol
 
 ### In Scope
 
-- Intercepting LangChain agent execution
-- Transforming LangChain events to AG-UI protocol events
-- Providing factory functions for easy integration
-- Configuration system with validation
+- Request handling for AG-UI-compatible runs
+- Middleware and callback integration as producer layers
+- Run-scoped publication and serialization of AG-UI events
+- Default SSE delivery path
+- Cancellation and disconnect propagation
+- Lower-level publisher and bridge exports
 
 ### Out of Scope
 
 | Excluded Feature | Reason |
 |------------------|--------|
-| Transport implementation | Developer responsibility - SSE, WebSocket, Protobuf |
-| HTTP server setup | Developer responsibility |
-| Wire formatting | Developer responsibility |
-| Frontend implementation | AG-UI frontend libraries handle this |
-| Agent persistence | LangChain handles state, we just observe |
-| Authentication/Authorization | Outside protocol scope |
-| Built-in Middleware (retry, rate limiting, HITL) | Use LangChain's built-in middleware directly |
-| JumpTo control flow | Not implemented - advanced middleware pattern |
+| Frontend rendering | Belongs to AG-UI frontend consumers |
+| General-purpose auth framework | Host application concern |
+| Durable persistence productization | Separate concern from run publication |
+| Replacing LangChain execution | LangChain remains the execution engine |
 
 ---
 
 ## 7. Conceptual Diagrams
 
-### System Context (C4 Level 1)
+### System Context
 
 ```mermaid
 C4Context
-  Person(LangChainDev, "LangChain Developer", "Builds AI-powered applications")
-  System_Boundary(AGUIMiddleware, "AG-UI Middleware Package") {
-    System(createAGUIAgent, "createAGUIAgent", "Factory combining middleware + callbacks")
-    System(AGUIMiddleware, "createAGUIMiddleware", "Lifecycle event emitter")
-    System(AGUICallbackHandler, "AGUICallbackHandler", "Streaming event handler")
+  Person(Builder, "Solo Builder", "Mounts the backend in an existing app")
+  System_Boundary(Adapter, "AG-UI Backend Adapter") {
+    System(Backend, "createAGUIBackend", "High-level backend adapter")
+    System(Publisher, "Publication Layer", "Run-scoped canonical event publisher")
+    System(Bridge, "LangChain Bridge", "Middleware + callbacks as producers")
   }
-  System(AGUIFrontend, "AG-UI Frontend", "Any AG-UI compatible UI")
-  System(LangChain, "LangChain.js", "Agent execution runtime")
+  System(LangChain, "LangChain createAgent()", "Execution engine")
+  System(Client, "AG-UI Client / Frontend", "Consumes AG-UI event stream")
 
-  Rel(LangChainDev, createAGUIAgent, "Uses")
-  Rel(createAGUIAgent, LangChain, "Intercepts")
-  Rel(AGUIMiddleware, AGUIFrontend, "Emits events to")
-  Rel(AGUICallbackHandler, AGUIFrontend, "Emits events to")
+  Rel(Builder, Backend, "Uses")
+  Rel(Backend, LangChain, "Invokes")
+  Rel(Bridge, Publisher, "Publishes semantic signals to")
+  Rel(Backend, Client, "Serves AG-UI stream to")
 ```
 
-### Domain Model
+### Layer Model
 
 ```mermaid
-classDiagram
-  class Middleware {
-    +beforeAgent()
-    +afterAgent()
-    +beforeModel()
-    +afterModel()
-  }
-  
-  class CallbackHandler {
-    +handleLLMStart()
-    +handleLLMNewToken()
-    +handleLLMEnd()
-    +handleToolStart()
-    +handleToolEnd()
-  }
-  
-  class Transport {
-    +emit(event: BaseEvent)
-  }
-  
-  class BaseEvent {
-    +type: EventType
-    +timestamp?: number
-  }
-  
-  Middleware --> Transport : emits via
-  CallbackHandler --> Transport : emits via
-  Transport --> BaseEvent : dispatches
+flowchart TD
+  A[Execution Layer\nLangChain createAgent()] --> B[Control Layer\nMiddleware]
+  A --> C[Observation Layer\nCallbacks]
+  B --> D[Publication Layer\nSingle Writer]
+  C --> D
+  D --> E[Serving Layer\nHTTP / SSE / future transports]
+  E --> F[AG-UI Client]
 ```
 
 ---
 
-## Appendix: Operator Preferences
+## Appendix: Product Positioning
 
-*Technology preferences documented for reference (not for PRD scope):*
+This package is no longer framed as "middleware plus callbacks that emit event objects." The target product is:
 
-- **Runtime:** Bun / Node.js
-- **Build:** tsup (ESM only)
-- **Validation:** Zod for configuration schema
-- **Event Types:** Re-exported from `@ag-ui/core`
+**"The simplest way to expose a LangChain `createAgent()` backend as an AG-UI-compatible backend."**

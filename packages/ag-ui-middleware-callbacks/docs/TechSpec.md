@@ -4,369 +4,376 @@
 
 ---
 
+## 0. Scope and Technical Direction
+
+This document defines the **target architecture** for the package after the current event-emitter design is evolved into a backend adapter.
+
+The package will support two usage tiers:
+
+1. **High-level backend path**
+   A batteries-included backend adapter for AG-UI-compatible serving.
+2. **Low-level bridge path**
+   Direct access to middleware, callbacks, and publication primitives for advanced hosts.
+
+The technical design keeps AG-UI transport-agnostic in principle while still shipping a default server path in practice.
+
+---
+
 ## 1. Stack Specification
 
-### Runtime & Build
+### 1.1 Runtime and Language
 
 | Component | Technology | Version |
 |-----------|------------|---------|
 | Runtime | Bun / Node.js | bun >=1.0.0 / node >=20.0.0 |
 | Language | TypeScript | 5.x |
 | Build | tsup | 8.x |
-| Output | ESM Only | - |
+| Output | ESM + CJS + type declarations | - |
 
-### Dependencies
+### 1.2 Dependencies
 
 | Package | Purpose | Type |
 |---------|---------|------|
-| @ag-ui/core | Event types & validation schemas | Dependency |
-| @langchain/core | LangChain integration | Dependency |
-| langchain | Agent runtime | Peer (1.2.3) |
-| zod | Configuration validation | Dependency (^4.3.6) |
-| fast-json-patch | JSON Patch for state deltas | Dependency |
+| `@ag-ui/core` | AG-UI event and schema types | Dependency |
+| `@langchain/core` | Callback abstractions | Dependency |
+| `langchain` | `createAgent()` runtime | Peer |
+| `zod` | Config validation | Dependency |
+| `fast-json-patch` | State delta computation | Dependency |
+
+### 1.3 Runtime Neutrality
+
+Shared modules must prefer Web Platform primitives:
+
+- `Request`
+- `Response`
+- `Headers`
+- `ReadableStream`
+- `AbortSignal`
+- `crypto.randomUUID()`
+
+Do not require Node-only serving code in core publication modules.
 
 ---
 
 ## 2. Architecture Decision Records
 
-### ADR 1: Hybrid Middleware + Callbacks
+### ADR-001: Product Shape Becomes Backend Adapter
 
-**Context:** LangChain separates middleware (lifecycle/state) from callbacks (streaming). No unified mechanism exists.
+**Context**
 
-**Decision:** Use both mechanisms - middleware for lifecycle/state/activity events, callbacks for streaming events.
+The original design centered on emitting event objects via `onEvent`. That is insufficient for the desired plug-and-play backend outcome.
 
-**Consequences:**
-- Two event sources require careful ordering
-- Developer must understand both mechanisms
-- More complex than unified handler (not possible)
+**Decision**
 
-### ADR 2: Event Type Compliance
+Redefine the package as an AG-UI backend adapter for LangChain `createAgent()`.
 
-**Context:** AG-UI protocol defines 26 event types. The package must emit exactly these types.
+**Consequences**
 
-**Decision:** Re-export event types from `@ag-ui/core` rather than defining custom types.
+- the package now owns a default serving path
+- the package still exposes low-level bridge components
+- documentation and task planning must prioritize publication and serving over minor event gaps
 
-**Consequences:**
-- Strict compliance with protocol
-- Updates to `@ag-ui/core` may require package updates
-- No custom event types except CUSTOM
+### ADR-002: Middleware Is Control, Not Transport
 
-### ADR 3: Configuration via Zod
+**Context**
 
-**Context:** Package needs validation for user-provided configuration.
+Middleware sees lifecycle, state, and policy, but not token chunks.
 
-**Decision:** Use Zod schema validation with sensible defaults.
+**Decision**
 
-**Consequences:**
-- Runtime validation catches errors early
-- Schema can be introspected
-- Additional dependency required
+Use middleware only as a control producer.
+
+**Consequences**
+
+- middleware emits structural runtime facts
+- middleware does not directly write public AG-UI events to transport
+
+### ADR-003: Callbacks Are Observation, Not Publication
+
+**Context**
+
+Callbacks observe tokens and tool events, but they do not by themselves define trustworthy public protocol behavior.
+
+**Decision**
+
+Use callbacks only as observation producers.
+
+**Consequences**
+
+- callbacks provide rich runtime signals
+- callbacks do not own ordering, termination, or transport
+
+### ADR-004: Single Writer Per Run
+
+**Context**
+
+Mixing middleware and callback output directly into a socket or `onEvent` sink creates race conditions and leaky semantics.
+
+**Decision**
+
+Introduce a run-scoped publication layer with one canonical writer.
+
+**Consequences**
+
+- all public events are emitted through one queue/publisher
+- ordering and terminal behavior become deterministic
+- concurrent run safety becomes tractable
+
+### ADR-005: Default SSE Path, Extensible Transport Model
+
+**Context**
+
+AG-UI is transport-agnostic, but the package goal is plug-and-play backend integration.
+
+**Decision**
+
+Ship SSE as the default serving transport and keep publication reusable for future binary or WebSocket helpers.
+
+**Consequences**
+
+- simplest deployment path is covered
+- transport-specific framing remains separate from publication logic
 
 ---
 
-## 3. API Contracts
+## 3. Public API Contracts
 
-### 3.1 createAGUIMiddleware
+### 3.1 High-Level Backend API
 
 ```typescript
-/**
- * Creates AG-UI protocol middleware for LangChain agents.
- * 
- * @param options - Middleware configuration options
- * @returns Middleware instance for use with createAgent()
- */
-function createAGUIMiddleware(
-  options: AGUIMiddlewareOptions
-): ReturnType<typeof createMiddleware>;
+interface AGUIBackend {
+  handle(request: Request): Promise<Response>;
+}
+
+interface AGUIBackendConfig {
+  agent: ReturnType<typeof createAgent>;
+  validateEvents?: boolean | "strict";
+  emitStateSnapshots?: "initial" | "final" | "all" | "none";
+  emitActivities?: boolean;
+  errorDetailLevel?: "full" | "message" | "code" | "none";
+}
+
+declare function createAGUIBackend(
+  config: AGUIBackendConfig,
+): AGUIBackend;
 ```
 
-**Options:**
+**Notes**
+
+- `handle(request)` is the batteries-included path.
+- The request body is expected to be AG-UI-compatible run input.
+- The response is a streamed AG-UI-compatible HTTP response, defaulting to SSE.
+
+### 3.2 Publication Layer API
+
+```typescript
+interface AGUIRunPublisher {
+  publish(event: BaseEvent): void;
+  error(error: unknown): void;
+  complete(): void;
+  toReadableStream(): ReadableStream<Uint8Array>;
+}
+
+interface AGUIRunPublisherConfig {
+  validateEvents?: boolean | "strict";
+  serializer?: AGUIEventSerializer;
+  transport?: "sse";
+}
+
+declare function createAGUIRunPublisher(
+  config?: AGUIRunPublisherConfig,
+): AGUIRunPublisher;
+```
+
+**Notes**
+
+- This is the single writer for one run.
+- Middleware and callbacks publish into this component instead of directly to transport.
+
+### 3.3 Control Layer API
 
 ```typescript
 interface AGUIMiddlewareOptions {
-  /** Required: Event callback function */
-  onEvent: (event: BaseEvent) => void;
-  
-  /** When to emit state snapshots: "initial" | "final" | "all" | "none" */
+  publish: (event: BaseEvent) => void;
   emitStateSnapshots?: "initial" | "final" | "all" | "none";
-  
-  /** Emit activity events */
   emitActivities?: boolean;
-  
-  /** Maximum payload size in bytes (default: 50KB) */
-  maxUIPayloadSize?: number;
-  
-  /** Chunk large tool results */
-  chunkLargeResults?: boolean;
-  
-  /** Override thread ID */
   threadIdOverride?: string;
-  
-  /** Override run ID */
   runIdOverride?: string;
-  
-  /** Error detail level: "full" | "message" | "code" | "none" */
   errorDetailLevel?: "full" | "message" | "code" | "none";
-  
-  /** Custom state mapper */
-  stateMapper?: (state: any) => any;
-  
-  /** Custom result mapper */
-  resultMapper?: (result: any) => any;
-  
-  /** Custom activity mapper */
-  activityMapper?: (node: any) => any;
-  
-  /** Validate events against @ag-ui/core schemas */
-  validateEvents?: boolean | "strict";
+  stateMapper?: (state: unknown) => unknown;
+  activityMapper?: (activity: unknown) => unknown;
 }
+
+declare function createAGUIMiddleware(
+  options: AGUIMiddlewareOptions,
+): ReturnType<typeof createMiddleware>;
 ```
 
-### 3.2 createAGUIAgent
+**Notes**
+
+- The control layer API changes from `onEvent` semantics to `publish` semantics.
+- The middleware remains a producer, not a server writer.
+
+### 3.4 Observation Layer API
 
 ```typescript
-/**
- * Creates a LangChain agent with integrated AG-UI protocol support.
- * 
- * @param config - Agent configuration
- * @returns Configured agent with middleware and callbacks
- */
-function createAGUIAgent<
-  State extends AgentState = AgentState,
-  Context extends AgentContext = AgentContext,
-  Response extends AgentResponse = AgentResponse
->(config: AGUIAgentConfig<State, Context, Response>): any;
-```
-
-**Config:**
-
-```typescript
-interface AGUIAgentConfig<
-  State extends AgentState = AgentState,
-  Context extends AgentContext = AgentContext,
-  Response extends AgentResponse = AgentResponse
-> {
-  /** LangChain model */
-  model: any;
-  
-  /** Agent tools */
-  tools?: any[];
-  
-  /** Event callback (required) */
-  onEvent: (event: BaseEvent) => void;
-  
-  /** Callback handler options */
-  callbackOptions?: AGUICallbackHandlerOptions;
-  
-  /** Middleware options */
-  middlewareOptions?: Partial<AGUIMiddlewareOptions>;
-  
-  /** Other createAgent options */
-  [key: string]: any;
+interface AGUICallbackHandlerOptions {
+  publish: (event: BaseEvent) => void;
+  emitTextMessages?: boolean;
+  emitToolCalls?: boolean;
+  emitToolResults?: boolean;
+  emitThinking?: boolean;
+  reasoningEventMode?: "thinking" | "reasoning";
 }
-```
 
-### 3.3 AGUICallbackHandler
-
-```typescript
-/**
- * Callback handler for streaming AG-UI events.
- * Extends LangChain's BaseCallbackHandler.
- */
-class AGUICallbackHandler extends BaseCallbackHandler {
+declare class AGUICallbackHandler extends BaseCallbackHandler {
   constructor(options: AGUICallbackHandlerOptions);
-
-  /**
-   * Emit a text message chunk directly.
-   * Expands to TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END.
-   */
-  emitTextChunk(messageId: string, role: string, delta: string): void;
-
-  /**
-   * Emit a tool call chunk directly.
-   * Expands to TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END.
-   */
-  emitToolChunk(toolCallId: string, toolCallName: string, delta: string, parentMessageId?: string): void;
-
-  /**
-   * Clean up handler resources.
-   */
   dispose(): void;
 }
 ```
 
-**Options:**
+**Notes**
+
+- The callback handler remains available as a low-level export.
+- It must never write directly to an HTTP response.
+
+### 3.5 Compatibility API
 
 ```typescript
-interface AGUICallbackHandlerOptions {
-  /** Event callback (required) */
-  onEvent: (event: BaseEvent) => void;
-  
-  /** Enable/disable handler */
-  enabled?: boolean;
-  
-  /** Emit text message events */
-  emitTextMessages?: boolean;
-  
-  /** Emit tool call events */
-  emitToolCalls?: boolean;
-  
-  /** Emit tool results */
-  emitToolResults?: boolean;
-  
-  /** Emit thinking/reasoning events */
-  emitThinking?: boolean;
-  
-  /** Reasoning mode: "thinking" (legacy) or "reasoning" (modern) */
-  reasoningEventMode?: "thinking" | "reasoning";
-  
-  /** Maximum payload size */
-  maxUIPayloadSize?: number;
-  
-  /** Chunk large results */
-  chunkLargeResults?: boolean;
-}
+declare function createAGUIAgent(config: AGUIAgentConfig): ReturnType<typeof createAgent>;
 ```
+
+**Notes**
+
+- `createAGUIAgent` remains as an advanced compatibility helper.
+- It is not the preferred public entrypoint for plug-and-play backend usage.
 
 ---
 
-## 4. Event Type Definitions
+## 4. Event Publication Rules
 
-### Event Source Mapping
+### 4.1 Producer Mapping
 
-Each AG-UI event is emitted via a specific LangChain mechanism:
+| Producer | Event Families |
+|----------|----------------|
+| Middleware | `RUN_*`, `STEP_*`, `STATE_*`, `MESSAGES_SNAPSHOT`, `ACTIVITY_*` |
+| Callbacks | `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `REASONING_*`, runtime errors |
+| Publisher | terminal coordination, validation, ordering, serialization |
 
-**Middleware Hooks:**
-- `beforeAgent` → RUN_STARTED
-- `afterAgent` → RUN_FINISHED, RUN_ERROR
-- `beforeModel` → STEP_STARTED, ACTIVITY_SNAPSHOT
-- `afterModel` → STEP_FINISHED, ACTIVITY_DELTA
+### 4.2 Truthfulness Rules
 
-**Callbacks:**
-- `handleLLMStart` → TEXT_MESSAGE_START, REASONING_START
-- `handleLLMNewToken` → TEXT_MESSAGE_CONTENT
-- `handleLLMEnd` → TEXT_MESSAGE_END
-- `handleToolStart` → TOOL_CALL_START, TOOL_CALL_ARGS
-- `handleToolEnd` → TOOL_CALL_END, TOOL_CALL_RESULT
-- `handleToolError` → TOOL_CALL_ERROR
-- `handleChainStart` → CHAIN_STARTED
-- `handleChainEnd` → CHAIN_FINISHED
-- `handleChainError` → CHAIN_ERROR
+1. Do not invent token deltas when none were observed.
+2. Do not invent tool argument chunks when none were observed.
+3. Allow degraded publication from chunked events to final-only events when upstream fidelity is lower.
+4. Validate public events before they reach transport when validation is enabled.
 
-### Implemented Events
+### 4.3 Ordering Rules
 
-> **Note:** Per latest AG-UI skill, REASONING_* events are the NEW standard that replaces deprecated THINKING_* events. Both are implemented for backward compatibility.
+1. All public events for one run flow through one publisher.
+2. `RUN_STARTED` must appear before any text or tool event for that run.
+3. `RUN_FINISHED` or `RUN_ERROR` must be the final semantic lifecycle event.
+4. Serving must flush and close only after publication has finalized.
 
-| Event Type | Source | Payload |
-|------------|--------|---------|
-| RUN_STARTED | Middleware | `{ threadId, runId, parentRunId?, input }` |
-| RUN_FINISHED | Middleware | `{ threadId, runId, result? }` |
-| RUN_ERROR | Middleware | `{ message, code? }` |
-| STEP_STARTED | Middleware | `{ stepName }` |
-| STEP_FINISHED | Middleware | `{ stepName }` |
-| TEXT_MESSAGE_START | Callback | `{ messageId, role }` |
-| TEXT_MESSAGE_CONTENT | Callback | `{ messageId, delta }` |
-| TEXT_MESSAGE_END | Callback | `{ messageId }` |
-| TEXT_MESSAGE_CHUNK | Callback | `{ messageId, content, role }` |
-| TOOL_CALL_START | Callback | `{ toolCallId, toolCallName, parentMessageId? }` |
-| TOOL_CALL_ARGS | Callback | `{ toolCallId, delta }` |
-| TOOL_CALL_END | Callback | `{ toolCallId }` |
-| TOOL_CALL_RESULT | Callback | `{ messageId, toolCallId, content, role? }` |
-| TOOL_CALL_CHUNK | Callback | `{ toolCallId, name, args, id? }` |
-| STATE_SNAPSHOT | Middleware | `{ snapshot }` |
-| MESSAGES_SNAPSHOT | Middleware | `{ messages }` |
-| ACTIVITY_SNAPSHOT | Middleware | `{ messageId, activityType, content, replace? }` |
-| ACTIVITY_DELTA | Middleware | `{ messageId, activityType, patch }` |
-| REASONING_START | Callback | `{ messageId }` |
-| REASONING_MESSAGE_START | Callback | `{ messageId, role }` |
-| REASONING_MESSAGE_CONTENT | Callback | `{ messageId, delta }` |
-| REASONING_MESSAGE_END | Callback | `{ messageId }` |
-| REASONING_END | Callback | `{ messageId }` |
-
-### Missing Events - Future Implementation
-
-> **Note:** Per latest AG-UI skill, STATE_DELTA and RAW are stable events in the protocol. THINKING_* events are deprecated (use REASONING_* instead). Chain events require handleChain* callbacks which are not yet standardized in LangChain.
-
-| Event Type | Purpose | Priority |
-|------------|---------|----------|
-| STATE_DELTA | JSON Patch for incremental state | High |
-| RAW | Passthrough events | Low |
-| REASONING_MESSAGE_CHUNK | Convenience chunk for reasoning | Medium |
-| REASONING_ENCRYPTED_VALUE | Encrypted chain-of-thought | Low |
-| TOOL_CALL_ERROR | Tool execution error | Medium |
-| CHAIN_STARTED | Chain started | Low |
-| CHAIN_FINISHED | Chain finished | Low |
-| CHAIN_ERROR | Chain error | Low |
-| THINKING_START | Deprecated: use REASONING_START | Deprecated |
-| THINKING_TEXT_MESSAGE_START | Deprecated: use REASONING_MESSAGE_START | Deprecated |
-| THINKING_TEXT_MESSAGE_CONTENT | Deprecated: use REASONING_MESSAGE_CONTENT | Deprecated |
-| THINKING_TEXT_MESSAGE_END | Deprecated: use REASONING_MESSAGE_END | Deprecated |
-| THINKING_END | Deprecated: use REASONING_END | Deprecated |
 ---
 
-## 5. Project Structure
-```
+## 5. Request and Serving Semantics
+
+### 5.1 Request Entry
+
+- Request body: AG-UI-compatible run input
+- Method: `POST`
+- Content type: `application/json`
+- Response type: `text/event-stream` by default
+
+### 5.2 Serving Responsibilities
+
+The serving layer must:
+
+- parse request JSON
+- create a run-scoped publisher
+- invoke the LangChain runtime with control and observation producers
+- stream canonical events to the client
+- propagate `AbortSignal` from client disconnect to execution
+
+### 5.3 Transport Responsibilities
+
+The SSE helper must:
+
+- serialize each public event as one SSE frame
+- flush progressively
+- close safely on success, failure, or disconnect
+
+The transport helper must not:
+
+- decide event ordering
+- generate semantic events independently of the publisher
+
+---
+
+## 6. Internal Module Structure
+
+```text
 src/
-├── callbacks/
-│   └── AGUICallbackHandler.ts    # Streaming event handler
-├── events/
-│   └── index.ts                  # Re-export @ag-ui/core types
+├── backend/
+│   ├── createAGUIBackend.ts      # High-level backend factory
+│   └── requestHandler.ts         # Request -> Response serving path
+├── publication/
+│   ├── createAGUIRunPublisher.ts # Single writer per run
+│   ├── serializer.ts             # BaseEvent -> framed output
+│   └── ordering.ts               # Ordering and terminal coordination
+├── transports/
+│   └── sse.ts                    # Default SSE writer
 ├── middleware/
-│   ├── createAGUIMiddleware.ts   # Middleware factory
-│   ├── idResolution.ts           # Thread/run ID resolution
-│   └── types.ts                  # Middleware types & Zod schema
+│   ├── createAGUIMiddleware.ts   # Control producer
+│   ├── idResolution.ts
+│   └── types.ts
+├── callbacks/
+│   └── AGUICallbackHandler.ts    # Observation producer
 ├── utils/
-│   ├── cleaner.ts                # Data cleaning utilities
-│   ├── eventNormalizer.ts        # Event transformation
-│   ├── idGenerator.ts            # ID generation
-│   ├── messageMapper.ts          # LangChain → AG-UI message mapping
-│   ├── reasoningBlocks.ts       # Reasoning event handling
-│   ├── stateDiff.ts              # State delta computation
-│   └── validation.ts            # Event validation
-├── createAGUIAgent.ts           # Unified factory
-└── index.ts                     # Public exports
+│   ├── cleaner.ts
+│   ├── idGenerator.ts
+│   ├── messageMapper.ts
+│   ├── reasoningBlocks.ts
+│   ├── stateDiff.ts
+│   └── validation.ts
+├── createAGUIAgent.ts            # Compatibility export
+└── index.ts
 ```
 
 ---
 
-## 6. Configuration Schema (Zod)
+## 7. Testing Requirements
 
-```typescript
-// Middleware options schema
-const AGUIMiddlewareOptionsSchema = z.object({
-  onEvent: z.custom<(event: BaseEvent) => void>(),
-  emitStateSnapshots: z.enum(["initial", "final", "all", "none"]).default("initial"),
-  emitActivities: z.boolean().default(false),
-  maxUIPayloadSize: z.number().positive().default(50 * 1024),
-  chunkLargeResults: z.boolean().default(false),
-  threadIdOverride: z.string().optional(),
-  runIdOverride: z.string().optional(),
-  errorDetailLevel: z.enum(["full", "message", "code", "none"]).default("message"),
-  stateMapper: z.custom<(state: any) => any>().optional(),
-  resultMapper: z.custom<(result: any) => any>().optional(),
-  activityMapper: z.custom<(node: any) => any>().optional(),
-  validateEvents: z.union([z.boolean(), z.literal("strict")]).default(false),
-});
-```
+### 7.1 Publication Tests
+
+- canonical ordering across middleware and callback producers
+- truthful degraded fidelity behavior
+- duplicate suppression
+- terminal completion and failure semantics
+
+### 7.2 Serving Tests
+
+- `POST` request returns streamed SSE response
+- disconnect aborts upstream work
+- post-start failures close the stream safely
+
+### 7.3 Concurrency Tests
+
+- simultaneous runs do not share message IDs, step state, or terminal state
+- middleware state does not leak between runs
+
+### 7.4 Compatibility Tests
+
+- low-level exports continue to work for advanced users
+- existing `createAGUIAgent` path remains usable while high-level backend becomes preferred
 
 ---
 
-## 7. Implementation Guidelines
+## 8. Technical Debt To Retire
 
-### Event Emission Order
+The following current-state properties are no longer acceptable in the target design:
 
-1. Middleware events always emit before callback events for same operation
-2. Lifecycle: RUN_STARTED → STEP_STARTED → [model] → STEP_FINISHED → RUN_FINISHED
-3. Streaming: START → CONTENT* → END
-
-### Error Handling
-
-- Middleware: Try-catch in every hook, emit RUN_ERROR on failure
-- Callbacks: Return Promise, errors logged but not thrown
-- Transport: Fail-silent, never crash agent
-
-### Validation
-
-- Events validated against @ag-ui/core schemas when `validateEvents: true`
-- Strict mode throws on invalid events
-- Default: No validation for performance
+- direct `onEvent` sinks as the only public integration contract
+- shared middleware closure state for run-scoped publication data
+- callback-led assumptions about public stream completeness
+- docs that define transport as purely the caller's burden
