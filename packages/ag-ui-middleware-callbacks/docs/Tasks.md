@@ -11,10 +11,17 @@
 
 This plan is grounded in the verified mismatch between the current codebase and the target `TechSpec.md`. The codebase already has meaningful control-layer and observation-layer logic, but it does not yet have:
 
-- a run-scoped publication layer
-- a high-level backend API
-- reusable serving/transport code
-- package exports aligned to the new backend-adapter shape
+- a validated replacement for the stale example set
+
+Current status snapshot:
+
+- completed: contract freeze (`P-1` through `P-3`)
+- completed: publication core (`A-1` through `A-5`)
+- completed: default serving path (`S-1` through `S-3`)
+- completed: verification coverage (`Q-1` through `Q-3`)
+- completed: package alignment (`K-1`)
+- completed: README rewrite (`D-1`)
+- remaining: example replacement work (`D-2`)
 
 Per Goldratt's Theory of Constraints, the bottleneck is the missing publication boundary. No serving or packaging work should be treated as stable until that boundary exists.
 
@@ -320,4 +327,3 @@ flowchart LR
 > And they find a validated advanced custom-host example
 > And neither example depends on stale API signatures
 > ```
-

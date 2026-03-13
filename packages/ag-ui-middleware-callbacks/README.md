@@ -1,6 +1,6 @@
 # @skroyc/ag-ui-middleware-callbacks
 
-Low-level AG-UI producer primitives for LangChain.js.
+AG-UI backend and producer primitives for LangChain.js.
 
 ## Status
 
@@ -9,8 +9,8 @@ shape is recorded in [docs/ContractFreeze.md](./docs/ContractFreeze.md).
 
 Current implementation status:
 
-- published runtime surface: low-level middleware and callback producers
-- frozen future surface: backend adapter plus run-scoped publisher
+- published runtime surface: backend adapter, run-scoped publisher, and
+  low-level producers
 - `createAGUIAgent`: still present in source for transition work, but no longer
   treated as public package API
 
@@ -26,7 +26,9 @@ Prefer explicit subpath imports:
 
 ```ts
 import { AGUICallbackHandler } from "@skroyc/ag-ui-middleware-callbacks/callbacks";
+import { createAGUIBackend } from "@skroyc/ag-ui-middleware-callbacks/backend";
 import { createAGUIMiddleware } from "@skroyc/ag-ui-middleware-callbacks/middleware";
+import { createAGUIRunPublisher } from "@skroyc/ag-ui-middleware-callbacks/publication";
 ```
 
 The root export remains intentionally minimal:
@@ -38,16 +40,30 @@ import {
 } from "@skroyc/ag-ui-middleware-callbacks";
 ```
 
-## Current Scope
+## Default Backend Path
 
-This package currently ships producer primitives that emit AG-UI-compatible
-event objects:
+Use the backend subpath for the batteries-included serving path:
 
-- `createAGUIMiddleware(...)` for lifecycle, state, and activity signals
-- `AGUICallbackHandler` for text, tool, and reasoning observations
+```ts
+import { createAgent } from "langchain";
+import { createAGUIBackend } from "@skroyc/ag-ui-middleware-callbacks/backend";
 
-The batteries-included backend path defined in the contract freeze doc is not
-implemented yet.
+const backend = createAGUIBackend({
+  agentFactory: ({ middleware }) =>
+    createAgent({
+      model,
+      tools,
+      middleware: [middleware],
+    }),
+});
+
+export function handle(request: Request) {
+  return backend.handle(request);
+}
+```
+
+`handle(request)` expects a strict AG-UI `RunAgentInput` JSON payload and
+returns a streamed `text/event-stream` response.
 
 ## Low-Level Example
 
@@ -60,14 +76,14 @@ const publish = (event: unknown) => {
 };
 
 const middleware = createAGUIMiddleware({
-	onEvent: publish,
+	publish,
 	emitStateSnapshots: "initial",
 	errorDetailLevel: "message",
 });
 
 const callbacks = [
 	new AGUICallbackHandler({
-		onEvent: publish,
+		publish,
 		reasoningEventMode: "reasoning",
 	}),
 ];
@@ -80,5 +96,6 @@ const callbacks = [
 - Thinking/reasoning content is derived from LangChain content blocks after the
   response is available; callback-only concurrent reasoning streaming is not
   currently possible.
-- The audited demo in [`example/`](./example) still reflects the pre-backend
-  wiring model and is not the frozen MVP public API.
+- The backend contract is `agentFactory({ input, middleware })`, not the older
+  frozen `{ agent }` shape. This is intentional because LangChain middleware is
+  attached at agent construction time.

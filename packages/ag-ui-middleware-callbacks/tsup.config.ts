@@ -2,6 +2,7 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
 	entry: {
+		backend: "src/backend.ts",
 		index: "src/index.ts",
 		callbacks: "src/callbacks.ts",
 		middleware: "src/middleware.ts",

@@ -1,5 +1,5 @@
 import { type BaseEvent, EventType } from "@ag-ui/core";
-import { validateEvent } from "../utils/validation";
+import { validateEvent } from "@/utils/validation";
 import {
   type AGUIEventSerializer,
   resolvePublisherSerializer,
@@ -18,6 +18,7 @@ export interface AGUIRunPublisher {
   publish(event: BaseEvent): void;
   complete(result?: unknown): void;
   error(error: unknown): void;
+  close(): void;
   subscribe(listener: AGUIRunPublisherListener): () => void;
   toReadableStream(): ReadableStream<Uint8Array>;
 }
@@ -186,6 +187,14 @@ export function createAGUIRunPublisher(
     }
   };
 
+  const closeControllers = () => {
+    for (const controller of streamControllers) {
+      controller.close();
+    }
+
+    streamControllers.clear();
+  };
+
   const finalize = (event: BaseEvent) => {
     if (isTerminal) {
       return;
@@ -194,11 +203,16 @@ export function createAGUIRunPublisher(
     closeOpenStreams();
     isTerminal = true;
     emit(event);
+    closeControllers();
+  };
 
-    for (const controller of streamControllers) {
-      controller.close();
+  const closeTransport = () => {
+    if (isTerminal) {
+      return;
     }
-    streamControllers.clear();
+
+    isTerminal = true;
+    closeControllers();
   };
 
   const publishStarted = (event: BaseEvent) => {
@@ -395,6 +409,10 @@ export function createAGUIRunPublisher(
         code: runError.code,
         timestamp: Date.now(),
       } as BaseEvent);
+    },
+
+    close() {
+      closeTransport();
     },
 
     subscribe(listener) {

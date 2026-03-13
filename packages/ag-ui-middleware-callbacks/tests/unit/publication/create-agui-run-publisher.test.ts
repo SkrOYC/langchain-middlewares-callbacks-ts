@@ -240,4 +240,15 @@ describe("createAGUIRunPublisher", () => {
       EventType.RUN_FINISHED,
     ]);
   });
+
+  test("close terminates transport without inventing terminal events", async () => {
+    const publisher = createAGUIRunPublisher();
+    const stream = publisher.toReadableStream();
+    const reader = stream.getReader();
+
+    publisher.close();
+
+    const result = await reader.read();
+    expect(result.done).toBe(true);
+  });
 });
