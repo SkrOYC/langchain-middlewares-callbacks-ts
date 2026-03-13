@@ -18,6 +18,7 @@ export interface AGUIRunPublisher {
   publish(event: BaseEvent): void;
   complete(result?: unknown): void;
   error(error: unknown): void;
+  close(): void;
   subscribe(listener: AGUIRunPublisherListener): () => void;
   toReadableStream(): ReadableStream<Uint8Array>;
 }
@@ -195,6 +196,18 @@ export function createAGUIRunPublisher(
     isTerminal = true;
     emit(event);
 
+    for (const controller of streamControllers) {
+      controller.close();
+    }
+    streamControllers.clear();
+  };
+
+  const closeTransport = () => {
+    if (isTerminal) {
+      return;
+    }
+
+    isTerminal = true;
     for (const controller of streamControllers) {
       controller.close();
     }
@@ -395,6 +408,10 @@ export function createAGUIRunPublisher(
         code: runError.code,
         timestamp: Date.now(),
       } as BaseEvent);
+    },
+
+    close() {
+      closeTransport();
     },
 
     subscribe(listener) {

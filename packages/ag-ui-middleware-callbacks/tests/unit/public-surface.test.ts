@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createAGUIBackend } from "../../src/backend";
 import { AGUICallbackHandler as callbackHandlerFromSubpath } from "../../src/callbacks";
 import {
   AGUICallbackHandler as callbackHandlerFromRoot,
@@ -30,5 +31,9 @@ describe("public surface", () => {
 
   test("publication subpath exports run publisher API", () => {
     expect(createAGUIRunPublisher).toBeDefined();
+  });
+
+  test("backend subpath exports backend factory API", () => {
+    expect(createAGUIBackend).toBeDefined();
   });
 });

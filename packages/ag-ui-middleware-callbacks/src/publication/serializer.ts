@@ -1,11 +1,10 @@
 import type { BaseEvent } from "@ag-ui/core";
+import { serializeEventAsSSE as serializeEventAsSSEImplementation } from "../transports/sse";
 
 export type AGUIEventSerializer = (event: BaseEvent) => Uint8Array;
 
-const textEncoder = new TextEncoder();
-
 export function serializeEventAsSSE(event: BaseEvent): Uint8Array {
-  return textEncoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+  return serializeEventAsSSEImplementation(event);
 }
 
 export function resolvePublisherSerializer(
