@@ -23,7 +23,14 @@ This creates the exact failure mode we want to avoid: too much protocol logic le
 Provide a default backend path that is as close as possible to:
 
 ```typescript
-const backend = createAGUIBackend({ agent });
+const backend = createAGUIBackend({
+  agentFactory: ({ middleware }) =>
+    createAgent({
+      model,
+      tools,
+      middleware: [middleware],
+    }),
+});
 return backend.handle(request);
 ```
 

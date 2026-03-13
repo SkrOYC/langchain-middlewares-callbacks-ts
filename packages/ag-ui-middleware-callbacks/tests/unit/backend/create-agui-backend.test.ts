@@ -107,6 +107,45 @@ async function readSSEEvents(response: Response): Promise<BaseEvent[]> {
   return events;
 }
 
+async function readSSEFrames(response: Response): Promise<string[]> {
+  const body = response.body;
+  if (!body) {
+    return [];
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const frames: string[] = [];
+  const drainFrames = () => {
+    let delimiterIndex = buffer.indexOf("\n\n");
+    while (delimiterIndex >= 0) {
+      frames.push(buffer.slice(0, delimiterIndex));
+      buffer = buffer.slice(delimiterIndex + 2);
+      delimiterIndex = buffer.indexOf("\n\n");
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    drainFrames();
+  }
+
+  buffer += decoder.decode();
+  drainFrames();
+
+  if (buffer) {
+    frames.push(buffer);
+  }
+
+  return frames;
+}
+
 describe("createAGUIBackend", () => {
   test("returns SSE response with canonical lifecycle events", async () => {
     const backend = createAGUIBackend({
@@ -161,6 +200,30 @@ describe("createAGUIBackend", () => {
     expect(response.headers.get("allow")).toBe("POST");
   });
 
+  test("rejects non-JSON requests before streaming", async () => {
+    const backend = createAGUIBackend({
+      agentFactory: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const response = await backend.handle(
+      new Request("https://example.test/agui", {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain",
+        },
+        body: "{}",
+      })
+    );
+
+    expect(response.status).toBe(415);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    await expect(response.json()).resolves.toEqual({
+      error: "Unsupported Media Type",
+    });
+  });
+
   test("rejects invalid request payloads before streaming", async () => {
     const backend = createAGUIBackend({
       agentFactory: () => {
@@ -208,6 +271,40 @@ describe("createAGUIBackend", () => {
     expect(types).toContain("RUN_STARTED");
     expect(types).toContain("RUN_ERROR");
     expect(types.at(-1)).toBe("RUN_ERROR");
+  });
+
+  test("serializes one AG-UI event per SSE frame", async () => {
+    const backend = createAGUIBackend({
+      agentFactory: ({ middleware }) =>
+        createAgent({
+          model: createTextModel(["Hello from backend"]),
+          tools: [],
+          middleware: [middleware],
+        }),
+    });
+
+    const response = await backend.handle(
+      new Request("https://example.test/agui", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(createRunInput()),
+      })
+    );
+
+    const frames = await readSSEFrames(response);
+    const events = frames.map((frame) => JSON.parse(frame.slice(6)) as BaseEvent);
+
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.every((frame) => frame.startsWith("data: "))).toBe(true);
+    expect(events).toHaveLength(frames.length);
+    expect(events[0]).toEqual(
+      expect.objectContaining({ type: "RUN_STARTED" })
+    );
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({ type: "RUN_FINISHED" })
+    );
   });
 
   test("passes request state into agent execution input", async () => {
