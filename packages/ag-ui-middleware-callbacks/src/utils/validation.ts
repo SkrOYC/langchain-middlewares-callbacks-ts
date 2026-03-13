@@ -30,15 +30,15 @@ import type { BaseEvent } from "../events";
  * Result of event validation.
  */
 export interface ValidationResult<T = BaseEvent> {
-	success: boolean;
-	data?: T;
-	error?: {
-		message: string;
-		issues: Array<{
-			path: (string | number)[];
-			message: string;
-		}>;
-	};
+  success: boolean;
+  data?: T;
+  error?: {
+    message: string;
+    issues: Array<{
+      path: (string | number)[];
+      message: string;
+    }>;
+  };
 }
 
 /**
@@ -51,36 +51,36 @@ export interface ValidationResult<T = BaseEvent> {
  * @returns ValidationResult with success status and any errors
  */
 export function validateEvent(event: unknown): ValidationResult {
-	try {
-		const result = EventSchemas.safeParse(event);
+  try {
+    const result = EventSchemas.safeParse(event);
 
-		if (result.success) {
-			return {
-				success: true,
-				data: event as BaseEvent,
-			};
-		}
+    if (result.success) {
+      return {
+        success: true,
+        data: event as BaseEvent,
+      };
+    }
 
-		return {
-			success: false,
-			error: {
-				message: "Event validation failed",
-				issues: result.error.issues.map((issue) => ({
-					path: issue.path,
-					message: issue.message,
-				})),
-			},
-		};
-	} catch (err) {
-		return {
-			success: false,
-			error: {
-				message:
-					err instanceof Error ? err.message : "Unknown validation error",
-				issues: [],
-			},
-		};
-	}
+    return {
+      success: false,
+      error: {
+        message: "Event validation failed",
+        issues: result.error.issues.map((issue) => ({
+          path: issue.path,
+          message: issue.message,
+        })),
+      },
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: {
+        message:
+          err instanceof Error ? err.message : "Unknown validation error",
+        issues: [],
+      },
+    };
+  }
 }
 
 /**
@@ -90,7 +90,7 @@ export function validateEvent(event: unknown): ValidationResult {
  * @returns true if valid, false otherwise
  */
 export function isValidEvent(event: unknown): event is BaseEvent {
-	return validateEvent(event).success;
+  return validateEvent(event).success;
 }
 
 /**
@@ -102,44 +102,44 @@ export function isValidEvent(event: unknown): event is BaseEvent {
  * @returns Wrapped callback with validation
  */
 export function createValidatingCallback<
-	T extends { emit: (event: BaseEvent) => void },
+  T extends { emit: (event: BaseEvent) => void },
 >(
-	callback: T,
-	options: {
-		/** Throw on invalid events (default: false - just log warning) */
-		throwOnInvalid?: boolean;
-		/** Custom logger for validation errors */
-		onValidationError?: (
-			event: BaseEvent,
-			error: ValidationResult["error"],
-		) => void;
-	} = {},
+  callback: T,
+  options: {
+    /** Throw on invalid events (default: false - just log warning) */
+    throwOnInvalid?: boolean;
+    /** Custom logger for validation errors */
+    onValidationError?: (
+      event: BaseEvent,
+      error: ValidationResult["error"]
+    ) => void;
+  } = {}
 ): T {
-	const { throwOnInvalid = false, onValidationError } = options;
+  const { throwOnInvalid = false, onValidationError } = options;
 
-	return {
-		...callback,
-		emit: (event: BaseEvent) => {
-			const result = validateEvent(event);
+  return {
+    ...callback,
+    emit: (event: BaseEvent) => {
+      const result = validateEvent(event);
 
-			if (!result.success) {
-				if (onValidationError) {
-					onValidationError(event, result.error);
-				} else {
-					console.warn(
-						"[AG-UI Validation] Invalid event:",
-						event.type,
-						result.error,
-					);
-				}
+      if (!result.success) {
+        if (onValidationError) {
+          onValidationError(event, result.error);
+        } else {
+          console.warn(
+            "[AG-UI Validation] Invalid event:",
+            event.type,
+            result.error
+          );
+        }
 
-				if (throwOnInvalid) {
-					throw new Error(`Invalid AG-UI event: ${result.error?.message}`);
-				}
-			}
+        if (throwOnInvalid) {
+          throw new Error(`Invalid AG-UI event: ${result.error?.message}`);
+        }
+      }
 
-			// Always emit (validation is advisory)
-			callback.emit(event);
-		},
-	};
+      // Always emit (validation is advisory)
+      callback.emit(event);
+    },
+  };
 }

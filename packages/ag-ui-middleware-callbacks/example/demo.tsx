@@ -1,5 +1,6 @@
-import { type AgentSubscriber, HttpAgent, RunAgentInput } from "@ag-ui/client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { type AgentSubscriber, HttpAgent } from "@ag-ui/client";
+import type { BaseEvent } from "@ag-ui/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // ============================================================================
 // CSS Styles
@@ -42,22 +43,51 @@ const CSS = `
 // ============================================================================
 
 interface AgentConfig {
-	baseUrl: string;
-	apiKey: string;
-	model: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
 }
 
 interface Message {
-	id: string;
-	role: "user" | "assistant" | "system";
-	content: string;
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
 }
 
 interface ToolCall {
-	id: string;
-	name: string;
-	args: string;
-	result?: string;
+  id: string;
+  name: string;
+  args: string;
+  result?: string;
+}
+
+const DEFAULT_AGENT_CONFIG: AgentConfig = {
+  baseUrl: "https://opencode.ai/zen/v1",
+  apiKey: "",
+  model: "grok-code",
+};
+
+function escapeInlineScript(content: string): string {
+  return content.replaceAll("</script", "<\\/script");
+}
+
+function renderDocument(appHtml: string, importMapJson: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>AG-UI Demo</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>AG</text></svg>"
+    />
+    <script type="importmap">${escapeInlineScript(importMapJson)}</script>
+    <style>${CSS}</style>
+  </head>
+  <body>
+    <div id="root">${appHtml}</div>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>`;
 }
 
 // ============================================================================
@@ -65,223 +95,224 @@ interface ToolCall {
 // ============================================================================
 
 function App() {
-	const [messages, setMessages] = useState<Message[]>([]);
-	const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
-	const [input, setInput] = useState("");
-	const [config, setConfig] = useState<AgentConfig | null>(null);
-	const [isRunning, setIsRunning] = useState(false);
-	const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
+  const [input, setInput] = useState("");
+  const [config, setConfig] = useState<AgentConfig | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-	// Form State
-	const [formBaseUrl, setFormBaseUrl] = useState("https://opencode.ai/zen/v1");
-	const [formApiKey, setFormApiKey] = useState("");
-	const [formModel, setFormModel] = useState("grok-code");
+  // Form State
+  const [formBaseUrl, setFormBaseUrl] = useState(DEFAULT_AGENT_CONFIG.baseUrl);
+  const [formApiKey, setFormApiKey] = useState(DEFAULT_AGENT_CONFIG.apiKey);
+  const [formModel, setFormModel] = useState(DEFAULT_AGENT_CONFIG.model);
 
-	// Agent ref
-	const agentRef = useRef<HttpAgent | null>(null);
+  // Agent ref
+  const agentRef = useRef<HttpAgent | null>(null);
 
-	// Load saved config
-	useEffect(() => {
-		const savedConfig = localStorage.getItem("agui_config");
-		if (savedConfig) {
-			const parsed = JSON.parse(savedConfig);
-			setConfig(parsed);
-			setFormBaseUrl(parsed.baseUrl);
-			setFormApiKey(parsed.apiKey);
-			setFormModel(parsed.model);
-		} else {
-			// Use defaults if no saved config
-			const defaultConfig = {
-				baseUrl: formBaseUrl,
-				apiKey: formApiKey,
-				model: formModel,
-			};
-			setConfig(defaultConfig);
-		}
-	}, []);
+  // Load saved config
+  useEffect(() => {
+    const savedConfig = localStorage.getItem("agui_config");
+    if (savedConfig) {
+      const parsed = JSON.parse(savedConfig);
+      setConfig(parsed);
+      setFormBaseUrl(parsed.baseUrl);
+      setFormApiKey(parsed.apiKey);
+      setFormModel(parsed.model);
+    } else {
+      setConfig(DEFAULT_AGENT_CONFIG);
+    }
+  }, []);
 
-	// Scroll to bottom
-	useEffect(() => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages, toolCalls]);
+  const scrollVersion = messages.length + toolCalls.length;
 
-	const saveSettings = () => {
-		const newConfig = {
-			baseUrl: formBaseUrl,
-			apiKey: formApiKey,
-			model: formModel,
-		};
-		setConfig(newConfig);
-		localStorage.setItem("agui_config", JSON.stringify(newConfig));
-	};
+  // Scroll to bottom
+  useEffect(() => {
+    if (scrollVersion < 0) {
+      return;
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [scrollVersion]);
 
-	// Initialize agent
-	useEffect(() => {
-		if (!config) return;
+  const saveSettings = () => {
+    const newConfig = {
+      baseUrl: formBaseUrl,
+      apiKey: formApiKey,
+      model: formModel,
+    };
+    setConfig(newConfig);
+    localStorage.setItem("agui_config", JSON.stringify(newConfig));
+  };
 
-		const agent = new HttpAgent({
-			url: "/chat",
-		});
+  // Initialize agent
+  useEffect(() => {
+    if (!config) {
+      return;
+    }
 
-		agentRef.current = agent;
-	}, [config]);
+    const agent = new HttpAgent({
+      url: "/chat",
+    });
 
-	const handleSend = useCallback(async () => {
-		if (!input.trim() || !agentRef.current || !config) return;
+    agentRef.current = agent;
+  }, [config]);
 
-		const userMessage: Message = {
-			id: crypto.randomUUID(),
-			role: "user",
-			content: input,
-		};
+  const handleSend = useCallback(async () => {
+    if (!(input.trim() && agentRef.current && config)) {
+      return;
+    }
 
-		setMessages((prev) => [...prev, userMessage]);
-		setInput("");
-		setIsRunning(true);
-		setToolCalls([]);
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: input,
+    };
 
-		try {
-			// Set messages on agent instance
-			agentRef.current.messages = [userMessage];
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsRunning(true);
+    setToolCalls([]);
 
-			// Create subscriber for real-time event handling
-			const subscriber: AgentSubscriber = {
-				onTextMessageStartEvent: ({ event }) => {
-					setMessages((prev) => [
-						...prev,
-						{
-							id: event.messageId,
-							role: "assistant",
-							content: "",
-						},
-					]);
-				},
-				onTextMessageContentEvent: ({ event, textMessageBuffer }) => {
-					setMessages((prev) =>
-						prev.map((msg) =>
-							msg.id === event.messageId
-								? { ...msg, content: textMessageBuffer }
-								: msg,
-						),
-					);
-				},
-				onToolCallStartEvent: ({ event }) => {
-					setToolCalls((prev) => [
-						...prev,
-						{
-							id: event.toolCallId,
-							name: event.toolCallName || "Unknown Tool",
-							args: "",
-						},
-					]);
-				},
-				onToolCallArgsEvent: ({ event, toolCallBuffer }) => {
-					setToolCalls((prev) =>
-						prev.map((tool) =>
-							tool.id === event.toolCallId
-								? { ...tool, args: toolCallBuffer }
-								: tool,
-						),
-					);
-				},
-				onToolCallResultEvent: ({ event }) => {
-					setToolCalls((prev) =>
-						prev.map((tool) =>
-							tool.id === event.toolCallId
-								? { ...tool, result: String(event.content) }
-								: tool,
-						),
-					);
-				},
-			};
+    try {
+      // Set messages on agent instance
+      agentRef.current.messages = [userMessage];
 
-			// Run agent with subscriber
-			await agentRef.current.runAgent(
-				{
-					forwardedProps: {
-						baseUrl: config.baseUrl,
-						apiKey: config.apiKey,
-						model: config.model,
-					},
-				},
-				subscriber,
-			);
-		} catch (err) {
-			console.error("Failed to send:", err);
-			setMessages((prev) => [
-				...prev,
-				{
-					id: crypto.randomUUID(),
-					role: "assistant",
-					content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
-				},
-			]);
-		} finally {
-			setIsRunning(false);
-		}
-	}, [input, config]);
+      // Create subscriber for real-time event handling
+      const subscriber: AgentSubscriber = {
+        onTextMessageStartEvent: ({ event }) => {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: event.messageId,
+              role: "assistant",
+              content: "",
+            },
+          ]);
+        },
+        onTextMessageContentEvent: ({ event, textMessageBuffer }) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === event.messageId
+                ? { ...msg, content: textMessageBuffer }
+                : msg
+            )
+          );
+        },
+        onToolCallStartEvent: ({ event }) => {
+          setToolCalls((prev) => [
+            ...prev,
+            {
+              id: event.toolCallId,
+              name: event.toolCallName || "Unknown Tool",
+              args: "",
+            },
+          ]);
+        },
+        onToolCallArgsEvent: ({ event, toolCallBuffer }) => {
+          setToolCalls((prev) =>
+            prev.map((tool) =>
+              tool.id === event.toolCallId
+                ? { ...tool, args: toolCallBuffer }
+                : tool
+            )
+          );
+        },
+        onToolCallResultEvent: ({ event }) => {
+          setToolCalls((prev) =>
+            prev.map((tool) =>
+              tool.id === event.toolCallId
+                ? { ...tool, result: String(event.content) }
+                : tool
+            )
+          );
+        },
+      };
 
-	return (
-		<div className="chat-container">
-			<div className="header">
-				<div>
-					<h3>AG-UI Demo</h3>
-				</div>
-				<button
-					className="settings-btn"
-					onClick={() => setFormBaseUrl(formBaseUrl)}
-				>
-					Settings
-				</button>
-			</div>
+      // Run agent with subscriber
+      await agentRef.current.runAgent(
+        {
+          forwardedProps: {
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            model: config.model,
+          },
+        },
+        subscriber
+      );
+    } catch (err) {
+      console.error("Failed to send:", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+        },
+      ]);
+    } finally {
+      setIsRunning(false);
+    }
+  }, [input, config]);
 
-			<div className="messages">
-				{messages.map((message) => (
-					<div key={message.id} className={`message ${message.role}`}>
-						<div className="message-bubble">
-							<div className="message-content">{message.content}</div>
-						</div>
-					</div>
-				))}
+  return (
+    <div className="chat-container">
+      <div className="header">
+        <div>
+          <h3>AG-UI Demo</h3>
+        </div>
+        <button className="settings-btn" onClick={saveSettings} type="button">
+          Settings
+        </button>
+      </div>
 
-				{toolCalls.map((tool) => (
-					<div key={tool.id} className="tool-result">
-						<div className="tool-result-header">
-							{!tool.result && <span className="tool-spinner" />}
-							{tool.result ? (
-								<>Tool: {tool.name}</>
-							) : (
-								<span className="tool-loading">Running: {tool.name}</span>
-							)}
-						</div>
-						{tool.args && <div className="tool-args">Args: {tool.args}</div>}
-						{tool.result && (
-							<div className="tool-result-content">{tool.result}</div>
-						)}
-					</div>
-				))}
+      <div className="messages">
+        {messages.map((message) => (
+          <div className={`message ${message.role}`} key={message.id}>
+            <div className="message-bubble">
+              <div className="message-content">{message.content}</div>
+            </div>
+          </div>
+        ))}
 
-				<div ref={messagesEndRef} />
-			</div>
+        {toolCalls.map((tool) => (
+          <div className="tool-result" key={tool.id}>
+            <div className="tool-result-header">
+              {!tool.result && <span className="tool-spinner" />}
+              {tool.result ? (
+                <>Tool: {tool.name}</>
+              ) : (
+                <span className="tool-loading">Running: {tool.name}</span>
+              )}
+            </div>
+            {tool.args && <div className="tool-args">Args: {tool.args}</div>}
+            {tool.result && (
+              <div className="tool-result-content">{tool.result}</div>
+            )}
+          </div>
+        ))}
 
-			<div className="input-area">
-				<input
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onKeyPress={(e) => e.key === "Enter" && handleSend()}
-					placeholder={isRunning ? "Agent is running..." : "Type a message..."}
-					disabled={!config || isRunning}
-				/>
-				<button
-					className="btn btn-primary"
-					onClick={handleSend}
-					disabled={!config || isRunning}
-				>
-					{isRunning ? "Running..." : "Send"}
-				</button>
-			</div>
-		</div>
-	);
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="input-area">
+        <input
+          disabled={!config || isRunning}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => e.key === "Enter" && handleSend()}
+          placeholder={isRunning ? "Agent is running..." : "Type a message..."}
+          value={input}
+        />
+        <button
+          className="btn btn-primary"
+          disabled={!config || isRunning}
+          onClick={handleSend}
+          type="button"
+        >
+          {isRunning ? "Running..." : "Send"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -289,298 +320,280 @@ function App() {
 // ============================================================================
 
 if (import.meta.main) {
-	const { renderToString } = await import("react-dom/server");
-	const { tool } = await import("@langchain/core/tools");
-	const { ChatOpenAI } = await import("@langchain/openai");
-	const { createAGUIAgent, AGUICallbackHandler } = await import("../src/index");
+  const { renderToString } = await import("react-dom/server");
+  const { tool } = await import("@langchain/core/tools");
+  const { ChatOpenAI } = await import("@langchain/openai");
+  const { createAGUIAgent } = await import("../src/create-agui-agent");
+  const { AGUICallbackHandler } = await import(
+    "../src/callbacks/agui-callback-handler"
+  );
 
-	// In-memory session storage
-	const sessions = new Map<
-		string,
-		{ messages: Array<{ role: string; content: string }> }
-	>();
+  // In-memory session storage
+  const sessions = new Map<
+    string,
+    { messages: Array<{ role: string; content: string }> }
+  >();
 
-	// Calculator tool
-	const calculatorTool = tool(
-		async ({
-			a,
-			b,
-			operation,
-		}: {
-			a: number;
-			b: number;
-			operation: string;
-		}) => {
-			let result: number;
-			switch (operation) {
-				case "add":
-					result = a + b;
-					break;
-				case "subtract":
-					result = a - b;
-					break;
-				case "multiply":
-					result = a * b;
-					break;
-				case "divide":
-					result = a / b;
-					break;
-				default:
-					return `Unknown operation: ${operation}`;
-			}
-			return `Result: ${result}`;
-		},
-		{
-			name: "calculator",
-			description: "Perform arithmetic operations",
-			schema: {
-				type: "object",
-				properties: {
-					a: { type: "number" },
-					b: { type: "number" },
-					operation: {
-						type: "string",
-						enum: ["add", "subtract", "multiply", "divide"],
-					},
-				},
-				required: ["a", "b", "operation"],
-			},
-		},
-	);
+  // Calculator tool
+  const calculatorTool = tool(
+    ({ a, b, operation }: { a: number; b: number; operation: string }) => {
+      let result: number;
+      switch (operation) {
+        case "add":
+          result = a + b;
+          break;
+        case "subtract":
+          result = a - b;
+          break;
+        case "multiply":
+          result = a * b;
+          break;
+        case "divide":
+          result = a / b;
+          break;
+        default:
+          return `Unknown operation: ${operation}`;
+      }
+      return `Result: ${result}`;
+    },
+    {
+      name: "calculator",
+      description: "Perform arithmetic operations",
+      schema: {
+        type: "object",
+        properties: {
+          a: { type: "number" },
+          b: { type: "number" },
+          operation: {
+            type: "string",
+            enum: ["add", "subtract", "multiply", "divide"],
+          },
+        },
+        required: ["a", "b", "operation"],
+      },
+    }
+  );
 
-	// Import map JSON (pre-serialized to avoid JSX escaping)
-	const importMapJson = JSON.stringify({
-		imports: {
-			"@ag-ui/client": "https://cdn.jsdelivr.net/npm/@ag-ui/client@0.0.42/+esm",
-		},
-	});
+  // Import map JSON (pre-serialized to avoid JSX escaping)
+  const importMapJson = JSON.stringify({
+    imports: {
+      "@ag-ui/client": "https://cdn.jsdelivr.net/npm/@ag-ui/client@0.0.42/+esm",
+    },
+  });
 
-	Bun.serve({
-		port: 3000,
-		async fetch(req: Request): Promise<Response> {
-			const url = new URL(req.url);
+  Bun.serve({
+    port: 3000,
+    async fetch(req: Request): Promise<Response> {
+      const url = new URL(req.url);
 
-			// Serve HTML
-			if (url.pathname === "/") {
-				const html = renderToString(
-					<html>
-						<head>
-							<title>AG-UI Demo</title>
-							<link
-								rel="icon"
-								href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>AG</text></svg>"
-							/>
-							<script
-								type="importmap"
-								dangerouslySetInnerHTML={{ __html: importMapJson }}
-							/>
-							<style dangerouslySetInnerHTML={{ __html: CSS }} />
-						</head>
-						<body>
-							<div id="root">
-								<App />
-							</div>
-							<script type="module" src="/client.js"></script>
-						</body>
-					</html>,
-				);
-				return new Response("<!DOCTYPE html>" + html, {
-					headers: { "Content-Type": "text/html" },
-				});
-			}
+      // Serve HTML
+      if (url.pathname === "/") {
+        const appHtml = renderToString(<App />);
+        return new Response(renderDocument(appHtml, importMapJson), {
+          headers: { "Content-Type": "text/html" },
+        });
+      }
 
-			// Self-bundle for browser
-			if (url.pathname === "/client.js") {
-				const build = await Bun.build({
-					entrypoints: [import.meta.filename!],
-					target: "browser",
-					minify: true,
-					define: {
-						"import.meta.main": "false",
-						"process.env.NODE_ENV": JSON.stringify("development"),
-					},
-					external: [
-						"react-dom/server",
-						"@langchain/core/tools",
-						"@langchain/openai",
-						"langchain",
-					],
-				});
-				return new Response(build.outputs[0]);
-			}
+      // Self-bundle for browser
+      if (url.pathname === "/client.js") {
+        const entryFile = import.meta.filename;
+        if (!entryFile) {
+          return new Response("Unable to resolve demo entry file", {
+            status: 500,
+          });
+        }
 
-			// AG-UI Chat endpoint (POST only - always returns SSE)
-			if (url.pathname === "/chat" && req.method === "POST") {
-				try {
-					const body = await req.json();
-					const bodyAny = body as Record<string, unknown>;
-					const messages = bodyAny.messages as Array<{
-						role: string;
-						content: string;
-					}>;
-					const threadId =
-						(bodyAny.threadId as string) || Math.random().toString(36).slice(2);
+        const build = await Bun.build({
+          entrypoints: [entryFile],
+          target: "browser",
+          minify: true,
+          define: {
+            "import.meta.main": "false",
+            "process.env.NODE_ENV": JSON.stringify("development"),
+          },
+          external: [
+            "react-dom/server",
+            "@langchain/core/tools",
+            "@langchain/openai",
+            "langchain",
+          ],
+        });
+        return new Response(build.outputs[0]);
+      }
 
-					// Read config from forwardedProps
-					const forwardedProps = (bodyAny.forwardedProps || {}) as Record<
-						string,
-						string
-					>;
-					const config: AgentConfig = {
-						baseUrl: forwardedProps.baseUrl || "https://opencode.ai/zen/v1",
-						apiKey: forwardedProps.apiKey || "",
-						model: forwardedProps.model || "grok-code",
-					};
+      // AG-UI Chat endpoint (POST only - always returns SSE)
+      if (url.pathname === "/chat" && req.method === "POST") {
+        try {
+          const body = await req.json();
+          const bodyAny = body as Record<string, unknown>;
+          const messages = bodyAny.messages as Array<{
+            role: string;
+            content: string;
+          }>;
+          const threadId =
+            (bodyAny.threadId as string) || Math.random().toString(36).slice(2);
 
-					// Get or create session
-					let session = sessions.get(threadId);
-					if (!session) {
-						session = { messages: [] };
-						sessions.set(threadId, session);
-					}
+          // Read config from forwardedProps
+          const forwardedProps = (bodyAny.forwardedProps || {}) as Record<
+            string,
+            string
+          >;
+          const config: AgentConfig = {
+            baseUrl: forwardedProps.baseUrl || "https://opencode.ai/zen/v1",
+            apiKey: forwardedProps.apiKey || "",
+            model: forwardedProps.model || "grok-code",
+          };
 
-					// Add new messages to session
-					session.messages.push(...messages);
+          // Get or create session
+          let session = sessions.get(threadId);
+          if (!session) {
+            session = { messages: [] };
+            sessions.set(threadId, session);
+          }
 
-					// Create model
-					const modelOptions: ConstructorParameters<typeof ChatOpenAI>[0] = {
-						model: config.model || "grok-code",
-						streaming: true,
-						configuration: {
-							baseURL: config.baseUrl,
-							apiKey: config.apiKey, // Empty string is valid for some endpoints
-						},
-					};
+          // Add new messages to session
+          session.messages.push(...messages);
 
-					const model = new ChatOpenAI(modelOptions);
+          // Create model
+          const modelOptions: ConstructorParameters<typeof ChatOpenAI>[0] = {
+            model: config.model || "grok-code",
+            streaming: true,
+            configuration: {
+              baseURL: config.baseUrl,
+              apiKey: config.apiKey, // Empty string is valid for some endpoints
+            },
+          };
 
-					// Return SSE stream
-					return new Response(
-						new ReadableStream({
-							async start(controller) {
-								const encoder = new TextEncoder();
+          const model = new ChatOpenAI(modelOptions);
 
-								const sendEvent = (event: unknown) => {
-									try {
-										controller.enqueue(
-											encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-										);
-									} catch (err) {
-										console.error("Error sending SSE event:", err);
-									}
-								};
+          // Return SSE stream
+          return new Response(
+            new ReadableStream({
+              async start(controller) {
+                const encoder = new TextEncoder();
 
-								const sendErrorAndClose = (message: string, code?: string) => {
-									try {
-										sendEvent({
-											type: "RUN_ERROR",
-											message,
-											code,
-											timestamp: Date.now(),
-										});
-										controller.close();
-									} catch {
-										controller.close();
-									}
-								};
+                const sendEvent = (event: BaseEvent) => {
+                  try {
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+                    );
+                  } catch (err) {
+                    console.error("Error sending SSE event:", err);
+                  }
+                };
 
-								const transport = {
-									emit: async (event: unknown) => {
-										sendEvent(event);
-									},
-								};
+                const sendErrorAndClose = (message: string, code?: string) => {
+                  try {
+                    sendEvent({
+                      type: "RUN_ERROR",
+                      message,
+                      code,
+                      timestamp: Date.now(),
+                    });
+                    controller.close();
+                  } catch {
+                    controller.close();
+                  }
+                };
 
-								try {
-									const agent = createAGUIAgent({
-										model,
-										tools: [calculatorTool],
-										transport,
-										middlewareOptions: {
-											emitToolResults: true,
-											emitStateSnapshots: "initial",
-											emitActivities: true,
-											maxUIPayloadSize: 50 * 1024,
-											chunkLargeResults: false,
-											errorDetailLevel: "message",
-										},
-									});
+                try {
+                  const agent = createAGUIAgent({
+                    model,
+                    tools: [calculatorTool],
+                    onEvent: sendEvent,
+                    middlewareOptions: {
+                      emitToolResults: true,
+                      emitStateSnapshots: "initial",
+                      emitActivities: true,
+                      maxUIPayloadSize: 50 * 1024,
+                      chunkLargeResults: false,
+                      errorDetailLevel: "message",
+                    },
+                  });
 
-									const aguiCallback = new AGUICallbackHandler(transport);
+                  const aguiCallback = new AGUICallbackHandler({
+                    onEvent: sendEvent,
+                  });
 
-									const eventStream = await (
-										agent as unknown as {
-											streamEvents: (
-												input: {
-													messages: Array<{ role: string; content: string }>;
-												},
-												options: { version: string; callbacks: Array<unknown> },
-											) => AsyncIterable<unknown>;
-										}
-									).streamEvents(
-										{ messages: session!.messages },
-										{ version: "v2", callbacks: [aguiCallback] },
-									);
+                  const currentSession = session;
+                  if (!currentSession) {
+                    throw new Error("Session missing after initialization");
+                  }
 
-									for await (const event of eventStream) {
-										if (
-											(event as { event: string }).event === "on_chain_end" &&
-											(
-												event as {
-													data?: { output?: { messages?: Array<unknown> } };
-												}
-											).data?.output?.messages
-										) {
-											session!.messages = (
-												event as {
-													data: {
-														output: {
-															messages: Array<{
-																role: string;
-																content: string;
-															}>;
-														};
-													};
-												}
-											).data.output.messages as Array<{
-												role: string;
-												content: string;
-											}>;
-										}
-									}
+                  const eventStream = await (
+                    agent as unknown as {
+                      streamEvents: (
+                        input: {
+                          messages: Array<{ role: string; content: string }>;
+                        },
+                        options: { version: string; callbacks: unknown[] }
+                      ) => AsyncIterable<unknown>;
+                    }
+                  ).streamEvents(
+                    { messages: currentSession.messages },
+                    { version: "v2", callbacks: [aguiCallback] }
+                  );
 
-									controller.close();
-								} catch (err) {
-									const errorMessage =
-										err instanceof Error ? err.message : String(err);
-									console.error("Agent execution error:", err);
-									sendErrorAndClose(errorMessage, "AGENT_EXECUTION_ERROR");
-								}
-							},
-						}),
-						{
-							headers: {
-								"Content-Type": "text/event-stream",
-								"Cache-Control": "no-cache",
-								Connection: "keep-alive",
-							},
-						},
-					);
-				} catch (err) {
-					return new Response(
-						JSON.stringify({ error: "Invalid request body" }),
-						{
-							status: 400,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-			}
+                  for await (const event of eventStream) {
+                    if (
+                      (event as { event: string }).event === "on_chain_end" &&
+                      (
+                        event as {
+                          data?: { output?: { messages?: unknown[] } };
+                        }
+                      ).data?.output?.messages
+                    ) {
+                      currentSession.messages = (
+                        event as {
+                          data: {
+                            output: {
+                              messages: Array<{
+                                role: string;
+                                content: string;
+                              }>;
+                            };
+                          };
+                        }
+                      ).data.output.messages as Array<{
+                        role: string;
+                        content: string;
+                      }>;
+                    }
+                  }
 
-			return new Response("Not Found", { status: 404 });
-		},
-	});
+                  controller.close();
+                } catch (err) {
+                  const errorMessage =
+                    err instanceof Error ? err.message : String(err);
+                  console.error("Agent execution error:", err);
+                  sendErrorAndClose(errorMessage, "AGENT_EXECUTION_ERROR");
+                }
+              },
+            }),
+            {
+              headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                Connection: "keep-alive",
+              },
+            }
+          );
+        } catch {
+          return new Response(
+            JSON.stringify({ error: "Invalid request body" }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
 
-	console.log("🚀 AG-UI Demo: http://localhost:3000");
+      return new Response("Not Found", { status: 404 });
+    },
+  });
+
+  console.log("🚀 AG-UI Demo: http://localhost:3000");
 }
 
 // ============================================================================
@@ -588,6 +601,9 @@ if (import.meta.main) {
 // ============================================================================
 
 if (typeof document !== "undefined") {
-	const { hydrateRoot } = await import("react-dom/client");
-	hydrateRoot(document.getElementById("root")!, <App />);
+  const { hydrateRoot } = await import("react-dom/client");
+  const root = document.getElementById("root");
+  if (root) {
+    hydrateRoot(root, <App />);
+  }
 }

@@ -1,8 +1,12 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-	entry: ["src/index.ts"],
-	format: ["esm"],
+	entry: {
+		index: "src/index.ts",
+		callbacks: "src/callbacks.ts",
+		middleware: "src/middleware.ts",
+	},
+	format: ["esm", "cjs"],
 	dts: true,
 	splitting: false,
 	sourcemap: true,

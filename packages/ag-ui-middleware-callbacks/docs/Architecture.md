@@ -166,7 +166,6 @@ The package is meant to be plug-and-play from the backend side. A default servin
 | **AGUIRunPublisher** | Publication | Single writer for one run; merges producer events and exposes canonical stream |
 | **AGUIMiddleware** | Control Producer | Emits lifecycle, state, and activity signals |
 | **AGUICallbackHandler** | Observation Producer | Emits token, tool, and runtime observation signals |
-| **createAGUIAgent** | Compatibility Factory | Advanced/legacy low-level agent factory retained for direct integration |
 | **LangChain Runtime** | Execution | Executes `createAgent()` runs |
 
 ---
@@ -330,6 +329,11 @@ A stream can fail after publication has started.
 ## 8. Architectural Consequence
 
 This package is no longer modeled as "middleware plus callbacks with an `onEvent` sink."
+
+The contract freeze also removes `createAGUIAgent` from the intended published
+surface. The public package should converge on backend, publication, and
+producer entrypoints without preserving a legacy helper purely for backward
+compatibility.
 
 It is modeled as:
 

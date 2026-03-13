@@ -237,16 +237,18 @@ declare class AGUICallbackHandler extends BaseCallbackHandler {
 - The callback handler remains available as a low-level export.
 - It must never write directly to an HTTP response.
 
-### 3.5 Compatibility API
+### 3.5 Public Surface Decisions
 
-```typescript
-declare function createAGUIAgent(config: AGUIAgentConfig): ReturnType<typeof createAgent>;
-```
+The frozen MVP package surface is:
 
-**Notes**
+- `createAGUIBackend`
+- `createAGUIRunPublisher`
+- `createAGUIMiddleware`
+- `AGUICallbackHandler`
 
-- `createAGUIAgent` remains as an advanced compatibility helper.
-- It is not the preferred public entrypoint for plug-and-play backend usage.
+`createAGUIAgent` is not part of the MVP public contract. It may remain in the
+source tree temporarily during implementation, but docs and package exports
+should not preserve it as a published API.
 
 ---
 
@@ -324,20 +326,23 @@ src/
 ├── transports/
 │   └── sse.ts                    # Default SSE writer
 ├── middleware/
-│   ├── createAGUIMiddleware.ts   # Control producer
-│   ├── idResolution.ts
+│   ├── create-agui-middleware.ts   # Control producer
+│   ├── id-resolution.ts
 │   └── types.ts
 ├── callbacks/
-│   └── AGUICallbackHandler.ts    # Observation producer
+│   └── agui-callback-handler.ts    # Observation producer
 ├── utils/
 │   ├── cleaner.ts
-│   ├── idGenerator.ts
-│   ├── messageMapper.ts
-│   ├── reasoningBlocks.ts
-│   ├── stateDiff.ts
+│   ├── id-generator.ts
+│   ├── message-mapper.ts
+│   ├── reasoning-blocks.ts
+│   ├── state-diff.ts
 │   └── validation.ts
-├── createAGUIAgent.ts            # Compatibility export
-└── index.ts
+├── backend.ts                    # Package entry for ./backend
+├── publication.ts                # Package entry for ./publication
+├── callbacks.ts                  # Package entry for ./callbacks
+├── middleware.ts                 # Package entry for ./middleware
+└── index.ts                      # Minimal root entry
 ```
 
 ---
@@ -364,8 +369,8 @@ src/
 
 ### 7.4 Compatibility Tests
 
-- low-level exports continue to work for advanced users
-- existing `createAGUIAgent` path remains usable while high-level backend becomes preferred
+- low-level producer exports continue to work for advanced users
+- package exports do not leak `createAGUIAgent` as a public API
 
 ---
 

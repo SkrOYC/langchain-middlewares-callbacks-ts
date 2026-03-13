@@ -1,17 +1,15 @@
 /**
- * AG-UI Middleware & Callbacks for LangChain.js
+ * AG-UI low-level producer exports for LangChain.js.
  *
- * This package provides middleware and callbacks that make LangChain agents
- * compatible with the AG-UI protocol for real-time agent-to-UI communication.
+ * The first contract-freeze epic keeps the published runtime surface honest:
+ * this root entry currently exposes only the existing low-level producer APIs.
+ * The frozen backend-adapter contract lives in `docs/ContractFreeze.md` and
+ * will be implemented in later epics.
  *
- * Package scope: Intercept LangChain execution and emit AG-UI events as JavaScript objects.
- * Developer responsibility: Wire formatting (SSE, Protobuf), HTTP/server setup, client communication.
+ * Package scope today: producer primitives only.
  *
  * @packageDocumentation
  */
 
-// Callback handler
-export { AGUICallbackHandler } from "./callbacks/AGUICallbackHandler";
-export { createAGUIAgent } from "./createAGUIAgent";
-// Factory functions
-export { createAGUIMiddleware } from "./middleware/createAGUIMiddleware";
+export { AGUICallbackHandler } from "./callbacks/agui-callback-handler";
+export { createAGUIMiddleware } from "./middleware/create-agui-middleware";

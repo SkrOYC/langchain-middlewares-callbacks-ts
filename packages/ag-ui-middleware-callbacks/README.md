@@ -1,186 +1,84 @@
-# ag-ui-middleware-callbacks
+# @skroyc/ag-ui-middleware-callbacks
 
-LangChain.js integration providing middleware and callbacks for AG-UI protocol compatibility.
+Low-level AG-UI producer primitives for LangChain.js.
 
-## Package Scope
+## Status
 
-This package focuses exclusively on **intercepting LangChain execution and emitting AG-UI events as JavaScript objects**.
+The first contract-freeze epic is complete in docs. The frozen target package
+shape is recorded in [docs/ContractFreeze.md](./docs/ContractFreeze.md).
 
-**Package responsibility:**
-- Intercept LangChain execution via middleware + callbacks
-- Emit AG-UI events as JavaScript objects (using `@ag-ui/core` types)
+Current implementation status:
 
-**Developer responsibility:**
-- All HTTP/server setup
-- Wire formatting (SSE framing, Protobuf framing)
-- Content negotiation
-- Client communication
+- published runtime surface: low-level middleware and callback producers
+- frozen future surface: backend adapter plus run-scoped publisher
+- `createAGUIAgent`: still present in source for transition work, but no longer
+  treated as public package API
 
-## Installation
+## Install
 
 ```bash
-bun install ag-ui-middleware-callbacks
+bun install @skroyc/ag-ui-middleware-callbacks
 ```
 
-## Exports
+## Public Imports
 
-### Factory Functions
+Prefer explicit subpath imports:
 
-| Function | Description |
-|----------|-------------|
-| `createAGUIAgent(config)` | Creates LangChain agent with AG-UI integration |
-| `createAGUIMiddleware(options)` | Creates middleware for lifecycle events |
+```ts
+import { AGUICallbackHandler } from "@skroyc/ag-ui-middleware-callbacks/callbacks";
+import { createAGUIMiddleware } from "@skroyc/ag-ui-middleware-callbacks/middleware";
+```
 
-### Callback Handler
+The root export remains intentionally minimal:
 
-| Export | Description |
-|--------|-------------|
-| `AGUICallbackHandler` | Callback handler for streaming events |
+```ts
+import {
+	AGUICallbackHandler,
+	createAGUIMiddleware,
+} from "@skroyc/ag-ui-middleware-callbacks";
+```
 
-## Quick Start
+## Current Scope
 
-```typescript
-import { createAGUIAgent } from "ag-ui-middleware-callbacks";
-import { EventType } from "@ag-ui/core";
+This package currently ships producer primitives that emit AG-UI-compatible
+event objects:
 
-// Create callback to handle events
-const handleEvent = (event) => {
-  console.log('AG-UI Event:', event.type, event);
+- `createAGUIMiddleware(...)` for lifecycle, state, and activity signals
+- `AGUICallbackHandler` for text, tool, and reasoning observations
+
+The batteries-included backend path defined in the contract freeze doc is not
+implemented yet.
+
+## Low-Level Example
+
+```ts
+import { AGUICallbackHandler } from "@skroyc/ag-ui-middleware-callbacks/callbacks";
+import { createAGUIMiddleware } from "@skroyc/ag-ui-middleware-callbacks/middleware";
+
+const publish = (event: unknown) => {
+	console.log(event);
 };
 
-// Create AG-UI enabled agent
-const agent = createAGUIAgent({
-  model,
-  tools,
-  onEvent: handleEvent,
-  callbackOptions: {
-    emitToolResults: true,
-  },
-});
-
-// Stream events (AGUICallbackHandler is bound by createAGUIAgent)
-const eventStream = await agent.streamEvents(
-  { messages },
-  {
-    version: "v2"
-  }
-);
-
-for await (const event of eventStream) {
-  // Events automatically emitted via callback
-}
-```
-
-## Middleware Configuration
-
-```typescript
 const middleware = createAGUIMiddleware({
-  onEvent: (event) => console.log(event),
-  emitToolResults: true,            // Deprecated: use createAGUIAgent({ callbackOptions: { emitToolResults }})
-  emitStateSnapshots: "initial",  // "initial" | "final" | "all" | "none"
-  emitActivities: false,
-  maxUIPayloadSize: 50 * 1024,
-  chunkLargeResults: false,
-  errorDetailLevel: "message",    // "full" | "message" | "code" | "none"
-  validateEvents: false,           // true | "strict" | false
-  stateMapper: (state) => state,
-  resultMapper: (result) => result,
-  activityMapper: (node) => node,
+	onEvent: publish,
+	emitStateSnapshots: "initial",
+	errorDetailLevel: "message",
 });
+
+const callbacks = [
+	new AGUICallbackHandler({
+		onEvent: publish,
+		reasoningEventMode: "reasoning",
+	}),
+];
 ```
 
-`createAGUIAgent` callback options:
+## Notes
 
-```typescript
-const agent = createAGUIAgent({
-  model,
-  tools,
-  onEvent: handleEvent,
-  callbackOptions: {
-    enabled: true,
-    emitTextMessages: true,
-    emitToolCalls: true,
-    emitToolResults: true,
-    emitThinking: true,
-    reasoningEventMode: "thinking", // "thinking" (default) | "reasoning"
-    maxUIPayloadSize: 50 * 1024,
-    chunkLargeResults: false,
-  },
-});
-```
-
-`emitStateSnapshots` mode semantics:
-- `initial`: emit one `STATE_SNAPSHOT` in `beforeAgent`
-- `final`: emit one `STATE_SNAPSHOT` in `afterAgent`
-- `all`: emit one in `beforeAgent` and one in `afterAgent`
-- `none`: emit no `STATE_SNAPSHOT` events
-
-`MESSAGES_SNAPSHOT` content mapping semantics:
-- Plain string content remains unchanged.
-- `user` messages preserve AG-UI-compatible structured content (`InputContent[]`, e.g. `text`/`binary` blocks).
-- Non-compatible structured content is serialized to JSON string to remain schema-compliant.
-- Non-serializable values use a controlled fallback string instead of throwing.
-
-## Events
-
-| Event | Source | Description |
-|-------|--------|-------------|
-| `RUN_STARTED` | Middleware | Agent execution started |
-| `RUN_FINISHED` | Middleware | Agent execution completed |
-| `RUN_ERROR` | Middleware | Agent execution failed |
-| `STEP_STARTED` | Middleware | Model turn started |
-| `STEP_FINISHED` | Middleware | Model turn completed |
-| `TEXT_MESSAGE_START` | Callback | Text message streaming started |
-| `TEXT_MESSAGE_CONTENT` | Callback | Text message chunk |
-| `TEXT_MESSAGE_END` | Callback | Text message streaming ended |
-| `TOOL_CALL_START` | Callback | Tool execution started |
-| `TOOL_CALL_ARGS` | Callback | Tool call arguments chunk |
-| `TOOL_CALL_END` | Callback | Tool execution ended |
-| `TOOL_CALL_RESULT` | Callback | Tool execution result |
-| `THINKING_START` | Callback | Legacy reasoning phase started (`reasoningEventMode: "thinking"`) |
-| `THINKING_TEXT_MESSAGE_START` | Callback | Legacy thinking message started |
-| `THINKING_TEXT_MESSAGE_CONTENT` | Callback | Legacy thinking content chunk |
-| `THINKING_TEXT_MESSAGE_END` | Callback | Legacy thinking message ended |
-| `THINKING_END` | Callback | Legacy reasoning phase completed |
-| `REASONING_START` | Callback | New reasoning phase started (`reasoningEventMode: "reasoning"`) |
-| `REASONING_MESSAGE_START` | Callback | New reasoning message started |
-| `REASONING_MESSAGE_CONTENT` | Callback | New reasoning content chunk |
-| `REASONING_MESSAGE_END` | Callback | New reasoning message ended |
-| `REASONING_END` | Callback | New reasoning phase completed |
-| `STATE_SNAPSHOT` | Middleware | State snapshot at run start/end (per `emitStateSnapshots` mode) |
-| `MESSAGES_SNAPSHOT` | Middleware | Messages snapshot |
-| `ACTIVITY_SNAPSHOT` | Middleware | New activity detected |
-| `ACTIVITY_DELTA` | Middleware | Activity update |
-
-> **Reasoning Migration Note:** `THINKING_*` events are deprecated by AG-UI. This package defaults to `reasoningEventMode: "thinking"` for backward compatibility. Set `reasoningEventMode: "reasoning"` to emit `REASONING_*` events.
->
-> **Emission Timing:** Reasoning/thinking events are emitted after the complete response using LangChain V1's `contentBlocks` API. Concurrent streaming is not possible through callbacks alone (see [docs/Architecture.md](./docs/Architecture.md) for middleware hooks and callback patterns).
-## Wire Formatting (Developer Responsibility)
-
-Developers must implement their own transport/wire formatting:
-
-### SSE Example
-
-```typescript
-const handleEvent = (event) => {
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
-};
-```
-
-### Protobuf Example
-
-```typescript
-import { encode, decode } from "@ag-ui/proto";
-
-const handleEvent = (event) => {
-  const bytes = encode(event);
-  const lengthPrefix = createLengthPrefix(bytes);
-  res.write(Buffer.concat([lengthPrefix, bytes]));
-};
-```
-
-## Dependencies
-
-- `@ag-ui/core` (^0.0.47)
-- `langchain` (^1.2.3)
-- `zod` (^4.3.6)
+- Reasoning events can be emitted as legacy `THINKING_*` or newer
+  `REASONING_*` families.
+- Thinking/reasoning content is derived from LangChain content blocks after the
+  response is available; callback-only concurrent reasoning streaming is not
+  currently possible.
+- The audited demo in [`example/`](./example) still reflects the pre-backend
+  wiring model and is not the frozen MVP public API.
