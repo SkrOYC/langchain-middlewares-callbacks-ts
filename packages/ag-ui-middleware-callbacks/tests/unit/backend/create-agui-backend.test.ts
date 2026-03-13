@@ -117,6 +117,14 @@ async function readSSEFrames(response: Response): Promise<string[]> {
   const decoder = new TextDecoder();
   let buffer = "";
   const frames: string[] = [];
+  const drainFrames = () => {
+    let delimiterIndex = buffer.indexOf("\n\n");
+    while (delimiterIndex >= 0) {
+      frames.push(buffer.slice(0, delimiterIndex));
+      buffer = buffer.slice(delimiterIndex + 2);
+      delimiterIndex = buffer.indexOf("\n\n");
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -125,13 +133,14 @@ async function readSSEFrames(response: Response): Promise<string[]> {
     }
 
     buffer += decoder.decode(value, { stream: true });
+    drainFrames();
+  }
 
-    let delimiterIndex = buffer.indexOf("\n\n");
-    while (delimiterIndex >= 0) {
-      frames.push(buffer.slice(0, delimiterIndex));
-      buffer = buffer.slice(delimiterIndex + 2);
-      delimiterIndex = buffer.indexOf("\n\n");
-    }
+  buffer += decoder.decode();
+  drainFrames();
+
+  if (buffer) {
+    frames.push(buffer);
   }
 
   return frames;
