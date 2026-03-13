@@ -1,4 +1,5 @@
 import { type AgentSubscriber, HttpAgent } from "@ag-ui/client";
+import type { BaseEvent } from "@ag-ui/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // ============================================================================
@@ -471,7 +472,7 @@ if (import.meta.main) {
               async start(controller) {
                 const encoder = new TextEncoder();
 
-                const sendEvent = (event: unknown) => {
+                const sendEvent = (event: BaseEvent) => {
                   try {
                     controller.enqueue(
                       encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
@@ -495,17 +496,11 @@ if (import.meta.main) {
                   }
                 };
 
-                const transport = {
-                  emit: (event: unknown) => {
-                    sendEvent(event);
-                  },
-                };
-
                 try {
                   const agent = createAGUIAgent({
                     model,
                     tools: [calculatorTool],
-                    transport,
+                    onEvent: sendEvent,
                     middlewareOptions: {
                       emitToolResults: true,
                       emitStateSnapshots: "initial",
@@ -516,7 +511,9 @@ if (import.meta.main) {
                     },
                   });
 
-                  const aguiCallback = new AGUICallbackHandler(transport);
+                  const aguiCallback = new AGUICallbackHandler({
+                    onEvent: sendEvent,
+                  });
 
                   const currentSession = session;
                   if (!currentSession) {
