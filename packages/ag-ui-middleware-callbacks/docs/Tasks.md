@@ -22,6 +22,7 @@ Current status snapshot:
 - completed: package alignment (`K-1`)
 - completed: README rewrite (`D-1`)
 - remaining: example replacement work (`D-2`)
+- verification evidence: see [VerificationAudit.md](./VerificationAudit.md)
 
 Per Goldratt's Theory of Constraints, the bottleneck is the missing publication boundary. No serving or packaging work should be treated as stable until that boundary exists.
 

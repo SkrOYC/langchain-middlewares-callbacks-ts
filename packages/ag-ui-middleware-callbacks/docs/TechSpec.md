@@ -145,12 +145,25 @@ interface AGUIBackend {
   handle(request: Request): Promise<Response>;
 }
 
+interface AGUIBackendAgentLike {
+  stream(
+    input: Record<string, unknown>,
+    options?: AGUIBackendRunOptions
+  ): Promise<AsyncIterable<unknown>>;
+}
+
+type AGUIAgentFactory = (args: {
+  input: RunAgentInput;
+  middleware: ReturnType<typeof createAGUIMiddleware>;
+}) => AGUIBackendAgentLike | Promise<AGUIBackendAgentLike>;
+
 interface AGUIBackendConfig {
-  agent: ReturnType<typeof createAgent>;
+  agentFactory: AGUIAgentFactory;
   validateEvents?: boolean | "strict";
   emitStateSnapshots?: "initial" | "final" | "all" | "none";
   emitActivities?: boolean;
   errorDetailLevel?: "full" | "message" | "code" | "none";
+  callbackOptions?: Omit<AGUICallbackHandlerOptions, "publish">;
 }
 
 declare function createAGUIBackend(
@@ -161,8 +174,10 @@ declare function createAGUIBackend(
 **Notes**
 
 - `handle(request)` is the batteries-included path.
-- The request body is expected to be AG-UI-compatible run input.
+- The request body is expected to be strict AG-UI `RunAgentInput` JSON.
 - The response is a streamed AG-UI-compatible HTTP response, defaulting to SSE.
+- `agentFactory` is intentional because LangChain middleware is attached when
+  `createAgent(...)` is constructed, not at request handling time.
 
 ### 3.2 Publication Layer API
 
@@ -282,7 +297,7 @@ should not preserve it as a published API.
 
 ### 5.1 Request Entry
 
-- Request body: AG-UI-compatible run input
+- Request body: strict AG-UI `RunAgentInput`
 - Method: `POST`
 - Content type: `application/json`
 - Response type: `text/event-stream` by default
