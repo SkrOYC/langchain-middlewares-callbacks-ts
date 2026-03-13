@@ -1,8 +1,8 @@
 import type { BaseEvent } from "@ag-ui/core";
-import { serializeEventAsSSE } from "@/transports/sse";
+import { serializeEventAsSSE as serializeEventAsSSEImplementation } from "@/transports/sse";
 
 export type AGUIEventSerializer = (event: BaseEvent) => Uint8Array;
-export { serializeEventAsSSE };
+export const serializeEventAsSSE = serializeEventAsSSEImplementation;
 
 export function resolvePublisherSerializer(
   serializer?: AGUIEventSerializer,

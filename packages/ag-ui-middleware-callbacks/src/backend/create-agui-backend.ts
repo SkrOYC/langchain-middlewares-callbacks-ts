@@ -1,4 +1,9 @@
-import { type RunAgentInput, RunAgentInputSchema } from "@ag-ui/core";
+import {
+  type BaseEvent,
+  EventType,
+  type RunAgentInput,
+  RunAgentInputSchema,
+} from "@ag-ui/core";
 import {
   AGUICallbackHandler,
   type AGUICallbackHandlerOptions,
@@ -80,6 +85,18 @@ function toAgentInput(input: RunAgentInput): Record<string, unknown> {
   };
 }
 
+function publishFromMiddleware(
+  publisher: ReturnType<typeof createAGUIRunPublisher>
+): (event: BaseEvent) => void {
+  return (event) => {
+    if (event.type === EventType.RUN_FINISHED) {
+      return;
+    }
+
+    publisher.publish(event);
+  };
+}
+
 async function readRunInput(request: Request): Promise<RunAgentInput> {
   const payload = await request.json();
   return RunAgentInputSchema.parse(payload);
@@ -133,8 +150,9 @@ export function createAGUIBackend(config: AGUIBackendConfig): AGUIBackend {
       const publisher = createAGUIRunPublisher({
         validateEvents: config.validateEvents,
       });
+      const middlewarePublish = publishFromMiddleware(publisher);
       const middleware = createAGUIMiddleware({
-        publish: publisher.publish,
+        publish: middlewarePublish,
         validateEvents: config.validateEvents ?? false,
         emitStateSnapshots: config.emitStateSnapshots ?? "initial",
         emitActivities: config.emitActivities ?? false,

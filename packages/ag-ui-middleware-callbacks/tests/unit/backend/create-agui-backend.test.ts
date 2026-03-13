@@ -138,6 +138,12 @@ describe("createAGUIBackend", () => {
     expect(types).toContain("RUN_FINISHED");
     expect(types.at(0)).toBe("RUN_STARTED");
     expect(types.at(-1)).toBe("RUN_FINISHED");
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({
+        type: "RUN_FINISHED",
+        result: expect.any(Object),
+      })
+    );
   });
 
   test("rejects non-POST requests", async () => {
