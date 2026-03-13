@@ -368,10 +368,16 @@ export function createAGUIRunPublisher(
         return;
       }
 
+      if (!runContext) {
+        throw new Error(
+          "Cannot complete a run that has not been started. A `RUN_STARTED` event must be published first."
+        );
+      }
+
       finalize({
         type: EventType.RUN_FINISHED,
-        threadId: runContext?.threadId ?? "",
-        runId: runContext?.runId ?? "",
+        threadId: runContext.threadId,
+        runId: runContext.runId,
         result,
         timestamp: Date.now(),
       } as BaseEvent);
@@ -400,8 +406,14 @@ export function createAGUIRunPublisher(
     },
 
     toReadableStream() {
+      let streamController:
+        | ReadableStreamDefaultController<Uint8Array>
+        | undefined;
+
       return new ReadableStream<Uint8Array>({
         start(controller) {
+          streamController = controller;
+
           for (const event of eventHistory) {
             controller.enqueue(serializer(event));
           }
@@ -414,7 +426,9 @@ export function createAGUIRunPublisher(
           streamControllers.add(controller);
         },
         cancel() {
-          return;
+          if (streamController) {
+            streamControllers.delete(streamController);
+          }
         },
       });
     },
