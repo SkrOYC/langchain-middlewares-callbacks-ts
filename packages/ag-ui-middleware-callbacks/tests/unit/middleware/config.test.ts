@@ -5,10 +5,8 @@ import { createMockCallback } from "../../fixtures/mock-transport";
 test("AGUIMiddlewareOptionsSchema validates valid options", () => {
   const mockCallback = createMockCallback();
   const validOptions = {
-    onEvent: mockCallback.emit,
-    emitToolResults: true,
+    publish: mockCallback.emit,
     emitStateSnapshots: "initial",
-    maxUIPayloadSize: 50 * 1024,
     errorDetailLevel: "message",
   };
 
@@ -18,15 +16,15 @@ test("AGUIMiddlewareOptionsSchema validates valid options", () => {
 test("AGUIMiddlewareOptionsSchema validates minimal options", () => {
   const mockCallback = createMockCallback();
   const minimalOptions = {
-    onEvent: mockCallback.emit,
+    publish: mockCallback.emit,
   };
 
   expect(() => AGUIMiddlewareOptionsSchema.parse(minimalOptions)).not.toThrow();
 });
 
-test("AGUIMiddlewareOptionsSchema rejects invalid onEvent", () => {
+test("AGUIMiddlewareOptionsSchema rejects invalid publish", () => {
   const invalidOptions = {
-    onEvent: "not-a-function",
+    publish: "not-a-function",
   };
 
   expect(() => AGUIMiddlewareOptionsSchema.parse(invalidOptions)).toThrow();
@@ -35,7 +33,7 @@ test("AGUIMiddlewareOptionsSchema rejects invalid onEvent", () => {
 test("AGUIMiddlewareOptionsSchema rejects invalid emitStateSnapshots", () => {
   const mockCallback = createMockCallback();
   const invalidOptions = {
-    onEvent: mockCallback.emit,
+    publish: mockCallback.emit,
     emitStateSnapshots: "invalid",
   };
 

@@ -444,7 +444,7 @@ export function createTestAgent(
   tools: ToolLike[],
   callback: MockCallback,
   middlewareOptions?: Partial<AGUIMiddlewareOptions>,
-  callbackOptions?: Partial<Omit<AGUICallbackHandlerOptions, "onEvent">>
+  callbackOptions?: Partial<Omit<AGUICallbackHandlerOptions, "publish">>
 ): TestAgent {
   let createAGUIAgentModule: typeof import("../../src/create-agui-agent");
 

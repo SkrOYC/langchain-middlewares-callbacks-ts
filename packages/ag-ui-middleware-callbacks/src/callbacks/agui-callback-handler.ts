@@ -20,7 +20,7 @@ import {
  */
 export interface AGUICallbackHandlerOptions {
   /** Callback function for emitting AG-UI events */
-  onEvent: (event: BaseEvent) => void;
+  publish: (event: BaseEvent) => void;
   /** Master toggle - when false, no events are emitted (default: true) */
   enabled?: boolean;
   /** Emit TEXT_MESSAGE events: START, CONTENT, END (default: true) */
@@ -109,7 +109,11 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   constructor(options: AGUICallbackHandlerOptions) {
     super({ raiseError: false });
-    this.emitCallback = options.onEvent;
+    if (typeof options.publish !== "function") {
+      throw new TypeError("publish must be a function");
+    }
+
+    this.emitCallback = options.publish;
     this._enabled = options?.enabled ?? true;
     this._emitTextMessages = options?.emitTextMessages ?? true;
     this._emitToolCalls = options?.emitToolCalls ?? true;

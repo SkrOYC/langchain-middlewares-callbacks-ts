@@ -134,7 +134,7 @@ describe("createAGUIAgent option wiring", () => {
     });
 
     const runtimeHandler = new AGUICallbackHandler({
-      onEvent: callback.emit,
+      publish: callback.emit,
     });
     const eventStream = await (agent as any).streamEvents(
       formatAgentInput([{ role: "user", content: "Hi" }]),

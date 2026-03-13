@@ -5,7 +5,7 @@ import { createMockCallback } from "../../fixtures/mock-transport";
 describe("AGUICallbackHandler", () => {
   test("is instantiated correctly", () => {
     const mockCallback = createMockCallback();
-    const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+    const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
 
     expect(handler).toBeDefined();
     expect(handler.name).toBe("ag-ui-callback");
@@ -14,7 +14,7 @@ describe("AGUICallbackHandler", () => {
   describe("LLM Callbacks", () => {
     test("handleLLMStart generates messageId internally and emits TEXT_MESSAGE_START", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const runId = "run-123";
       const parentRunId = "run-parent";
 
@@ -44,7 +44,7 @@ describe("AGUICallbackHandler", () => {
 
     test("handleLLMNewToken emits TEXT_MESSAGE_CONTENT", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const runId = "run-123";
       const messageId = "msg-abc";
 
@@ -62,7 +62,7 @@ describe("AGUICallbackHandler", () => {
 
     test("handleLLMStart prefers metadata/config context run_id for agent correlation", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const runId = "internal-run-id";
 
       await handler.handleLLMStart(
@@ -86,7 +86,7 @@ describe("AGUICallbackHandler", () => {
 
     test("handleLLMStart supports legacy agui_runId as compatibility fallback", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const runId = "internal-run-id";
 
       await handler.handleLLMStart(
@@ -108,7 +108,7 @@ describe("AGUICallbackHandler", () => {
   describe("Tool Callbacks", () => {
     test("handleToolStart emits TOOL_CALL_START with parentMessageId even after LLM end (Red Phase)", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const parentRunId = "run-parent";
       const toolRunId = "run-tool";
 
@@ -140,7 +140,7 @@ describe("AGUICallbackHandler", () => {
 
     test("handleToolEnd emits TOOL_CALL_RESULT and cleans up", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const toolRunId = "run-tool";
       const parentRunId = "run-parent";
 
@@ -180,7 +180,7 @@ describe("AGUICallbackHandler", () => {
 
     test("handleToolEnd preserves toolCallId from handleToolStart (no override)", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const toolRunId = "run-tool";
       const parentRunId = "run-parent";
 
@@ -237,7 +237,7 @@ describe("AGUICallbackHandler", () => {
 
     test("handleToolError emits TOOL_CALL_END", async () => {
       const mockCallback = createMockCallback();
-      const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const toolRunId = "run-tool";
       const parentRunId = "run-parent";
 
@@ -274,7 +274,7 @@ describe("AGUICallbackHandler", () => {
       test("when enabled=false, no LLM events are emitted", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: false,
         });
         const runId = "run-123";
@@ -290,7 +290,7 @@ describe("AGUICallbackHandler", () => {
       test("when enabled=false, no tool events are emitted", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: false,
         });
         const toolRunId = "run-tool";
@@ -310,7 +310,7 @@ describe("AGUICallbackHandler", () => {
       test("detectAndEmitThinking emits thinking events from contentBlocks", async () => {
         // Test that thinking events are emitted when AIMessage contains reasoning contentBlocks
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const runId = "run-123";
 
         await handler.handleLLMStart(null, ["prompt"], runId);
@@ -377,7 +377,7 @@ describe("AGUICallbackHandler", () => {
       test("detectAndEmitThinking emits multiple thinking cycles for different indices", async () => {
         // Test interleaved thinking pattern: think -> respond -> tool -> think -> respond
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const runId = "run-123";
 
         await handler.handleLLMStart(null, ["prompt"], runId);
@@ -454,7 +454,7 @@ describe("AGUICallbackHandler", () => {
 
       test("blocks without explicit index are grouped under index 0", async () => {
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const runId = "run-123";
 
         await handler.handleLLMStart(null, ["prompt"], runId);
@@ -514,7 +514,7 @@ describe("AGUICallbackHandler", () => {
       test("detectAndEmitThinking emits REASONING events when reasoningEventMode=reasoning", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           reasoningEventMode: "reasoning",
         });
         const runId = "run-123";
@@ -593,7 +593,7 @@ describe("AGUICallbackHandler", () => {
 
       test("enabled can be toggled at runtime", async () => {
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const runId = "run-123";
 
         // First call with enabled=true
@@ -623,7 +623,7 @@ describe("AGUICallbackHandler", () => {
         // even when disabled, so subsequent tool callbacks have the data they need
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: false,
           emitToolCalls: true,
         });
@@ -655,7 +655,7 @@ describe("AGUICallbackHandler", () => {
       test("enabled=false is respected by emitTextChunk", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: false,
         });
 
@@ -667,7 +667,7 @@ describe("AGUICallbackHandler", () => {
       test("enabled=false is respected by emitToolChunk", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: false,
         });
 
@@ -681,7 +681,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitTextMessages=false, TEXT_MESSAGE events are suppressed", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitTextMessages: false,
         });
         const runId = "run-123";
@@ -701,7 +701,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitTextMessages=false, thinking events are also suppressed (coupled)", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitTextMessages: false,
         });
         const runId = "run-123";
@@ -744,7 +744,7 @@ describe("AGUICallbackHandler", () => {
 
       test("emitTextMessages can be toggled at runtime", async () => {
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const runId = "run-123";
 
         // First call with emitTextMessages=true
@@ -796,7 +796,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitToolCalls=false, TOOL_CALL events are suppressed", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitToolCalls: false,
         });
         const toolRunId = "run-tool";
@@ -821,7 +821,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitToolCalls=false, TEXT_MESSAGE events still work", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitToolCalls: false,
         });
         const runId = "run-123";
@@ -844,7 +844,7 @@ describe("AGUICallbackHandler", () => {
 
       test("emitToolCalls can be toggled at runtime", async () => {
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const toolRunId = "run-tool";
         const parentRunId = "run-parent";
 
@@ -878,7 +878,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitToolResults=false, TOOL_CALL_END is emitted and TOOL_CALL_RESULT is suppressed", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitToolCalls: true,
           emitToolResults: false,
         });
@@ -906,7 +906,7 @@ describe("AGUICallbackHandler", () => {
 
       test("emitToolResults can be toggled at runtime", async () => {
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const parentRunId = "run-parent";
 
         handler.emitToolResults = false;
@@ -939,7 +939,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitThinking=false, THINKING events are suppressed", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitThinking: false,
         });
         const runId = "run-123";
@@ -985,7 +985,7 @@ describe("AGUICallbackHandler", () => {
       test("when emitThinking=false, TEXT_MESSAGE events still work", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitThinking: false,
         });
         const runId = "run-123";
@@ -1008,7 +1008,7 @@ describe("AGUICallbackHandler", () => {
 
       test("emitThinking can be toggled at runtime", async () => {
         const mockCallback = createMockCallback();
-        const handler = new AGUICallbackHandler({ onEvent: mockCallback.emit });
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
         const runId = "run-123";
 
         // First call with emitThinking=true
@@ -1076,7 +1076,7 @@ describe("AGUICallbackHandler", () => {
       test("enabled=false overrides all other settings", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: false,
           emitTextMessages: true,
           emitToolCalls: true,
@@ -1114,7 +1114,7 @@ describe("AGUICallbackHandler", () => {
       test("emitTextMessages=false and emitThinking=false together", async () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           emitTextMessages: false,
           emitThinking: false,
         });
@@ -1157,7 +1157,7 @@ describe("AGUICallbackHandler", () => {
       test("all options can be configured via constructor", () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
           enabled: true,
           emitTextMessages: true,
           emitToolCalls: true,
@@ -1177,7 +1177,7 @@ describe("AGUICallbackHandler", () => {
       test("default values are all true", () => {
         const mockCallback = createMockCallback();
         const handler = new AGUICallbackHandler({
-          onEvent: mockCallback.emit,
+          publish: mockCallback.emit,
         });
 
         expect(handler.enabled).toBe(true);

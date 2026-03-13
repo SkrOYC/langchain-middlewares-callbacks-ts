@@ -8,6 +8,7 @@ import {
   AGUIMiddlewareOptionsSchema,
   createAGUIMiddleware as createMiddlewareFromSubpath,
 } from "../../src/middleware";
+import { createAGUIRunPublisher } from "../../src/publication";
 
 describe("public surface", () => {
   test("root export stays limited to low-level producers", async () => {
@@ -25,5 +26,9 @@ describe("public surface", () => {
   test("middleware subpath exports middleware factory API", () => {
     expect(createMiddlewareFromSubpath).toBeDefined();
     expect(AGUIMiddlewareOptionsSchema).toBeDefined();
+  });
+
+  test("publication subpath exports run publisher API", () => {
+    expect(createAGUIRunPublisher).toBeDefined();
   });
 });
