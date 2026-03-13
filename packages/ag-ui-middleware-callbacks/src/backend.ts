@@ -5,7 +5,7 @@ import {
   type AGUIBackend as AGUIBackendImplementation,
   type AGUIBackendRunOptions as AGUIBackendRunOptionsImplementation,
   createAGUIBackend as createAGUIBackendImplementation,
-} from "./backend/create-agui-backend";
+} from "@/backend/create-agui-backend";
 
 export type AGUIAgentFactory = AGUIAgentFactoryImplementation;
 export type AGUIBackend = AGUIBackendImplementation;

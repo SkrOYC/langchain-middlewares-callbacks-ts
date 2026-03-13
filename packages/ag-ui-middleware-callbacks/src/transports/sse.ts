@@ -1,11 +1,14 @@
 import type { BaseEvent } from "@ag-ui/core";
 
 const textEncoder = new TextEncoder();
+const contentTypeHeader = "text/event-stream";
+const cacheControlHeader = "no-cache";
+const connectionHeader = "keep-alive";
 
 export const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache",
-  Connection: "keep-alive",
+  "Content-Type": contentTypeHeader,
+  "Cache-Control": cacheControlHeader,
+  Connection: connectionHeader,
 } as const;
 
 export function serializeEventAsSSE(event: BaseEvent): Uint8Array {

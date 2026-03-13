@@ -2,11 +2,11 @@ import { type RunAgentInput, RunAgentInputSchema } from "@ag-ui/core";
 import {
   AGUICallbackHandler,
   type AGUICallbackHandlerOptions,
-} from "../callbacks/agui-callback-handler";
-import { createAGUIMiddleware } from "../middleware/create-agui-middleware";
-import type { AGUIMiddlewareOptions } from "../middleware/types";
-import { createAGUIRunPublisher } from "../publication/create-agui-run-publisher";
-import { createSSEResponse } from "../transports/sse";
+} from "@/callbacks/agui-callback-handler";
+import { createAGUIMiddleware } from "@/middleware/create-agui-middleware";
+import type { AGUIMiddlewareOptions } from "@/middleware/types";
+import { createAGUIRunPublisher } from "@/publication/create-agui-run-publisher";
+import { createSSEResponse } from "@/transports/sse";
 
 export interface AGUIBackend {
   handle(request: Request): Promise<Response>;
@@ -99,7 +99,9 @@ async function consumeAgentStream(
 
 export function createAGUIBackend(config: AGUIBackendConfig): AGUIBackend {
   if (typeof config.agentFactory !== "function") {
-    throw new TypeError("agentFactory must be a function");
+    throw new TypeError(
+      "agentFactory must be a function that accepts { input, middleware } and returns an agent with a stream() method"
+    );
   }
 
   return {
