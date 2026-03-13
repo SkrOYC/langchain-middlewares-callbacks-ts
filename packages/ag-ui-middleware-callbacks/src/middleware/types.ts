@@ -12,28 +12,17 @@ import { z } from "zod";
  */
 export const AGUIMiddlewareOptionsSchema = z.object({
   // Callback function (required)
-  onEvent: z.custom<(event: BaseEvent) => void>(
+  publish: z.custom<(event: BaseEvent) => void>(
     (val) => typeof val === "function",
     {
-      message: "onEvent must be a function",
+      message: "publish must be a function",
     }
   ),
 
-  // Event control
-  // Deprecated: use callbackOptions.emitToolResults in createAGUIAgent.
-  // Kept for backward compatibility and transitional mapping.
-  emitToolResults: z.boolean().default(true),
   emitStateSnapshots: z
     .enum(["initial", "final", "all", "none"])
     .default("initial"),
   emitActivities: z.boolean().default(false),
-
-  // Smart Emission Policy
-  maxUIPayloadSize: z
-    .number()
-    .positive()
-    .default(50 * 1024), // 50KB
-  chunkLargeResults: z.boolean().default(false),
 
   // Session Override
   threadIdOverride: z.string().optional(),
@@ -46,7 +35,6 @@ export const AGUIMiddlewareOptionsSchema = z.object({
 
   // Data Mappers (New in Protocol Compliance)
   stateMapper: z.custom<(state: unknown) => unknown>().optional(),
-  resultMapper: z.custom<(result: unknown) => unknown>().optional(),
   activityMapper: z.custom<(node: unknown) => unknown>().optional(),
 
   // Validation (New - @ag-ui/core integration)

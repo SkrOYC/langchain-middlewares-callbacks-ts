@@ -1007,14 +1007,10 @@ describe("Smart Emission Policy (SPEC Section 9.3)", () => {
     const callback = createMockCallback();
 
     // Should not throw
-    const handler = new AGUICallbackHandler(
-      {
-        onEvent: callback.emit,
-      },
-      {
-        maxUIPayloadSize: 1000,
-      }
-    );
+    const handler = new AGUICallbackHandler({
+      publish: callback.emit,
+      maxUIPayloadSize: 1000,
+    });
 
     expect(handler).toBeDefined();
   });
@@ -1028,14 +1024,10 @@ describe("Smart Emission Policy (SPEC Section 9.3)", () => {
     const callback = createMockCallback();
 
     // Should not throw
-    const handler = new AGUICallbackHandler(
-      {
-        onEvent: callback.emit,
-      },
-      {
-        chunkLargeResults: true,
-      }
-    );
+    const handler = new AGUICallbackHandler({
+      publish: callback.emit,
+      chunkLargeResults: true,
+    });
 
     expect(handler).toBeDefined();
   });

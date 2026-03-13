@@ -249,7 +249,7 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         );
       }
     }
-    validated.onEvent(event);
+    validated.publish(event);
   };
 
   const shouldEmitStateSnapshot = (
@@ -298,16 +298,16 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     } as BaseEvent);
   };
 
-  let threadId: string | undefined;
-  let runId: string | undefined;
-  let currentStepName: string | undefined;
-  let modelTurnIndex = 0;
+  interface MiddlewareRunState {
+    threadId: string;
+    runId: string;
+    currentStepName?: string;
+    modelTurnIndex: number;
+    activityTracker: ActivityTracker;
+  }
 
-  const activityTracker: ActivityTracker = {
-    currentActivityId: undefined,
-    currentActivityType: "AGENT_STEP",
-    activityContent: {},
-  };
+  const runStates = new Map<string, MiddlewareRunState>();
+  const runtimeRunIds = new WeakMap<object, string>();
 
   const lifecycleContextSchema = z.object({
     run_id: z.string().optional(),
@@ -316,27 +316,62 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     threadId: z.string().optional(),
   });
 
+  const getOrCreateRunState = (runtime: unknown): MiddlewareRunState => {
+    const runtimeKey = isRecord(runtime) ? runtime : undefined;
+    const fallbackRunId = runtimeKey
+      ? runtimeRunIds.get(runtimeKey)
+      : undefined;
+    const resolvedIds = resolveLifecycleIds({
+      context: getRuntimeContext(runtime),
+      threadIdOverride: validated.threadIdOverride,
+      runIdOverride: validated.runIdOverride,
+      createFallbackRunId: () => fallbackRunId ?? crypto.randomUUID(),
+    });
+
+    if (runtimeKey && !runtimeRunIds.has(runtimeKey)) {
+      runtimeRunIds.set(runtimeKey, resolvedIds.runId);
+    }
+
+    const existing = runStates.get(resolvedIds.runId);
+    if (existing) {
+      if (!existing.threadId && resolvedIds.threadId) {
+        existing.threadId = resolvedIds.threadId;
+      }
+      return existing;
+    }
+
+    const created: MiddlewareRunState = {
+      threadId: resolvedIds.threadId,
+      runId: resolvedIds.runId,
+      modelTurnIndex: 0,
+      activityTracker: {
+        currentActivityId: undefined,
+        currentActivityType: "AGENT_STEP",
+        activityContent: {},
+      },
+    };
+
+    runStates.set(created.runId, created);
+    return created;
+  };
+
   return createMiddleware({
     name: "ag-ui-lifecycle",
     contextSchema: lifecycleContextSchema,
 
     beforeAgent: (state, runtime) => {
-      modelTurnIndex = 0;
-      const resolvedIds = resolveLifecycleIds({
-        context: getRuntimeContext(runtime),
-        threadIdOverride: validated.threadIdOverride,
-        runIdOverride: validated.runIdOverride,
-        createFallbackRunId: () => crypto.randomUUID(),
-      });
-
-      threadId = resolvedIds.threadId;
-      runId = resolvedIds.runId;
+      const runState = getOrCreateRunState(runtime);
+      runState.modelTurnIndex = 0;
+      runState.currentStepName = undefined;
+      runState.activityTracker.currentActivityId = undefined;
+      runState.activityTracker.currentActivityType = "AGENT_STEP";
+      runState.activityTracker.activityContent = {};
 
       try {
         emitEvent({
           type: EventType.RUN_STARTED,
-          threadId,
-          runId,
+          threadId: runState.threadId,
+          runId: runState.runId,
           input: cleanLangChainData(getRuntimeInput(runtime)),
           timestamp: Date.now(),
         } as BaseEvent);
@@ -359,19 +394,11 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
     },
 
     beforeModel: (state, runtime) => {
-      const turnIndex = modelTurnIndex++;
-      const resolvedIds = resolveLifecycleIds({
-        context: getRuntimeContext(runtime),
-        threadIdOverride: validated.threadIdOverride,
-        runIdOverride: validated.runIdOverride,
-        createFallbackRunId: () => crypto.randomUUID(),
-      });
-      const currentRunId = runId ?? resolvedIds.runId;
-      runId = currentRunId;
-      threadId = threadId ?? resolvedIds.threadId;
-      const messageId = generateDeterministicId(currentRunId, turnIndex);
+      const runState = getOrCreateRunState(runtime);
+      const turnIndex = runState.modelTurnIndex++;
+      const messageId = generateDeterministicId(runState.runId, turnIndex);
       const stepName = `model_call_${messageId}`;
-      currentStepName = stepName;
+      runState.currentStepName = stepName;
 
       try {
         emitEvent({
@@ -385,9 +412,9 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
         if (validated.emitActivities) {
           emitActivityUpdate(
             emitEvent,
-            currentRunId,
+            runState.runId,
             turnIndex,
-            activityTracker,
+            runState.activityTracker,
             "started",
             validated.activityMapper,
             {
@@ -407,30 +434,31 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       return {};
     },
 
-    afterModel: (state) => {
+    afterModel: (state, runtime) => {
+      const runtimeState = getOrCreateRunState(runtime);
       try {
         // TEXT_MESSAGE_END is handled by AGUICallbackHandler
         // using the same deterministic message ID.
 
         emitEvent({
           type: EventType.STEP_FINISHED,
-          stepName: currentStepName || "",
+          stepName: runtimeState.currentStepName || "",
           timestamp: Date.now(),
           // REMOVED: runId, threadId
         } as BaseEvent);
 
         // Emit ACTIVITY_DELTA for completed activity if activities are enabled
-        if (validated.emitActivities && currentStepName) {
-          const turnIndex = modelTurnIndex - 1;
+        if (validated.emitActivities && runtimeState.currentStepName) {
+          const turnIndex = runtimeState.modelTurnIndex - 1;
           emitActivityUpdate(
             emitEvent,
-            runId,
+            runtimeState.runId,
             turnIndex,
-            activityTracker,
+            runtimeState.activityTracker,
             "completed",
             validated.activityMapper,
             {
-              stepName: currentStepName,
+              stepName: runtimeState.currentStepName,
               outputType: getOutputType(state),
               hasToolCalls: hasToolCalls(state),
             }
@@ -439,12 +467,12 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
       } catch {
         // Fail-safe
       }
-
-      currentStepName = undefined;
+      runtimeState.currentStepName = undefined;
       return {};
     },
 
     afterAgent: (state, runtime) => {
+      const runState = getOrCreateRunState(runtime);
       try {
         emitStateSnapshotIfConfigured("final", state);
 
@@ -464,29 +492,20 @@ export function createAGUIMiddleware(options: AGUIMiddlewareOptions) {
             // REMOVED: threadId, runId, parentRunId
           } as BaseEvent);
         } else {
-          const resolvedIds = resolveLifecycleIds({
-            context: getRuntimeContext(runtime),
-            threadIdOverride: validated.threadIdOverride,
-            runIdOverride: validated.runIdOverride,
-            createFallbackRunId: () => crypto.randomUUID(),
-          });
-          const currentThreadId = threadId ?? resolvedIds.threadId;
-          const currentRunId = runId ?? resolvedIds.runId;
-          threadId = currentThreadId;
-          runId = currentRunId;
-
           emitEvent({
             type: EventType.RUN_FINISHED,
-            threadId: currentThreadId,
-            runId: currentRunId,
-            result: validated.resultMapper
-              ? validated.resultMapper(state)
-              : undefined,
+            threadId: runState.threadId,
+            runId: runState.runId,
             timestamp: Date.now(),
           } as BaseEvent);
         }
       } catch {
         // Fail-safe
+      }
+
+      runStates.delete(runState.runId);
+      if (isRecord(runtime)) {
+        runtimeRunIds.delete(runtime);
       }
 
       return {};

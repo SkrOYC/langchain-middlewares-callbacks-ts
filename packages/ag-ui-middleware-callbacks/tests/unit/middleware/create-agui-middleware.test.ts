@@ -7,7 +7,7 @@ describe("createAGUIMiddleware", () => {
   const mockCallback = createMockCallback();
 
   test("returns middleware object", () => {
-    const middleware = createAGUIMiddleware({ onEvent: mockCallback.emit });
+    const middleware = createAGUIMiddleware({ publish: mockCallback.emit });
 
     expect(middleware).toBeDefined();
     expect(typeof middleware).toBe("object");
@@ -15,7 +15,7 @@ describe("createAGUIMiddleware", () => {
 
   describe("beforeAgent", () => {
     test("emits RUN_STARTED and mapped MESSAGES_SNAPSHOT (Red Phase)", async () => {
-      const middleware = createAGUIMiddleware({ onEvent: mockCallback.emit });
+      const middleware = createAGUIMiddleware({ publish: mockCallback.emit });
 
       const state = {
         messages: [new HumanMessage("Hello"), new AIMessage("Hi there!")],
@@ -55,7 +55,7 @@ describe("createAGUIMiddleware", () => {
         curated: state.secret ? "hidden" : "visible",
       });
       const middleware = createAGUIMiddleware({
-        onEvent: mockCallback.emit,
+        publish: mockCallback.emit,
         stateMapper,
         emitStateSnapshots: "initial",
       });
@@ -77,7 +77,7 @@ describe("createAGUIMiddleware", () => {
     });
 
     test("filters 'messages' from STATE_SNAPSHOT by default (Red Phase)", async () => {
-      const middleware = createAGUIMiddleware({ onEvent: mockCallback.emit });
+      const middleware = createAGUIMiddleware({ publish: mockCallback.emit });
       const state = {
         messages: [new HumanMessage("test")],
         app_data: "keep me",
@@ -98,7 +98,7 @@ describe("createAGUIMiddleware", () => {
 
     test("preserves AG-UI structured user content in MESSAGES_SNAPSHOT", async () => {
       const callback = createMockCallback();
-      const middleware = createAGUIMiddleware({ onEvent: callback.emit });
+      const middleware = createAGUIMiddleware({ publish: callback.emit });
       const state = {
         messages: [
           new HumanMessage({
@@ -143,7 +143,7 @@ describe("createAGUIMiddleware", () => {
   describe("Step/Activity Correlation (Red Phase)", () => {
     test("emits ACTIVITY_SNAPSHOT for configured steps", async () => {
       const middleware = createAGUIMiddleware({
-        onEvent: mockCallback.emit,
+        publish: mockCallback.emit,
         emitActivities: true,
       });
 
@@ -181,7 +181,7 @@ describe("createAGUIMiddleware", () => {
     const runLifecycle = async (mode: "initial" | "final" | "all" | "none") => {
       const callback = createMockCallback();
       const middleware = createAGUIMiddleware({
-        onEvent: callback.emit,
+        publish: callback.emit,
         emitStateSnapshots: mode,
       });
       const state = { messages: [new HumanMessage("Hello")], custom: "value" };
@@ -246,14 +246,9 @@ describe("createAGUIMiddleware", () => {
   });
 
   describe("afterAgent", () => {
-    test("applies resultMapper to RUN_FINISHED (Red Phase)", async () => {
-      const resultMapper = (result: any) => ({
-        status: "done",
-        count: result.messages.length,
-      });
+    test("emits RUN_FINISHED without shared result shaping", async () => {
       const middleware = createAGUIMiddleware({
-        onEvent: mockCallback.emit,
-        resultMapper,
+        publish: mockCallback.emit,
       });
 
       const state = { messages: ["msg1", "msg2"] };
@@ -270,7 +265,8 @@ describe("createAGUIMiddleware", () => {
       expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "RUN_FINISHED",
-          result: { status: "done", count: 2 },
+          runId: "run-123",
+          threadId: "t1",
         })
       );
     });
@@ -280,7 +276,7 @@ describe("createAGUIMiddleware", () => {
     test("uses context IDs before explicit overrides", async () => {
       const callback = createMockCallback();
       const middleware = createAGUIMiddleware({
-        onEvent: callback.emit,
+        publish: callback.emit,
         threadIdOverride: "override-thread",
         runIdOverride: "override-run",
       });
@@ -309,7 +305,7 @@ describe("createAGUIMiddleware", () => {
     test("uses explicit overrides when context IDs are absent", async () => {
       const callback = createMockCallback();
       const middleware = createAGUIMiddleware({
-        onEvent: callback.emit,
+        publish: callback.emit,
         threadIdOverride: "override-thread",
         runIdOverride: "override-run",
       });
@@ -327,7 +323,7 @@ describe("createAGUIMiddleware", () => {
 
     test("falls back only when run ID is missing", async () => {
       const callback = createMockCallback();
-      const middleware = createAGUIMiddleware({ onEvent: callback.emit });
+      const middleware = createAGUIMiddleware({ publish: callback.emit });
 
       const state = {};
       const runtime = { context: {} };
@@ -339,6 +335,61 @@ describe("createAGUIMiddleware", () => {
       expect(typeof runStarted?.runId).toBe("string");
       expect(runStarted?.runId.length).toBeGreaterThan(0);
       expect(runStarted?.threadId).toBe("");
+    });
+  });
+
+  describe("concurrency isolation", () => {
+    test("same middleware factory keeps run state isolated across interleaved runs", async () => {
+      const callback = createMockCallback();
+      const middleware = createAGUIMiddleware({
+        publish: callback.emit,
+        emitActivities: true,
+      });
+
+      const beforeAgent = middleware.beforeAgent as any;
+      const beforeModel = middleware.beforeModel as any;
+      const afterModel = middleware.afterModel as any;
+      const afterAgent = middleware.afterAgent as any;
+
+      const runtimeA = { context: { thread_id: "thread-a", run_id: "run-a" } };
+      const runtimeB = { context: { thread_id: "thread-b", run_id: "run-b" } };
+      const stateA = { messages: [new HumanMessage("run a")] };
+      const stateB = { messages: [new HumanMessage("run b")] };
+
+      await beforeAgent(stateA, runtimeA);
+      await beforeAgent(stateB, runtimeB);
+      await beforeModel(stateA, runtimeA);
+      await beforeModel(stateB, runtimeB);
+      await afterModel(stateA, runtimeA);
+      await afterModel(stateB, runtimeB);
+      await afterAgent(stateA, runtimeA);
+      await afterAgent(stateB, runtimeB);
+
+      const runStartedEvents = callback.events.filter(
+        (event) => event.type === "RUN_STARTED"
+      );
+      const runFinishedEvents = callback.events.filter(
+        (event) => event.type === "RUN_FINISHED"
+      );
+      const stepStartedEvents = callback.events.filter(
+        (event) => event.type === "STEP_STARTED"
+      );
+
+      expect(runStartedEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ runId: "run-a", threadId: "thread-a" }),
+          expect.objectContaining({ runId: "run-b", threadId: "thread-b" }),
+        ])
+      );
+      expect(runFinishedEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ runId: "run-a", threadId: "thread-a" }),
+          expect.objectContaining({ runId: "run-b", threadId: "thread-b" }),
+        ])
+      );
+      expect(
+        new Set(stepStartedEvents.map((event: any) => event.stepName)).size
+      ).toBe(2);
     });
   });
 });

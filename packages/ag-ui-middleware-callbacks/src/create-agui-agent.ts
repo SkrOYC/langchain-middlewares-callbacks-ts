@@ -40,6 +40,11 @@ interface AgentListeners extends Record<string, unknown> {
   onError?: (run: AgentRunLike) => void;
 }
 
+interface AGUIAgentMiddlewareCompatOptions
+  extends Partial<AGUIMiddlewareOptions> {
+  emitToolResults?: boolean;
+}
+
 interface WrappedAgentLike {
   [AGUI_RUNTIME_WRAPPED]?: boolean;
   invoke?: (input: unknown, options?: RuntimeInvocationOptions) => unknown;
@@ -201,9 +206,9 @@ export interface AGUIAgentConfig {
   /** Callback function for AG-UI events */
   onEvent: (event: BaseEvent) => void;
   /** Optional middleware configuration */
-  middlewareOptions?: Partial<AGUIMiddlewareOptions>;
+  middlewareOptions?: AGUIAgentMiddlewareCompatOptions;
   /** Optional callback handler configuration */
-  callbackOptions?: Omit<AGUICallbackHandlerOptions, "onEvent">;
+  callbackOptions?: Omit<AGUICallbackHandlerOptions, "publish">;
 }
 
 /**
@@ -235,31 +240,27 @@ export function createAGUIAgent(config: AGUIAgentConfig) {
     );
   }
 
-  const callbackDefaults: Omit<AGUICallbackHandlerOptions, "onEvent"> = {
+  const callbackDefaults: Omit<AGUICallbackHandlerOptions, "publish"> = {
     ...config.callbackOptions,
     emitToolResults: callbackEmitToolResults,
   };
 
   const createCallbackHandler = () =>
     new AGUICallbackHandler({
-      onEvent: config.onEvent,
+      publish: config.onEvent,
       ...callbackDefaults,
     });
 
   // Create middleware with callback
   const middleware = createAGUIMiddleware({
-    onEvent: config.onEvent,
-    emitToolResults: config.middlewareOptions?.emitToolResults ?? true,
+    publish: config.onEvent,
     emitStateSnapshots:
       config.middlewareOptions?.emitStateSnapshots ?? "initial",
     emitActivities: config.middlewareOptions?.emitActivities ?? false,
-    maxUIPayloadSize: config.middlewareOptions?.maxUIPayloadSize ?? 50 * 1024,
-    chunkLargeResults: config.middlewareOptions?.chunkLargeResults ?? false,
     threadIdOverride: config.middlewareOptions?.threadIdOverride,
     runIdOverride: config.middlewareOptions?.runIdOverride,
     errorDetailLevel: config.middlewareOptions?.errorDetailLevel ?? "message",
     stateMapper: config.middlewareOptions?.stateMapper,
-    resultMapper: config.middlewareOptions?.resultMapper,
     activityMapper: config.middlewareOptions?.activityMapper,
     validateEvents: config.middlewareOptions?.validateEvents ?? false,
   });

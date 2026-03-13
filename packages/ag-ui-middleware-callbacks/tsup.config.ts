@@ -5,6 +5,7 @@ export default defineConfig({
 		index: "src/index.ts",
 		callbacks: "src/callbacks.ts",
 		middleware: "src/middleware.ts",
+		publication: "src/publication.ts",
 	},
 	format: ["esm", "cjs"],
 	dts: true,
