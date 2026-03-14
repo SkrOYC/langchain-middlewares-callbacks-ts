@@ -590,11 +590,42 @@ describe("OpenResponsesCallbackBridge", () => {
       "run-3"
     );
 
-    expect(events).toHaveLength(3);
-    expect(events[2]?.type).toBe("run.failed");
-    expect(events[2]).toMatchObject({
+    expect(events).toHaveLength(2);
+    expect(events[1]?.type).toBe("run.failed");
+    expect(events[1]).toMatchObject({
       type: "run.failed",
       runId: "run-3",
+    });
+  });
+
+  test("suppresses duplicate terminal events after a run has failed", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["msg-1"]),
+    });
+    const firstFailure = new Error("first failure");
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-7"
+    );
+    await callHandler(bridge.handleLLMError, firstFailure, "run-7");
+    await callHandler(
+      bridge.handleChainError,
+      new Error("second failure"),
+      "run-7"
+    );
+    await callHandler(bridge.handleAgentEnd, agentFinishFixture, "run-7");
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({ type: "run.started", runId: "run-7" });
+    expect(events[1]).toEqual({
+      type: "run.failed",
+      runId: "run-7",
+      error: firstFailure,
     });
   });
 });

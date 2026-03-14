@@ -255,6 +255,12 @@ export const createOpenResponsesCallbackBridge = (
   const failedRuns = new Set<string>();
 
   const emitRunStarted = (runId: string, parentRunId?: string): void => {
+    if (completedRuns.has(runId) || failedRuns.has(runId)) {
+      completedRuns.delete(runId);
+      failedRuns.delete(runId);
+      cleanupRunState(runId);
+    }
+
     if (startedRuns.has(runId)) {
       return;
     }
@@ -533,8 +539,6 @@ export const createOpenResponsesCallbackBridge = (
     }
 
     startedRuns.delete(runId);
-    completedRuns.delete(runId);
-    failedRuns.delete(runId);
   };
 
   const emitRunFailed = (runId: string, error: unknown): void => {

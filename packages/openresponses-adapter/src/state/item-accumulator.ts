@@ -109,6 +109,10 @@ const asOutputItem = (item: MutableItem): CanonicalOutputItem => {
     : asFunctionCallItem(item);
 };
 
+const duplicateItemIdError = (itemId: string): never => {
+  throw invalidRequest(`Canonical item '${itemId}' already exists`);
+};
+
 class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
   readonly #generateId: () => string;
   readonly #items: MutableItem[] = [];
@@ -116,6 +120,12 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
 
   constructor(options: CanonicalItemAccumulatorOptions) {
     this.#generateId = options.generateId;
+  }
+
+  #assertUniqueItemId(itemId: string): void {
+    if (this.#itemsById.has(itemId)) {
+      duplicateItemIdError(itemId);
+    }
   }
 
   startMessageItem(input?: { id?: string }): CanonicalMessageItem {
@@ -127,6 +137,7 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
       content: [],
     };
 
+    this.#assertUniqueItemId(item.id);
     this.#items.push(item);
     this.#itemsById.set(item.id, item);
 
@@ -149,6 +160,7 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
       finalized: false,
     };
 
+    this.#assertUniqueItemId(item.id);
     this.#items.push(item);
     this.#itemsById.set(item.id, item);
 

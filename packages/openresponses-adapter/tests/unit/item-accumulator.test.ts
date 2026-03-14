@@ -4,6 +4,7 @@ import { createCanonicalItemAccumulator } from "@/state/item-accumulator.js";
 import { createSequentialIdGenerator } from "@/testing/deterministic-id.js";
 
 const PART_CLOSED_PATTERN = /before output text part 0 is closed/;
+const DUPLICATE_ITEM_ID_PATTERN = /already exists/;
 const DUPLICATE_TERMINAL_PATTERN = /already received a terminal event/;
 
 describe("CanonicalItemAccumulator", () => {
@@ -96,5 +97,21 @@ describe("CanonicalItemAccumulator", () => {
       call_id: "call-1",
       arguments: '{"city":"Boston"}',
     });
+  });
+
+  test("rejects duplicate caller-supplied item ids", () => {
+    const accumulator = createCanonicalItemAccumulator({
+      generateId: createSequentialIdGenerator(["generated-1"]),
+    });
+
+    accumulator.startMessageItem({ id: "duplicate-id" });
+
+    expect(() =>
+      accumulator.startFunctionCallItem({
+        id: "duplicate-id",
+        name: "get_weather",
+        callId: "call-1",
+      })
+    ).toThrow(DUPLICATE_ITEM_ID_PATTERN);
   });
 });
