@@ -11,6 +11,10 @@ export interface OpenResponsesCallbackBridgeOptions {
 
 type RecordValue = Record<string, unknown>;
 
+type TerminalRunStatus = "completed" | "failed";
+
+const MAX_TERMINAL_RUNS = 256;
+
 interface PendingFunctionCall {
   readonly itemId: string;
   readonly toolName: string;
@@ -251,13 +255,16 @@ export const createOpenResponsesCallbackBridge = (
   const activeFunctionCallsByToolRun = new Map<string, PendingFunctionCall>();
   const pendingFunctionCallsByCallId = new Map<string, PendingFunctionCall>();
   const startedRuns = new Set<string>();
-  const completedRuns = new Set<string>();
-  const failedRuns = new Set<string>();
+  const terminalRuns = new Map<string, TerminalRunStatus>();
+  const terminalRunOrder: string[] = [];
 
   const emitRunStarted = (runId: string, parentRunId?: string): void => {
-    if (completedRuns.has(runId) || failedRuns.has(runId)) {
-      completedRuns.delete(runId);
-      failedRuns.delete(runId);
+    if (terminalRuns.has(runId)) {
+      terminalRuns.delete(runId);
+      const terminalRunIndex = terminalRunOrder.indexOf(runId);
+      if (terminalRunIndex >= 0) {
+        terminalRunOrder.splice(terminalRunIndex, 1);
+      }
       cleanupRunState(runId);
     }
 
@@ -541,22 +548,42 @@ export const createOpenResponsesCallbackBridge = (
     startedRuns.delete(runId);
   };
 
-  const emitRunFailed = (runId: string, error: unknown): void => {
-    if (failedRuns.has(runId)) {
+  const rememberTerminalRun = (
+    runId: string,
+    status: TerminalRunStatus
+  ): void => {
+    if (terminalRuns.has(runId)) {
+      terminalRuns.set(runId, status);
       return;
     }
 
-    failedRuns.add(runId);
+    terminalRuns.set(runId, status);
+    terminalRunOrder.push(runId);
+
+    while (terminalRunOrder.length > MAX_TERMINAL_RUNS) {
+      const oldestRunId = terminalRunOrder.shift();
+      if (oldestRunId) {
+        terminalRuns.delete(oldestRunId);
+      }
+    }
+  };
+
+  const emitRunFailed = (runId: string, error: unknown): void => {
+    if (terminalRuns.has(runId)) {
+      return;
+    }
+
+    rememberTerminalRun(runId, "failed");
     options.emitter.emit({ type: "run.failed", runId, error });
     cleanupRunState(runId);
   };
 
   const emitRunCompleted = (runId: string): void => {
-    if (completedRuns.has(runId) || failedRuns.has(runId)) {
+    if (terminalRuns.has(runId)) {
       return;
     }
 
-    completedRuns.add(runId);
+    rememberTerminalRun(runId, "completed");
     options.emitter.emit({ type: "run.completed", runId });
     cleanupRunState(runId);
   };

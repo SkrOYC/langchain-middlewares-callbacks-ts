@@ -628,4 +628,39 @@ describe("OpenResponsesCallbackBridge", () => {
       error: firstFailure,
     });
   });
+
+  test("bounds terminal run retention for long-lived handler instances", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["msg-bounded"]),
+    });
+
+    for (let index = 0; index < 257; index++) {
+      const runId = `bounded-run-${index}`;
+      await callHandler(
+        bridge.handleChatModelStart,
+        serializedFixture,
+        [],
+        runId
+      );
+      await callHandler(
+        bridge.handleLLMError,
+        new Error(`failure-${index}`),
+        runId
+      );
+    }
+
+    await callHandler(
+      bridge.handleChainError,
+      new Error("failure-again"),
+      "bounded-run-0"
+    );
+
+    expect(events).toHaveLength(515);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.failed",
+      runId: "bounded-run-0",
+    });
+  });
 });
