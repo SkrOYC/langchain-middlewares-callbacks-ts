@@ -796,7 +796,7 @@ const resultContainsToolCall = (value: unknown): boolean => {
   }
 
   const directType = getStringProperty(value, "type");
-  if (directType === "tool" || directType === "function_call") {
+  if (directType === "function_call") {
     return true;
   }
 

@@ -557,6 +557,32 @@ describe("adapter tool policy enforcement", () => {
     });
   });
 
+  test("does not treat a bare tool result message as a required tool call", async () => {
+    const agent = createFakeAgent({
+      responses: [
+        {
+          type: "tool",
+          id: "tool-result-1",
+          content: '{"result":"orphaned"}',
+          tool_call_id: "tool-call-1",
+        },
+      ],
+    });
+    const adapter = createOpenResponsesAdapter({ agent });
+
+    await expect(
+      adapter.invoke({
+        ...createBaseRequest(),
+        tools: [lookupFactTool],
+        tool_choice: "required",
+      })
+    ).rejects.toMatchObject({
+      code: "agent_execution_failed",
+      message:
+        "tool_choice requires a tool call, but the agent completed without calling a tool",
+    });
+  });
+
   test("accepts required tool execution when the result transcript includes a tool call", async () => {
     const agent = createFakeAgent({
       responses: [
