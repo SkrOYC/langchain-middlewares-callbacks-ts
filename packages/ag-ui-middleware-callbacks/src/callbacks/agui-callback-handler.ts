@@ -47,7 +47,9 @@ type RecordLike = Record<string, unknown>;
 
 interface ToolCallChunk {
   id?: string;
+  name?: string;
   args?: string;
+  index?: number;
 }
 
 interface ToolCallRecord {
@@ -56,6 +58,22 @@ interface ToolCallRecord {
     name?: string;
     arguments?: string;
   };
+}
+
+interface ToolInputResolution {
+  toolCallId?: string;
+  toolCallName?: string;
+  argsDelta?: string;
+}
+
+interface StreamingReasoningChunk {
+  index: number;
+  reasoning?: string;
+}
+
+interface StreamingReasoningState {
+  phaseId: string;
+  messageId: string;
 }
 
 interface ToolCallIdentity {
@@ -85,6 +103,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   private readonly messageIds = new Map<string, string>();
   private readonly latestMessageIds = new Map<string, string>();
+  private readonly startedMessageIds = new Set<string>();
   private readonly agentRunIds = new Map<string, string>(); // Maps current runId to authoritative agentRunId
   private readonly parentToAuthoritativeId = new Map<string, string>(); // Maps internal parentRunId to authoritative agentRunId
   private readonly toolCallInfo = new Map<
@@ -95,6 +114,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private readonly agentTurnTracker = new Map<string, number>();
   private readonly pendingToolCalls = new Map<string, string[]>();
   private readonly accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
+  private readonly streamingToolCallIds = new Map<string, string>(); // Maps agentRunId:index to toolCallId for args-only deltas
+  private readonly streamedReasoningRuns = new Set<string>();
+  private readonly openReasoningStates = new Map<string, StreamingReasoningState>();
+  private readonly warnedMissingStreamingContentBlocks = new Set<string>();
   private readonly emitCallback: (event: BaseEvent) => void;
 
   private _enabled: boolean;
@@ -183,6 +206,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   dispose(): void {
     this.messageIds.clear();
     this.latestMessageIds.clear();
+    this.startedMessageIds.clear();
     this.agentRunIds.clear();
     this.parentToAuthoritativeId.clear();
     this.toolCallInfo.clear();
@@ -190,6 +214,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     this.agentTurnTracker.clear();
     this.pendingToolCalls.clear();
     this.accumulatedToolArgs.clear();
+    this.streamingToolCallIds.clear();
+    this.streamedReasoningRuns.clear();
+    this.openReasoningStates.clear();
+    this.warnedMissingStreamingContentBlocks.clear();
   }
 
   // ==================== Convenience Methods for Chunk Events ====================
@@ -290,7 +318,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       this.parentToAuthoritativeId.set(parentRunId, agentRunId);
     }
 
-    this.startAssistantMessage(
+    this.prepareAssistantMessage(
       runId,
       agentRunId,
       this.getString(metadata, "agui_messageId")
@@ -315,12 +343,15 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     }
 
     try {
+      const agentRunId = this.resolveAgentRunId(runId, parentRunId);
+      this.emitStreamingReasoning(fields, messageId, runId);
+      if (token && token.length > 0) {
+        this.closeStreamingReasoning(runId);
+        this.ensureAssistantMessageStarted(messageId, agentRunId);
+      }
       this.emitStreamingToken(token, messageId);
       if (this.emitToolCalls) {
-        this.trackStreamingToolCallArgs(
-          fields,
-          this.resolveAgentRunId(runId, parentRunId)
-        );
+        this.trackStreamingToolCallArgs(fields, agentRunId);
       }
     } catch {
       // Fail-safe
@@ -334,30 +365,49 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     _tags?: string[],
     _extraParams?: Record<string, unknown>
   ): void {
+    const agentRunId = this.resolveAgentRunId(runId, parentRunId);
+
     // Collect tool calls from output for subsequent tool callbacks
     // We collect even when disabled, so that tool callbacks have the data they need
     // (tool callbacks will check their own emit flags before emitting)
-    this.collectToolCallsFromOutput(
-      output,
-      this.resolveAgentRunId(runId, parentRunId)
-    );
+    this.collectToolCallsFromOutput(output, agentRunId);
 
     // Skip event emission if disabled - check after tool call collection
     if (!this.enabled) {
+      const messageId = this.messageIds.get(runId);
+      this.cleanupOpenLifecycles(runId, messageId);
+      if (messageId) {
+        this.startedMessageIds.delete(messageId);
+      }
+      this.streamedReasoningRuns.delete(runId);
+      this.warnedMissingStreamingContentBlocks.delete(runId);
       this.messageIds.delete(runId);
+      this.clearStreamingToolCallIds(agentRunId);
       return;
     }
 
     const messageId = this.messageIds.get(runId);
 
-    // Extract the final AIMessage for thinking detection
-    this.emitThinkingFromOutput(output, messageId ?? runId);
+    if (!this.streamedReasoningRuns.has(runId)) {
+      // Extract the final AIMessage for thinking detection when reasoning was not streamed.
+      this.emitThinkingFromOutput(output, messageId ?? runId);
+    }
+
+    this.closeStreamingReasoning(runId);
+
+    this.emitAssistantMessageFromOutput(output, messageId, agentRunId);
 
     // Emit TEXT_MESSAGE_END
     this.emitTextMessageEnd(messageId);
 
     // Cleanup
+    if (messageId) {
+      this.startedMessageIds.delete(messageId);
+    }
     this.messageIds.delete(runId);
+    this.clearStreamingToolCallIds(agentRunId);
+    this.streamedReasoningRuns.delete(runId);
+    this.warnedMissingStreamingContentBlocks.delete(runId);
   }
 
   /**
@@ -482,14 +532,33 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     runId: string,
     parentRunId?: string
   ): void {
+    const messageId = this.messageIds.get(runId);
+    const agentRunId = this.resolveAgentRunId(runId, parentRunId);
+
     if (!this.enabled) {
+      this.cleanupOpenLifecycles(runId, messageId);
+      if (messageId) {
+        this.startedMessageIds.delete(messageId);
+      }
+      this.messageIds.delete(runId);
+      this.pendingToolCalls.delete(agentRunId);
+      this.agentRunIds.delete(runId);
+      this.streamedReasoningRuns.delete(runId);
+      this.warnedMissingStreamingContentBlocks.delete(runId);
+      this.clearStreamingToolCallIds(agentRunId);
       return;
     }
 
+    if (messageId) {
+      this.startedMessageIds.delete(messageId);
+    }
     this.messageIds.delete(runId);
-    const agentRunId = this.resolveAgentRunId(runId, parentRunId);
     this.pendingToolCalls.delete(agentRunId);
     this.agentRunIds.delete(runId);
+    this.closeStreamingReasoning(runId);
+    this.streamedReasoningRuns.delete(runId);
+    this.warnedMissingStreamingContentBlocks.delete(runId);
+    this.clearStreamingToolCallIds(agentRunId);
   }
 
   // ==================== Tool Callbacks ====================
@@ -507,18 +576,22 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       return;
     }
 
-    const toolCall = this.resolveToolCallIdentity(
+    const toolInput = this.resolveToolInput(
       tool,
       input,
       runId,
       metadata,
       runName
     );
+    const toolCall = {
+      id: toolInput.toolCallId ?? runId,
+      name: toolInput.toolCallName ?? this.getToolCallName(tool, runName),
+    };
     this.toolCallInfo.set(runId, toolCall);
 
     const agentRunId = this.resolveParentAgentRunId(parentRunId);
     const messageId = this.latestMessageIds.get(agentRunId);
-    this.emitToolStartSequence(toolCall, messageId);
+    this.emitToolStartSequence(toolCall, messageId, toolInput.argsDelta);
   }
 
   override handleToolEnd(
@@ -745,15 +818,26 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     );
   }
 
-  private startAssistantMessage(
+  private prepareAssistantMessage(
     runId: string,
-    agentRunId: string,
+    _agentRunId: string,
     middlewareMessageId?: string
   ): void {
     const messageId =
-      middlewareMessageId ?? this.createAssistantMessageId(agentRunId);
+      middlewareMessageId ?? this.createAssistantMessageId(_agentRunId);
 
     this.messageIds.set(runId, messageId);
+  }
+
+  private ensureAssistantMessageStarted(
+    messageId: string,
+    agentRunId: string
+  ): void {
+    if (this.startedMessageIds.has(messageId)) {
+      return;
+    }
+
+    this.startedMessageIds.add(messageId);
     this.latestMessageIds.set(agentRunId, messageId);
     this.emitCallback({
       type: EventType.TEXT_MESSAGE_START,
@@ -782,6 +866,28 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     } as BaseEvent);
   }
 
+  private emitAssistantMessageFromOutput(
+    output: unknown,
+    messageId: string | undefined,
+    agentRunId: string
+  ): void {
+    if (!(messageId && this.emitTextMessages)) {
+      return;
+    }
+
+    if (this.startedMessageIds.has(messageId)) {
+      return;
+    }
+
+    const content = this.getOutputTextContent(output);
+    if (!(typeof content === "string" && content.length > 0)) {
+      return;
+    }
+
+    this.ensureAssistantMessageStarted(messageId, agentRunId);
+    this.emitStreamingToken(content, messageId);
+  }
+
   private trackStreamingToolCallArgs(
     fields: unknown,
     agentRunId: string
@@ -795,18 +901,25 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     let hasPendingUpdates = false;
 
     for (const chunk of toolCallChunks) {
-      if (!(chunk.id && chunk.args)) {
+      const toolCallId = this.resolveStreamingToolCallId(agentRunId, chunk);
+      if (!toolCallId) {
         continue;
       }
 
-      const previousArgs = this.accumulatedToolArgs.get(chunk.id) || "";
-      const nextArgs = previousArgs + chunk.args;
-      if (nextArgs !== previousArgs) {
-        this.accumulatedToolArgs.set(chunk.id, nextArgs);
+      if (chunk.name) {
+        this.toolCallNames.set(toolCallId, chunk.name);
       }
 
-      if (!pending.includes(chunk.id)) {
-        pending.push(chunk.id);
+      if (typeof chunk.args === "string") {
+        const previousArgs = this.accumulatedToolArgs.get(toolCallId) || "";
+        const nextArgs = previousArgs + chunk.args;
+        if (nextArgs !== previousArgs) {
+          this.accumulatedToolArgs.set(toolCallId, nextArgs);
+        }
+      }
+
+      if (!pending.includes(toolCallId)) {
+        pending.push(toolCallId);
         hasPendingUpdates = true;
       }
     }
@@ -816,10 +929,201 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     }
   }
 
+  private emitStreamingReasoning(
+    fields: unknown,
+    assistantMessageId: string,
+    runId: string
+  ): void {
+    if (!(this.emitThinking && this.emitTextMessages)) {
+      return;
+    }
+
+    const reasoningChunks = this.getStreamingReasoningChunks(fields, runId);
+    if (reasoningChunks.length === 0) {
+      return;
+    }
+
+    this.streamedReasoningRuns.add(runId);
+
+    for (const chunk of reasoningChunks) {
+      const state = this.ensureStreamingReasoningState(
+        runId,
+        assistantMessageId,
+        chunk.index
+      );
+      if (!(typeof chunk.reasoning === "string" && chunk.reasoning.length > 0)) {
+        continue;
+      }
+      if (this.reasoningEventMode === "reasoning") {
+        this.emitCallback({
+          type: EventType.REASONING_MESSAGE_CONTENT,
+          messageId: state.messageId,
+          delta: chunk.reasoning,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      } else {
+        this.emitCallback({
+          type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
+          delta: chunk.reasoning,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      }
+    }
+  }
+
+  private getStreamingReasoningChunks(
+    fields: unknown,
+    runId: string
+  ): StreamingReasoningChunk[] {
+    const chunk = this.asRecord(this.asRecord(fields)?.chunk);
+    const message = chunk?.message;
+    const messageRecord = this.asRecord(message);
+    const contentBlocks = this.getStreamingContentBlocks(message);
+
+    if (
+      contentBlocks.length === 0 &&
+      this.hasRawStreamingReasoning(messageRecord)
+    ) {
+      this.warnMissingStreamingContentBlocks(runId);
+    }
+
+    return contentBlocks
+      .map((entry) => this.asRecord(entry))
+      .flatMap((entry) => {
+        const reasoning = this.getString(entry, "reasoning");
+        if (entry?.type !== "reasoning") {
+          return [];
+        }
+
+        return [
+          {
+            index: typeof entry.index === "number" ? entry.index : 0,
+            reasoning,
+          },
+        ];
+      });
+  }
+
+  private getStreamingContentBlocks(message: unknown): unknown[] {
+    const messageRecord = this.asRecord(message);
+    if (Array.isArray(messageRecord?.contentBlocks)) {
+      return messageRecord.contentBlocks;
+    }
+
+    return [];
+  }
+
+  private hasRawStreamingReasoning(
+    messageRecord: RecordLike | undefined
+  ): boolean {
+    if (!Array.isArray(messageRecord?.content)) {
+      return false;
+    }
+
+    return messageRecord.content.some((entry) => {
+      const block = this.asRecord(entry);
+      return block?.type === "reasoning" && typeof block.reasoning === "string";
+    });
+  }
+
+  private warnMissingStreamingContentBlocks(runId?: string): void {
+    if (!runId || this.warnedMissingStreamingContentBlocks.has(runId)) {
+      return;
+    }
+
+    this.warnedMissingStreamingContentBlocks.add(runId);
+    console.warn(
+      "[AG-UI] Stream chunk exposed reasoning outside LangChain contentBlocks; reasoning events were skipped for this chunk."
+    );
+  }
+
+  private ensureStreamingReasoningState(
+    runId: string,
+    assistantMessageId: string,
+    index: number
+  ): StreamingReasoningState {
+    const key = `${runId}:${index}`;
+    const existing = this.openReasoningStates.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const state = {
+      phaseId: generateDeterministicId(
+        `${assistantMessageId}-reasoning-phase`,
+        index
+      ),
+      messageId: generateDeterministicId(
+        `${assistantMessageId}-reasoning-message`,
+        index
+      ),
+    };
+    this.openReasoningStates.set(key, state);
+
+    if (this.reasoningEventMode === "reasoning") {
+      this.emitCallback({
+        type: EventType.REASONING_START,
+        messageId: state.phaseId,
+        timestamp: Date.now(),
+      } as BaseEvent);
+      this.emitCallback({
+        type: EventType.REASONING_MESSAGE_START,
+        messageId: state.messageId,
+        role: "reasoning",
+        timestamp: Date.now(),
+      } as BaseEvent);
+    } else {
+      this.emitCallback({
+        type: EventType.THINKING_START,
+        timestamp: Date.now(),
+      } as BaseEvent);
+      this.emitCallback({
+        type: EventType.THINKING_TEXT_MESSAGE_START,
+        timestamp: Date.now(),
+      } as BaseEvent);
+    }
+
+    return state;
+  }
+
+  private closeStreamingReasoning(runId: string): void {
+    const prefix = `${runId}:`;
+    for (const [key, state] of this.openReasoningStates) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+
+      if (this.reasoningEventMode === "reasoning") {
+        this.emitCallback({
+          type: EventType.REASONING_MESSAGE_END,
+          messageId: state.messageId,
+          timestamp: Date.now(),
+        } as BaseEvent);
+        this.emitCallback({
+          type: EventType.REASONING_END,
+          messageId: state.phaseId,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      } else {
+        this.emitCallback({
+          type: EventType.THINKING_TEXT_MESSAGE_END,
+          timestamp: Date.now(),
+        } as BaseEvent);
+        this.emitCallback({
+          type: EventType.THINKING_END,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      }
+      this.openReasoningStates.delete(key);
+    }
+  }
+
   private getToolCallChunks(fields: unknown): ToolCallChunk[] {
     const chunk = this.asRecord(this.asRecord(fields)?.chunk);
     const message = this.asRecord(chunk?.message);
-    const toolCallChunks = message?.tool_call_chunks;
+    const messageKwargs = this.asRecord(message?.kwargs);
+    const toolCallChunks =
+      message?.tool_call_chunks ?? messageKwargs?.tool_call_chunks;
 
     if (!Array.isArray(toolCallChunks)) {
       return [];
@@ -829,9 +1133,51 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       const record = this.asRecord(entry);
       return {
         id: this.getString(record, "id"),
+        name: this.getString(record, "name"),
         args: this.getString(record, "args"),
+        index: typeof record?.index === "number" ? record.index : undefined,
       };
     });
+  }
+
+  private resolveStreamingToolCallId(
+    agentRunId: string,
+    chunk: ToolCallChunk
+  ): string | undefined {
+    if (chunk.id) {
+      const key = this.getStreamingToolCallKey(agentRunId, chunk.index);
+      if (key) {
+        this.streamingToolCallIds.set(key, chunk.id);
+      }
+      return chunk.id;
+    }
+
+    const key = this.getStreamingToolCallKey(agentRunId, chunk.index);
+    if (!key) {
+      return undefined;
+    }
+
+    return this.streamingToolCallIds.get(key);
+  }
+
+  private getStreamingToolCallKey(
+    agentRunId: string,
+    index?: number
+  ): string | undefined {
+    if (typeof index !== "number") {
+      return undefined;
+    }
+
+    return `${agentRunId}:${index}`;
+  }
+
+  private clearStreamingToolCallIds(agentRunId: string): void {
+    const prefix = `${agentRunId}:`;
+    for (const key of this.streamingToolCallIds.keys()) {
+      if (key.startsWith(prefix)) {
+        this.streamingToolCallIds.delete(key);
+      }
+    }
   }
 
   private collectToolCallsFromOutput(
@@ -873,18 +1219,38 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const kwargs = this.asRecord(outputRecord?.kwargs);
     const toolCalls = outputRecord?.tool_calls ?? kwargs?.tool_calls;
 
-    if (!Array.isArray(toolCalls)) {
+    if (Array.isArray(toolCalls)) {
+      return toolCalls.map((entry) => {
+        const record = this.asRecord(entry);
+        const fn = this.asRecord(record?.function);
+        return {
+          id: this.getString(record, "id"),
+          function: {
+            name: this.getString(fn, "name"),
+            arguments: this.getString(fn, "arguments"),
+          },
+        };
+      });
+    }
+
+    const message = this.getOutputMessage(output);
+    const messageRecord = this.asRecord(message);
+    const messageToolCalls = messageRecord?.tool_calls;
+    if (!Array.isArray(messageToolCalls)) {
       return [];
     }
 
-    return toolCalls.map((entry) => {
+    return messageToolCalls.map((entry) => {
       const record = this.asRecord(entry);
       const fn = this.asRecord(record?.function);
       return {
         id: this.getString(record, "id"),
         function: {
-          name: this.getString(fn, "name"),
-          arguments: this.getString(fn, "arguments"),
+          name:
+            this.getString(fn, "name") ?? this.getString(record, "name"),
+          arguments:
+            this.getString(fn, "arguments") ??
+            this.stringifyIfDefined(record?.args),
         },
       };
     });
@@ -919,7 +1285,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   }
 
   private emitTextMessageEnd(messageId?: string): void {
-    if (!(messageId && this.emitTextMessages)) {
+    if (!(messageId && this.startedMessageIds.has(messageId))) {
       return;
     }
 
@@ -930,21 +1296,31 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     } as BaseEvent);
   }
 
-  private resolveToolCallIdentity(
+  private cleanupOpenLifecycles(
+    runId: string,
+    messageId: string | undefined
+  ): void {
+    this.closeStreamingReasoning(runId);
+    this.emitTextMessageEnd(messageId);
+  }
+
+  private resolveToolInput(
     tool: unknown,
     input: string,
     runId: string,
     metadata?: RecordLike,
     runName?: string
-  ): ToolCallIdentity {
+  ): ToolInputResolution {
     let toolCallId = runId;
     let toolCallName = this.getToolCallName(tool, runName);
+    let argsDelta = input || undefined;
 
     const metadataToolCallId = this.getString(metadata, "tool_call_id");
     if (metadataToolCallId) {
       return {
-        id: metadataToolCallId,
-        name: this.resolveStoredToolName(metadataToolCallId, toolCallName),
+        toolCallId: metadataToolCallId,
+        toolCallName: this.resolveStoredToolName(metadataToolCallId, toolCallName),
+        argsDelta,
       };
     }
 
@@ -955,6 +1331,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         this.getString(parsedInput, "id") ||
         toolCallId;
       toolCallName = this.getString(parsedInput, "name") || toolCallName;
+      argsDelta = this.resolveToolArgsDelta(parsedInput, input);
     }
 
     const matchedToolCallId =
@@ -966,8 +1343,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     }
 
     return {
-      id: toolCallId,
-      name: this.resolveStoredToolName(toolCallId, toolCallName),
+      toolCallId,
+      toolCallName: this.resolveStoredToolName(toolCallId, toolCallName),
+      argsDelta,
     };
   }
 
@@ -1036,7 +1414,8 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
 
   private emitToolStartSequence(
     toolCall: ToolCallIdentity,
-    parentMessageId?: string
+    parentMessageId?: string,
+    inputArgsDelta?: string
   ): void {
     try {
       this.emitCallback({
@@ -1047,20 +1426,116 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         timestamp: Date.now(),
       } as BaseEvent);
 
-      const accumulatedArgs = this.accumulatedToolArgs.get(toolCall.id);
-      if (!accumulatedArgs) {
+      const argsDelta =
+        inputArgsDelta ?? this.accumulatedToolArgs.get(toolCall.id);
+      if (!argsDelta) {
         return;
       }
 
       this.emitCallback({
         type: EventType.TOOL_CALL_ARGS,
         toolCallId: toolCall.id,
-        delta: accumulatedArgs,
+        delta: argsDelta,
         timestamp: Date.now(),
       } as BaseEvent);
       this.accumulatedToolArgs.delete(toolCall.id);
     } catch {
       // Fail-safe
+    }
+  }
+
+  private getOutputMessage(output: unknown): unknown {
+    const outputRecord = this.asRecord(output);
+    const generations = outputRecord?.generations;
+    if (!Array.isArray(generations) || generations.length === 0) {
+      return undefined;
+    }
+
+    const firstGroup = generations[0];
+    if (!Array.isArray(firstGroup) || firstGroup.length === 0) {
+      return undefined;
+    }
+
+    return this.asRecord(firstGroup[0])?.message;
+  }
+
+  private getOutputTextContent(output: unknown): string | undefined {
+    const outputRecord = this.asRecord(output);
+    const message = this.getOutputMessage(output);
+    const messageRecord = this.asRecord(message);
+    const content = messageRecord?.content;
+    if (typeof content === "string" && content.length > 0) {
+      return content;
+    }
+
+    const text = this.getString(this.asRecord(messageRecord?.kwargs), "text");
+    if (text && text.length > 0) {
+      return text;
+    }
+
+    const contentBlocks = messageRecord?.contentBlocks;
+    if (Array.isArray(contentBlocks)) {
+      const blockText = contentBlocks
+        .map((block) => this.asRecord(block))
+        .filter((block) => block?.type === "text")
+        .map((block) => this.getString(block, "text"))
+        .filter((value): value is string => Boolean(value && value.length > 0))
+        .join("");
+
+      if (blockText.length > 0) {
+        return blockText;
+      }
+    }
+
+    const generations = Array.isArray(outputRecord?.generations)
+      ? outputRecord.generations
+      : undefined;
+    const firstGroup = Array.isArray(generations?.[0]) ? generations[0] : undefined;
+    const generation = this.asRecord(firstGroup?.[0]);
+    const generationText = generation?.text;
+    return typeof generationText === "string" && generationText.length > 0
+      ? generationText
+      : undefined;
+  }
+
+  private resolveToolArgsDelta(
+    parsedInput: RecordLike,
+    rawInput: string
+  ): string | undefined {
+    if (typeof parsedInput.args === "string") {
+      return parsedInput.args;
+    }
+
+    const stringifiedArgs = this.stringifyIfDefined(parsedInput.args);
+    if (stringifiedArgs) {
+      return stringifiedArgs;
+    }
+
+    if (typeof parsedInput.arguments === "string") {
+      return parsedInput.arguments;
+    }
+
+    const stringifiedArguments = this.stringifyIfDefined(parsedInput.arguments);
+    if (stringifiedArguments) {
+      return stringifiedArguments;
+    }
+
+    return rawInput || undefined;
+  }
+
+  private stringifyIfDefined(value: unknown): string | undefined {
+    if (typeof value === "undefined") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      return value;
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return undefined;
     }
   }
 }

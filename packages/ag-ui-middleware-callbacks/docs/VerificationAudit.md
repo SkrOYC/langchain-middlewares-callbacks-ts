@@ -34,6 +34,6 @@ middleware })` backend contract in source and README.
 - `Q-1` through `Q-3` are verified by the current test suite.
 - The only code gap found during this audit was missing explicit backend coverage
   for unsupported non-JSON request bodies; that test is now present.
-- The remaining reconciliation work is documentary: keep planning/spec docs
-  aligned with the implemented `agentFactory({ input, middleware })` backend
-  shape.
+- Planning/spec docs are aligned with the implemented
+  `agentFactory({ input, middleware })` backend shape, and the example surface
+  has been rebaselined onto the backend-adapter contract.

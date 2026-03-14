@@ -11,6 +11,8 @@ Current implementation status:
 
 - published runtime surface: backend adapter, run-scoped publisher, and
   low-level producers
+- validated example set: CLI verifier plus GUI-backed default backend example
+  and advanced custom-host example under `example/`
 - `createAGUIAgent`: still present in source for transition work, but no longer
   treated as public package API
 

@@ -1,6 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { join } from "node:path";
 import { AGUICallbackHandler } from "../../../src/callbacks/agui-callback-handler";
 import { createMockCallback } from "../../fixtures/mock-transport";
+
+interface CapturedFixtureChunk {
+  token: string;
+  message: Record<string, unknown>;
+}
+
+interface CapturedChatModelFixture {
+  outputVersion: "v0" | "v1";
+  useResponsesApi: boolean;
+  chunks: CapturedFixtureChunk[];
+  finalMessage: Record<string, unknown>;
+}
 
 describe("AGUICallbackHandler", () => {
   test("is instantiated correctly", () => {
@@ -12,7 +25,7 @@ describe("AGUICallbackHandler", () => {
   });
 
   describe("LLM Callbacks", () => {
-    test("handleLLMStart generates messageId internally and emits TEXT_MESSAGE_START", async () => {
+    test("handleLLMStart generates messageId internally without emitting TEXT_MESSAGE_START yet", async () => {
       const mockCallback = createMockCallback();
       const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const runId = "run-123";
@@ -31,32 +44,223 @@ describe("AGUICallbackHandler", () => {
       const messageId = (handler as any).messageIds.get(runId);
       expect(messageId).toBeDefined();
       expect(typeof messageId).toBe("string");
-
-      // Should emit TEXT_MESSAGE_START (Callback responsibility)
-      expect(mockCallback.emit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "TEXT_MESSAGE_START",
-          messageId: expect.any(String),
-          role: "assistant",
-        })
-      );
+      expect(mockCallback.emit).not.toHaveBeenCalled();
     });
 
-    test("handleLLMNewToken emits TEXT_MESSAGE_CONTENT", async () => {
+    test("handleLLMNewToken emits TEXT_MESSAGE_START before TEXT_MESSAGE_CONTENT", async () => {
       const mockCallback = createMockCallback();
       const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const runId = "run-123";
       const messageId = "msg-abc";
+      const agentRunId = "agent-run-123";
 
       (handler as any).messageIds.set(runId, messageId);
+      (handler as any).agentRunIds.set(runId, agentRunId);
       await handler.handleLLMNewToken("Hello", null, runId);
 
+      expect(mockCallback.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "TEXT_MESSAGE_START",
+          messageId,
+          role: "assistant",
+        })
+      );
       expect(mockCallback.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "TEXT_MESSAGE_CONTENT",
           messageId,
           delta: "Hello",
         })
+      );
+    });
+
+    test("streamed reasoning is emitted before streamed text", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({
+        publish: mockCallback.emit,
+        reasoningEventMode: "reasoning",
+      });
+      const runId = "run-123";
+      const messageId = "msg-abc";
+      const agentRunId = "agent-run-123";
+
+      (handler as any).messageIds.set(runId, messageId);
+      (handler as any).agentRunIds.set(runId, agentRunId);
+
+      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+        chunk: {
+          message: {
+            contentBlocks: [
+              {
+                type: "reasoning",
+                reasoning: "I should think first.",
+                index: 0,
+              },
+            ],
+          },
+        },
+      });
+
+      await handler.handleLLMNewToken("Hello", null, runId);
+      await handler.handleLLMEnd({}, runId);
+
+      const eventTypes = mockCallback.events.map((event: any) => event.type);
+      expect(eventTypes).toEqual([
+        "REASONING_START",
+        "REASONING_MESSAGE_START",
+        "REASONING_MESSAGE_CONTENT",
+        "REASONING_MESSAGE_END",
+        "REASONING_END",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+      ]);
+    });
+
+    test("streamed reasoning uses THINKING events by default", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({
+        publish: mockCallback.emit,
+      });
+      const runId = "run-thinking";
+      const messageId = "msg-thinking";
+      const agentRunId = "agent-run-thinking";
+
+      (handler as any).messageIds.set(runId, messageId);
+      (handler as any).agentRunIds.set(runId, agentRunId);
+
+      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+        chunk: {
+          message: {
+            contentBlocks: [
+              {
+                type: "reasoning",
+                reasoning: "Think before speaking.",
+                index: 0,
+              },
+            ],
+          },
+        },
+      });
+
+      await handler.handleLLMNewToken("Hello", null, runId);
+      await handler.handleLLMEnd({}, runId);
+
+      const eventTypes = mockCallback.events.map((event: any) => event.type);
+      expect(eventTypes).toEqual([
+        "THINKING_START",
+        "THINKING_TEXT_MESSAGE_START",
+        "THINKING_TEXT_MESSAGE_CONTENT",
+        "THINKING_TEXT_MESSAGE_END",
+        "THINKING_END",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+      ]);
+      expect(eventTypes).not.toContain("REASONING_START");
+      expect(eventTypes).not.toContain("REASONING_MESSAGE_START");
+    });
+
+    test("raw streaming reasoning without contentBlocks is flagged and skipped", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({
+        publish: mockCallback.emit,
+        reasoningEventMode: "reasoning",
+      });
+      const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+      const runId = "run-123";
+      const messageId = "msg-abc";
+      const agentRunId = "agent-run-123";
+
+      (handler as any).messageIds.set(runId, messageId);
+      (handler as any).agentRunIds.set(runId, agentRunId);
+
+      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+        chunk: {
+          message: {
+            content: [
+              {
+                type: "reasoning",
+                reasoning: "Provider-specific raw reasoning.",
+                index: 0,
+              },
+            ],
+          },
+        },
+      });
+
+      expect(mockCallback.events).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[AG-UI] Stream chunk exposed reasoning outside LangChain contentBlocks; reasoning events were skipped for this chunk."
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    test("captured responses-v1 fixture opens reasoning before text", async () => {
+      const fixturePath = join(
+        import.meta.dir,
+        "..",
+        "..",
+        "fixtures",
+        "langchain",
+        "responses-v1-chatmodel.json"
+      );
+      const fixture = (await Bun.file(fixturePath).json()) as CapturedChatModelFixture;
+
+      expect(fixture.useResponsesApi).toBe(true);
+      expect(fixture.outputVersion).toBe("v1");
+
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({
+        publish: mockCallback.emit,
+        reasoningEventMode: "reasoning",
+      });
+      const runId = "run-responses-v1";
+      const messageId = "msg-responses-v1";
+      const agentRunId = "agent-run-responses-v1";
+
+      (handler as any).messageIds.set(runId, messageId);
+      (handler as any).agentRunIds.set(runId, agentRunId);
+
+      for (const chunk of fixture.chunks) {
+        await handler.handleLLMNewToken(
+          chunk.token,
+          null,
+          runId,
+          undefined,
+          undefined,
+          {
+            chunk: {
+              message: chunk.message,
+            },
+          }
+        );
+      }
+
+      await handler.handleLLMEnd(
+        {
+          generations: [
+            [
+              {
+                message: fixture.finalMessage,
+                text: "",
+              },
+            ],
+          ],
+        },
+        runId
+      );
+
+      const eventTypes = mockCallback.events.map((event) => event.type);
+      expect(eventTypes).toContain("REASONING_START");
+      expect(eventTypes).toContain("REASONING_MESSAGE_START");
+      expect(eventTypes).toContain("TEXT_MESSAGE_START");
+      expect(eventTypes.indexOf("REASONING_START")).toBeLessThan(
+        eventTypes.indexOf("TEXT_MESSAGE_START")
+      );
+      expect(eventTypes.indexOf("REASONING_MESSAGE_START")).toBeLessThan(
+        eventTypes.indexOf("TEXT_MESSAGE_START")
       );
     });
 
@@ -106,21 +310,15 @@ describe("AGUICallbackHandler", () => {
   });
 
   describe("Tool Callbacks", () => {
-    test("handleToolStart emits TOOL_CALL_START with parentMessageId even after LLM end (Red Phase)", async () => {
+    test("handleToolStart emits TOOL_CALL_START without parentMessageId for tool-only turns", async () => {
       const mockCallback = createMockCallback();
       const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
       const parentRunId = "run-parent";
       const toolRunId = "run-tool";
 
       await handler.handleLLMStart(null, [], toolRunId, parentRunId);
-      const parentMessageId = (handler as any).latestMessageIds.get(
-        parentRunId
-      );
-
-      // End LLM run
       await handler.handleLLMEnd({}, toolRunId);
 
-      // Start tool call - should use parent message
       await handler.handleToolStart(
         { name: "weather_tool" },
         JSON.stringify({ id: "tc-1", name: "weather_tool", args: {} }),
@@ -133,7 +331,112 @@ describe("AGUICallbackHandler", () => {
           type: "TOOL_CALL_START",
           toolCallId: "tc-1",
           toolCallName: "weather_tool",
-          parentMessageId,
+          parentMessageId: undefined,
+        })
+      );
+    });
+
+    test("handleToolStart emits TOOL_CALL_ARGS from structured tool input", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
+
+      await handler.handleToolStart(
+        { name: "calculator" },
+        JSON.stringify({
+          id: "tc-1",
+          name: "calculator",
+          args: { a: 2, b: 2, operation: "add" },
+        }),
+        "tool-run-1",
+        "parent-run-1"
+      );
+
+      expect(mockCallback.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "tc-1",
+          delta: JSON.stringify({ a: 2, b: 2, operation: "add" }),
+        })
+      );
+    });
+
+    test("OpenAI-compatible tool call chunks in message.kwargs accumulate args across args-only deltas", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
+      const llmRunId = "run-llm";
+      const agentRunId = "agent-run";
+      const toolRunId = "run-tool";
+
+      await handler.handleLLMStart(
+        null,
+        [],
+        llmRunId,
+        undefined,
+        undefined,
+        undefined,
+        {
+          run_id: agentRunId,
+        }
+      );
+
+      const toolCallChunks = [
+        {
+          name: "calculator",
+          args: "",
+          id: "call_calculator_1",
+          index: 0,
+          type: "tool_call_chunk",
+        },
+        { args: '{"a":', index: 0, type: "tool_call_chunk" },
+        { args: '2,"b"', index: 0, type: "tool_call_chunk" },
+        { args: ':2,"o', index: 0, type: "tool_call_chunk" },
+        { args: "perat", index: 0, type: "tool_call_chunk" },
+        { args: 'ion":', index: 0, type: "tool_call_chunk" },
+        { args: '"add"', index: 0, type: "tool_call_chunk" },
+        { args: "}", index: 0, type: "tool_call_chunk" },
+      ];
+
+      for (const chunk of toolCallChunks) {
+        await handler.handleLLMNewToken(
+          "",
+          null,
+          llmRunId,
+          undefined,
+          undefined,
+          {
+            chunk: {
+              message: {
+                kwargs: {
+                  tool_call_chunks: [chunk],
+                },
+              },
+            },
+          }
+        );
+      }
+
+      await handler.handleLLMEnd({}, llmRunId);
+
+      await handler.handleToolStart(
+        { name: "calculator" },
+        '{"a":2,"b":2,"operation":"add"}',
+        toolRunId,
+        agentRunId
+      );
+
+      expect(mockCallback.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "TOOL_CALL_START",
+          toolCallId: "call_calculator_1",
+          toolCallName: "calculator",
+        })
+      );
+
+      expect(mockCallback.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "call_calculator_1",
+          delta: '{"a":2,"b":2,"operation":"add"}',
         })
       );
     });
@@ -573,9 +876,6 @@ describe("AGUICallbackHandler", () => {
         const reasoningEnd = emitCalls.find(
           (event: any) => event.type === "REASONING_END"
         );
-        const textEndIndex = eventTypes.indexOf("TEXT_MESSAGE_END");
-        const reasoningStartIndex = eventTypes.indexOf("REASONING_START");
-
         expect(typeof reasoningStart?.messageId).toBe("string");
         expect(typeof reasoningMessageStart?.messageId).toBe("string");
         expect(reasoningMessageStart?.role).toBe("reasoning");
@@ -586,9 +886,7 @@ describe("AGUICallbackHandler", () => {
           "I should inspect the constraints first. Then I can answer with a concise plan."
         );
         expect(reasoningEnd?.messageId).toBe(reasoningStart?.messageId);
-
-        // Reasoning sequence should complete before assistant message closes.
-        expect(textEndIndex).toBeGreaterThan(reasoningStartIndex);
+        expect(eventTypes).not.toContain("TEXT_MESSAGE_END");
       });
 
       test("enabled can be toggled at runtime", async () => {
@@ -598,6 +896,7 @@ describe("AGUICallbackHandler", () => {
 
         // First call with enabled=true
         await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
         expect(mockCallback.emit).toHaveBeenCalled();
 
         // Reset mock
@@ -615,7 +914,44 @@ describe("AGUICallbackHandler", () => {
         handler.enabled = true;
         const runId3 = "run-789";
         await handler.handleLLMStart(null, ["prompt"], runId3);
+        await handler.handleLLMNewToken("Hello again", null, runId3);
         expect(mockCallback.emit).toHaveBeenCalled();
+      });
+
+      test("disabling mid-stream still closes an open text lifecycle on LLM end", async () => {
+        const mockCallback = createMockCallback();
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
+        const runId = "run-midstream-end";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+
+        mockCallback.emit.mockClear();
+
+        handler.enabled = false;
+        await handler.handleLLMEnd({}, runId);
+
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
+      });
+
+      test("disabling mid-stream still closes an open text lifecycle on LLM error", async () => {
+        const mockCallback = createMockCallback();
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
+        const runId = "run-midstream-error";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+
+        mockCallback.emit.mockClear();
+
+        handler.enabled = false;
+        await handler.handleLLMError(new Error("boom"), runId);
+
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
       });
 
       test("tool calls are collected even when enabled=false but emitToolCalls=true", async () => {
@@ -749,6 +1085,7 @@ describe("AGUICallbackHandler", () => {
 
         // First call with emitTextMessages=true
         await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
         expect(mockCallback.emit).toHaveBeenCalled();
 
         mockCallback.emit.mockClear();

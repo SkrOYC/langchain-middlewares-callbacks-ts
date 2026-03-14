@@ -4,17 +4,22 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"strict": true,
-		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
-		"jsx": "react-jsx",
-		"jsxImportSource": "react",
-		"outDir": "./dist",
-		"declaration": true,
+		"noEmit": true,
 		"resolveJsonModule": true,
 		"allowSyntheticDefaultImports": true,
-		"types": ["bun-types"]
+		"types": ["bun-types"],
+		"lib": ["ES2022", "DOM"],
+		"baseUrl": ".",
+		"paths": {
+			"@skroyc/ag-ui-middleware-callbacks": ["../src/index.ts"],
+			"@skroyc/ag-ui-middleware-callbacks/backend": ["../src/backend.ts"],
+			"@skroyc/ag-ui-middleware-callbacks/callbacks": ["../src/callbacks.ts"],
+			"@skroyc/ag-ui-middleware-callbacks/middleware": ["../src/middleware.ts"],
+			"@skroyc/ag-ui-middleware-callbacks/publication": ["../src/publication.ts"]
+		}
 	},
-	"include": ["server.ts", "../src/**/*.ts"],
+	"include": ["*.ts"],
 	"exclude": ["node_modules", "dist"]
 }

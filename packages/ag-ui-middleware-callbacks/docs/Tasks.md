@@ -9,9 +9,9 @@
 - **Total Estimation:** 58 story points
 - **Critical Path:** `[P-1] -> [P-2] -> [A-1] -> [A-2] -> [A-3] -> [A-4] -> [S-1] -> [S-2] -> [S-3] -> [Q-3] -> [K-1] -> [D-1] -> [D-2]`
 
-This plan is grounded in the verified mismatch between the current codebase and the target `TechSpec.md`. The codebase already has meaningful control-layer and observation-layer logic, but it does not yet have:
-
-- a validated replacement for the stale example set
+This plan is grounded in the verified mismatch between the original codebase
+and the target `TechSpec.md`. The package implementation is now aligned with
+the MVP target, including a validated replacement for the example surface.
 
 Current status snapshot:
 
@@ -21,7 +21,7 @@ Current status snapshot:
 - completed: verification coverage (`Q-1` through `Q-3`)
 - completed: package alignment (`K-1`)
 - completed: README rewrite (`D-1`)
-- remaining: example replacement work (`D-2`)
+- completed: example replacement work (`D-2`)
 - verification evidence: see [VerificationAudit.md](./VerificationAudit.md)
 
 Per Goldratt's Theory of Constraints, the bottleneck is the missing publication boundary. No serving or packaging work should be treated as stable until that boundary exists.
