@@ -514,6 +514,29 @@ export const createOpenResponsesCallbackBridge = (
     pendingFunctionCallsByAgentRun.set(agentRunId, remaining);
   };
 
+  const cleanupRunState = (runId: string): void => {
+    activeMessageItems.delete(runId);
+
+    const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(runId);
+    if (pendingFunctionCalls) {
+      for (const pendingFunctionCall of pendingFunctionCalls) {
+        if (pendingFunctionCall.callId) {
+          pendingFunctionCallsByCallId.delete(pendingFunctionCall.callId);
+        }
+
+        if (pendingFunctionCall.toolRunId) {
+          activeFunctionCallsByToolRun.delete(pendingFunctionCall.toolRunId);
+        }
+      }
+
+      pendingFunctionCallsByAgentRun.delete(runId);
+    }
+
+    startedRuns.delete(runId);
+    completedRuns.delete(runId);
+    failedRuns.delete(runId);
+  };
+
   const emitRunFailed = (runId: string, error: unknown): void => {
     if (failedRuns.has(runId)) {
       return;
@@ -521,6 +544,7 @@ export const createOpenResponsesCallbackBridge = (
 
     failedRuns.add(runId);
     options.emitter.emit({ type: "run.failed", runId, error });
+    cleanupRunState(runId);
   };
 
   const emitRunCompleted = (runId: string): void => {
@@ -530,12 +554,12 @@ export const createOpenResponsesCallbackBridge = (
 
     completedRuns.add(runId);
     options.emitter.emit({ type: "run.completed", runId });
+    cleanupRunState(runId);
   };
 
   return {
     handleChatModelStart(_llm, _messages, runId, parentRunId): void {
       emitRunStarted(runId, parentRunId);
-      ensureMessageItem(runId);
     },
 
     handleLLMNewToken(token, _chunk, runId): void {

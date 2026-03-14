@@ -450,6 +450,122 @@ describe("OpenResponsesCallbackBridge", () => {
     ]);
   });
 
+  test("does not emit an empty assistant message for tool-only turns", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["fc-tool-only"]),
+    });
+
+    const action: AgentActionWithBridgeFields = {
+      tool: "lookup_user",
+      toolInput: { id: "user-999" },
+      log: "tool selected",
+      toolCallId: "call-tool-only",
+    };
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "tool-only-run"
+    );
+    await callHandler(bridge.handleAgentAction, action, "tool-only-run");
+    await callHandler(
+      bridge.handleToolStart,
+      serializedFixture,
+      '{"id":"user-999"}',
+      "tool-only-tool-run",
+      "tool-only-run",
+      undefined,
+      undefined,
+      "lookup_user",
+      "call-tool-only"
+    );
+    await callHandler(
+      bridge.handleToolEnd,
+      "ok",
+      "tool-only-tool-run",
+      "tool-only-run"
+    );
+    await callHandler(bridge.handleLLMEnd, llmResultFixture, "tool-only-run");
+    await callHandler(
+      bridge.handleAgentEnd,
+      agentFinishFixture,
+      "tool-only-run"
+    );
+
+    expect(events).toEqual([
+      { type: "run.started", runId: "tool-only-run" },
+      {
+        type: "function_call.started",
+        itemId: "fc-tool-only",
+        name: "lookup_user",
+        callId: "call-tool-only",
+        arguments: '{"id":"user-999"}',
+      },
+      {
+        type: "tool.started",
+        runId: "tool-only-tool-run",
+        toolName: "lookup_user",
+        input: '{"id":"user-999"}',
+      },
+      { type: "tool.completed", runId: "tool-only-tool-run", output: "ok" },
+      { type: "function_call.completed", itemId: "fc-tool-only" },
+      { type: "run.completed", runId: "tool-only-run" },
+    ]);
+  });
+
+  test("cleans per-run state so a reused handler can process a reused run id", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["msg-1", "msg-2"]),
+    });
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-reused"
+    );
+    await callHandler(
+      bridge.handleLLMNewToken,
+      "first",
+      tokenIndicesFixture,
+      "run-reused"
+    );
+    await callHandler(bridge.handleLLMEnd, llmResultFixture, "run-reused");
+    await callHandler(bridge.handleAgentEnd, agentFinishFixture, "run-reused");
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-reused"
+    );
+    await callHandler(
+      bridge.handleLLMNewToken,
+      "second",
+      tokenIndicesFixture,
+      "run-reused"
+    );
+    await callHandler(bridge.handleLLMEnd, llmResultFixture, "run-reused");
+    await callHandler(bridge.handleAgentEnd, agentFinishFixture, "run-reused");
+
+    expect(events).toEqual([
+      { type: "run.started", runId: "run-reused" },
+      { type: "message.started", itemId: "msg-1", runId: "run-reused" },
+      { type: "text.delta", itemId: "msg-1", delta: "first" },
+      { type: "text.completed", itemId: "msg-1" },
+      { type: "run.completed", runId: "run-reused" },
+      { type: "run.started", runId: "run-reused" },
+      { type: "message.started", itemId: "msg-2", runId: "run-reused" },
+      { type: "text.delta", itemId: "msg-2", delta: "second" },
+      { type: "text.completed", itemId: "msg-2" },
+      { type: "run.completed", runId: "run-reused" },
+    ]);
+  });
   test("maps runtime failures into a single run.failed event", async () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
