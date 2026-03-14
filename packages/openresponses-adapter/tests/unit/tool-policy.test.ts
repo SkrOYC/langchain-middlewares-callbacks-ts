@@ -308,6 +308,67 @@ describe("tool policy middleware", () => {
     await second;
   });
 
+  test("separate middleware instances do not share a queue", async () => {
+    const firstMiddleware = createOpenResponsesToolPolicyMiddleware();
+    const secondMiddleware = createOpenResponsesToolPolicyMiddleware();
+    const firstWrap = firstMiddleware.wrapToolCall;
+    const secondWrap = secondMiddleware.wrapToolCall;
+    if (!firstWrap || !secondWrap) {
+      throw new Error("Expected wrapToolCall to be defined");
+    }
+
+    let releaseFirst!: () => void;
+    const firstDone = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const order: string[] = [];
+
+    const createRequest = () =>
+      ({
+        toolCall: { id: "call-1", name: "lookup_fact", args: {} },
+        tool: { name: "lookup_fact" },
+        state: { messages: [] },
+        runtime: {
+          config: {
+            configurable: {
+              [OPENRESPONSES_TOOL_POLICY_CONFIG_KEY]: {
+                tools: [],
+                allowedToolNames: ["lookup_fact"],
+                toolChoice: "auto",
+                parallelToolCalls: false,
+              } satisfies SerializedNormalizedToolPolicy,
+            },
+          },
+        },
+      }) as Parameters<typeof firstWrap>[0];
+
+    const first = firstWrap(
+      createRequest(),
+      (async () => {
+        order.push("first:start");
+        await firstDone;
+        order.push("first:end");
+        return {} as never;
+      }) as Parameters<typeof firstWrap>[1]
+    );
+
+    const second = secondWrap(
+      createRequest(),
+      (async () => {
+        order.push("second:start");
+        order.push("second:end");
+        return {} as never;
+      }) as Parameters<typeof secondWrap>[1]
+    );
+
+    await Promise.resolve();
+    expect(order).toEqual(["first:start", "second:start", "second:end"]);
+
+    releaseFirst();
+    await first;
+    await second;
+  });
+
   test("cleans queue state after afterAgent so a later run is not blocked", async () => {
     const middleware = createOpenResponsesToolPolicyMiddleware();
     const wrapToolCall = middleware.wrapToolCall;
@@ -375,6 +436,51 @@ describe("tool policy middleware", () => {
       "second:end",
     ]);
   });
+
+  test("recovers queue progress after a handler throws", async () => {
+    const middleware = createOpenResponsesToolPolicyMiddleware();
+    const wrapToolCall = middleware.wrapToolCall;
+    if (!wrapToolCall) {
+      throw new Error("Expected wrapToolCall to be defined");
+    }
+
+    const request = {
+      toolCall: { id: "call-1", name: "lookup_fact", args: {} },
+      tool: { name: "lookup_fact" },
+      state: { messages: [] },
+      runtime: {
+        config: {
+          configurable: {
+            run_id: "run-rejection",
+            [OPENRESPONSES_TOOL_POLICY_CONFIG_KEY]: {
+              tools: [],
+              allowedToolNames: ["lookup_fact"],
+              toolChoice: "auto",
+              parallelToolCalls: false,
+            } satisfies SerializedNormalizedToolPolicy,
+          },
+        },
+      },
+    } as Parameters<typeof wrapToolCall>[0];
+
+    await expect(
+      wrapToolCall(
+        request,
+        (async () => {
+          throw new Error("tool exploded");
+        }) as Parameters<typeof wrapToolCall>[1]
+      )
+    ).rejects.toThrow("tool exploded");
+
+    const recoveredResult = await wrapToolCall(
+      request,
+      (async () => {
+        return {} as never;
+      }) as Parameters<typeof wrapToolCall>[1]
+    );
+
+    expect(recoveredResult).toBeDefined();
+  });
 });
 
 describe("adapter tool policy enforcement", () => {
@@ -418,6 +524,7 @@ describe("adapter tool policy enforcement", () => {
 
     expect(agent.__getLastInvokeConfig()).toMatchObject({
       configurable: {
+        run_id: expect.any(String),
         [OPENRESPONSES_TOOL_POLICY_CONFIG_KEY]: {
           allowedToolNames: ["lookup_fact"],
           parallelToolCalls: true,

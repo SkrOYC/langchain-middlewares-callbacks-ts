@@ -119,9 +119,11 @@ const assertToolPolicySupport = (params: {
 
 const buildAgentConfig = (params: {
   signal?: AbortSignal;
+  runId: string;
   toolPolicy: Awaited<ReturnType<typeof normalizeRequest>>["toolPolicy"];
 }): Record<string, unknown> => {
   const configurable: Record<string, unknown> = {
+    run_id: params.runId,
     [OPENRESPONSES_TOOL_POLICY_CONFIG_KEY]: serializeNormalizedToolPolicy(
       params.toolPolicy
     ),
@@ -184,8 +186,15 @@ export function createOpenResponsesAdapter(
           { messages: normalizedRequest.messages },
           buildAgentConfig(
             signal === undefined
-              ? { toolPolicy: normalizedRequest.toolPolicy }
-              : { signal, toolPolicy: normalizedRequest.toolPolicy }
+              ? {
+                  runId: responseId,
+                  toolPolicy: normalizedRequest.toolPolicy,
+                }
+              : {
+                  signal,
+                  runId: responseId,
+                  toolPolicy: normalizedRequest.toolPolicy,
+                }
           )
         );
       } catch (error) {

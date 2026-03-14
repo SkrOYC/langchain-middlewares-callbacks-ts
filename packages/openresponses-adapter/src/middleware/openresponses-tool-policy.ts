@@ -7,7 +7,10 @@ import {
   SerializedNormalizedToolPolicySchema,
 } from "@/core/tool-policy.js";
 
-const runQueues = new Map<string, Promise<void>>();
+interface RunQueueState {
+  tail: Promise<void>;
+  pendingCount: number;
+}
 
 const getConfigurable = (runtime: unknown): Record<string, unknown> | null => {
   if (typeof runtime !== "object" || runtime === null) {
@@ -65,6 +68,8 @@ const getToolName = (request: unknown): string => {
 };
 
 export const createOpenResponsesToolPolicyMiddleware = () => {
+  const runQueues = new Map<string, RunQueueState>();
+
   return createMiddleware({
     name: "openresponses-tool-policy",
     wrapToolCall: async (request, handler) => {
@@ -90,12 +95,27 @@ export const createOpenResponsesToolPolicyMiddleware = () => {
       }
 
       const queueKey = getPolicyKey(configurable);
-      const previous = runQueues.get(queueKey) ?? Promise.resolve();
+      const queue =
+        runQueues.get(queueKey) ??
+        ({
+          tail: Promise.resolve(),
+          pendingCount: 0,
+        } satisfies RunQueueState);
+
+      queue.pendingCount += 1;
+      runQueues.set(queueKey, queue);
+
+      const previous = queue.tail;
       let release!: () => void;
       const next = new Promise<void>((resolve) => {
         release = resolve;
       });
-      runQueues.set(queueKey, previous.then(() => next));
+
+      // Keep the queue chain alive even if a prior gate were ever to reject.
+      queue.tail = previous.then(
+        () => next,
+        () => next
+      );
 
       await previous;
 
@@ -103,6 +123,11 @@ export const createOpenResponsesToolPolicyMiddleware = () => {
         return await handler(request);
       } finally {
         release();
+
+        queue.pendingCount -= 1;
+        if (queue.pendingCount === 0) {
+          runQueues.delete(queueKey);
+        }
       }
     },
     afterAgent: (_state, runtime) => {
