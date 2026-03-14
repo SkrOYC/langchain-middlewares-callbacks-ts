@@ -95,7 +95,7 @@ export const createOpenResponsesToolPolicyMiddleware = () => {
       const next = new Promise<void>((resolve) => {
         release = resolve;
       });
-      runQueues.set(queueKey, previous.finally(() => next));
+      runQueues.set(queueKey, previous.then(() => next));
 
       await previous;
 
