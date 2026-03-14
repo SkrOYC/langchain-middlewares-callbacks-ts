@@ -102,6 +102,7 @@ export interface OpenResponsesHandlerOptions {
   agent: OpenResponsesCompatibleAgent;
   callbacks?: CallbackHandlerMethods[];
   middleware?: unknown[];
+  toolPolicySupport?: "metadata-only" | "middleware";
   previousResponseStore?: PreviousResponseStore;
   onError?: (error: unknown) => ErrorObject;
   clock?: () => number;
@@ -115,11 +116,12 @@ export interface OpenResponsesHandlerOptions {
 /**
  * Tool policy derived from request normalization.
  */
-export type NormalizedToolPolicy =
-  | { mode: "none" }
-  | { mode: "auto" }
-  | { mode: "required" }
-  | { mode: "specific"; tools: string[] };
+export interface NormalizedToolPolicy {
+  tools: FunctionTool[];
+  allowedToolNames: Set<string>;
+  toolChoice: ToolChoice;
+  parallelToolCalls: boolean;
+}
 
 /**
  * Normalized request after input transformation.

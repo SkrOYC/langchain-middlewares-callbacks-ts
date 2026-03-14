@@ -3,6 +3,7 @@
  */
 
 import {
+  agentExecutionFailed,
   type InternalError,
   internalError,
   invalidRequest,
@@ -11,6 +12,7 @@ import {
 } from "../core/errors.js";
 import {
   type ErrorObject,
+  type FunctionTool,
   type InputItem,
   type OpenResponsesRequest,
   OpenResponsesRequestSchema,
@@ -19,7 +21,9 @@ import {
   type OutputItem,
   type OutputTextPart,
   StoredResponseRecordSchema,
+  type ToolChoice,
 } from "../core/schemas.js";
+import { getEffectiveToolChoiceMode } from "../core/tool-policy.js";
 import type {
   LangChainMessageLike,
   NormalizedRequest,
@@ -77,6 +81,81 @@ const inputToItems = (input: OpenResponsesRequest["input"]): InputItem[] => {
   }
 
   return safeStructuredClone(input);
+};
+
+const normalizeToolChoice = (
+  toolChoice: OpenResponsesRequest["tool_choice"]
+): ToolChoice => {
+  if (toolChoice === undefined) {
+    return "auto";
+  }
+
+  if (
+    typeof toolChoice === "object" &&
+    toolChoice !== null &&
+    "type" in toolChoice &&
+    toolChoice.type === "allowed_tools"
+  ) {
+    return {
+      ...safeStructuredClone(toolChoice),
+      mode: toolChoice.mode ?? "auto",
+    };
+  }
+
+  return safeStructuredClone(toolChoice);
+};
+
+const assertUniqueToolNames = (tools: FunctionTool[]): void => {
+  const seen = new Set<string>();
+
+  for (const tool of tools) {
+    if (seen.has(tool.name)) {
+      throw invalidRequest(`Duplicate tool name '${tool.name}' is not allowed`);
+    }
+    seen.add(tool.name);
+  }
+};
+
+const getAllowedToolNames = (toolChoice: ToolChoice, tools: FunctionTool[]) => {
+  const declaredToolNames = new Set(tools.map((tool) => tool.name));
+
+  if (
+    typeof toolChoice === "object" &&
+    toolChoice !== null &&
+    "type" in toolChoice
+  ) {
+    if (toolChoice.type === "allowed_tools") {
+      const allowedToolNames = new Set<string>();
+
+      for (const tool of toolChoice.tools) {
+        if (!declaredToolNames.has(tool.name)) {
+          throw invalidRequest(
+            `tool_choice references unknown tool '${tool.name}'`
+          );
+        }
+
+        if (allowedToolNames.has(tool.name)) {
+          throw invalidRequest(
+            `tool_choice.allowed_tools contains duplicate tool '${tool.name}'`
+          );
+        }
+
+        allowedToolNames.add(tool.name);
+      }
+
+      return allowedToolNames;
+    }
+
+    if (!declaredToolNames.has(toolChoice.name)) {
+      throw invalidRequest(
+        `tool_choice references unknown tool '${toolChoice.name}'`
+      );
+    }
+
+    return new Set([toolChoice.name]);
+  }
+
+  return declaredToolNames;
 };
 
 const outputItemToInputItem = (item: OutputItem): InputItem => {
@@ -579,28 +658,18 @@ const inputItemToMessage = (item: InputItem): LangChainMessageLike => {
 const normalizeToolPolicy = (
   request: OpenResponsesRequest
 ): NormalizedToolPolicy => {
-  const { tool_choice: toolChoice } = request;
+  const tools = safeStructuredClone(request.tools);
+  assertUniqueToolNames(tools);
 
-  if (toolChoice === undefined || toolChoice === "auto") {
-    return { mode: "auto" };
-  }
+  const toolChoice = normalizeToolChoice(request.tool_choice);
+  const allowedToolNames = getAllowedToolNames(toolChoice, tools);
 
-  if (toolChoice === "none") {
-    return { mode: "none" };
-  }
-
-  if (toolChoice === "required") {
-    return { mode: "required" };
-  }
-
-  if ("type" in toolChoice && toolChoice.type === "allowed_tools") {
-    return {
-      mode: "specific",
-      tools: toolChoice.tools.map((tool) => tool.name),
-    };
-  }
-
-  return { mode: "specific", tools: [toolChoice.name] };
+  return {
+    tools,
+    allowedToolNames,
+    toolChoice,
+    parallelToolCalls: request.parallel_tool_calls,
+  };
 };
 
 const parseRequest = (request: OpenResponsesRequest): OpenResponsesRequest => {
@@ -719,6 +788,100 @@ export const normalizeRequest = async (
     original: parsedRequest,
     toolPolicy: normalizeToolPolicy(parsedRequest),
   };
+};
+
+const resultContainsToolCall = (value: unknown): boolean => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const directType = getStringProperty(value, "type");
+  if (directType === "tool" || directType === "function_call") {
+    return true;
+  }
+
+  return getToolCalls(value).length > 0;
+};
+
+const getCalledToolNames = (value: unknown): string[] => {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const directType = getStringProperty(value, "type");
+  if (directType === "function_call") {
+    const name = getStringProperty(value, "name");
+    return name ? [name] : [];
+  }
+
+  if (directType === "tool") {
+    return [];
+  }
+
+  const names: string[] = [];
+  for (const toolCall of getToolCalls(value)) {
+    const name = getStringProperty(toolCall, "name");
+    if (name) {
+      names.push(name);
+    }
+  }
+
+  return names;
+};
+
+export const validateRequiredToolCallResult = (params: {
+  result: unknown;
+  inputMessageCount: number;
+  toolPolicy: NormalizedToolPolicy;
+}): void => {
+  const effectiveMode = getEffectiveToolChoiceMode(params.toolPolicy.toolChoice);
+  if (effectiveMode !== "required") {
+    return;
+  }
+
+  const resultMessages = getResultMessages(params.result, params.inputMessageCount);
+  if (!resultMessages) {
+    throw agentExecutionFailed(
+      "tool_choice requires a tool call, but the agent result did not include message history"
+    );
+  }
+
+  const toolCallObserved = resultMessages.some(resultContainsToolCall);
+  if (!toolCallObserved) {
+    throw agentExecutionFailed(
+      "tool_choice requires a tool call, but the agent completed without calling a tool"
+    );
+  }
+
+  const calledToolNames = new Set(
+    resultMessages.flatMap((message) => getCalledToolNames(message))
+  );
+
+  if (
+    typeof params.toolPolicy.toolChoice === "object" &&
+    params.toolPolicy.toolChoice.type === "function"
+  ) {
+    if (!calledToolNames.has(params.toolPolicy.toolChoice.name)) {
+      throw agentExecutionFailed(
+        `tool_choice requires tool '${params.toolPolicy.toolChoice.name}', but the agent called a different tool`
+      );
+    }
+  }
+
+  if (
+    typeof params.toolPolicy.toolChoice === "object" &&
+    params.toolPolicy.toolChoice.type === "allowed_tools"
+  ) {
+    const allowedCallObserved = [...calledToolNames].some((name) =>
+      params.toolPolicy.allowedToolNames.has(name)
+    );
+
+    if (!allowedCallObserved) {
+      throw agentExecutionFailed(
+        "tool_choice requires a tool from the allowed set, but the agent completed without calling one"
+      );
+    }
+  }
 };
 
 const asOutputItems = (params: {

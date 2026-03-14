@@ -10,6 +10,7 @@
 export * from "./callbacks/index.js";
 export * from "./core/errors.js";
 export * from "./core/events.js";
+export * from "./middleware/index.js";
 // Re-export public factory signatures
 export type {
   OpenResponsesCompatibleAgent,

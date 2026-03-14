@@ -40,8 +40,10 @@ export interface FakeAgentConfig {
 export interface FakeAgent extends OpenResponsesCompatibleAgent {
   __getInvokeCount(): number;
   __getLastInvokeInput(): { messages: LangChainMessageLike[] } | null;
+  __getLastInvokeConfig(): Record<string, unknown> | null;
   __getStreamCount(): number;
   __getLastStreamInput(): { messages: LangChainMessageLike[] } | null;
+  __getLastStreamConfig(): Record<string, unknown> | null;
   __resetCounts(): void;
 }
 
@@ -76,14 +78,17 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
   let invokeCount = 0;
   let streamCount = 0;
   let lastInvokeInput: { messages: LangChainMessageLike[] } | null = null;
+  let lastInvokeConfig: Record<string, unknown> | null = null;
   let lastStreamInput: { messages: LangChainMessageLike[] } | null = null;
+  let lastStreamConfig: Record<string, unknown> | null = null;
 
   return {
     async invoke(
       input: { messages: LangChainMessageLike[] },
-      _config?: Record<string, unknown>
+      config?: Record<string, unknown>
     ): Promise<unknown> {
       lastInvokeInput = structuredClone(input);
+      lastInvokeConfig = config ? structuredClone(config) : null;
 
       if (invokeError) {
         throw invokeError;
@@ -119,9 +124,10 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
 
     async *stream(
       input: { messages: LangChainMessageLike[] },
-      _config?: Record<string, unknown>
+      config?: Record<string, unknown>
     ): AsyncIterable<unknown> {
       lastStreamInput = structuredClone(input);
+      lastStreamConfig = config ? structuredClone(config) : null;
 
       if (streamError) {
         throw streamError;
@@ -139,13 +145,17 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
     // Expose for testing
     __getInvokeCount: () => invokeCount,
     __getLastInvokeInput: () => lastInvokeInput,
+    __getLastInvokeConfig: () => lastInvokeConfig,
     __getStreamCount: () => streamCount,
     __getLastStreamInput: () => lastStreamInput,
+    __getLastStreamConfig: () => lastStreamConfig,
     __resetCounts: () => {
       invokeCount = 0;
       streamCount = 0;
       lastInvokeInput = null;
+      lastInvokeConfig = null;
       lastStreamInput = null;
+      lastStreamConfig = null;
     },
   };
 }

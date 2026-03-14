@@ -10,6 +10,11 @@ import {
   internalError,
   invalidRequest,
 } from "../core/errors.js";
+import {
+  getEffectiveToolChoiceMode,
+  OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,
+  serializeNormalizedToolPolicy,
+} from "../core/tool-policy.js";
 import type {
   OpenResponsesHandlerOptions,
   OpenResponsesRequest,
@@ -23,6 +28,7 @@ import {
   isInternalError,
   materializeInvokeResponse,
   normalizeRequest,
+  validateRequiredToolCallResult,
 } from "./previous-response.js";
 
 export interface OpenResponsesAdapter {
@@ -72,6 +78,66 @@ const materializeResponseOrThrow = (params: {
   }
 };
 
+const requiresExecutionTimeEnforcement = (
+  policy: Awaited<ReturnType<typeof normalizeRequest>>["toolPolicy"]
+): boolean => {
+  const effectiveMode = getEffectiveToolChoiceMode(policy.toolChoice);
+  if (!policy.parallelToolCalls) {
+    return true;
+  }
+
+  if (typeof policy.toolChoice === "object" && policy.toolChoice.type === "function") {
+    return true;
+  }
+
+  if (
+    typeof policy.toolChoice === "object" &&
+    policy.toolChoice.type === "allowed_tools"
+  ) {
+    return true;
+  }
+
+  return effectiveMode === "none";
+};
+
+const assertToolPolicySupport = (params: {
+  toolPolicy: Awaited<ReturnType<typeof normalizeRequest>>["toolPolicy"];
+  supportMode: OpenResponsesHandlerOptions["toolPolicySupport"];
+}): void => {
+  if (params.supportMode === "middleware") {
+    return;
+  }
+
+  if (!requiresExecutionTimeEnforcement(params.toolPolicy)) {
+    return;
+  }
+
+  throw invalidRequest(
+    "This tool policy requires createOpenResponsesToolPolicyMiddleware() and toolPolicySupport: 'middleware'"
+  );
+};
+
+const buildAgentConfig = (params: {
+  signal?: AbortSignal;
+  toolPolicy: Awaited<ReturnType<typeof normalizeRequest>>["toolPolicy"];
+}): Record<string, unknown> => {
+  const configurable: Record<string, unknown> = {
+    [OPENRESPONSES_TOOL_POLICY_CONFIG_KEY]: serializeNormalizedToolPolicy(
+      params.toolPolicy
+    ),
+  };
+
+  const config: Record<string, unknown> = {
+    configurable,
+  };
+
+  if (params.signal !== undefined) {
+    config.signal = params.signal;
+  }
+
+  return config;
+};
+
 /**
  * Creates an Open Responses adapter without HTTP transport.
  *
@@ -83,6 +149,7 @@ export function createOpenResponsesAdapter(
 ): OpenResponsesAdapter {
   const clock = options.clock ?? (() => Date.now());
   const generateId = options.generateId ?? (() => crypto.randomUUID());
+  const toolPolicySupport = options.toolPolicySupport ?? "metadata-only";
 
   return {
     async invoke(
@@ -103,6 +170,10 @@ export function createOpenResponsesAdapter(
       }
 
       const normalizedRequest = await normalizeRequest(request, normalizeDeps);
+      assertToolPolicySupport({
+        toolPolicy: normalizedRequest.toolPolicy,
+        supportMode: toolPolicySupport,
+      });
 
       const responseId = generateId();
       const createdAt = clock();
@@ -111,11 +182,21 @@ export function createOpenResponsesAdapter(
       try {
         agentResult = await options.agent.invoke(
           { messages: normalizedRequest.messages },
-          { signal, toolPolicy: normalizedRequest.toolPolicy }
+          buildAgentConfig(
+            signal === undefined
+              ? { toolPolicy: normalizedRequest.toolPolicy }
+              : { signal, toolPolicy: normalizedRequest.toolPolicy }
+          )
         );
       } catch (error) {
         return toAgentExecutionFailed(error);
       }
+
+      validateRequiredToolCallResult({
+        result: agentResult,
+        inputMessageCount: normalizedRequest.messages.length,
+        toolPolicy: normalizedRequest.toolPolicy,
+      });
 
       const completedAt = clock();
 
