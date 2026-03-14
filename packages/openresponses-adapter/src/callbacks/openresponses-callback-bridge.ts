@@ -138,40 +138,82 @@ const getMessageLogEntries = (action: RecordValue): unknown[] => {
   return [];
 };
 
-const getDeltasFromMessageLogEntry = (entry: unknown): string[] => {
-  if (!isRecord(entry)) {
-    return [];
+const getToolCallDeltaKey = (toolCall: RecordValue): string | undefined => {
+  const toolCallId = getString(toolCall, "id");
+  if (toolCallId) {
+    return toolCallId;
   }
 
-  const additionalKwargs = getNestedRecord(entry, "additional_kwargs");
-  const toolCalls = additionalKwargs?.tool_calls;
-  if (!Array.isArray(toolCalls)) {
-    return [];
+  const functionRecord = getNestedRecord(toolCall, "function");
+  if (!functionRecord) {
+    return undefined;
   }
 
-  const deltas: string[] = [];
-  for (const toolCall of toolCalls) {
-    if (!isRecord(toolCall)) {
-      continue;
-    }
-
-    const functionRecord = getNestedRecord(toolCall, "function");
-    if (!functionRecord) {
-      continue;
-    }
-
-    const delta =
-      getString(functionRecord, "arguments_delta") ??
-      getString(functionRecord, "delta");
-    if (delta) {
-      deltas.push(delta);
-    }
-  }
-
-  return deltas;
+  return getString(functionRecord, "name");
 };
 
-const getArgumentDeltas = (action: unknown): string[] => {
+const appendToolCallDeltas = (
+  deltasByKey: Map<string, string[]>,
+  toolCall: RecordValue
+): void => {
+  const deltaKey = getToolCallDeltaKey(toolCall);
+  if (!deltaKey) {
+    return;
+  }
+
+  const functionRecord = getNestedRecord(toolCall, "function");
+  if (!functionRecord) {
+    return;
+  }
+
+  const delta =
+    getString(functionRecord, "arguments_delta") ??
+    getString(functionRecord, "delta");
+  if (!delta) {
+    return;
+  }
+
+  const existingDeltas = deltasByKey.get(deltaKey);
+  if (existingDeltas) {
+    existingDeltas.push(delta);
+    return;
+  }
+
+  deltasByKey.set(deltaKey, [delta]);
+};
+
+const getMessageLogArgumentDeltas = (
+  action: RecordValue
+): Map<string, string[]> => {
+  const deltasByKey = new Map<string, string[]>();
+
+  for (const entry of getMessageLogEntries(action)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const additionalKwargs = getNestedRecord(entry, "additional_kwargs");
+    const toolCalls = additionalKwargs?.tool_calls;
+    if (!Array.isArray(toolCalls)) {
+      continue;
+    }
+
+    for (const toolCall of toolCalls) {
+      if (!isRecord(toolCall)) {
+        continue;
+      }
+
+      appendToolCallDeltas(deltasByKey, toolCall);
+    }
+  }
+
+  return deltasByKey;
+};
+
+const getArgumentDeltas = (
+  action: unknown,
+  sharedDeltasByKey?: Map<string, string[]>
+): string[] => {
   if (!isRecord(action)) {
     return [];
   }
@@ -186,7 +228,15 @@ const getArgumentDeltas = (action: unknown): string[] => {
     return directChunks;
   }
 
-  return getMessageLogEntries(action).flatMap(getDeltasFromMessageLogEntry);
+  const availableDeltasByKey =
+    sharedDeltasByKey ?? getMessageLogArgumentDeltas(action);
+  const actionCallId = extractCallId(action);
+  if (actionCallId) {
+    return availableDeltasByKey.get(actionCallId) ?? [];
+  }
+
+  const actionToolName = normalizeToolName(action);
+  return availableDeltasByKey.get(actionToolName) ?? [];
 };
 
 const getObservedArguments = (action: unknown): string | undefined => {
@@ -254,6 +304,7 @@ export const createOpenResponsesCallbackBridge = (
   >();
   const activeFunctionCallsByToolRun = new Map<string, PendingFunctionCall>();
   const pendingFunctionCallsByCallId = new Map<string, PendingFunctionCall>();
+  const sharedArgumentDeltasByRun = new Map<string, Map<string, string[]>>();
   const startedRuns = new Set<string>();
   const terminalRuns = new Map<string, TerminalRunStatus>();
   const terminalRunOrder: string[] = [];
@@ -355,14 +406,17 @@ export const createOpenResponsesCallbackBridge = (
     }
   };
 
-  const createPendingFunctionCall = (action: unknown): PendingFunctionCall => {
+  const createPendingFunctionCall = (
+    action: unknown,
+    sharedDeltasByKey?: Map<string, string[]>
+  ): PendingFunctionCall => {
     const observedArguments = getObservedArguments(action);
     const callId = extractCallId(action);
 
     return {
       itemId: options.generateId(),
       toolName: normalizeToolName(action),
-      argumentDeltas: getArgumentDeltas(action),
+      argumentDeltas: getArgumentDeltas(action, sharedDeltasByKey),
       ...(observedArguments !== undefined ? { observedArguments } : {}),
       ...(callId !== undefined ? { callId } : {}),
       startedEmitted: false,
@@ -529,6 +583,7 @@ export const createOpenResponsesCallbackBridge = (
 
   const cleanupRunState = (runId: string): void => {
     activeMessageItems.delete(runId);
+    sharedArgumentDeltasByRun.delete(runId);
 
     const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(runId);
     if (pendingFunctionCalls) {
@@ -671,7 +726,18 @@ export const createOpenResponsesCallbackBridge = (
 
     handleAgentAction(action, runId, parentRunId): void {
       emitRunStarted(runId, parentRunId);
-      const pendingFunctionCall = createPendingFunctionCall(action);
+
+      const sharedDeltasByKey = isRecord(action)
+        ? getMessageLogArgumentDeltas(action)
+        : new Map<string, string[]>();
+      if (sharedDeltasByKey.size > 0) {
+        sharedArgumentDeltasByRun.set(runId, sharedDeltasByKey);
+      }
+
+      const pendingFunctionCall = createPendingFunctionCall(
+        action,
+        sharedArgumentDeltasByRun.get(runId)
+      );
       registerPendingFunctionCall(runId, pendingFunctionCall);
 
       if (pendingFunctionCall.callId) {

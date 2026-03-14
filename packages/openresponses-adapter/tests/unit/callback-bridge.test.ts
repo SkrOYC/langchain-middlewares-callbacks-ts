@@ -22,6 +22,7 @@ const callHandler = async <Args extends unknown[]>(
 type AgentActionWithBridgeFields = AgentAction & {
   toolCallId?: string;
   argumentsDelta?: string;
+  messageLog?: unknown[];
 };
 
 const serializedFixture: Serialized = {
@@ -296,6 +297,88 @@ describe("OpenResponsesCallbackBridge", () => {
         output: { temperature: "55F" },
       },
       { type: "function_call.completed", itemId: "fc-1" },
+    ]);
+  });
+
+  test("splits shared messageLog argument deltas across parallel tool calls", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["fc-par-1", "fc-par-2"]),
+    });
+
+    const sharedMessageLog = [
+      {
+        additional_kwargs: {
+          tool_calls: [
+            {
+              id: "call-par-1",
+              function: {
+                name: "get_weather",
+                arguments_delta: '{"city":"Bos',
+              },
+            },
+            {
+              id: "call-par-2",
+              function: {
+                name: "get_time",
+                arguments_delta: '{"timezone":"UT',
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    const firstAction: AgentActionWithBridgeFields = {
+      tool: "get_weather",
+      toolInput: { city: "Boston" },
+      log: "first parallel tool",
+      toolCallId: "call-par-1",
+      messageLog: sharedMessageLog,
+    };
+    const secondAction: AgentActionWithBridgeFields = {
+      tool: "get_time",
+      toolInput: { timezone: "UTC" },
+      log: "second parallel tool",
+      toolCallId: "call-par-2",
+    };
+
+    await callHandler(
+      bridge.handleAgentAction,
+      firstAction,
+      "agent-run-parallel"
+    );
+    await callHandler(
+      bridge.handleAgentAction,
+      secondAction,
+      "agent-run-parallel"
+    );
+
+    expect(events).toEqual([
+      { type: "run.started", runId: "agent-run-parallel" },
+      {
+        type: "function_call.started",
+        itemId: "fc-par-1",
+        name: "get_weather",
+        callId: "call-par-1",
+      },
+      {
+        type: "function_call_arguments.delta",
+        itemId: "fc-par-1",
+        delta: '{"city":"Bos',
+      },
+      {
+        type: "function_call.started",
+        itemId: "fc-par-2",
+        name: "get_time",
+        callId: "call-par-2",
+      },
+      {
+        type: "function_call_arguments.delta",
+        itemId: "fc-par-2",
+        delta: '{"timezone":"UT',
+      },
     ]);
   });
 
