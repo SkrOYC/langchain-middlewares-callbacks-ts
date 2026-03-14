@@ -176,8 +176,44 @@ describe("tool policy middleware", () => {
         (async () => ({}) as never) as Parameters<typeof wrapToolCall>[1]
       )
     ).rejects.toMatchObject({
-      code: "invalid_request",
+      code: "agent_execution_failed",
       message: "tool_choice forbids tool execution",
+    });
+  });
+
+  test("fails with agent execution error when a disallowed tool is proposed", async () => {
+    const middleware = createOpenResponsesToolPolicyMiddleware();
+    const wrapToolCall = middleware.wrapToolCall;
+    if (!wrapToolCall) {
+      throw new Error("Expected wrapToolCall to be defined");
+    }
+
+    const request = {
+      toolCall: { id: "call-1", name: "get_weather", args: {} },
+      tool: { name: "get_weather" },
+      state: { messages: [] },
+      runtime: {
+        config: {
+          configurable: {
+            [OPENRESPONSES_TOOL_POLICY_CONFIG_KEY]: {
+              tools: [],
+              allowedToolNames: ["lookup_fact"],
+              toolChoice: "auto",
+              parallelToolCalls: true,
+            } satisfies SerializedNormalizedToolPolicy,
+          },
+        },
+      },
+    };
+
+    await expect(
+      wrapToolCall(
+        request as Parameters<typeof wrapToolCall>[0],
+        (async () => ({}) as never) as Parameters<typeof wrapToolCall>[1]
+      )
+    ).rejects.toMatchObject({
+      code: "agent_execution_failed",
+      message: "Tool 'get_weather' is not allowed for this request",
     });
   });
 

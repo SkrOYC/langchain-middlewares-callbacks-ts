@@ -1,6 +1,6 @@
 import { createMiddleware } from "langchain";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { invalidRequest } from "@/core/errors.js";
+import { agentExecutionFailed } from "@/core/errors.js";
 import {
   getEffectiveToolChoiceMode,
   OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,
@@ -83,11 +83,13 @@ export const createOpenResponsesToolPolicyMiddleware = () => {
       const effectiveMode = getEffectiveToolChoiceMode(policy.toolChoice);
 
       if (effectiveMode === "none") {
-        throw invalidRequest("tool_choice forbids tool execution");
+        throw agentExecutionFailed("tool_choice forbids tool execution");
       }
 
       if (!policy.allowedToolNames.includes(toolName)) {
-        throw invalidRequest(`Tool '${toolName}' is not allowed for this request`);
+        throw agentExecutionFailed(
+          `Tool '${toolName}' is not allowed for this request`
+        );
       }
 
       if (policy.parallelToolCalls) {
