@@ -40,8 +40,10 @@ export interface FakeAgentConfig {
 export interface FakeAgent extends OpenResponsesCompatibleAgent {
   __getInvokeCount(): number;
   __getLastInvokeInput(): { messages: LangChainMessageLike[] } | null;
+  __getLastInvokeConfig(): Record<string, unknown> | null;
   __getStreamCount(): number;
   __getLastStreamInput(): { messages: LangChainMessageLike[] } | null;
+  __getLastStreamConfig(): Record<string, unknown> | null;
   __resetCounts(): void;
 }
 
@@ -56,6 +58,39 @@ const toResponseBatch = (
   response: LangChainMessageLike | LangChainMessageLike[]
 ): LangChainMessageLike[] => {
   return Array.isArray(response) ? response : [response];
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+const snapshotValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => snapshotValue(item));
+  }
+
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [key, snapshotValue(entryValue)])
+    );
+  }
+
+  return value;
+};
+
+const snapshotConfig = (
+  config: Record<string, unknown> | undefined
+): Record<string, unknown> | null => {
+  if (!config) {
+    return null;
+  }
+
+  return snapshotValue(config) as Record<string, unknown>;
 };
 
 export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
@@ -76,14 +111,17 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
   let invokeCount = 0;
   let streamCount = 0;
   let lastInvokeInput: { messages: LangChainMessageLike[] } | null = null;
+  let lastInvokeConfig: Record<string, unknown> | null = null;
   let lastStreamInput: { messages: LangChainMessageLike[] } | null = null;
+  let lastStreamConfig: Record<string, unknown> | null = null;
 
   return {
     async invoke(
       input: { messages: LangChainMessageLike[] },
-      _config?: Record<string, unknown>
+      config?: Record<string, unknown>
     ): Promise<unknown> {
       lastInvokeInput = structuredClone(input);
+      lastInvokeConfig = snapshotConfig(config);
 
       if (invokeError) {
         throw invokeError;
@@ -119,9 +157,10 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
 
     async *stream(
       input: { messages: LangChainMessageLike[] },
-      _config?: Record<string, unknown>
+      config?: Record<string, unknown>
     ): AsyncIterable<unknown> {
       lastStreamInput = structuredClone(input);
+      lastStreamConfig = snapshotConfig(config);
 
       if (streamError) {
         throw streamError;
@@ -139,13 +178,17 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
     // Expose for testing
     __getInvokeCount: () => invokeCount,
     __getLastInvokeInput: () => lastInvokeInput,
+    __getLastInvokeConfig: () => lastInvokeConfig,
     __getStreamCount: () => streamCount,
     __getLastStreamInput: () => lastStreamInput,
+    __getLastStreamConfig: () => lastStreamConfig,
     __resetCounts: () => {
       invokeCount = 0;
       streamCount = 0;
       lastInvokeInput = null;
+      lastInvokeConfig = null;
       lastStreamInput = null;
+      lastStreamConfig = null;
     },
   };
 }

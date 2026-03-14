@@ -3,7 +3,9 @@
 ## 1. Executive Summary
 
 - **Total Estimation:** 75 story points
-- **Critical Path:** ORL-001 → ORL-002 → ORL-003 → ORL-004 → ORL-005 → ORL-006 → ORL-007 → ORL-008 → ORL-009 → ORL-010 → ORL-011 → ORL-012 → ORL-013 → ORL-015 → ORL-016 → ORL-017 → ORL-018 → ORL-020 → ORL-021
+- **Progress Snapshot:** 14 implemented, 4 partial, 3 planned
+- **Original Critical Path:** ORL-001 → ORL-002 → ORL-003 → ORL-004 → ORL-005 → ORL-006 → ORL-007 → ORL-008 → ORL-009 → ORL-010 → ORL-011 → ORL-012 → ORL-013 → ORL-015 → ORL-016 → ORL-017 → ORL-018 → ORL-020 → ORL-021
+- **Remaining Critical Path:** ORL-015 → ORL-016 → ORL-017 → ORL-018 → ORL-019 → ORL-020 → ORL-021
 
 The plan is intentionally shaped around the real bottleneck: truthful live semantic streaming. Based on Goldratt’s Theory of Constraints, the highest-risk and highest-coupling path is callback fidelity → canonical state → single-writer serialization → transport failure semantics. Non-streaming JSON, continuation persistence, and release packaging are sequenced to support that path rather than compete with it.
 
@@ -90,6 +92,14 @@ flowchart LR
     ORL014 --> ORL016
     ORL015 --> ORL016
     ORL016 --> ORL017 --> ORL018 --> ORL019 --> ORL020 --> ORL021
+
+    classDef implemented fill:#dff3e4,stroke:#2f6f44,color:#14311f
+    classDef partial fill:#fff3cd,stroke:#8a6d1d,color:#4a3700
+    classDef planned fill:#edf2f7,stroke:#5c6b7a,color:#24313d
+
+    class ORL001,ORL002,ORL003,ORL004,ORL005,ORL006,ORL007,ORL008,ORL009,ORL010,ORL011,ORL012,ORL013,ORL014 implemented
+    class ORL017,ORL018,ORL019,ORL020 partial
+    class ORL015,ORL016,ORL021 planned
 ```
 
 ## 4. The Ticket List
@@ -98,6 +108,7 @@ flowchart LR
 
 > **[ORL-001] Spike callback and streaming feasibility**
 > - **Type:** Spike
+> - **Status:** Implemented
 > - **Effort:** Story Points: 3
 > - **Dependencies:** None
 > - **Description:** Time-box a proof of feasibility around LangChain callback richness, live streaming observability, and Hono’s post-stream error boundary. The output is a written engineering note that defines the exact live events the package can publish truthfully, the degraded-fidelity rule for weak provider callbacks, and the failure rule after SSE has started.
@@ -110,6 +121,7 @@ flowchart LR
 
 > **[ORL-002] Create the workspace package skeleton**
 > - **Type:** Chore
+> - **Status:** Implemented
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-001]
 > - **Description:** Create the publishable workspace package, package-local file layout, root and package scripts, tsup build config, exports map, tsconfig, and Biome/Bun wiring required by the Tech Spec.
@@ -122,6 +134,7 @@ flowchart LR
 
 > **[ORL-003] Define the core protocol contract**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-002]
 > - **Description:** Implement `src/core` with Zod-backed request, response, event, and error schemas; exported TypeScript types; public factory signatures; and the internal/public error taxonomy needed by all downstream modules.
@@ -134,6 +147,7 @@ flowchart LR
 
 > **[ORL-004] Build the deterministic testing harness**
 > - **Type:** Chore
+> - **Status:** Implemented
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-002]
 > - **Description:** Create deterministic test helpers and fakes, including injectable clock and ID generation, fake model/agent behavior, and an in-memory harness usable by all package-local tests.
@@ -148,6 +162,7 @@ flowchart LR
 
 > **[ORL-005] Implement the continuation persistence port and dev store**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 3
 > - **Dependencies:** [ORL-003]
 > - **Description:** Implement `StoredResponseRecord`, `PreviousResponseStore`, and `InMemoryPreviousResponseStore` as the explicit continuation boundary. Enforce the invariant that top-level convenience fields stay synchronized with the authoritative nested response resource.
@@ -160,6 +175,7 @@ flowchart LR
 
 > **[ORL-006] Implement exact previous_response_id replay semantics**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 3
 > - **Dependencies:** [ORL-005]
 > - **Description:** Implement the adapter logic that loads and validates prior response records and reconstructs continuation input using the exact required order: prior request input + prior response output + new request input.
@@ -174,6 +190,7 @@ flowchart LR
 
 > **[ORL-007] Implement the response lifecycle state machine**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-003]
 > - **Description:** Implement `ResponseLifecycle` with the permitted response states and single-transition semantics for completion, failure, and incompletion.
@@ -186,6 +203,7 @@ flowchart LR
 
 > **[ORL-008] Implement the item accumulator and part finalizer guards**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 3
 > - **Dependencies:** [ORL-007]
 > - **Description:** Implement `ItemAccumulator` so canonical message items, function call items, and output text parts can be opened, appended, finalized, and snapshotted while enforcing duplicate-finalizer and close-order rules.
@@ -198,6 +216,7 @@ flowchart LR
 
 > **[ORL-009] Implement the single-writer async event queue**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-008]
 > - **Description:** Implement the in-process async queue that decouples callback bursts from transport writes and gives the serializer a single ordered consumption path.
@@ -210,6 +229,7 @@ flowchart LR
 
 > **[ORL-010] Bridge text and message callbacks into semantic events**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-004, ORL-009]
 > - **Description:** Implement the callback bridge path for message start, model token deltas, model completion, and runtime failure. This ticket is the first half of live semantic derivation and must remain provider-agnostic.
@@ -222,6 +242,7 @@ flowchart LR
 
 > **[ORL-011] Bridge tool and function-call callbacks into semantic events**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-010]
 > - **Description:** Implement the callback bridge path for agent actions, tool start/end/error, and function-call argument progress. Encode the degraded-fidelity rule so weak provider granularity never causes synthetic deltas.
@@ -236,6 +257,7 @@ flowchart LR
 
 > **[ORL-012] Normalize requests and map tool policy once**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-003, ORL-006]
 > - **Description:** Implement request normalization for string and array input, role-specific message handling, minimum supported input parts, tool parsing, duplicate/unknown tool rejection, and runtime-facing `NormalizedToolPolicy`.
@@ -248,6 +270,7 @@ flowchart LR
 
 > **[ORL-013] Enforce tool policy during execution**
 > - **Type:** Security
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-012]
 > - **Description:** Implement the middleware or execution-config layer that enforces `tool_choice`, `allowed_tools`, `parallel_tool_calls`, and the fail-closed posture for `required` where clean enforcement is not fully available upstream.
@@ -260,6 +283,7 @@ flowchart LR
 
 > **[ORL-014] Materialize the final JSON response resource**
 > - **Type:** Feature
+> - **Status:** Implemented
 > - **Effort:** Story Points: 3
 > - **Dependencies:** [ORL-008, ORL-012]
 > - **Description:** Implement final response materialization from canonical item state and lifecycle state for the non-streaming path, including error projection and stable metadata and timestamps.
@@ -274,8 +298,10 @@ flowchart LR
 
 > **[ORL-015] Implement the event serializer and SSE framing**
 > - **Type:** Feature
+> - **Status:** Planned
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-003, ORL-009, ORL-010, ORL-011]
+> - **Current State:** No serializer module or SSE framing path exists yet; sequence-numbered public event serialization remains unimplemented.
 > - **Description:** Implement the single serializer that owns response-scoped sequence numbers, converts canonical and internal events into public Open Responses events, validates outgoing events in non-production paths, and formats compliant SSE frames.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -286,8 +312,10 @@ flowchart LR
 
 > **[ORL-016] Implement the truthful streaming execution path**
 > - **Type:** Feature
+> - **Status:** Planned
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-013, ORL-014, ORL-015]
+> - **Current State:** The adapter still rejects `stream: true`; live callback-derived SSE publication and post-stream failure semantics are not wired.
 > - **Description:** Implement the adapter’s streaming path so live callback-derived semantic events are serialized and published while canonical state accumulates in parallel. This ticket also owns post-stream terminal failure behavior.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -298,8 +326,10 @@ flowchart LR
 
 > **[ORL-017] Implement the Hono route boundary**
 > - **Type:** Feature
+> - **Status:** Partial
 > - **Effort:** Story Points: 3
 > - **Dependencies:** [ORL-014, ORL-016]
+> - **Current State:** The Hono boundary handles non-streaming JSON requests with validation and error mapping, but the `stream` branch is still explicitly rejected.
 > - **Description:** Implement `createOpenResponsesHandler` and the Hono server boundary that verifies content type, parses JSON, validates requests, branches on `stream`, propagates auth and host context opaquely, applies abort budgets, and orchestrates persistence and transport without embedding business logic.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -312,8 +342,10 @@ flowchart LR
 
 > **[ORL-018] Implement the minimum image-input path**
 > - **Type:** Feature
+> - **Status:** Partial
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-017]
+> - **Current State:** Image-bearing user input is schema-valid and preserved through normalization, but the dedicated continuation plus route-level image path is not yet proven end-to-end.
 > - **Description:** Complete the minimum image-input path by validating `input_image`, preserving image-bearing parts through normalization and continuation replay, and passing those parts through without inventing a broader multimodal abstraction.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -324,8 +356,10 @@ flowchart LR
 
 > **[ORL-019] Harden public error mapping and structured logging**
 > - **Type:** Security
+> - **Status:** Partial
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-017]
+> - **Current State:** Internal-to-public error mapping is in place, but structured logging, correlation fields, and token-safe logging discipline are still missing.
 > - **Description:** Implement the final public error mapping path, request and response correlation fields, and structured logging discipline so failures are observable without leaking internal state or token content.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -338,8 +372,10 @@ flowchart LR
 
 > **[ORL-020] Build the release-blocker regression suite**
 > - **Type:** Feature
+> - **Status:** Partial
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-018, ORL-019]
+> - **Current State:** The package has deterministic unit coverage, including Epic 3, but still lacks the full release-blocker matrix for streaming, image continuation, and compliance/golden-stream gates.
 > - **Description:** Implement the package-local regression suite covering event order, terminal states, tool-calling, continuation, image input, and every event union branch required by the Tech Spec’s release blockers.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -350,8 +386,10 @@ flowchart LR
 
 > **[ORL-021] Wire the compliance workflow, runtime smoke coverage, and publishable examples**
 > - **Type:** Chore
+> - **Status:** Planned
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-020]
+> - **Current State:** CI workflows, runtime smoke jobs, consumer examples, and a real package README are still absent.
 > - **Description:** Add the compliance workflow, CI jobs, Node and Bun smoke coverage, optional Deno smoke coverage, and minimal examples and README so a solo builder can adopt the package quickly and release criteria are automated.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
