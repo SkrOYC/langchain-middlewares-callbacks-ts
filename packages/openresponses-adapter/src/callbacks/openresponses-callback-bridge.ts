@@ -11,9 +11,14 @@ export interface OpenResponsesCallbackBridgeOptions {
 
 type RecordValue = Record<string, unknown>;
 
-interface ActiveFunctionCall {
-  itemId: string;
-  callId: string;
+interface PendingFunctionCall {
+  readonly itemId: string;
+  readonly toolName: string;
+  readonly argumentDeltas: string[];
+  readonly observedArguments?: string;
+  callId?: string;
+  startedEmitted: boolean;
+  toolRunId?: string;
 }
 
 const isRecord = (value: unknown): value is RecordValue => {
@@ -59,9 +64,9 @@ const normalizeToolName = (action: unknown): string => {
   );
 };
 
-const normalizeCallId = (action: unknown, fallbackId: string): string => {
+const extractCallId = (action: unknown): string | undefined => {
   if (!isRecord(action)) {
-    return fallbackId;
+    return undefined;
   }
 
   return (
@@ -69,8 +74,7 @@ const normalizeCallId = (action: unknown, fallbackId: string): string => {
     getString(action, "tool_call_id") ??
     getString(action, "callId") ??
     getString(action, "call_id") ??
-    getString(action, "id") ??
-    fallbackId
+    getString(action, "id")
   );
 };
 
@@ -219,8 +223,12 @@ export const createOpenResponsesCallbackBridge = (
   options: OpenResponsesCallbackBridgeOptions
 ): OpenResponsesCallbackHandler => {
   const activeMessageItems = new Map<string, string>();
-  const activeFunctionCallsByAgentRun = new Map<string, ActiveFunctionCall>();
-  const activeFunctionCallsByToolRun = new Map<string, ActiveFunctionCall>();
+  const pendingFunctionCallsByAgentRun = new Map<
+    string,
+    PendingFunctionCall[]
+  >();
+  const activeFunctionCallsByToolRun = new Map<string, PendingFunctionCall>();
+  const pendingFunctionCallsByCallId = new Map<string, PendingFunctionCall>();
   const startedRuns = new Set<string>();
   const completedRuns = new Set<string>();
   const failedRuns = new Set<string>();
@@ -250,63 +258,239 @@ export const createOpenResponsesCallbackBridge = (
     return itemId;
   };
 
+  const getPendingFunctionCalls = (
+    agentRunId: string
+  ): PendingFunctionCall[] => {
+    const existing = pendingFunctionCallsByAgentRun.get(agentRunId);
+    if (existing) {
+      return existing;
+    }
+
+    const next: PendingFunctionCall[] = [];
+    pendingFunctionCallsByAgentRun.set(agentRunId, next);
+    return next;
+  };
+
+  const registerPendingFunctionCall = (
+    agentRunId: string,
+    pendingFunctionCall: PendingFunctionCall
+  ): void => {
+    getPendingFunctionCalls(agentRunId).push(pendingFunctionCall);
+    if (pendingFunctionCall.callId) {
+      pendingFunctionCallsByCallId.set(
+        pendingFunctionCall.callId,
+        pendingFunctionCall
+      );
+    }
+  };
+
   const emitFunctionCallStarted = (
-    runId: string,
-    action: unknown
-  ): ActiveFunctionCall => {
-    const itemId = options.generateId();
-    const callId = normalizeCallId(action, itemId);
+    pendingFunctionCall: PendingFunctionCall,
+    callId: string
+  ): void => {
+    if (pendingFunctionCall.startedEmitted) {
+      return;
+    }
+
+    pendingFunctionCall.callId = callId;
+    pendingFunctionCall.startedEmitted = true;
+    pendingFunctionCallsByCallId.set(callId, pendingFunctionCall);
+
     const event: FunctionCallStartedEvent = {
       type: "function_call.started",
-      itemId,
-      name: normalizeToolName(action),
+      itemId: pendingFunctionCall.itemId,
+      name: pendingFunctionCall.toolName,
       callId,
     };
 
-    const deltas = getArgumentDeltas(action);
-    if (deltas.length === 0) {
-      const observedArguments = getObservedArguments(action);
-      if (observedArguments !== undefined) {
-        event.arguments = observedArguments;
-      }
+    if (
+      pendingFunctionCall.argumentDeltas.length === 0 &&
+      pendingFunctionCall.observedArguments !== undefined
+    ) {
+      event.arguments = pendingFunctionCall.observedArguments;
     }
 
-    const active = { itemId, callId };
-    activeFunctionCallsByAgentRun.set(runId, active);
     options.emitter.emit(event);
 
-    for (const delta of deltas) {
+    for (const delta of pendingFunctionCall.argumentDeltas) {
       options.emitter.emit({
         type: "function_call_arguments.delta",
-        itemId,
+        itemId: pendingFunctionCall.itemId,
         delta,
       });
     }
+  };
 
-    return active;
+  const createPendingFunctionCall = (action: unknown): PendingFunctionCall => {
+    const observedArguments = getObservedArguments(action);
+    const callId = extractCallId(action);
+
+    return {
+      itemId: options.generateId(),
+      toolName: normalizeToolName(action),
+      argumentDeltas: getArgumentDeltas(action),
+      ...(observedArguments !== undefined ? { observedArguments } : {}),
+      ...(callId !== undefined ? { callId } : {}),
+      startedEmitted: false,
+    };
+  };
+
+  const getAvailablePendingFunctionCalls = (
+    agentRunId: string
+  ): PendingFunctionCall[] => {
+    const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(agentRunId);
+    if (!pendingFunctionCalls) {
+      return [];
+    }
+
+    return pendingFunctionCalls.filter((pendingFunctionCall) => {
+      return pendingFunctionCall.toolRunId === undefined;
+    });
+  };
+
+  const findPendingFunctionCallByCallId = (
+    pendingFunctionCalls: PendingFunctionCall[],
+    toolCallId: string
+  ): PendingFunctionCall | undefined => {
+    const matchedByCallId = pendingFunctionCallsByCallId.get(toolCallId);
+    if (matchedByCallId && pendingFunctionCalls.includes(matchedByCallId)) {
+      return matchedByCallId;
+    }
+
+    return undefined;
+  };
+
+  const findPendingFunctionCallByToolName = (
+    pendingFunctionCalls: PendingFunctionCall[],
+    toolName: string,
+    toolCallId?: string
+  ): PendingFunctionCall | undefined => {
+    for (const pendingFunctionCall of pendingFunctionCalls) {
+      if (pendingFunctionCall.toolName !== toolName) {
+        continue;
+      }
+
+      if (
+        toolCallId !== undefined &&
+        pendingFunctionCall.callId !== undefined
+      ) {
+        continue;
+      }
+
+      return pendingFunctionCall;
+    }
+
+    return undefined;
+  };
+
+  const resolvePendingFunctionCallForToolStart = (
+    agentRunId: string,
+    toolName: string,
+    toolCallId?: string
+  ): PendingFunctionCall | undefined => {
+    const pendingFunctionCalls = getAvailablePendingFunctionCalls(agentRunId);
+    if (pendingFunctionCalls.length === 0) {
+      return undefined;
+    }
+
+    if (toolCallId) {
+      const matchedByCallId = findPendingFunctionCallByCallId(
+        pendingFunctionCalls,
+        toolCallId
+      );
+      if (matchedByCallId) {
+        return matchedByCallId;
+      }
+    }
+
+    const matchedByToolName = findPendingFunctionCallByToolName(
+      pendingFunctionCalls,
+      toolName,
+      toolCallId
+    );
+    if (matchedByToolName) {
+      return matchedByToolName;
+    }
+
+    return pendingFunctionCalls[0];
+  };
+
+  const resolvePendingFunctionCallForToolEnd = (
+    toolRunId: string,
+    agentRunId?: string
+  ): PendingFunctionCall | undefined => {
+    const activeFunctionCall = activeFunctionCallsByToolRun.get(toolRunId);
+    if (activeFunctionCall) {
+      return activeFunctionCall;
+    }
+
+    if (!agentRunId) {
+      return undefined;
+    }
+
+    const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(agentRunId);
+    if (!pendingFunctionCalls || pendingFunctionCalls.length === 0) {
+      return undefined;
+    }
+
+    for (const pendingFunctionCall of pendingFunctionCalls) {
+      if (pendingFunctionCall.startedEmitted) {
+        return pendingFunctionCall;
+      }
+    }
+
+    return pendingFunctionCalls[0];
   };
 
   const completeFunctionCall = (
-    active: ActiveFunctionCall | undefined
+    pendingFunctionCall: PendingFunctionCall | undefined
   ): void => {
-    if (!active) {
+    if (!pendingFunctionCall) {
       return;
     }
 
     options.emitter.emit({
       type: "function_call.completed",
-      itemId: active.itemId,
+      itemId: pendingFunctionCall.itemId,
     });
   };
 
   const cleanupFunctionCallState = (
-    toolRunId: string,
-    agentRunId?: string
+    pendingFunctionCall: PendingFunctionCall | undefined,
+    agentRunId?: string,
+    toolRunId?: string
   ): void => {
-    activeFunctionCallsByToolRun.delete(toolRunId);
-    if (agentRunId) {
-      activeFunctionCallsByAgentRun.delete(agentRunId);
+    if (toolRunId) {
+      activeFunctionCallsByToolRun.delete(toolRunId);
     }
+
+    if (!pendingFunctionCall) {
+      return;
+    }
+
+    if (pendingFunctionCall.callId) {
+      pendingFunctionCallsByCallId.delete(pendingFunctionCall.callId);
+    }
+
+    if (!agentRunId) {
+      return;
+    }
+
+    const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(agentRunId);
+    if (!pendingFunctionCalls) {
+      return;
+    }
+
+    const remaining = pendingFunctionCalls.filter((candidate) => {
+      return candidate !== pendingFunctionCall;
+    });
+
+    if (remaining.length === 0) {
+      pendingFunctionCallsByAgentRun.delete(agentRunId);
+      return;
+    }
+
+    pendingFunctionCallsByAgentRun.set(agentRunId, remaining);
   };
 
   const emitRunFailed = (runId: string, error: unknown): void => {
@@ -358,47 +542,68 @@ export const createOpenResponsesCallbackBridge = (
       parentRunId,
       _tags,
       _metadata,
-      runName
+      runName,
+      toolCallId
     ): void {
       const toolName = normalizeToolNameFromRun(serialized, runName);
+      const pendingFunctionCall = parentRunId
+        ? resolvePendingFunctionCallForToolStart(
+            parentRunId,
+            toolName,
+            toolCallId
+          )
+        : undefined;
+
+      if (pendingFunctionCall) {
+        const resolvedCallId =
+          toolCallId ??
+          pendingFunctionCall.callId ??
+          pendingFunctionCall.itemId;
+        emitFunctionCallStarted(pendingFunctionCall, resolvedCallId);
+        pendingFunctionCall.toolRunId = runId;
+        activeFunctionCallsByToolRun.set(runId, pendingFunctionCall);
+      }
+
       options.emitter.emit({
         type: "tool.started",
         runId,
         toolName,
         input: safeStringify(input),
       });
-
-      if (parentRunId) {
-        const activeFunctionCall =
-          activeFunctionCallsByAgentRun.get(parentRunId);
-        if (activeFunctionCall) {
-          activeFunctionCallsByToolRun.set(runId, activeFunctionCall);
-        }
-      }
     },
 
     handleToolEnd(output, runId, parentRunId): void {
       options.emitter.emit({ type: "tool.completed", runId, output });
 
-      const active = activeFunctionCallsByToolRun.get(runId);
-      if (active) {
-        completeFunctionCall(active);
-      } else if (parentRunId) {
-        completeFunctionCall(activeFunctionCallsByAgentRun.get(parentRunId));
-      }
-
-      cleanupFunctionCallState(runId, parentRunId);
+      const pendingFunctionCall = resolvePendingFunctionCallForToolEnd(
+        runId,
+        parentRunId
+      );
+      completeFunctionCall(pendingFunctionCall);
+      cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);
     },
 
     handleToolError(error, runId, parentRunId): void {
       options.emitter.emit({ type: "tool.error", runId, error });
-      cleanupFunctionCallState(runId, parentRunId);
+      const pendingFunctionCall = resolvePendingFunctionCallForToolEnd(
+        runId,
+        parentRunId
+      );
+      cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);
       emitRunFailed(parentRunId ?? runId, error);
     },
 
     handleAgentAction(action, runId): void {
       emitRunStarted(runId);
-      emitFunctionCallStarted(runId, action);
+      const pendingFunctionCall = createPendingFunctionCall(action);
+      registerPendingFunctionCall(runId, pendingFunctionCall);
+
+      if (pendingFunctionCall.callId) {
+        emitFunctionCallStarted(
+          pendingFunctionCall,
+          pendingFunctionCall.callId
+        );
+      }
     },
 
     handleAgentEnd(_result, runId): void {

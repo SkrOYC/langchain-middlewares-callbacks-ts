@@ -48,4 +48,20 @@ describe("AsyncEventQueue", () => {
     });
     await expect(iterator.next()).rejects.toThrow("queue failed");
   });
+
+  test("returns done immediately on repeated reads after completion", async () => {
+    const queue = createAsyncEventQueue<string>();
+    const iterator = queue[Symbol.asyncIterator]();
+
+    queue.complete();
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+  });
 });

@@ -86,6 +86,10 @@ class DefaultAsyncEventQueue<T> implements AsyncEventQueue<T> {
       return Promise.resolve(buffered);
     }
 
+    if (this.#finalized) {
+      return Promise.resolve({ done: true });
+    }
+
     const waiter = createDeferred<QueueResult<T>>();
     this.#waiters.push(waiter);
     return waiter;
