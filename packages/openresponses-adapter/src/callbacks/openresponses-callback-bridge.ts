@@ -39,7 +39,8 @@ const safeStringify = (value: unknown): string => {
   }
 
   try {
-    return JSON.stringify(value);
+    const stringified = JSON.stringify(value);
+    return stringified ?? String(value);
   } catch {
     return String(value);
   }

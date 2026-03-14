@@ -121,8 +121,7 @@ describe("OpenResponsesCallbackBridge", () => {
       "agent-run-1",
       undefined,
       undefined,
-      "get_weather",
-      "call-1"
+      "get_weather"
     );
     await callHandler(
       bridge.handleToolEnd,
