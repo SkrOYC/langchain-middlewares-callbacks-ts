@@ -117,6 +117,50 @@ describe("AGUICallbackHandler", () => {
       ]);
     });
 
+    test("streamed reasoning uses THINKING events by default", async () => {
+      const mockCallback = createMockCallback();
+      const handler = new AGUICallbackHandler({
+        publish: mockCallback.emit,
+      });
+      const runId = "run-thinking";
+      const messageId = "msg-thinking";
+      const agentRunId = "agent-run-thinking";
+
+      (handler as any).messageIds.set(runId, messageId);
+      (handler as any).agentRunIds.set(runId, agentRunId);
+
+      await handler.handleLLMNewToken("", null, runId, undefined, undefined, {
+        chunk: {
+          message: {
+            contentBlocks: [
+              {
+                type: "reasoning",
+                reasoning: "Think before speaking.",
+                index: 0,
+              },
+            ],
+          },
+        },
+      });
+
+      await handler.handleLLMNewToken("Hello", null, runId);
+      await handler.handleLLMEnd({}, runId);
+
+      const eventTypes = mockCallback.events.map((event: any) => event.type);
+      expect(eventTypes).toEqual([
+        "THINKING_START",
+        "THINKING_TEXT_MESSAGE_START",
+        "THINKING_TEXT_MESSAGE_CONTENT",
+        "THINKING_TEXT_MESSAGE_END",
+        "THINKING_END",
+        "TEXT_MESSAGE_START",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_END",
+      ]);
+      expect(eventTypes).not.toContain("REASONING_START");
+      expect(eventTypes).not.toContain("REASONING_MESSAGE_START");
+    });
+
     test("raw streaming reasoning without contentBlocks is flagged and skipped", async () => {
       const mockCallback = createMockCallback();
       const handler = new AGUICallbackHandler({

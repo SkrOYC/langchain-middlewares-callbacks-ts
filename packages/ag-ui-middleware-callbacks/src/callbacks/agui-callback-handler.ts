@@ -943,12 +943,20 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       if (!(typeof chunk.reasoning === "string" && chunk.reasoning.length > 0)) {
         continue;
       }
-      this.emitCallback({
-        type: EventType.REASONING_MESSAGE_CONTENT,
-        messageId: state.messageId,
-        delta: chunk.reasoning,
-        timestamp: Date.now(),
-      } as BaseEvent);
+      if (this.reasoningEventMode === "reasoning") {
+        this.emitCallback({
+          type: EventType.REASONING_MESSAGE_CONTENT,
+          messageId: state.messageId,
+          delta: chunk.reasoning,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      } else {
+        this.emitCallback({
+          type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
+          delta: chunk.reasoning,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      }
     }
   }
 
@@ -1041,17 +1049,28 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     };
     this.openReasoningStates.set(key, state);
 
-    this.emitCallback({
-      type: EventType.REASONING_START,
-      messageId: state.phaseId,
-      timestamp: Date.now(),
-    } as BaseEvent);
-    this.emitCallback({
-      type: EventType.REASONING_MESSAGE_START,
-      messageId: state.messageId,
-      role: "reasoning",
-      timestamp: Date.now(),
-    } as BaseEvent);
+    if (this.reasoningEventMode === "reasoning") {
+      this.emitCallback({
+        type: EventType.REASONING_START,
+        messageId: state.phaseId,
+        timestamp: Date.now(),
+      } as BaseEvent);
+      this.emitCallback({
+        type: EventType.REASONING_MESSAGE_START,
+        messageId: state.messageId,
+        role: "reasoning",
+        timestamp: Date.now(),
+      } as BaseEvent);
+    } else {
+      this.emitCallback({
+        type: EventType.THINKING_START,
+        timestamp: Date.now(),
+      } as BaseEvent);
+      this.emitCallback({
+        type: EventType.THINKING_TEXT_MESSAGE_START,
+        timestamp: Date.now(),
+      } as BaseEvent);
+    }
 
     return state;
   }
@@ -1063,16 +1082,27 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         continue;
       }
 
-      this.emitCallback({
-        type: EventType.REASONING_MESSAGE_END,
-        messageId: state.messageId,
-        timestamp: Date.now(),
-      } as BaseEvent);
-      this.emitCallback({
-        type: EventType.REASONING_END,
-        messageId: state.phaseId,
-        timestamp: Date.now(),
-      } as BaseEvent);
+      if (this.reasoningEventMode === "reasoning") {
+        this.emitCallback({
+          type: EventType.REASONING_MESSAGE_END,
+          messageId: state.messageId,
+          timestamp: Date.now(),
+        } as BaseEvent);
+        this.emitCallback({
+          type: EventType.REASONING_END,
+          messageId: state.phaseId,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      } else {
+        this.emitCallback({
+          type: EventType.THINKING_TEXT_MESSAGE_END,
+          timestamp: Date.now(),
+        } as BaseEvent);
+        this.emitCallback({
+          type: EventType.THINKING_END,
+          timestamp: Date.now(),
+        } as BaseEvent);
+      }
       this.openReasoningStates.delete(key);
     }
   }
