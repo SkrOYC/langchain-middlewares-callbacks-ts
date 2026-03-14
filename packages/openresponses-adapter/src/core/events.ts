@@ -62,12 +62,15 @@ export interface TextCompletedEvent {
 
 /**
  * Function call (tool use) started.
+ * When provider granularity is weak, the full arguments may be attached here
+ * so downstream state can emit done-only behavior without synthetic deltas.
  */
 export interface FunctionCallStartedEvent {
   type: "function_call.started";
   itemId: string;
   name: string;
   callId: string;
+  arguments?: string;
 }
 
 /**
