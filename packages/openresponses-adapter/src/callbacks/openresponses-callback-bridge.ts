@@ -298,6 +298,16 @@ export const createOpenResponsesCallbackBridge = (
     });
   };
 
+  const cleanupFunctionCallState = (
+    toolRunId: string,
+    agentRunId?: string
+  ): void => {
+    activeFunctionCallsByToolRun.delete(toolRunId);
+    if (agentRunId) {
+      activeFunctionCallsByAgentRun.delete(agentRunId);
+    }
+  };
+
   const emitRunFailed = (runId: string, error: unknown): void => {
     if (failedRuns.has(runId)) {
       return;
@@ -376,18 +386,12 @@ export const createOpenResponsesCallbackBridge = (
         completeFunctionCall(activeFunctionCallsByAgentRun.get(parentRunId));
       }
 
-      activeFunctionCallsByToolRun.delete(runId);
-      if (parentRunId) {
-        activeFunctionCallsByAgentRun.delete(parentRunId);
-      }
+      cleanupFunctionCallState(runId, parentRunId);
     },
 
     handleToolError(error, runId, parentRunId): void {
       options.emitter.emit({ type: "tool.error", runId, error });
-      activeFunctionCallsByToolRun.delete(runId);
-      if (parentRunId) {
-        activeFunctionCallsByAgentRun.delete(parentRunId);
-      }
+      cleanupFunctionCallState(runId, parentRunId);
       emitRunFailed(parentRunId ?? runId, error);
     },
 

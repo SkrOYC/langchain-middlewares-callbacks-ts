@@ -99,8 +99,11 @@ class DefaultAsyncEventQueue<T> implements AsyncEventQueue<T> {
     this.#finalized = true;
 
     if (this.#waiters.length > 0) {
-      for (const waiter of this.#waiters.splice(0)) {
-        waiter.resolve(result);
+      while (this.#waiters.length > 0) {
+        const waiter = this.#waiters.shift();
+        if (waiter) {
+          waiter.resolve(result);
+        }
       }
       return;
     }
