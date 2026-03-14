@@ -350,6 +350,106 @@ describe("OpenResponsesCallbackBridge", () => {
     ]);
   });
 
+  test("matches tool runs by serialized id when runName and toolCallId are absent", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["fc-4", "fc-5"]),
+    });
+
+    const firstAction: AgentAction = {
+      tool: "get_weather",
+      toolInput: { city: "Boston" },
+      log: "first tool selected",
+    };
+    const secondAction: AgentAction = {
+      tool: "get_time",
+      toolInput: { timezone: "UTC" },
+      log: "second tool selected",
+    };
+
+    await callHandler(bridge.handleAgentAction, firstAction, "agent-run-6");
+    await callHandler(bridge.handleAgentAction, secondAction, "agent-run-6");
+    await callHandler(
+      bridge.handleToolStart,
+      {
+        lc: 1,
+        type: "constructor",
+        id: ["langchain", "tools", "get_time"],
+        kwargs: {},
+      },
+      '{"timezone":"UTC"}',
+      "tool-run-6b",
+      "agent-run-6"
+    );
+    await callHandler(
+      bridge.handleToolEnd,
+      { now: "10:00" },
+      "tool-run-6b",
+      "agent-run-6"
+    );
+    await callHandler(
+      bridge.handleToolStart,
+      {
+        lc: 1,
+        type: "constructor",
+        id: ["langchain", "tools", "get_weather"],
+        kwargs: {},
+      },
+      '{"city":"Boston"}',
+      "tool-run-6a",
+      "agent-run-6"
+    );
+    await callHandler(
+      bridge.handleToolEnd,
+      { temperature: "55F" },
+      "tool-run-6a",
+      "agent-run-6"
+    );
+
+    expect(events).toEqual([
+      { type: "run.started", runId: "agent-run-6" },
+      {
+        type: "function_call.started",
+        itemId: "fc-5",
+        name: "get_time",
+        callId: "fc-5",
+        arguments: '{"timezone":"UTC"}',
+      },
+      {
+        type: "tool.started",
+        runId: "tool-run-6b",
+        toolName: "get_time",
+        input: '{"timezone":"UTC"}',
+      },
+      {
+        type: "tool.completed",
+        runId: "tool-run-6b",
+        output: { now: "10:00" },
+      },
+      { type: "function_call.completed", itemId: "fc-5" },
+      {
+        type: "function_call.started",
+        itemId: "fc-4",
+        name: "get_weather",
+        callId: "fc-4",
+        arguments: '{"city":"Boston"}',
+      },
+      {
+        type: "tool.started",
+        runId: "tool-run-6a",
+        toolName: "get_weather",
+        input: '{"city":"Boston"}',
+      },
+      {
+        type: "tool.completed",
+        runId: "tool-run-6a",
+        output: { temperature: "55F" },
+      },
+      { type: "function_call.completed", itemId: "fc-4" },
+    ]);
+  });
+
   test("maps runtime failures into a single run.failed event", async () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({

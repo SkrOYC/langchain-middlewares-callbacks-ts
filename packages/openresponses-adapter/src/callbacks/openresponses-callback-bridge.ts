@@ -204,6 +204,27 @@ const getObservedArguments = (action: unknown): string | undefined => {
   return undefined;
 };
 
+const getSerializedName = (serialized: RecordValue): string | undefined => {
+  const directName = getString(serialized, "name");
+  if (directName) {
+    return directName;
+  }
+
+  const id = serialized.id;
+  if (!Array.isArray(id)) {
+    return undefined;
+  }
+
+  for (let index = id.length - 1; index >= 0; index--) {
+    const part = id[index];
+    if (typeof part === "string" && part.length > 0) {
+      return part;
+    }
+  }
+
+  return undefined;
+};
+
 const normalizeToolNameFromRun = (
   serialized: unknown,
   runName?: string
@@ -216,7 +237,7 @@ const normalizeToolNameFromRun = (
     return "tool";
   }
 
-  return getString(serialized, "name") ?? getString(serialized, "id") ?? "tool";
+  return getSerializedName(serialized) ?? "tool";
 };
 
 export const createOpenResponsesCallbackBridge = (
