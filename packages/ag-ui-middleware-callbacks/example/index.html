@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>AG-UI Backend Example</title>
+		<style>
+			:root {
+				color-scheme: light;
+				font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+				background:
+					radial-gradient(circle at top left, #efe2c6, transparent 35%),
+					radial-gradient(circle at bottom right, #b9d6cf, transparent 30%),
+					#f7f2e8;
+				color: #1e2a24;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				padding: 24px;
+			}
+
+			main {
+				max-width: 1100px;
+				margin: 0 auto;
+				display: grid;
+				grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+				gap: 20px;
+			}
+
+			.panel {
+				background: rgba(255, 255, 255, 0.78);
+				backdrop-filter: blur(16px);
+				border: 1px solid rgba(30, 42, 36, 0.12);
+				border-radius: 20px;
+				padding: 20px;
+				box-shadow: 0 20px 45px rgba(30, 42, 36, 0.08);
+			}
+
+			h1,
+			h2,
+			p {
+				margin-top: 0;
+			}
+
+			aside {
+				display: grid;
+				gap: 16px;
+				align-self: start;
+			}
+
+			label {
+				display: grid;
+				gap: 6px;
+				font-size: 13px;
+				font-weight: 600;
+			}
+
+			input,
+			select,
+			textarea,
+			button {
+				font: inherit;
+			}
+
+			input,
+			select,
+			textarea {
+				border-radius: 12px;
+				border: 1px solid rgba(30, 42, 36, 0.16);
+				padding: 12px 14px;
+				background: rgba(255, 255, 255, 0.85);
+			}
+
+			textarea {
+				min-height: 110px;
+				resize: vertical;
+			}
+
+			button {
+				border: none;
+				border-radius: 999px;
+				padding: 12px 18px;
+				font-weight: 700;
+				cursor: pointer;
+			}
+
+			.primary {
+				background: #204f42;
+				color: #f8f6f0;
+			}
+
+			.secondary {
+				background: #d8c59f;
+				color: #2b261c;
+			}
+
+			.toolbar {
+				display: flex;
+				gap: 12px;
+				flex-wrap: wrap;
+			}
+
+			.stack {
+				display: grid;
+				gap: 14px;
+			}
+
+			#messages,
+			#tools {
+				display: grid;
+				gap: 12px;
+			}
+
+			.message,
+			.tool-card {
+				padding: 14px 16px;
+				border-radius: 16px;
+				border: 1px solid rgba(30, 42, 36, 0.1);
+				background: rgba(255, 255, 255, 0.92);
+			}
+
+			.message.user {
+				background: #204f42;
+				color: #f8f6f0;
+			}
+
+			.message-title,
+			.tool-title {
+				font-size: 12px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+				opacity: 0.65;
+				margin-bottom: 8px;
+			}
+
+			.tool-card pre {
+				margin: 8px 0 0;
+				padding: 12px;
+				border-radius: 12px;
+				background: #f3efe6;
+				overflow-x: auto;
+			}
+
+			.status {
+				font-size: 13px;
+				min-height: 20px;
+			}
+
+			.hint {
+				font-size: 13px;
+				color: rgba(30, 42, 36, 0.72);
+			}
+
+			.hidden {
+				display: none;
+			}
+
+			@media (max-width: 900px) {
+				main {
+					grid-template-columns: 1fr;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<aside>
+				<section class="panel">
+					<h1>AG-UI Default Backend</h1>
+					<p class="hint">
+						The GUI talks to the same backend contract that <code>verify.ts</code>
+						exercises from the CLI.
+					</p>
+				</section>
+				<section class="panel stack">
+					<h2>Runtime</h2>
+					<label>
+						Provider
+						<select id="provider">
+							<option value="mock">Mock</option>
+							<option value="openai-compatible">OpenAI-compatible</option>
+						</select>
+					</label>
+					<label>
+						Base URL
+						<input id="base-url" type="text" />
+					</label>
+					<label>
+						API Key
+						<input id="api-key" type="password" placeholder="Only needed for live mode" />
+					</label>
+					<label>
+						Model
+						<input id="model" type="text" />
+					</label>
+					<p class="hint">
+						Mock mode works offline and is the default path for local verification.
+					</p>
+				</section>
+				<section class="panel stack">
+					<h2>Prompt</h2>
+					<label>
+						Message
+						<textarea id="prompt">Calculate 2 + 2</textarea>
+					</label>
+					<div class="toolbar">
+						<button class="primary" id="send" type="button">Send</button>
+						<button class="secondary" id="abort" type="button">Abort</button>
+					</div>
+					<div class="status" id="status"></div>
+				</section>
+			</aside>
+			<section class="panel stack">
+				<div>
+					<h2>Messages</h2>
+					<div id="messages"></div>
+				</div>
+				<div>
+					<h2>Tool Activity</h2>
+					<div id="tools"></div>
+				</div>
+			</section>
+		</main>
+		<script type="module" src="./client.ts"></script>
+	</body>
+</html>

@@ -1,0 +1,1142 @@
+{
+  "capturedAt": "2026-03-13T23:20:46.162Z",
+  "provider": "openai-compatible",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "model": "openrouter/healer-alpha",
+  "prompt": "Think step by step and then answer: what is 37 * 19? Put the final answer on its own line.",
+  "useResponsesApi": true,
+  "outputVersion": "v1",
+  "chunks": [
+    {
+      "token": "",
+      "message": {
+        "content": [],
+        "contentBlocks": [],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "id": "gen-1773444039-lSF7XbVMsgxw5165ii1R",
+          "model_name": "openrouter/healer-alpha",
+          "model": "openrouter/healer-alpha",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "",
+      "message": {
+        "content": [
+          {
+            "type": "reasoning",
+            "reasoning": ""
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "reasoning",
+            "reasoning": ""
+          }
+        ],
+        "additional_kwargs": {
+          "reasoning": {
+            "id": "rs_tmp_088vzcosmv86",
+            "type": "reasoning",
+            "summary": []
+          }
+        },
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "",
+      "message": {
+        "id": "msg_tmp_093l96hhxh4m",
+        "content": [],
+        "contentBlocks": [],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "We",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "We"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "We"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " can break",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " can break"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " can break"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " down 3",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " down 3"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " down 3"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "7 *",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "7 *"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "7 *"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 19 as",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 19 as"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 19 as"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " follows",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " follows"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " follows"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": ":  \n37",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": ":  \n37"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": ":  \n37"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " * 19",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " * 19"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " * 19"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " = 37",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " = 37"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " = 37"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " * (20",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " * (20"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " * (20"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " - 1)",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " - 1)"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " - 1)"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " = 37",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " = 37"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " = 37"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " *",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " *"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " *"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 20 -",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 20 -"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 20 -"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 37 =",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 37 ="
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 37 ="
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 740",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 740"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 740"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " - 37",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " - 37"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " - 37"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " = 70",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " = 70"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " = 70"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "3.  \n\n",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "3.  \n\n"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "3.  \n\n"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "Alternatively, compute",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "Alternatively, compute"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "Alternatively, compute"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 30 *",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 30 *"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 30 *"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 19 =",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 19 ="
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 19 ="
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 570",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 570"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 570"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " and 7 *",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " and 7 *"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " and 7 *"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 19 =",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 19 ="
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 19 ="
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": " 133",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 133"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": " 133"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": ", then add them",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": ", then add them"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": ", then add them"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": ": 57",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": ": 57"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": ": 57"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "0 + 1",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "0 + 1"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "0 + 1"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "33 = ",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "33 = "
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "33 = "
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "703.",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "703."
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "703."
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "  \n\n703",
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "  \n\n703"
+          }
+        ],
+        "contentBlocks": [
+          {
+            "type": "text",
+            "index": 0,
+            "text": "  \n\n703"
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    },
+    {
+      "token": "",
+      "message": {
+        "content": [],
+        "contentBlocks": [],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_provider": "openai",
+          "object": "response",
+          "created_at": 1773444039,
+          "model": "openrouter/healer-alpha",
+          "status": "completed",
+          "completed_at": 1773444046,
+          "output": [
+            {
+              "id": "rs_tmp_088vzcosmv86",
+              "type": "reasoning",
+              "status": "completed",
+              "content": [
+                {
+                  "type": "reasoning_text",
+                  "text": "We are asked: \"Think step by step and then answer: what is 37 * 19? Put the final answer on its own line.\"\n\nWe need to compute 37 * 19. We can do it step by step.\n\n37 * 19 = 37 * (20 - 1) = 37*20 - 37 = 740 - 37 = 703.\n\nAlternatively, multiply directly: 30*19 = 570, 7*19 = 133, sum = 703.\n\nSo final answer: 703.\n\nWe need to put the final answer on its own line. So we output:\n\n703\n\nBut also we are to \"think step by step\" so we can include reasoning before that. We'll output the reasoning and then the answer on its own line.\n\nLet's format:\n\nStep-by-step reasoning:\n37 * 19 = 37 * (20 - 1) = 37*20 - 37 = 740 - 37 = 703.\nAlternatively, 30*19 = 570, 7*19 = 133, 570+133=703.\n\nSo the answer is 703.\n\nFinal answer:\n703"
+                }
+              ],
+              "summary": [],
+              "format": "unknown"
+            },
+            {
+              "id": "msg_tmp_093l96hhxh4m",
+              "type": "message",
+              "role": "assistant",
+              "status": "completed",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "We can break down 37 * 19 as follows:  \n37 * 19 = 37 * (20 - 1) = 37 * 20 - 37 = 740 - 37 = 703.  \n\nAlternatively, compute 30 * 19 = 570 and 7 * 19 = 133, then add them: 570 + 133 = 703.  \n\n703",
+                  "annotations": [],
+                  "logprobs": []
+                }
+              ]
+            }
+          ],
+          "error": null,
+          "incomplete_details": null,
+          "tools": [],
+          "tool_choice": "auto",
+          "parallel_tool_calls": true,
+          "max_output_tokens": null,
+          "temperature": 1,
+          "top_p": 1,
+          "presence_penalty": 0,
+          "frequency_penalty": 0,
+          "top_logprobs": 0,
+          "max_tool_calls": null,
+          "metadata": {},
+          "background": false,
+          "previous_response_id": null,
+          "service_tier": "auto",
+          "truncation": "disabled",
+          "store": false,
+          "instructions": null,
+          "text": {},
+          "reasoning": null,
+          "usage": {
+            "input_tokens": 2110,
+            "input_tokens_details": {
+              "cached_tokens": 2078
+            },
+            "output_tokens": 414,
+            "output_tokens_details": {
+              "reasoning_tokens": 198
+            },
+            "total_tokens": 2524,
+            "cost": 0,
+            "is_byok": false,
+            "cost_details": {
+              "upstream_inference_cost": null,
+              "upstream_inference_input_cost": 0,
+              "upstream_inference_output_cost": 0
+            }
+          },
+          "output_version": "v1"
+        },
+        "tool_call_chunks": [],
+        "tool_calls": [],
+        "invalid_tool_calls": []
+      }
+    }
+  ],
+  "finalMessage": {
+    "id": "msg_tmp_093l96hhxh4m",
+    "content": [
+      {
+        "type": "reasoning",
+        "reasoning": ""
+      },
+      {
+        "type": "text",
+        "index": 0,
+        "text": "We can break down 37 * 19 as follows:  \n37 * 19 = 37 * (20 - 1) = 37 * 20 - 37 = 740 - 37 = 703.  \n\nAlternatively, compute 30 * 19 = 570 and 7 * 19 = 133, then add them: 570 + 133 = 703.  \n\n703"
+      }
+    ],
+    "contentBlocks": [
+      {
+        "type": "reasoning",
+        "reasoning": ""
+      },
+      {
+        "type": "text",
+        "index": 0,
+        "text": "We can break down 37 * 19 as follows:  \n37 * 19 = 37 * (20 - 1) = 37 * 20 - 37 = 740 - 37 = 703.  \n\nAlternatively, compute 30 * 19 = 570 and 7 * 19 = 133, then add them: 570 + 133 = 703.  \n\n703"
+      }
+    ],
+    "additional_kwargs": {
+      "reasoning": {
+        "id": "rs_tmp_088vzcosmv86",
+        "type": "reasoning",
+        "summary": []
+      }
+    },
+    "response_metadata": {
+      "model_provider": "openai",
+      "id": "gen-1773444039-lSF7XbVMsgxw5165ii1R",
+      "model_name": "openrouter/healer-alpha",
+      "model": "openrouter/healer-alphaopenrouter/healer-alpha",
+      "output_version": "v1",
+      "object": "response",
+      "created_at": 1773444039,
+      "status": "completed",
+      "completed_at": 1773444046,
+      "output": [
+        {
+          "id": "rs_tmp_088vzcosmv86",
+          "type": "reasoning",
+          "status": "completed",
+          "content": [
+            {
+              "type": "reasoning_text",
+              "text": "We are asked: \"Think step by step and then answer: what is 37 * 19? Put the final answer on its own line.\"\n\nWe need to compute 37 * 19. We can do it step by step.\n\n37 * 19 = 37 * (20 - 1) = 37*20 - 37 = 740 - 37 = 703.\n\nAlternatively, multiply directly: 30*19 = 570, 7*19 = 133, sum = 703.\n\nSo final answer: 703.\n\nWe need to put the final answer on its own line. So we output:\n\n703\n\nBut also we are to \"think step by step\" so we can include reasoning before that. We'll output the reasoning and then the answer on its own line.\n\nLet's format:\n\nStep-by-step reasoning:\n37 * 19 = 37 * (20 - 1) = 37*20 - 37 = 740 - 37 = 703.\nAlternatively, 30*19 = 570, 7*19 = 133, 570+133=703.\n\nSo the answer is 703.\n\nFinal answer:\n703"
+            }
+          ],
+          "summary": [],
+          "format": "unknown"
+        },
+        {
+          "id": "msg_tmp_093l96hhxh4m",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "We can break down 37 * 19 as follows:  \n37 * 19 = 37 * (20 - 1) = 37 * 20 - 37 = 740 - 37 = 703.  \n\nAlternatively, compute 30 * 19 = 570 and 7 * 19 = 133, then add them: 570 + 133 = 703.  \n\n703",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        }
+      ],
+      "error": null,
+      "incomplete_details": null,
+      "tools": [],
+      "tool_choice": "auto",
+      "parallel_tool_calls": true,
+      "max_output_tokens": null,
+      "temperature": 1,
+      "top_p": 1,
+      "presence_penalty": 0,
+      "frequency_penalty": 0,
+      "top_logprobs": 0,
+      "max_tool_calls": null,
+      "metadata": {},
+      "background": false,
+      "previous_response_id": null,
+      "service_tier": "auto",
+      "truncation": "disabled",
+      "store": false,
+      "instructions": null,
+      "text": {},
+      "reasoning": null,
+      "usage": {
+        "input_tokens": 2110,
+        "input_tokens_details": {
+          "cached_tokens": 2078
+        },
+        "output_tokens": 414,
+        "output_tokens_details": {
+          "reasoning_tokens": 198
+        },
+        "total_tokens": 2524,
+        "cost": 0,
+        "is_byok": false,
+        "cost_details": {
+          "upstream_inference_cost": null,
+          "upstream_inference_input_cost": 0,
+          "upstream_inference_output_cost": 0
+        }
+      }
+    },
+    "tool_call_chunks": [],
+    "tool_calls": [],
+    "invalid_tool_calls": []
+  }
+}
