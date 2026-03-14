@@ -70,30 +70,30 @@ describe("OpenResponsesCallbackBridge", () => {
       bridge.handleChatModelStart,
       serializedFixture,
       [],
-      "run-1"
+      "model-run-1",
+      "agent-run-1"
     );
     await callHandler(
       bridge.handleLLMNewToken,
       "Hello",
       tokenIndicesFixture,
-      "run-1"
+      "model-run-1"
     );
     await callHandler(
       bridge.handleLLMNewToken,
       " world",
       tokenIndicesFixture,
-      "run-1"
+      "model-run-1"
     );
-    await callHandler(bridge.handleLLMEnd, llmResultFixture, "run-1");
-    await callHandler(bridge.handleAgentEnd, agentFinishFixture, "run-1");
+    await callHandler(bridge.handleLLMEnd, llmResultFixture, "model-run-1");
 
     expect(events).toEqual([
-      { type: "run.started", runId: "run-1" },
-      { type: "message.started", itemId: "msg-1", runId: "run-1" },
+      { type: "run.started", runId: "model-run-1", parentRunId: "agent-run-1" },
+      { type: "message.started", itemId: "msg-1", runId: "model-run-1" },
       { type: "text.delta", itemId: "msg-1", delta: "Hello" },
       { type: "text.delta", itemId: "msg-1", delta: " world" },
       { type: "text.completed", itemId: "msg-1" },
-      { type: "run.completed", runId: "run-1" },
+      { type: "run.completed", runId: "model-run-1" },
     ]);
   });
 
@@ -513,6 +513,105 @@ describe("OpenResponsesCallbackBridge", () => {
       { type: "tool.completed", runId: "tool-only-tool-run", output: "ok" },
       { type: "function_call.completed", itemId: "fc-tool-only" },
       { type: "run.completed", runId: "tool-only-run" },
+    ]);
+  });
+
+  test("preserves parentRunId for nested agent actions", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["fc-nested"]),
+    });
+
+    const action: AgentActionWithBridgeFields = {
+      tool: "lookup_user",
+      toolInput: { id: "nested-user" },
+      log: "nested tool selected",
+      toolCallId: "call-nested",
+    };
+
+    await callHandler(
+      bridge.handleAgentAction,
+      action,
+      "nested-agent-run",
+      "outer-agent-run"
+    );
+
+    expect(events).toEqual([
+      {
+        type: "run.started",
+        runId: "nested-agent-run",
+        parentRunId: "outer-agent-run",
+      },
+      {
+        type: "function_call.started",
+        itemId: "fc-nested",
+        name: "lookup_user",
+        callId: "call-nested",
+        arguments: '{"id":"nested-user"}',
+      },
+    ]);
+  });
+
+  test("does not fail the parent run when a tool reports an error", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["fc-tool-error"]),
+    });
+
+    const action: AgentActionWithBridgeFields = {
+      tool: "lookup_user",
+      toolInput: { id: "recoverable-user" },
+      log: "tool selected",
+      toolCallId: "call-tool-error",
+    };
+
+    await callHandler(bridge.handleAgentAction, action, "agent-run-tool-error");
+    await callHandler(
+      bridge.handleToolStart,
+      serializedFixture,
+      '{"id":"recoverable-user"}',
+      "tool-run-error",
+      "agent-run-tool-error",
+      undefined,
+      undefined,
+      "lookup_user",
+      "call-tool-error"
+    );
+    await callHandler(
+      bridge.handleToolError,
+      new Error("recoverable tool failure"),
+      "tool-run-error",
+      "agent-run-tool-error"
+    );
+    await callHandler(
+      bridge.handleAgentEnd,
+      agentFinishFixture,
+      "agent-run-tool-error"
+    );
+
+    expect(events).toEqual([
+      { type: "run.started", runId: "agent-run-tool-error" },
+      {
+        type: "function_call.started",
+        itemId: "fc-tool-error",
+        name: "lookup_user",
+        callId: "call-tool-error",
+        arguments: '{"id":"recoverable-user"}',
+      },
+      {
+        type: "tool.started",
+        runId: "tool-run-error",
+        toolName: "lookup_user",
+        input: '{"id":"recoverable-user"}',
+      },
+      {
+        type: "tool.error",
+        runId: "tool-run-error",
+        error: new Error("recoverable tool failure"),
+      },
+      { type: "run.completed", runId: "agent-run-tool-error" },
     ]);
   });
 

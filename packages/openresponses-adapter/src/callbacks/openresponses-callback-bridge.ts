@@ -600,11 +600,11 @@ export const createOpenResponsesCallbackBridge = (
 
     handleLLMEnd(_output, runId): void {
       const itemId = activeMessageItems.get(runId);
-      if (!itemId) {
-        return;
+      if (itemId) {
+        options.emitter.emit({ type: "text.completed", itemId });
       }
 
-      options.emitter.emit({ type: "text.completed", itemId });
+      emitRunCompleted(runId);
     },
 
     handleLLMError(error, runId): void {
@@ -666,11 +666,10 @@ export const createOpenResponsesCallbackBridge = (
         parentRunId
       );
       cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);
-      emitRunFailed(parentRunId ?? runId, error);
     },
 
-    handleAgentAction(action, runId): void {
-      emitRunStarted(runId);
+    handleAgentAction(action, runId, parentRunId): void {
+      emitRunStarted(runId, parentRunId);
       const pendingFunctionCall = createPendingFunctionCall(action);
       registerPendingFunctionCall(runId, pendingFunctionCall);
 
