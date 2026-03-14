@@ -375,10 +375,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     // Skip event emission if disabled - check after tool call collection
     if (!this.enabled) {
       const messageId = this.messageIds.get(runId);
+      this.cleanupOpenLifecycles(runId, messageId);
       if (messageId) {
         this.startedMessageIds.delete(messageId);
       }
-      this.closeStreamingReasoning(runId);
       this.streamedReasoningRuns.delete(runId);
       this.warnedMissingStreamingContentBlocks.delete(runId);
       this.messageIds.delete(runId);
@@ -532,16 +532,27 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     runId: string,
     parentRunId?: string
   ): void {
+    const messageId = this.messageIds.get(runId);
+    const agentRunId = this.resolveAgentRunId(runId, parentRunId);
+
     if (!this.enabled) {
+      this.cleanupOpenLifecycles(runId, messageId);
+      if (messageId) {
+        this.startedMessageIds.delete(messageId);
+      }
+      this.messageIds.delete(runId);
+      this.pendingToolCalls.delete(agentRunId);
+      this.agentRunIds.delete(runId);
+      this.streamedReasoningRuns.delete(runId);
+      this.warnedMissingStreamingContentBlocks.delete(runId);
+      this.clearStreamingToolCallIds(agentRunId);
       return;
     }
 
-    const messageId = this.messageIds.get(runId);
     if (messageId) {
       this.startedMessageIds.delete(messageId);
     }
     this.messageIds.delete(runId);
-    const agentRunId = this.resolveAgentRunId(runId, parentRunId);
     this.pendingToolCalls.delete(agentRunId);
     this.agentRunIds.delete(runId);
     this.closeStreamingReasoning(runId);
@@ -1274,10 +1285,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   }
 
   private emitTextMessageEnd(messageId?: string): void {
-    if (
-      !(messageId && this.emitTextMessages) ||
-      !this.startedMessageIds.has(messageId)
-    ) {
+    if (!(messageId && this.startedMessageIds.has(messageId))) {
       return;
     }
 
@@ -1286,6 +1294,14 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       messageId,
       timestamp: Date.now(),
     } as BaseEvent);
+  }
+
+  private cleanupOpenLifecycles(
+    runId: string,
+    messageId: string | undefined
+  ): void {
+    this.closeStreamingReasoning(runId);
+    this.emitTextMessageEnd(messageId);
   }
 
   private resolveToolInput(

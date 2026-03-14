@@ -918,6 +918,42 @@ describe("AGUICallbackHandler", () => {
         expect(mockCallback.emit).toHaveBeenCalled();
       });
 
+      test("disabling mid-stream still closes an open text lifecycle on LLM end", async () => {
+        const mockCallback = createMockCallback();
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
+        const runId = "run-midstream-end";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+
+        mockCallback.emit.mockClear();
+
+        handler.enabled = false;
+        await handler.handleLLMEnd({}, runId);
+
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
+      });
+
+      test("disabling mid-stream still closes an open text lifecycle on LLM error", async () => {
+        const mockCallback = createMockCallback();
+        const handler = new AGUICallbackHandler({ publish: mockCallback.emit });
+        const runId = "run-midstream-error";
+
+        await handler.handleLLMStart(null, ["prompt"], runId);
+        await handler.handleLLMNewToken("Hello", null, runId);
+
+        mockCallback.emit.mockClear();
+
+        handler.enabled = false;
+        await handler.handleLLMError(new Error("boom"), runId);
+
+        expect(mockCallback.emit).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "TEXT_MESSAGE_END" })
+        );
+      });
+
       test("tool calls are collected even when enabled=false but emitToolCalls=true", async () => {
         // This verifies that handleLLMEnd collects tool calls from output
         // even when disabled, so subsequent tool callbacks have the data they need

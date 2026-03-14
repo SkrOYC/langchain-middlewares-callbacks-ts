@@ -105,10 +105,10 @@ class ExampleMockModel extends BaseChatModel {
     });
   }
 
-  bindTools(tools: unknown[]): Promise<ExampleMockModel> {
+  override bindTools(tools: unknown[]): ExampleMockModel {
     const bound = new ExampleMockModel();
     bound.boundTools = tools;
-    return Promise.resolve(bound);
+    return bound;
   }
 
   protected _generate(
