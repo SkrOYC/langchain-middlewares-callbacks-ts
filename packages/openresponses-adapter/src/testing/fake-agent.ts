@@ -60,6 +60,39 @@ const toResponseBatch = (
   return Array.isArray(response) ? response : [response];
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+const snapshotValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => snapshotValue(item));
+  }
+
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [key, snapshotValue(entryValue)])
+    );
+  }
+
+  return value;
+};
+
+const snapshotConfig = (
+  config: Record<string, unknown> | undefined
+): Record<string, unknown> | null => {
+  if (!config) {
+    return null;
+  }
+
+  return snapshotValue(config) as Record<string, unknown>;
+};
+
 export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
   const {
     responses = [
@@ -88,7 +121,7 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
       config?: Record<string, unknown>
     ): Promise<unknown> {
       lastInvokeInput = structuredClone(input);
-      lastInvokeConfig = config ? structuredClone(config) : null;
+      lastInvokeConfig = snapshotConfig(config);
 
       if (invokeError) {
         throw invokeError;
@@ -127,7 +160,7 @@ export function createFakeAgent(config: FakeAgentConfig = {}): FakeAgent {
       config?: Record<string, unknown>
     ): AsyncIterable<unknown> {
       lastStreamInput = structuredClone(input);
-      lastStreamConfig = config ? structuredClone(config) : null;
+      lastStreamConfig = snapshotConfig(config);
 
       if (streamError) {
         throw streamError;
