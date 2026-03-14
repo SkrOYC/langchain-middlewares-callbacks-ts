@@ -665,6 +665,7 @@ export const createOpenResponsesCallbackBridge = (
         runId,
         parentRunId
       );
+      completeFunctionCall(pendingFunctionCall);
       cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);
     },
 

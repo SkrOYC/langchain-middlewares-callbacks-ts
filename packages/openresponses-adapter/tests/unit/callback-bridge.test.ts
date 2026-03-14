@@ -611,6 +611,7 @@ describe("OpenResponsesCallbackBridge", () => {
         runId: "tool-run-error",
         error: new Error("recoverable tool failure"),
       },
+      { type: "function_call.completed", itemId: "fc-tool-error" },
       { type: "run.completed", runId: "agent-run-tool-error" },
     ]);
   });
