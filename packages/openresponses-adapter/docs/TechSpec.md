@@ -135,7 +135,7 @@ This TechSpec replaces:
 - **JavaScript baseline:** ES2022
 - **Runtime baseline:** Web-standards-compatible JavaScript runtime
 - **Certified runtime matrix:** Node.js 24.x LTS and Bun current
-- **LangChain minimum:** Node.js 20.x (per `@langchain/core` engines requirement), though certified CI runs on 20.x/22.x/24.x
+- **LangChain minimum:** Node.js 20.x (per `@langchain/core` engines requirement)
 - **Portable target:** Deno current on a best-effort basis, limited to paths where the consuming app can run LangChain, the selected model/tool integrations, and Hono transport cleanly
 
 ### 1.2 Primary Frameworks and Libraries
@@ -157,7 +157,7 @@ This TechSpec replaces:
 - **Outputs:** ESM + CJS + `.d.ts`
 - **Exports map:** required
 - **Side effects:** `false`
-- **Target style:** source code must avoid Node-only built-ins in `core`, `adapter`, `callbacks`, `state`, and `serializer`
+- **Target style:** source code must avoid Node-only built-ins in `core`, `callbacks`, `middleware`, `state`, and shared server helpers
 - **Node-only code location:** runtime-specific server bootstraps, test harness helpers, and optional examples
 - **Monorepo package shape:** one publishable package per workspace, with package-local `README.md`, `src/`, `tests/`, and `examples/`
 
@@ -204,7 +204,7 @@ This TechSpec replaces:
 The product is a library-shaped adapter, not a distributed application. The builder is a solo developer mounting one package into an existing agent host.
 
 **Decision**  
-Implement as a modular monolith with explicit bounded modules: `core`, `adapter`, `callbacks`, `state`, `serializer`, `server`, and `testing`.
+Implement as a modular monolith with explicit bounded modules: `core`, `callbacks`, `middleware`, `state`, `server`, and `testing`.
 
 **Consequences**
 
@@ -314,25 +314,20 @@ This package shall distinguish between **certified support** and **portable desi
 The following modules must remain runtime-portable because they only use Web APIs and pure TypeScript:
 
 - `core/*`
-- `adapter/*`
 - `callbacks/*`
+- `middleware/*`
 - `state/*`
-- `serializer/*`
-
-#### Best-effort runtime target
-
-- Deno current, via Web-standard transport and package-local example entrypoints
+- shared server helpers that do not depend on Hono or a runtime-specific bootstrap
 
 #### Runtime-specific entrypoints
 
 - `server/hono.ts` — shared Hono app factory
 - `examples/node.ts` — Node bootstrap
 - `examples/bun.ts` — Bun bootstrap
-- `examples/deno.ts` — Deno bootstrap
 
 ### 3.2 Hard Constraint
 
-The package may be authored for runtime portability, but it shall only claim certified support for environments exercised in CI and release verification. Deno remains best-effort until the full LangChain integration path used by the package is continuously exercised there.
+The package may be authored for runtime portability, but it shall only claim certified support for environments exercised in CI and release verification.
 
 ### 3.3 Build Output
 
@@ -341,7 +336,7 @@ The package may be authored for runtime portability, but it shall only claim cer
 - `dist/index.js` (ESM)
 - `dist/index.cjs` (CJS)
 - `dist/index.d.ts`
-- optional subpath exports for `./server`, `./testing`, `./zod`
+- subpath exports for `./server` and `./testing`
 
 ### 3.4 `package.json` Contract
 
@@ -1039,7 +1034,7 @@ export type SpecErrorType =
 
 The adapter's `onError` handler maps internal codes to spec-compliant error types for external communication.
 
-## 8.2 `src/adapter`
+## 8.2 Adapter orchestration helpers
 
 ### Responsibility
 
@@ -1178,7 +1173,7 @@ export interface ResponseLifecycle {
 
 Use an in-process async queue implemented with promises/iterators. Do not pull in an event bus.
 
-## 8.5 `src/serializer`
+## 8.5 Event serialization and transport framing
 
 ### Responsibility
 
@@ -1186,9 +1181,8 @@ Convert canonical state changes into protocol events and transport output.
 
 ### Files
 
-- `event-serializer.ts`
-- `sse-response.ts`
-- `json-response.ts`
+- `src/server/event-serializer.ts`
+- `src/server/hono.ts`
 
 ### Required serializer behavior
 
@@ -1220,9 +1214,12 @@ Own the Hono route boundary.
 
 ### Files
 
+- `adapter.ts`
+- `event-serializer.ts`
 - `hono.ts`
-- `errors.ts`
-- `context.ts`
+- `logging.ts`
+- `previous-response.ts`
+- `timeout.ts`
 
 ### Route algorithm
 
@@ -1293,11 +1290,11 @@ export interface NormalizedToolPolicy {
 
 ## 9.3 Responsibility Split
 
-- parse/validate: adapter
-- translate to runtime config: tool mapping adapter
+- parse/validate: request normalization and server helpers
+- translate to runtime config: server adapter helpers
 - enforce during execution: middleware
 - observe resulting behavior: callback bridge
-- serialize function-call deltas/results: serializer
+- serialize function-call deltas/results: event serializer
 
 -----
 
@@ -1379,50 +1376,52 @@ export interface ErrorObject {
   tsconfig.json
   biome.json
   packages/
-    openresponses-langchain/
+    openresponses-adapter/
       src/
         core/
           errors.ts
           events.ts
           schemas.ts
           types.ts
-        adapter/
-          invoke-config.ts
-          materialize-output.ts
-          normalize-input.ts
-          previous-response.ts
-          tools.ts
         callbacks/
           openresponses-callback-bridge.ts
+          index.ts
+        middleware/
+          index.ts
+          openresponses-tool-policy.ts
         state/
           async-event-queue.ts
           item-accumulator.ts
           response-lifecycle.ts
-        serializer/
-          event-serializer.ts
-          json-response.ts
-          sse-response.ts
+          index.ts
         server/
-          context.ts
-          errors.ts
+          event-serializer.ts
+          adapter.ts
           hono.ts
+          index.ts
+          logging.ts
+          previous-response.ts
+          timeout.ts
         testing/
-          deterministic.ts
-          fakes.ts
+          deterministic-clock.ts
+          deterministic-id.ts
+          fake-agent.ts
+          in-memory-store.ts
+          index.ts
         index.ts
-        server.ts
-        testing.ts
       tests/
         compliance.spec.ts
         event-order.spec.ts
         fake-model.spec.ts
         image-input.spec.ts
         previous-response.spec.ts
+        readme.spec.ts
         tool-calling.spec.ts
       examples/
         node.ts
         bun.ts
-        deno.ts
+        node-smoke.mjs
+        bun-smoke.ts
       package.json
       tsconfig.json
       tsup.config.ts
@@ -1438,11 +1437,10 @@ export interface ErrorObject {
 
 ### 13.3 Dependency direction
 
-- `server` depends on `adapter`, `callbacks`, `state`, `serializer`, `core`
-- `serializer` depends on `state` and `core`
+- `server` depends on `callbacks`, `middleware`, `state`, and `core`
 - `state` depends on `core`
 - `callbacks` depends on `core` and `state`
-- `adapter` depends on `core`
+- `middleware` depends on `core`
 - `core` depends on nothing project-local
 
 ### 13.4 Clean Architecture rule
@@ -1465,7 +1463,7 @@ export interface ErrorObject {
 
 - canonical item state logic lives only in `src/state`
 - request validation logic lives only in `src/core/schemas.ts`
-- transport framing logic lives only in `src/serializer` and `src/server`
+- transport framing logic lives only in `src/server`
 - host/runtime auth integration stays outside package internals
 
 ### 14.3 Testing discipline
@@ -1497,14 +1495,13 @@ export interface ErrorObject {
 
 - `install` via `bun install --frozen-lockfile`
 - `typecheck` via `bun run typecheck`
-- `lint` via `bunx @biomejs/biome ci .`
+- `lint` via `bun run lint`
 - `unit` via `bun test`
 - `golden-stream` via `bun test tests/event-order.spec.ts tests/fake-model.spec.ts`
 - `compliance`
 - `build` via `bun run build`
 - `node-24-smoke`
 - `bun-smoke`
-- optional `deno-smoke`
 
 ## 15.2 Release blockers
 
@@ -1575,4 +1572,3 @@ These are not normative sources but reflect current ecosystem state at the time 
 - `@biomejs/biome`: https://www.npmjs.com/package/%40biomejs/biome
 - `tsup`: https://www.npmjs.com/package/tsup
 - `@types/bun`: https://www.npmjs.com/package/%40types/bun
-
