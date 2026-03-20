@@ -56,6 +56,21 @@ export interface SerializerContext {
   itemOutputIndices: Map<string, number>;
 }
 
+const getOutputIndexOrThrow = (
+  context: SerializerContext,
+  itemId: string,
+  eventType: string
+): number => {
+  const outputIndex = context.itemOutputIndices.get(itemId);
+  if (outputIndex === undefined) {
+    throw new Error(
+      `Invariant violation: received ${eventType} for unknown item ID "${itemId}"`
+    );
+  }
+
+  return outputIndex;
+};
+
 const ensureInProgress = (
   context: SerializerContext
 ): OpenResponsesEvent | null => {
@@ -137,7 +152,11 @@ export const serializeInternalEvent = (
     }
 
     case "text.delta": {
-      const outputIndex = context.itemOutputIndices.get(event.itemId) ?? 0;
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        "text.delta"
+      );
       context.accumulator.appendOutputTextDelta(event.itemId, 0, event.delta);
 
       return [
@@ -153,7 +172,11 @@ export const serializeInternalEvent = (
     }
 
     case "text.completed": {
-      const outputIndex = context.itemOutputIndices.get(event.itemId) ?? 0;
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        "text.completed"
+      );
       const finalizedPart = context.accumulator.finalizeOutputTextPart(
         event.itemId,
         0
@@ -219,7 +242,11 @@ export const serializeInternalEvent = (
     }
 
     case "function_call_arguments.delta": {
-      const outputIndex = context.itemOutputIndices.get(event.itemId) ?? 0;
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        "function_call_arguments.delta"
+      );
       context.accumulator.appendFunctionCallArgumentsDelta(
         event.itemId,
         event.delta
@@ -238,7 +265,11 @@ export const serializeInternalEvent = (
     }
 
     case "function_call.completed": {
-      const outputIndex = context.itemOutputIndices.get(event.itemId) ?? 0;
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        "function_call.completed"
+      );
       const finalizedItem = context.accumulator.finalizeItem(
         event.itemId,
         "completed"

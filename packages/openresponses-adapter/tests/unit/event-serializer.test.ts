@@ -160,6 +160,19 @@ describe("serializeInternalEvent", () => {
     });
   });
 
+  test("text.delta throws for unknown item IDs instead of defaulting to output index 0", () => {
+    const context = createContext();
+
+    expect(() =>
+      serializeInternalEvent(
+        { type: "text.delta", itemId: "missing-item", delta: "Hello" },
+        context
+      )
+    ).toThrow(
+      'Invariant violation: received text.delta for unknown item ID "missing-item"'
+    );
+  });
+
   test("text.completed emits text.done + part.done + item.done in order", () => {
     const context = createContext();
     serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
