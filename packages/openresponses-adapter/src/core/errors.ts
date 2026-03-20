@@ -24,6 +24,16 @@ export type InternalErrorCode =
   | "stream_transport_failed"
   | "internal_error";
 
+const INTERNAL_ERROR_CODES = [
+  "invalid_request",
+  "unsupported_media_type",
+  "previous_response_not_found",
+  "previous_response_unusable",
+  "agent_execution_failed",
+  "stream_transport_failed",
+  "internal_error",
+] as const satisfies readonly InternalErrorCode[];
+
 /**
  * Internal error structure with code and details.
  */
@@ -39,9 +49,12 @@ export function isInternalError(error: unknown): error is InternalError {
     return false;
   }
 
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : null;
+
   return (
-    "code" in error &&
-    typeof error.code === "string" &&
+    code !== null &&
+    INTERNAL_ERROR_CODES.includes(code as InternalErrorCode) &&
     "message" in error &&
     typeof error.message === "string"
   );
