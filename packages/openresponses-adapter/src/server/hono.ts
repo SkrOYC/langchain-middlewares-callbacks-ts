@@ -120,15 +120,21 @@ export function createOpenResponsesHandler<E extends Env = Env>(
           parsedRequest,
           executionOptions
         );
+        const cleanupStreamAbort = cleanupRequestAbort;
+        cleanupRequestAbort = noopCleanup;
 
         return streamSSE(c, async (stream) => {
-          for await (const chunk of eventStream) {
-            if (chunk === "[DONE]") {
-              await stream.write("data: [DONE]\n\n");
-              break;
-            }
+          try {
+            for await (const chunk of eventStream) {
+              if (chunk === "[DONE]") {
+                await stream.write("data: [DONE]\n\n");
+                break;
+              }
 
-            await stream.writeSSE(formatSSEFrame(chunk));
+              await stream.writeSSE(formatSSEFrame(chunk));
+            }
+          } finally {
+            cleanupStreamAbort();
           }
         });
       }
