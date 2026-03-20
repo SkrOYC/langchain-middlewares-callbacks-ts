@@ -14,6 +14,7 @@ import {
 import { createFakeAgent } from "@/testing/fake-agent.js";
 import {
   createDeterministicClock,
+  createInMemoryPreviousResponseStore,
   createSequentialIdGenerator,
 } from "@/testing/index.js";
 
@@ -120,6 +121,21 @@ const collectStream = async (
     events.push(event);
   }
   return events;
+};
+
+const extractResponseId = (
+  events: (OpenResponsesEvent | "[DONE]")[]
+): string => {
+  const firstEvent = events[0];
+  if (
+    !firstEvent ||
+    typeof firstEvent === "string" ||
+    firstEvent.type !== "response.in_progress"
+  ) {
+    throw new Error("Expected first stream event to be response.in_progress");
+  }
+
+  return firstEvent.response.id;
 };
 
 const createDelayedStore = (params: {
@@ -349,6 +365,65 @@ describe("adapter.stream()", () => {
     expect(
       events.map((event) => (typeof event === "string" ? event : event.type))
     ).toEqual(["response.failed", "[DONE]"]);
+  });
+
+  test("streaming completion persists a response record for continuation", async () => {
+    const previousResponseStore = createInMemoryPreviousResponseStore();
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateTextStream,
+      }),
+      previousResponseStore,
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator([
+        "resp-1",
+        "msg-1",
+        "extra-1",
+        "extra-2",
+      ]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    const stored = await previousResponseStore.load(extractResponseId(events));
+    expect(stored).toBeTruthy();
+    expect(stored?.response.status).toBe("completed");
+    expect(stored?.response.output).toEqual([
+      {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        status: "completed",
+        content: [
+          {
+            type: "output_text",
+            text: "Hello world",
+            annotations: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("streaming failure persists a failed response record for continuation", async () => {
+    const previousResponseStore = createInMemoryPreviousResponseStore();
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateFailureStream,
+      }),
+      previousResponseStore,
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator(["resp-1", "msg-1", "extra-1"]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    const stored = await previousResponseStore.load(extractResponseId(events));
+    expect(stored).toBeTruthy();
+    expect(stored?.response.status).toBe("failed");
+    expect(stored?.response.error).toMatchObject({
+      code: "agent_execution_failed",
+    });
   });
 });
 

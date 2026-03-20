@@ -102,9 +102,10 @@ export const withTimeout = async <T>(params: {
     }, params.timeoutMs);
   });
 
-  const operationPromise = params.operation(controller.signal);
-
   try {
+    const operationPromise = Promise.resolve().then(() =>
+      params.operation(controller.signal)
+    );
     return await Promise.race([operationPromise, timeoutPromise]);
   } finally {
     cleanupParentSignal();

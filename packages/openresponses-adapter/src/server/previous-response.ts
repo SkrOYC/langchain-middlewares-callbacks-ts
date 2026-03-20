@@ -968,6 +968,31 @@ export const materializeInvokeResponse = (params: {
   return OpenResponsesResponseSchema.parse(response);
 };
 
+export const materializeStreamResponse = (params: {
+  request: OpenResponsesRequest;
+  responseId: string;
+  createdAt: number;
+  completedAt: number | null;
+  status: OpenResponsesResponse["status"];
+  output: OutputItem[];
+  error: ErrorObject | null;
+}): OpenResponsesResponse => {
+  const response = {
+    id: params.responseId,
+    object: "response",
+    created_at: params.createdAt,
+    completed_at: params.completedAt,
+    status: params.status,
+    model: params.request.model,
+    previous_response_id: params.request.previous_response_id ?? null,
+    output: safeStructuredClone(params.output),
+    error: params.error ? safeStructuredClone(params.error) : null,
+    metadata: safeStructuredClone(params.request.metadata),
+  } satisfies OpenResponsesResponse;
+
+  return OpenResponsesResponseSchema.parse(response);
+};
+
 export const createStoredResponseRecord = (params: {
   request: OpenResponsesRequest;
   normalizedInputItems: InputItem[];

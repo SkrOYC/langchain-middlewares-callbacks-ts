@@ -37,6 +37,7 @@ import {
   createStoredResponseRecord,
   isInternalError,
   materializeInvokeResponse,
+  materializeStreamResponse,
   normalizeRequest,
   validateRequiredToolCallResult,
 } from "./previous-response.js";
@@ -91,6 +92,22 @@ const materializeResponseOrThrow = (params: {
 }): OpenResponsesResponse => {
   try {
     return materializeInvokeResponse(params);
+  } catch (error) {
+    return toInternalServerError("Failed to materialize response", error);
+  }
+};
+
+const materializeStreamResponseOrThrow = (params: {
+  request: OpenResponsesRequest;
+  responseId: string;
+  createdAt: number;
+  completedAt: number | null;
+  status: OpenResponsesResponse["status"];
+  output: OpenResponsesResponse["output"];
+  error: OpenResponsesResponse["error"];
+}): OpenResponsesResponse => {
+  try {
+    return materializeStreamResponse(params);
   } catch (error) {
     return toInternalServerError("Failed to materialize response", error);
   }
@@ -398,13 +415,67 @@ export function createOpenResponsesAdapter(
         }
       })();
 
-      // Return the serializer generator — drains queue in foreground
-      return createEventSerializer({
+      const serializedEvents = createEventSerializer({
         queue,
         accumulator,
         lifecycle,
         responseId,
       });
+
+      const persistStreamResponse = async (): Promise<void> => {
+        const previousResponseStore = options.previousResponseStore;
+        if (!previousResponseStore) {
+          return;
+        }
+
+        const status = lifecycle.getStatus();
+        if (
+          status !== "completed" &&
+          status !== "failed" &&
+          status !== "incomplete"
+        ) {
+          return;
+        }
+
+        const response = materializeStreamResponseOrThrow({
+          request: normalizedRequest.original,
+          responseId,
+          createdAt,
+          completedAt: lifecycle.getCompletedAt(),
+          status,
+          output: accumulator.snapshot(),
+          error: lifecycle.getError(),
+        });
+
+        const storedRecord = createStoredResponseRecord({
+          request: normalizedRequest.original,
+          normalizedInputItems: normalizedRequest.inputItems,
+          response,
+        });
+
+        await withTimeout({
+          operation: (phaseSignal) =>
+            previousResponseStore.save(storedRecord, phaseSignal),
+          signal: executionOptions.signal,
+          timeoutMs: timeoutBudgets.previousResponseSaveMs,
+          onTimeout: () =>
+            previousResponseSaveTimedOut(timeoutBudgets.previousResponseSaveMs),
+        });
+      };
+
+      return {
+        async *[Symbol.asyncIterator](): AsyncIterator<
+          OpenResponsesEvent | "[DONE]"
+        > {
+          try {
+            for await (const event of serializedEvents) {
+              yield event;
+            }
+          } finally {
+            await persistStreamResponse();
+          }
+        },
+      };
     },
   };
 }
