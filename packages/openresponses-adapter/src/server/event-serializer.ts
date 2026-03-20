@@ -9,6 +9,7 @@ import {
   agentExecutionFailed,
   type InternalError,
   internalErrorToPublicError,
+  isInternalError,
 } from "@/core/errors.js";
 import type { InternalSemanticEvent } from "@/core/events.js";
 import {
@@ -19,7 +20,6 @@ import type { SequenceGenerator, SSEFrame } from "@/core/types.js";
 import type { AsyncEventQueue } from "@/state/async-event-queue.js";
 import type { CanonicalItemAccumulator } from "@/state/item-accumulator.js";
 import type { ResponseLifecycle } from "@/state/response-lifecycle.js";
-import { isInternalError } from "./previous-response.js";
 
 export const createSequenceGenerator = (): SequenceGenerator => {
   let counter = 0;

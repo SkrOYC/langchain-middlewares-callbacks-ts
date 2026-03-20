@@ -31,5 +31,6 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "exclude": ["dist", "examples/*smoke.*"]
 }

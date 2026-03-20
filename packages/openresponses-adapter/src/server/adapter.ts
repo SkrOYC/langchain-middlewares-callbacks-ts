@@ -4,16 +4,17 @@
  * Programmatic adapter without HTTP transport.
  */
 
-import { createOpenResponsesCallbackBridge } from "../callbacks/openresponses-callback-bridge.js";
+import { createOpenResponsesCallbackBridge } from "@/callbacks/openresponses-callback-bridge.js";
 import {
   agentExecutionFailed,
   internalError,
   invalidRequest,
-} from "../core/errors.js";
+  isInternalError,
+} from "@/core/errors.js";
 import type {
   InternalEventEmitter,
   InternalSemanticEvent,
-} from "../core/events.js";
+} from "@/core/events.js";
 import type {
   InputItem,
   OpenResponsesExecutionOptions,
@@ -21,27 +22,23 @@ import type {
   OpenResponsesRequest,
   OpenResponsesResponse,
   PreviousResponseStore,
-} from "../core/index.js";
-import type { OpenResponsesEvent } from "../core/schemas.js";
+} from "@/core/index.js";
+import type { OpenResponsesEvent } from "@/core/schemas.js";
 import {
   getEffectiveToolChoiceMode,
   OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,
   serializeNormalizedToolPolicy,
-} from "../core/tool-policy.js";
-import { OPENRESPONSES_REQUEST_CONTEXT_CONFIG_KEY } from "../core/types.js";
-import { createAsyncEventQueue } from "../state/async-event-queue.js";
-import { createCanonicalItemAccumulator } from "../state/item-accumulator.js";
-import { createResponseLifecycle } from "../state/response-lifecycle.js";
-import { createEventSerializer } from "./event-serializer.js";
+} from "@/core/tool-policy.js";
+import { OPENRESPONSES_REQUEST_CONTEXT_CONFIG_KEY } from "@/core/types.js";
+import { createEventSerializer } from "@/server/event-serializer.js";
 import {
   buildStoredRequestInputItems,
   createStoredResponseRecord,
-  isInternalError,
   materializeInvokeResponse,
   materializeStreamResponse,
   normalizeRequest,
   validateRequiredToolCallResult,
-} from "./previous-response.js";
+} from "@/server/previous-response.js";
 import {
   agentExecutionTimedOut,
   normalizeExecutionOptions,
@@ -49,7 +46,10 @@ import {
   previousResponseSaveTimedOut,
   resolveTimeoutBudgets,
   withTimeout,
-} from "./timeout.js";
+} from "@/server/timeout.js";
+import { createAsyncEventQueue } from "@/state/async-event-queue.js";
+import { createCanonicalItemAccumulator } from "@/state/item-accumulator.js";
+import { createResponseLifecycle } from "@/state/response-lifecycle.js";
 
 export interface OpenResponsesAdapter {
   invoke(

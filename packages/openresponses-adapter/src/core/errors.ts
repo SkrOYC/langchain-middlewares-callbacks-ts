@@ -5,7 +5,7 @@
  * and public error types that are emitted on the wire per the Open Responses spec.
  */
 
-import type { ErrorObject } from "./schemas.js";
+import type { ErrorObject } from "@/core/schemas.js";
 
 // =============================================================================
 // Internal Error Codes
@@ -24,6 +24,16 @@ export type InternalErrorCode =
   | "stream_transport_failed"
   | "internal_error";
 
+const INTERNAL_ERROR_CODES = [
+  "invalid_request",
+  "unsupported_media_type",
+  "previous_response_not_found",
+  "previous_response_unusable",
+  "agent_execution_failed",
+  "stream_transport_failed",
+  "internal_error",
+] as const satisfies readonly InternalErrorCode[];
+
 /**
  * Internal error structure with code and details.
  */
@@ -32,6 +42,36 @@ export interface InternalError {
   message: string;
   details?: Record<string, unknown>;
   cause?: unknown;
+}
+
+export function isInternalError(error: unknown): error is InternalError {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : null;
+
+  return (
+    code !== null &&
+    INTERNAL_ERROR_CODES.includes(code as InternalErrorCode) &&
+    "message" in error &&
+    typeof error.message === "string"
+  );
+}
+
+export function toInternalError(
+  error: unknown,
+  defaultMessage = "Unexpected internal error"
+): InternalError {
+  if (isInternalError(error)) {
+    return error;
+  }
+
+  return internalError(
+    error instanceof Error ? error.message : defaultMessage,
+    error
+  );
 }
 
 // =============================================================================

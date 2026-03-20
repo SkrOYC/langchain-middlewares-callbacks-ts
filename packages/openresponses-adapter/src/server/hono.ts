@@ -9,21 +9,31 @@ import {
   internalErrorToPublicError,
   internalErrorToStatusCode,
   invalidRequest,
+  isInternalError,
   unsupportedMediaType,
-} from "../core/errors.js";
+} from "@/core/errors.js";
 import {
   type OpenResponsesHandlerOptions,
+  type OpenResponsesRequest,
   OpenResponsesRequestSchema,
-} from "../core/index.js";
-import { createOpenResponsesAdapter } from "./adapter.js";
-import { formatSSEFrame } from "./event-serializer.js";
-import { isInternalError, toPublicErrorBody } from "./previous-response.js";
+} from "@/core/index.js";
+import type { OpenResponsesEvent } from "@/core/schemas.js";
+import { createOpenResponsesAdapter } from "@/server/adapter.js";
+import { formatSSEFrame } from "@/server/event-serializer.js";
+import {
+  getRequestPath,
+  logRequestCompleted,
+  logRequestFailed,
+  logRequestStarted,
+  type RequestLogContext,
+} from "@/server/logging.js";
+import { toPublicErrorBody } from "@/server/previous-response.js";
 import {
   createRequestAbortController,
   requestValidationTimedOut,
   resolveTimeoutBudgets,
   withTimeout,
-} from "./timeout.js";
+} from "@/server/timeout.js";
 
 const parseRequestBody = async (request: Request): Promise<unknown> => {
   try {
@@ -62,6 +72,108 @@ const toErrorResponse = (
   });
 };
 
+const validateOpenResponsesRequest = (params: {
+  request: Request;
+  signal: AbortSignal;
+  timeoutMs: number;
+}): Promise<OpenResponsesRequest> => {
+  return withTimeout({
+    operation: async () => {
+      const body = await parseRequestBody(params.request);
+      const parsed = OpenResponsesRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        throw invalidRequest(
+          parsed.error.issues.map((issue) => issue.message).join("; ")
+        );
+      }
+
+      return parsed.data;
+    },
+    signal: params.signal,
+    timeoutMs: params.timeoutMs,
+    onTimeout: () => requestValidationTimedOut(params.timeoutMs),
+  });
+};
+
+const createExecutionOptions = <E extends Env = Env>(params: {
+  context: Context<E>;
+  signal: AbortSignal;
+  options: OpenResponsesHandlerOptions;
+}) => {
+  const requestContext = params.options.getRequestContext?.(params.context);
+  if (!requestContext) {
+    return {
+      signal: params.signal,
+    };
+  }
+
+  return {
+    signal: params.signal,
+    requestContext,
+  };
+};
+
+const logStreamingOutcome = (
+  requestLogContext: RequestLogContext,
+  terminalErrorCode: string | null
+): void => {
+  if (terminalErrorCode) {
+    logRequestFailed(
+      requestLogContext,
+      {
+        code: terminalErrorCode,
+        message: "Streaming request failed",
+      },
+      200
+    );
+    return;
+  }
+
+  logRequestCompleted(requestLogContext, 200);
+};
+
+const streamOpenResponses = <E extends Env = Env>(params: {
+  cleanupStreamAbort: () => void;
+  context: Context<E>;
+  eventStream: AsyncIterable<OpenResponsesEvent | "[DONE]">;
+  requestLogContext: RequestLogContext;
+}) => {
+  return streamSSE(params.context, async (stream) => {
+    let sawDone = false;
+    let terminalErrorCode: string | null = null;
+
+    try {
+      for await (const chunk of params.eventStream) {
+        if (chunk === "[DONE]") {
+          sawDone = true;
+          continue;
+        }
+
+        if ("response" in chunk) {
+          params.requestLogContext.responseId = chunk.response.id;
+        }
+
+        if (chunk.type === "response.failed") {
+          terminalErrorCode = chunk.error.code;
+        }
+
+        await stream.writeSSE(formatSSEFrame(chunk));
+      }
+
+      if (sawDone) {
+        await stream.write("data: [DONE]\n\n");
+      }
+
+      logStreamingOutcome(params.requestLogContext, terminalErrorCode);
+    } catch (error) {
+      logRequestFailed(params.requestLogContext, error, 200);
+      throw error;
+    } finally {
+      params.cleanupStreamAbort();
+    }
+  });
+};
+
 /**
  * Creates an Open Responses handler for Hono.
  *
@@ -79,6 +191,16 @@ export function createOpenResponsesHandler<E extends Env = Env>(
 
   return async (c: Context<E>): Promise<Response> => {
     let cleanupRequestAbort = noopCleanup;
+    const requestLogContext: RequestLogContext = {
+      path: getRequestPath(c.req.raw),
+      requestId: crypto.randomUUID(),
+      responseId: null,
+      startedAt: Date.now(),
+      stream: false,
+    };
+
+    logRequestStarted(requestLogContext);
+
     try {
       const requestAbort = createRequestAbortController(c.req.raw.signal);
       const requestAbortController = requestAbort.controller;
@@ -88,34 +210,19 @@ export function createOpenResponsesHandler<E extends Env = Env>(
         throw unsupportedMediaType("Content-Type must be application/json");
       }
 
-      const parsedRequest = await withTimeout({
-        operation: async () => {
-          const body = await parseRequestBody(c.req.raw);
-          const parsed = OpenResponsesRequestSchema.safeParse(body);
-          if (!parsed.success) {
-            throw invalidRequest(
-              parsed.error.issues.map((issue) => issue.message).join("; ")
-            );
-          }
-
-          return parsed.data;
-        },
+      const parsedRequest = await validateOpenResponsesRequest({
+        request: c.req.raw,
         signal: requestAbortController.signal,
         timeoutMs: timeoutBudgets.requestValidationMs,
-        onTimeout: () =>
-          requestValidationTimedOut(timeoutBudgets.requestValidationMs),
       });
-      const requestContext = options.getRequestContext?.(c);
-      const executionOptions = requestContext
-        ? {
-            signal: requestAbortController.signal,
-            requestContext,
-          }
-        : {
-            signal: requestAbortController.signal,
-          };
+      const executionOptions = createExecutionOptions({
+        context: c,
+        signal: requestAbortController.signal,
+        options,
+      });
 
       if (parsedRequest.stream) {
+        requestLogContext.stream = true;
         const eventStream = await adapter.stream(
           parsedRequest,
           executionOptions
@@ -123,30 +230,20 @@ export function createOpenResponsesHandler<E extends Env = Env>(
         const cleanupStreamAbort = cleanupRequestAbort;
         cleanupRequestAbort = noopCleanup;
 
-        return streamSSE(c, async (stream) => {
-          let sawDone = false;
-          try {
-            for await (const chunk of eventStream) {
-              if (chunk === "[DONE]") {
-                sawDone = true;
-                continue;
-              }
-
-              await stream.writeSSE(formatSSEFrame(chunk));
-            }
-
-            if (sawDone) {
-              await stream.write("data: [DONE]\n\n");
-            }
-          } finally {
-            cleanupStreamAbort();
-          }
+        return streamOpenResponses({
+          cleanupStreamAbort,
+          context: c,
+          eventStream,
+          requestLogContext,
         });
       }
 
       const response = await adapter.invoke(parsedRequest, executionOptions);
+      requestLogContext.responseId = response.id;
+      logRequestCompleted(requestLogContext, 200);
       return c.json(response);
     } catch (error) {
+      logRequestFailed(requestLogContext, error);
       return toErrorResponse(error, options.onError);
     } finally {
       cleanupRequestAbort();

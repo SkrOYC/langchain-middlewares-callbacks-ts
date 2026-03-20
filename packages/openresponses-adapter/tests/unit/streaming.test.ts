@@ -328,6 +328,30 @@ const createHandlerContext = (params: {
   };
 };
 
+const captureStructuredLogs = async <T>(
+  callback: () => Promise<T>
+): Promise<{ result: T; errorLogs: string[]; infoLogs: string[] }> => {
+  const infoLogs: string[] = [];
+  const errorLogs: string[] = [];
+  const originalInfo = console.info;
+  const originalError = console.error;
+
+  console.info = (...args: unknown[]) => {
+    infoLogs.push(args.map((arg) => String(arg)).join(" "));
+  };
+  console.error = (...args: unknown[]) => {
+    errorLogs.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    const result = await callback();
+    return { result, errorLogs, infoLogs };
+  } finally {
+    console.info = originalInfo;
+    console.error = originalError;
+  }
+};
+
 const baseRequest = {
   model: "test-model",
   input: "Hello",
@@ -817,6 +841,46 @@ describe("Hono streaming route", () => {
     });
   });
 
+  test("rejects unsupported content types with 415", async () => {
+    const app = await buildOpenResponsesApp({
+      agent: createCallbackDrivenAgent({ onStream: simulateTextStream }),
+    });
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify(baseRequest),
+    });
+
+    expect(response.status).toBe(415);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "unsupported_media_type",
+        type: "invalid_request_error",
+      },
+    });
+  });
+
+  test("rejects malformed JSON bodies with a sanitized 400 response", async () => {
+    const app = await buildOpenResponsesApp({
+      agent: createCallbackDrivenAgent({ onStream: simulateTextStream }),
+    });
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not-valid-json",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "invalid_request",
+        type: "invalid_request_error",
+      },
+    });
+  });
+
   test("strict streaming persistence failures do not write [DONE]", async () => {
     const app = await buildOpenResponsesApp({
       agent: createCallbackDrivenAgent({ onStream: simulateTextStream }),
@@ -905,5 +969,124 @@ describe("Hono streaming route", () => {
     await expect(response.json()).resolves.toMatchObject({
       metadata: {},
     });
+  });
+
+  test("emits token-safe structured logs for completed JSON requests", async () => {
+    const { infoLogs } = await captureStructuredLogs(async () => {
+      const app = await buildOpenResponsesApp({
+        agent: createFakeAgent({
+          responses: [
+            {
+              type: "ai",
+              id: "ai-1",
+              content: "do-not-log-this-output",
+            },
+          ],
+        }),
+        clock: createDeterministicClock(1000),
+        generateId: createSequentialIdGenerator(["resp-1", "msg-1"]),
+      });
+
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...baseRequest,
+          stream: false,
+          input: "do-not-log-this-input",
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await response.json();
+    });
+
+    const startedLog = JSON.parse(
+      infoLogs.find((entry) => entry.includes('"event":"request.started"')) ??
+        ""
+    );
+    const completedLog = JSON.parse(
+      infoLogs.find((entry) => entry.includes('"event":"request.completed"')) ??
+        ""
+    );
+
+    expect(startedLog).toMatchObject({
+      request_id: expect.any(String),
+      response_id: null,
+      stream: false,
+    });
+    expect(completedLog).toMatchObject({
+      request_id: expect.any(String),
+      response_id: "resp-1",
+      status_code: 200,
+      error_code: null,
+      stream: false,
+    });
+    expect(infoLogs.join("\n")).not.toContain("do-not-log-this-input");
+    expect(infoLogs.join("\n")).not.toContain("do-not-log-this-output");
+  });
+
+  test("emits structured failure logs for post-start streaming errors", async () => {
+    const { errorLogs } = await captureStructuredLogs(async () => {
+      const app = await buildOpenResponsesApp({
+        agent: createCallbackDrivenAgent({ onStream: simulateFailureStream }),
+        clock: createDeterministicClock(1000),
+        generateId: createSequentialIdGenerator(["resp-1", "msg-1", "extra-1"]),
+      });
+
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(baseRequest),
+      });
+
+      expect(response.status).toBe(200);
+      await response.text();
+    });
+
+    const failedLog = JSON.parse(
+      errorLogs.find((entry) => entry.includes('"event":"request.failed"')) ??
+        ""
+    );
+
+    expect(failedLog).toMatchObject({
+      request_id: expect.any(String),
+      response_id: "resp-1",
+      status_code: 200,
+      error_code: "agent_execution_failed",
+      stream: true,
+    });
+    expect(errorLogs.join("\n")).not.toContain("Hi");
+  });
+
+  test("internal error responses and logs do not expose raw stack traces", async () => {
+    const { errorLogs } = await captureStructuredLogs(async () => {
+      const app = await buildOpenResponsesApp({
+        agent: createFakeAgent({
+          invokeError: new Error("database exploded"),
+        }),
+      });
+
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...baseRequest,
+          stream: false,
+        }),
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toMatchObject({
+        error: {
+          code: "agent_execution_failed",
+          message: "database exploded",
+        },
+      });
+    });
+
+    const serializedLogs = errorLogs.join("\n");
+    expect(serializedLogs).not.toContain("Error: database exploded");
+    expect(serializedLogs).not.toContain("at ");
   });
 });

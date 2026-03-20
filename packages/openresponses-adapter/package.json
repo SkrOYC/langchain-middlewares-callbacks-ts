@@ -45,9 +45,14 @@
   "scripts": {
     "build": "tsup",
     "test": "bun test",
+    "test:unit": "bun test",
+    "test:golden-stream": "bun test tests/event-order.spec.ts tests/fake-model.spec.ts",
+    "test:compliance": "bun test tests/compliance.spec.ts",
     "lint": "bunx --bun @biomejs/biome check .",
     "format": "bunx --bun @biomejs/biome format --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:node": "node ./examples/node-smoke.mjs",
+    "smoke:bun": "bun ./examples/bun-smoke.ts"
   },
   "peerDependencies": {
     "langchain": "catalog:peer",

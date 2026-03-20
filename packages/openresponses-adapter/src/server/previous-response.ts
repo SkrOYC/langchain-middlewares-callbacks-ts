@@ -4,12 +4,11 @@
 
 import {
   agentExecutionFailed,
-  type InternalError,
   internalError,
   invalidRequest,
   previousResponseNotFound,
   previousResponseUnusable,
-} from "../core/errors.js";
+} from "@/core/errors.js";
 import {
   type ErrorObject,
   type FunctionTool,
@@ -22,15 +21,15 @@ import {
   type OutputTextPart,
   StoredResponseRecordSchema,
   type ToolChoice,
-} from "../core/schemas.js";
-import { getEffectiveToolChoiceMode } from "../core/tool-policy.js";
+} from "@/core/schemas.js";
+import { getEffectiveToolChoiceMode } from "@/core/tool-policy.js";
 import type {
   LangChainMessageLike,
   NormalizedRequest,
   NormalizedToolPolicy,
   PreviousResponseStore,
   StoredResponseRecord,
-} from "../core/types.js";
+} from "@/core/types.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
@@ -1026,17 +1025,4 @@ export const toPublicErrorBody = (
   error: ErrorObject
 ): { error: ErrorObject } => {
   return { error };
-};
-
-export const isInternalError = (error: unknown): error is InternalError => {
-  if (typeof error !== "object" || error === null) {
-    return false;
-  }
-
-  return (
-    "code" in error &&
-    typeof error.code === "string" &&
-    "message" in error &&
-    typeof error.message === "string"
-  );
 };
