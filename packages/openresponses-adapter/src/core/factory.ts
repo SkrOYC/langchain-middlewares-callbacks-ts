@@ -11,12 +11,17 @@ import type {
   OpenResponsesRequest,
   OpenResponsesResponse,
 } from "./schemas.js";
-import type { OpenResponsesHandlerOptions } from "./types.js";
+import type {
+  OpenResponsesExecutionOptions,
+  OpenResponsesHandlerOptions,
+} from "./types.js";
 
 // Re-export types for convenience
 export type {
   OpenResponsesCompatibleAgent,
+  OpenResponsesExecutionOptions,
   OpenResponsesHandlerOptions,
+  OpenResponsesTimeoutBudgets,
   PreviousResponseStore,
   StoredResponseRecord,
 } from "./types.js";
@@ -50,7 +55,7 @@ export interface OpenResponsesAdapter {
    */
   invoke(
     request: OpenResponsesRequest,
-    signal?: AbortSignal
+    signalOrOptions?: AbortSignal | OpenResponsesExecutionOptions
   ): Promise<OpenResponsesResponse>;
 
   /**
@@ -62,8 +67,8 @@ export interface OpenResponsesAdapter {
    */
   stream(
     request: OpenResponsesRequest,
-    signal?: AbortSignal
-  ): AsyncIterable<OpenResponsesEvent | "[DONE]">;
+    signalOrOptions?: AbortSignal | OpenResponsesExecutionOptions
+  ): Promise<AsyncIterable<OpenResponsesEvent | "[DONE]">>;
 }
 
 export declare function createOpenResponsesAdapter(

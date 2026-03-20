@@ -1,15 +1,14 @@
 import { z } from "zod";
 import {
   FunctionToolSchema,
-  ToolChoiceSchema,
   type ToolChoice,
+  ToolChoiceSchema,
 } from "./schemas.js";
 import type { NormalizedToolPolicy } from "./types.js";
 
 export type EffectiveToolChoiceMode = "none" | "auto" | "required";
 
-export const OPENRESPONSES_TOOL_POLICY_CONFIG_KEY =
-  "openresponses_tool_policy";
+export const OPENRESPONSES_TOOL_POLICY_CONFIG_KEY = "openresponses_tool_policy";
 
 export const SerializedNormalizedToolPolicySchema = z.object({
   tools: z.array(FunctionToolSchema),

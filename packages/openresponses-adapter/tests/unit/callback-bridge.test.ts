@@ -155,6 +155,7 @@ describe("OpenResponsesCallbackBridge", () => {
         type: "tool.completed",
         runId: "tool-run-1",
         output: { temperature: "55F" },
+        callId: "call-1",
       },
       { type: "function_call.completed", itemId: "fc-1" },
       { type: "run.completed", runId: "agent-run-1" },
@@ -191,7 +192,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "call-2",
         arguments: '{"id":"user-123"}',
       },
-      { type: "tool.completed", runId: "tool-run-2", output: "ok" },
+      {
+        type: "tool.completed",
+        runId: "tool-run-2",
+        output: "ok",
+        callId: "call-2",
+      },
       { type: "function_call.completed", itemId: "fc-2" },
     ]);
 
@@ -283,6 +289,7 @@ describe("OpenResponsesCallbackBridge", () => {
         type: "tool.completed",
         runId: "tool-run-2",
         output: { now: "10:00" },
+        callId: "call-2",
       },
       { type: "function_call.completed", itemId: "fc-2" },
       {
@@ -295,6 +302,7 @@ describe("OpenResponsesCallbackBridge", () => {
         type: "tool.completed",
         runId: "tool-run-1",
         output: { temperature: "55F" },
+        callId: "call-1",
       },
       { type: "function_call.completed", itemId: "fc-1" },
     ]);
@@ -428,7 +436,12 @@ describe("OpenResponsesCallbackBridge", () => {
         toolName: "lookup_user",
         input: '{"id":"user-456"}',
       },
-      { type: "tool.completed", runId: "tool-run-5", output: "ok" },
+      {
+        type: "tool.completed",
+        runId: "tool-run-5",
+        output: "ok",
+        callId: "real-call-5",
+      },
       { type: "function_call.completed", itemId: "fc-3" },
     ]);
   });
@@ -509,6 +522,7 @@ describe("OpenResponsesCallbackBridge", () => {
         type: "tool.completed",
         runId: "tool-run-6b",
         output: { now: "10:00" },
+        callId: "fc-5",
       },
       { type: "function_call.completed", itemId: "fc-5" },
       {
@@ -528,6 +542,7 @@ describe("OpenResponsesCallbackBridge", () => {
         type: "tool.completed",
         runId: "tool-run-6a",
         output: { temperature: "55F" },
+        callId: "fc-4",
       },
       { type: "function_call.completed", itemId: "fc-4" },
     ]);
@@ -593,7 +608,12 @@ describe("OpenResponsesCallbackBridge", () => {
         toolName: "lookup_user",
         input: '{"id":"user-999"}',
       },
-      { type: "tool.completed", runId: "tool-only-tool-run", output: "ok" },
+      {
+        type: "tool.completed",
+        runId: "tool-only-tool-run",
+        output: "ok",
+        callId: "call-tool-only",
+      },
       { type: "function_call.completed", itemId: "fc-tool-only" },
       { type: "run.completed", runId: "tool-only-run" },
     ]);

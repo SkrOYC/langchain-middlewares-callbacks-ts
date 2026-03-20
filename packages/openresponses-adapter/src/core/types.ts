@@ -6,6 +6,7 @@
  */
 
 import type { CallbackHandlerMethods } from "@langchain/core/callbacks/base";
+import type { Context, Env } from "hono";
 import type {
   ErrorObject,
   FunctionTool,
@@ -95,6 +96,21 @@ export interface OpenResponsesCompatibleAgent {
 // Handler Options
 // =============================================================================
 
+export const OPENRESPONSES_REQUEST_CONTEXT_CONFIG_KEY =
+  "openresponses_request_context";
+
+export interface OpenResponsesTimeoutBudgets {
+  requestValidationMs?: number;
+  previousResponseLoadMs?: number;
+  agentExecutionMs?: number;
+  previousResponseSaveMs?: number;
+}
+
+export interface OpenResponsesExecutionOptions {
+  signal?: AbortSignal;
+  requestContext?: Record<string, unknown>;
+}
+
 /**
  * Options for creating an Open Responses handler.
  */
@@ -105,6 +121,11 @@ export interface OpenResponsesHandlerOptions {
   toolPolicySupport?: "metadata-only" | "middleware";
   previousResponseStore?: PreviousResponseStore;
   onError?: (error: unknown) => ErrorObject;
+  timeoutBudgets?: OpenResponsesTimeoutBudgets;
+  previousResponseSaveMode?: "strict" | "best_effort";
+  getRequestContext?: <E extends Env = Env>(
+    c: Context<E>
+  ) => Record<string, unknown> | undefined;
   clock?: () => number;
   generateId?: () => string;
 }

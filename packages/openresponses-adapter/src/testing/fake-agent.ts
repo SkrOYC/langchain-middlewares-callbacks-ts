@@ -76,7 +76,10 @@ const snapshotValue = (value: unknown): unknown => {
 
   if (isPlainObject(value)) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, entryValue]) => [key, snapshotValue(entryValue)])
+      Object.entries(value).map(([key, entryValue]) => [
+        key,
+        snapshotValue(entryValue),
+      ])
     );
   }
 
