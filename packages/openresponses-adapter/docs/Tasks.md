@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 - **Total Estimation:** 75 story points
-- **Progress Snapshot:** 14 implemented, 4 partial, 3 planned
+- **Progress Snapshot:** 21 implemented, 0 partial, 0 planned
 - **Original Critical Path:** ORL-001 → ORL-002 → ORL-003 → ORL-004 → ORL-005 → ORL-006 → ORL-007 → ORL-008 → ORL-009 → ORL-010 → ORL-011 → ORL-012 → ORL-013 → ORL-015 → ORL-016 → ORL-017 → ORL-018 → ORL-020 → ORL-021
-- **Remaining Critical Path:** ORL-015 → ORL-016 → ORL-017 → ORL-018 → ORL-019 → ORL-020 → ORL-021
+- **Remaining Critical Path:** None. MVP critical path complete through ORL-021.
 
 The plan is intentionally shaped around the real bottleneck: truthful live semantic streaming. Based on Goldratt’s Theory of Constraints, the highest-risk and highest-coupling path is callback fidelity → canonical state → single-writer serialization → transport failure semantics. Non-streaming JSON, continuation persistence, and release packaging are sequenced to support that path rather than compete with it.
 
@@ -98,8 +98,7 @@ flowchart LR
     classDef planned fill:#edf2f7,stroke:#5c6b7a,color:#24313d
 
     class ORL001,ORL002,ORL003,ORL004,ORL005,ORL006,ORL007,ORL008,ORL009,ORL010,ORL011,ORL012,ORL013,ORL014 implemented
-    class ORL017,ORL018,ORL019,ORL020 partial
-    class ORL015,ORL016,ORL021 planned
+    class ORL015,ORL016,ORL017,ORL018,ORL019,ORL020,ORL021 implemented
 ```
 
 ## 4. The Ticket List
@@ -298,10 +297,10 @@ flowchart LR
 
 > **[ORL-015] Implement the event serializer and SSE framing**
 > - **Type:** Feature
-> - **Status:** Planned
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-003, ORL-009, ORL-010, ORL-011]
-> - **Current State:** No serializer module or SSE framing path exists yet; sequence-numbered public event serialization remains unimplemented.
+> - **Current State:** Implemented in `src/server/event-serializer.ts` with response-scoped sequence numbers, outgoing event validation, and SSE frame formatting used by the Hono transport.
 > - **Description:** Implement the single serializer that owns response-scoped sequence numbers, converts canonical and internal events into public Open Responses events, validates outgoing events in non-production paths, and formats compliant SSE frames.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -312,10 +311,10 @@ flowchart LR
 
 > **[ORL-016] Implement the truthful streaming execution path**
 > - **Type:** Feature
-> - **Status:** Planned
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-013, ORL-014, ORL-015]
-> - **Current State:** The adapter still rejects `stream: true`; live callback-derived SSE publication and post-stream failure semantics are not wired.
+> - **Current State:** Implemented in `src/server/adapter.ts`; streaming requests now publish live callback-derived events, preserve canonical state in parallel, persist terminal records, and emit `response.failed` before terminal close on post-start failures.
 > - **Description:** Implement the adapter’s streaming path so live callback-derived semantic events are serialized and published while canonical state accumulates in parallel. This ticket also owns post-stream terminal failure behavior.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -326,10 +325,10 @@ flowchart LR
 
 > **[ORL-017] Implement the Hono route boundary**
 > - **Type:** Feature
-> - **Status:** Partial
+> - **Status:** Implemented
 > - **Effort:** Story Points: 3
 > - **Dependencies:** [ORL-014, ORL-016]
-> - **Current State:** The Hono boundary handles non-streaming JSON requests with validation and error mapping, but the `stream` branch is still explicitly rejected.
+> - **Current State:** Implemented in `src/server/hono.ts`; the handler now validates content type and JSON, branches correctly for JSON vs SSE, applies timeout budgets, propagates request context opaquely, and keeps business semantics outside the transport layer.
 > - **Description:** Implement `createOpenResponsesHandler` and the Hono server boundary that verifies content type, parses JSON, validates requests, branches on `stream`, propagates auth and host context opaquely, applies abort budgets, and orchestrates persistence and transport without embedding business logic.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -342,10 +341,10 @@ flowchart LR
 
 > **[ORL-018] Implement the minimum image-input path**
 > - **Type:** Feature
-> - **Status:** Partial
+> - **Status:** Implemented
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-017]
-> - **Current State:** Image-bearing user input is schema-valid and preserved through normalization, but the dedicated continuation plus route-level image path is not yet proven end-to-end.
+> - **Current State:** Implemented and covered end to end across validation, normalization, direct invocation, route handling, and `previous_response_id` replay without adding broader multimodal abstractions.
 > - **Description:** Complete the minimum image-input path by validating `input_image`, preserving image-bearing parts through normalization and continuation replay, and passing those parts through without inventing a broader multimodal abstraction.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -356,10 +355,10 @@ flowchart LR
 
 > **[ORL-019] Harden public error mapping and structured logging**
 > - **Type:** Security
-> - **Status:** Partial
+> - **Status:** Implemented
 > - **Effort:** Story Points: 2
 > - **Dependencies:** [ORL-017]
-> - **Current State:** Internal-to-public error mapping is in place, but structured logging, correlation fields, and token-safe logging discipline are still missing.
+> - **Current State:** Implemented in the Hono boundary with request-scoped structured logs that include request and response correlation fields, omit token content by default, and preserve sanitized client-visible error mapping.
 > - **Description:** Implement the final public error mapping path, request and response correlation fields, and structured logging discipline so failures are observable without leaking internal state or token content.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -372,10 +371,10 @@ flowchart LR
 
 > **[ORL-020] Build the release-blocker regression suite**
 > - **Type:** Feature
-> - **Status:** Partial
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-018, ORL-019]
-> - **Current State:** The package has deterministic unit coverage, including Epic 3, but still lacks the full release-blocker matrix for streaming, image continuation, and compliance/golden-stream gates.
+> - **Current State:** Implemented through package-local regression specs covering golden stream order, fake-model baselines, tool calling, image input, continuation, README drift, and a local compliance-oriented suite.
 > - **Description:** Implement the package-local regression suite covering event order, terminal states, tool-calling, continuation, image input, and every event union branch required by the Tech Spec’s release blockers.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin
@@ -386,10 +385,10 @@ flowchart LR
 
 > **[ORL-021] Wire the compliance workflow, runtime smoke coverage, and publishable examples**
 > - **Type:** Chore
-> - **Status:** Planned
+> - **Status:** Implemented
 > - **Effort:** Story Points: 5
 > - **Dependencies:** [ORL-020]
-> - **Current State:** CI workflows, runtime smoke jobs, consumer examples, and a real package README are still absent.
+> - **Current State:** Implemented with package examples for Node and Bun, smoke entrypoints, a package README aligned to current scope, and a repo-root GitHub Actions workflow covering install, typecheck, lint, unit, golden-stream, compliance, build, node-24-smoke, and bun-smoke.
 > - **Description:** Add the compliance workflow, CI jobs, Node and Bun smoke coverage, optional Deno smoke coverage, and minimal examples and README so a solo builder can adopt the package quickly and release criteria are automated.
 > - **Acceptance Criteria (Gherkin):**
 > ```gherkin

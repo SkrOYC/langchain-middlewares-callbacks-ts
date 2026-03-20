@@ -1,0 +1,115 @@
+name: openresponses-adapter
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/openresponses-adapter.yml"
+      - "bun.lock"
+      - "package.json"
+      - "tsconfig.json"
+      - "packages/openresponses-adapter/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/openresponses-adapter.yml"
+      - "bun.lock"
+      - "package.json"
+      - "tsconfig.json"
+      - "packages/openresponses-adapter/**"
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run --filter @skroyc/openresponses-adapter typecheck
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Lint
+        run: bun run --filter @skroyc/openresponses-adapter lint
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Unit tests
+        run: bun run --filter @skroyc/openresponses-adapter test:unit
+
+  golden-stream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Golden stream regression
+        run: bun run --filter @skroyc/openresponses-adapter test:golden-stream
+
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Local compliance regression
+        run: bun run --filter @skroyc/openresponses-adapter test:compliance
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build package
+        run: bun run --filter @skroyc/openresponses-adapter build
+
+  node-24-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build package
+        run: bun run --filter @skroyc/openresponses-adapter build
+      - name: Node 24 smoke
+        run: bun run --filter @skroyc/openresponses-adapter smoke:node
+
+  bun-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build package
+        run: bun run --filter @skroyc/openresponses-adapter build
+      - name: Bun smoke
+        run: bun run --filter @skroyc/openresponses-adapter smoke:bun
