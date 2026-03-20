@@ -1,32 +1,4 @@
-import {
-  type InternalError,
-  internalError,
-  internalErrorToStatusCode,
-} from "../core/errors.js";
-
-const isInternalError = (error: unknown): error is InternalError => {
-  if (typeof error !== "object" || error === null) {
-    return false;
-  }
-
-  return (
-    "code" in error &&
-    typeof error.code === "string" &&
-    "message" in error &&
-    typeof error.message === "string"
-  );
-};
-
-const toInternalError = (error: unknown): InternalError => {
-  if (isInternalError(error)) {
-    return error;
-  }
-
-  return internalError(
-    error instanceof Error ? error.message : "Unexpected internal error",
-    error
-  );
-};
+import { internalErrorToStatusCode, toInternalError } from "@/core/errors.js";
 
 interface LogPayload {
   duration_ms: number;

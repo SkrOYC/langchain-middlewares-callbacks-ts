@@ -45,6 +45,7 @@ import {
   buildOpenResponsesApp,
   createInMemoryPreviousResponseStore,
   createOpenResponsesToolPolicyMiddleware,
+  type OpenResponsesCompatibleAgent,
 } from "@skroyc/openresponses-adapter";
 
 const getWeather = tool(
@@ -62,8 +63,20 @@ const agent = createAgent({
   middleware: [createOpenResponsesToolPolicyMiddleware()],
 });
 
+const openResponsesAgent: OpenResponsesCompatibleAgent = {
+  invoke(input, config) {
+    return agent.invoke(input, config);
+  },
+  async *stream(input, config) {
+    const stream = await agent.stream(input, config);
+    for await (const chunk of stream) {
+      yield chunk;
+    }
+  },
+};
+
 const app = await buildOpenResponsesApp({
-  agent,
+  agent: openResponsesAgent,
   previousResponseStore: createInMemoryPreviousResponseStore(),
   toolPolicySupport: "middleware",
 });
