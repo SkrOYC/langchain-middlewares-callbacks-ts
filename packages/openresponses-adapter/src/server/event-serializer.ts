@@ -319,6 +319,10 @@ export const serializeInternalEvent = (
     }
 
     case "run.failed": {
+      if (event.runId !== context.responseId) {
+        return [];
+      }
+
       const errorObject = errorToErrorObject(event.error);
 
       if (context.lifecycle.getStatus() === "queued") {

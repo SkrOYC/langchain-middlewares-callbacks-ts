@@ -83,7 +83,7 @@ describe("serializeInternalEvent", () => {
 
   test("run.started emits nothing on subsequent calls", () => {
     const context = createContext();
-    serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
+    serializeInternalEvent({ type: "run.started", runId: "resp-1" }, context);
     const events = serializeInternalEvent(
       { type: "run.started", runId: "run-2" },
       context
@@ -412,7 +412,7 @@ describe("serializeInternalEvent", () => {
     serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
 
     const events = serializeInternalEvent(
-      { type: "run.failed", runId: "run-1", error: new Error("boom") },
+      { type: "run.failed", runId: "resp-1", error: new Error("boom") },
       context
     );
 
@@ -422,6 +422,22 @@ describe("serializeInternalEvent", () => {
       response: { id: "resp-1", object: "response", status: "failed" },
       error: { type: "model_error", message: "boom" },
     });
+  });
+
+  test("run.failed from a sub-run does not fail the response lifecycle", () => {
+    const context = createContext();
+    serializeInternalEvent(
+      { type: "message.started", itemId: "msg-1", runId: "llm-run-1" },
+      context
+    );
+
+    const events = serializeInternalEvent(
+      { type: "run.failed", runId: "llm-run-1", error: new Error("boom") },
+      context
+    );
+
+    expect(events).toEqual([]);
+    expect(context.lifecycle.getStatus()).toBe("in_progress");
   });
 
   test("tool events return empty arrays", () => {
@@ -593,7 +609,7 @@ describe("createEventSerializer", () => {
     queue.push({ type: "text.delta", itemId: "msg-1", delta: "Hi" });
     queue.push({
       type: "run.failed",
-      runId: "run-1",
+      runId: "resp-1",
       error: new Error("model crashed"),
     });
     queue.complete();
