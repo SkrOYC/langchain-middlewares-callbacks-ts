@@ -1,398 +1,350 @@
-# Tasks.md
+# Engineering Execution Plan
 
-## 1. Executive Summary
+## 0. Version History & Changelog
+- v2.0.1 - Expanded dependency notes and archived ORL execution detail while tightening the full-compliance sequencing and coverage language.
+- v2.0.0 - Rebuilt the execution plan around full current OpenResponses compliance and preserved the completed ORL MVP backlog as archived brownfield context.
+- v1.1.0 - Recorded the MVP completion state and the final ORL critical-path outcome.
+- ... [Older history truncated, refer to git logs]
 
-- **Total Estimation:** 75 story points
-- **Progress Snapshot:** 21 implemented, 0 partial, 0 planned
-- **Original Critical Path:** ORL-001 → ORL-002 → ORL-003 → ORL-004 → ORL-005 → ORL-006 → ORL-007 → ORL-008 → ORL-009 → ORL-010 → ORL-011 → ORL-012 → ORL-013 → ORL-015 → ORL-016 → ORL-017 → ORL-018 → ORL-020 → ORL-021
-- **Remaining Critical Path:** None. MVP critical path complete through ORL-021.
+## 1. Executive Summary & Active Critical Path
+- **Total Active Story Points:** 42
+- **Critical Path:** `ORA-A001 -> ORA-A002 -> ORA-A003 -> ORA-A004 -> ORA-B001 -> ORA-B002 -> ORA-B003 -> ORA-C001 -> ORA-C002 -> ORA-C003 -> ORA-D001 -> ORA-D002 -> ORA-D003`
+- **Archived MVP Critical Path:** `ORL-001 -> ORL-002 -> ORL-003 -> ORL-004 -> ORL-005 -> ORL-006 -> ORL-007 -> ORL-008 -> ORL-009 -> ORL-010 -> ORL-011 -> ORL-012 -> ORL-013 -> ORL-015 -> ORL-016 -> ORL-017 -> ORL-018 -> ORL-020 -> ORL-021`
+- **Planning Assumptions:** The pinned upstream OpenResponses snapshot is the contract authority; the package remains library-shaped with root, `./server`, and `./testing` entrypoints; certified release verification remains Node.js 24.x plus Bun current.
 
-The plan is intentionally shaped around the real bottleneck: truthful live semantic streaming. Based on Goldratt’s Theory of Constraints, the highest-risk and highest-coupling path is callback fidelity → canonical state → single-writer serialization → transport failure semantics. Non-streaming JSON, continuation persistence, and release packaging are sequenced to support that path rather than compete with it.
+The active plan still follows the original constraint logic from the MVP phase: the real risk concentration is truthful semantic publication under a broader contract. The pacing chain remains contract authority -> canonical state -> publication breadth -> release proof. Request broadening, stored-record migration, and release documentation are sequenced to support that path rather than compete with it.
 
-## 2. Project Phasing Strategy
+### Legacy Issue Mapping Policy
+- `ORL-*` remains the archived MVP baseline that produced the current brownfield package.
+- `ORA-*` covers only the delta required to reach the new full-compliance target authorized by `PRD.md`, `Architecture.md`, and `TechSpec.md`.
+- Each active ticket keeps a `Legacy Issue ID` so the maintainer can trace which existing asset, earlier constraint, or completed MVP decision it extends.
 
-### Phase 1 (MVP)
+### Brownfield Continuity Note
+- The current package already contains the route boundary, callback bridge, state machine, async event queue, tool-policy enforcement, continuation replay, minimum image-input support, local regressions, and Node/Bun smoke examples.
+- The active plan does not reopen those completed foundations. It concentrates on contract broadening, full terminal resource publication, snapshot governance, and official black-box release proof.
+- `ORA-B003` is a required join blocker before `ORA-D001`, but the longer pacing branch remains the streaming-fidelity work through `ORA-C003`.
 
-The MVP is complete when all of the following outcomes exist in one releasable package:
+### Active Dependency Notes
+- **Baseline chain:** `ORA-A001` through `ORA-A004` creates the contract authority, the repeatable external measurement loop, and the schema boundary every later ticket depends on.
+- **State and continuation chain:** `ORA-B001` through `ORA-B003` upgrades the normalized request snapshot, the canonical terminal response, and the stored-record contract needed for replay-safe full compliance.
+- **Streaming chain:** `ORA-C001` through `ORA-C003` broadens truthful publication to every required family and then upgrades terminal SSE output. This remains the highest semantic-risk branch.
+- **Release chain:** `ORA-D001` through `ORA-D003` is intentionally late because it hardens the public wire boundary only after the state and streaming branches have converged.
+- **Join rule:** `ORA-D001` may not start until both `ORA-B003` and `ORA-C003` are complete. The route boundary cannot honestly align to the pinned contract until both persistence and terminal streaming are already corrected.
 
-- A Hono-mounted `POST /v1/responses` route exposes an existing LangChain `createAgent()` runtime without requiring an agent rewrite.
-- The package accepts the defined spec-minimal Open Responses request subset and returns compliant non-streaming JSON responses.
-- The package returns compliant streaming SSE responses with live semantic fidelity, deterministic event ordering, and correct terminal behavior.
-- The package supports tool-calling semantics required by the compliance suite, including normalized `tool_choice` handling and execution-time enforcement.
-- The package supports `previous_response_id` continuation through a builder-controlled `PreviousResponseStore`.
-- The package supports the minimum image-input path required for compliance.
-- The package passes the release-blocker test suite, compliance workflow, and dual-runtime smoke checks.
+## 2. Project Phasing & Iteration Strategy
+### Current Active Scope
+- Pin the official OpenResponses contract snapshot and compliance-runner baseline inside the repository.
+- Stand up a repeatable official compliance harness against the built package before the main implementation pass.
+- Expand public schemas, request normalization, canonical response assembly, continuation persistence, and streaming publication to emit a full current `ResponseResource`.
+- Broaden truthful output-item and event-family coverage to every snapshot-required family, using live, coarse, or terminal publication rules as needed rather than silent omission.
+- Promote official compliance, import smoke, and certified runtime checks to release gates and public package claims.
 
-### Phase 2 (Post-Launch)
+### Future / Deferred Scope
+- Additional runtime bindings beyond the current LangChain-oriented host family and the certified Node 24 plus Bun verification path.
+- Optional packaged persistence adapters beyond the development in-memory store.
+- Richer contract-drift automation beyond the pinned snapshot, update script, and review documentation required for this release.
+- Coverage for upstream contract changes introduced after the pinned snapshot is refreshed again.
 
-The following capabilities are deliberately deferred to prevent scope creep:
+### Archived or Already Completed Scope
+- `ORL-001` through `ORL-004`: feasibility spike, package scaffold, subset contract, and deterministic test harness.
+- `ORL-005` through `ORL-014`: continuation boundary, request normalization, tool policy, canonical state, callback bridge, and subset JSON response materialization.
+- `ORL-015` through `ORL-021`: truthful SSE streaming, Hono publication, minimum image input, error hardening, local regressions, smoke examples, and initial CI automation.
 
-- Broader runtime bindings beyond the initial certified Node.js and Bun target.
-- Richer advanced adapter surfaces beyond the initial handler plus adapter factory.
-- Extension events for richer observability and debugging.
-- Broader multimodal support beyond minimum image input.
-- Optional packaged persistence adapters beyond the development-only in-memory store.
+### Explicit Gap Inventory
+- Full terminal `ResponseResource` fields are still missing or incomplete in the current public schema and persisted record shape.
+- Terminal SSE events currently emit partial response stubs instead of full terminal resources.
+- Official black-box compliance is not yet wired into the repository as a first-class release gate.
+- Snapshot-required item and event families beyond the current text and function-call center need a checked truthful-publication policy before implementation.
 
-## 3. Build Order (Dependency Graph)
+### Active Verification Milestones
+- **Milestone 1:** The pinned contract snapshot and official runner harness execute mechanically against a live built package, even while failing semantically.
+- **Milestone 2:** Local regressions and official black-box compliance both exercise the broadened response, continuation, and streaming surface without conflating their roles.
+- **Milestone 3:** CI, import smoke, examples, and release-facing docs all reflect the full-compliance posture rather than the old MVP subset claim.
 
-There is no standalone product UI in this package. The **FRONTEND** lane below represents consumer-facing example integration and runtime smoke coverage.
-
+## 3. Build Order (Mermaid)
 ```mermaid
 flowchart LR
-    subgraph INFRA[INFRA]
-        ORL001[ORL-001 Spike callback + stream feasibility]
-        ORL002[ORL-002 Workspace/package scaffold]
-        ORL003[ORL-003 Core protocol contract]
-        ORL004[ORL-004 Deterministic test harness]
-        ORL001 --> ORL002 --> ORL003 --> ORL004
+    subgraph BASELINE[Baseline]
+        ORAA001[ORA-A001 Snapshot baseline]
+        ORAA002[ORA-A002 Official runner harness]
+        ORAA003[ORA-A003 Brownfield gap inventory]
+        ORAA004[ORA-A004 Snapshot-aligned schemas]
+        ORAA001 --> ORAA002 --> ORAA003 --> ORAA004
     end
 
-    subgraph DB[DB / Persistence Boundary]
-        ORL005[ORL-005 PreviousResponseStore + in-memory store]
-        ORL006[ORL-006 previous_response_id replay]
-        ORL005 --> ORL006
+    subgraph STATE[State and Continuation]
+        ORAB001[ORA-B001 Full request snapshot]
+        ORAB002[ORA-B002 Full ResponseResource assembly]
+        ORAB003[ORA-B003 Continuation record upgrade]
+        ORAA004 --> ORAB001 --> ORAB002 --> ORAB003
     end
 
-    subgraph BACKEND[BACKEND]
-        ORL007[ORL-007 ResponseLifecycle]
-        ORL008[ORL-008 ItemAccumulator]
-        ORL009[ORL-009 Async event queue]
-        ORL010[ORL-010 Text callback bridge]
-        ORL011[ORL-011 Tool callback bridge]
-        ORL012[ORL-012 Request normalization + tool mapping]
-        ORL013[ORL-013 Tool enforcement middleware]
-        ORL014[ORL-014 Final response materializer + JSON path]
-        ORL015[ORL-015 Event serializer + SSE framing]
-        ORL016[ORL-016 Streaming execution path]
-        ORL017[ORL-017 Hono route orchestration]
-        ORL018[ORL-018 Minimum image-input path]
-        ORL019[ORL-019 Logging + error hardening]
-        ORL020[ORL-020 Release-blocker test suite]
+    subgraph STREAMING[Streaming Fidelity]
+        ORAC001[ORA-C001 Observability spike]
+        ORAC002[ORA-C002 Event and item coverage]
+        ORAC003[ORA-C003 Full terminal SSE]
+        ORAA003 --> ORAC001 --> ORAC002 --> ORAC003
+        ORAB002 --> ORAC002
     end
 
-    subgraph FRONTEND[FRONTEND / Consumer Integration]
-        ORL021[ORL-021 Compliance CI examples README]
+    subgraph RELEASE[Boundary and Release Gates]
+        ORAD001[ORA-D001 Route and wire alignment]
+        ORAD002[ORA-D002 Regression and CI gate refresh]
+        ORAD003[ORA-D003 Docs and publish refresh]
+        ORAB003 --> ORAD001
+        ORAC003 --> ORAD001 --> ORAD002 --> ORAD003
+        ORAA002 --> ORAD002
     end
-
-    ORL003 --> ORL005
-    ORL003 --> ORL007
-    ORL003 --> ORL012
-    ORL004 --> ORL010
-    ORL004 --> ORL020
-
-    ORL006 --> ORL012
-    ORL007 --> ORL008 --> ORL009 --> ORL010 --> ORL011
-    ORL012 --> ORL013
-    ORL012 --> ORL014
-    ORL008 --> ORL014
-    ORL009 --> ORL015
-    ORL010 --> ORL015
-    ORL011 --> ORL015
-    ORL013 --> ORL016
-    ORL014 --> ORL016
-    ORL015 --> ORL016
-    ORL016 --> ORL017 --> ORL018 --> ORL019 --> ORL020 --> ORL021
-
-    classDef implemented fill:#dff3e4,stroke:#2f6f44,color:#14311f
-    classDef partial fill:#fff3cd,stroke:#8a6d1d,color:#4a3700
-    classDef planned fill:#edf2f7,stroke:#5c6b7a,color:#24313d
-
-    class ORL001,ORL002,ORL003,ORL004,ORL005,ORL006,ORL007,ORL008,ORL009,ORL010,ORL011,ORL012,ORL013,ORL014 implemented
-    class ORL015,ORL016,ORL017,ORL018,ORL019,ORL020,ORL021 implemented
 ```
 
-## 4. The Ticket List
+## 4. Ticket List
+### Epic A — Contract Baseline & Gap Inventory (ORA)
 
-## Epic 0 — Risk Mitigation and Foundation
+**ORA-A001 Pin the upstream contract snapshot and compliance baseline**
+- **Type:** Chore
+- **Effort:** 2
+- **Dependencies:** None
+- **Legacy Issue ID:** ORL-020, ORL-021
+- **Capability / Contract Mapping:** ORC-008, ORC-009
+- **Description:** Vendor the current OpenResponses OpenAPI snapshot and official compliance-runner baseline into `contracts/openresponses/`, record exact upstream provenance, and add the local script entrypoints needed for the rest of the package to resolve one contract authority.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the repository without a vendored upstream contract authority
+When the pinned OpenResponses snapshot and compliance baseline are added
+Then the repo contains the canonical snapshot files, exact upstream provenance, and local script entrypoints that resolve the same snapshot version for docs, tests, and CI
+```
 
-> **[ORL-001] Spike callback and streaming feasibility**
-> - **Type:** Spike
-> - **Status:** Implemented
-> - **Effort:** Story Points: 3
-> - **Dependencies:** None
-> - **Description:** Time-box a proof of feasibility around LangChain callback richness, live streaming observability, and Hono’s post-stream error boundary. The output is a written engineering note that defines the exact live events the package can publish truthfully, the degraded-fidelity rule for weak provider callbacks, and the failure rule after SSE has started.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a minimal LangChain createAgent runtime and a Hono streaming prototype
-> When the spike exercises text generation, tool invocation, and failures before and after stream start
-> Then the resulting engineering note identifies the observable callback surface, the permitted degraded-fidelity behavior, and the exact terminal failure rule to carry into implementation
-> ```
+**ORA-A002 Stand up the official compliance harness against the built package**
+- **Type:** Chore
+- **Effort:** 2
+- **Dependencies:** ORA-A001
+- **Legacy Issue ID:** ORL-021
+- **Capability / Contract Mapping:** ORC-008, ORC-009
+- **Description:** Add a runnable harness that builds the package, starts a live local server from the built artifacts, and executes the pinned official compliance runner so the maintainer can measure real black-box behavior throughout the implementation pass.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the pinned runner baseline and the package build output
+When the official compliance harness executes against a live local server
+Then the run succeeds mechanically, records the scenario-level pass or fail result, and can be rerun without hand-crafted one-off commands
+```
 
-> **[ORL-002] Create the workspace package skeleton**
-> - **Type:** Chore
-> - **Status:** Implemented
-> - **Effort:** Story Points: 2
-> - **Dependencies:** [ORL-001]
-> - **Description:** Create the publishable workspace package, package-local file layout, root and package scripts, tsup build config, exports map, tsconfig, and Biome/Bun wiring required by the Tech Spec.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given an empty workspace package
-> When the package skeleton, build scripts, typecheck script, lint script, test script, and export map are added
-> Then the package builds to ESM and CJS, emits declaration files, and the workspace commands run without requiring application code
-> ```
+**ORA-A003 Spike the brownfield contract and observability gap**
+- **Type:** Spike
+- **Effort:** 3
+- **Dependencies:** ORA-A002
+- **Legacy Issue ID:** ORL-001
+- **Capability / Contract Mapping:** ORC-001, ORC-002, ORC-003, ORC-009, ORC-010
+- **Description:** Time-box a checked contract diff between the current package and the pinned snapshot, including which fields, item families, and event families are already implemented, which need explicit field-policy defaults, and what truthful publication mode each required family will use.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the pinned snapshot, the built-package compliance harness, and the current brownfield implementation
+When the spike compares request fields, response fields, output-item families, stream-event families, and stored-record shapes
+Then it produces a checked-in gap inventory that classifies each public element as already implemented, preserve, derive, default, read-repair, or a specific truthful publication mode
+```
 
-> **[ORL-003] Define the core protocol contract**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-002]
-> - **Description:** Implement `src/core` with Zod-backed request, response, event, and error schemas; exported TypeScript types; public factory signatures; and the internal/public error taxonomy needed by all downstream modules.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given valid and invalid Open Responses request and response payloads within the MVP scope
-> When the core schemas parse them
-> Then supported fields are accepted, malformed or out-of-scope combinations are rejected, and the exported TypeScript surfaces compile without `any` in public contracts
-> ```
+**ORA-A004 Replace subset schema authority with snapshot-aligned validators and types**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** ORA-A003
+- **Legacy Issue ID:** ORL-003
+- **Capability / Contract Mapping:** ORC-001, ORC-006, ORC-009
+- **Description:** Rework `src/core` and the new contract-alignment helpers so request, response, error, and event validation follows the vendored snapshot rather than the earlier subset schema, while keeping snapshot-version visibility available to downstream modules and tests.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given requests, responses, errors, and stream events built against the pinned snapshot
+When the package validators and exported public types parse them
+Then contract-valid payloads are accepted, required fields cannot be silently omitted, and the resolved snapshot version is visible to downstream modules and verification code
+```
 
-> **[ORL-004] Build the deterministic testing harness**
-> - **Type:** Chore
-> - **Status:** Implemented
-> - **Effort:** Story Points: 2
-> - **Dependencies:** [ORL-002]
-> - **Description:** Create deterministic test helpers and fakes, including injectable clock and ID generation, fake model/agent behavior, and an in-memory harness usable by all package-local tests.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the package-local test suite
-> When a test injects the deterministic clock, deterministic ID generator, and fake runtime doubles
-> Then the test can assert exact timestamps, response IDs, and event ordering without non-deterministic failures
-> ```
+### Epic B — Request, State, and Continuation Upgrade (ORA)
 
-## Epic 1 — Continuation Persistence Boundary
+**ORA-B001 Preserve the full request snapshot and broaden normalization**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** ORA-A004
+- **Legacy Issue ID:** ORL-006, ORL-012, ORL-018
+- **Capability / Contract Mapping:** ORC-004, ORC-005, ORC-006
+- **Description:** Expand normalization so the effective request snapshot preserves current contract fields, structured history, compliant assistant and developer context, tool contract inputs, operational fields, and image-bearing inputs needed for response echo and continuation replay.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given requests that use the current supported input forms, tool fields, operational fields, and image-bearing parts
+When normalization builds the canonical transcript and request snapshot
+Then the effective request preserves the contract fields needed for response echo, tool enforcement, and previous_response_id replay without leaking provider-specific transport details
+```
 
-> **[ORL-005] Implement the continuation persistence port and dev store**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 3
-> - **Dependencies:** [ORL-003]
-> - **Description:** Implement `StoredResponseRecord`, `PreviousResponseStore`, and `InMemoryPreviousResponseStore` as the explicit continuation boundary. Enforce the invariant that top-level convenience fields stay synchronized with the authoritative nested response resource.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a canonical stored response record
-> When the record is saved and immediately loaded through InMemoryPreviousResponseStore
-> Then the authoritative response resource and projected top-level fields round-trip without drift and the read is strongly consistent for the just-written record
-> ```
+**ORA-B002 Build full terminal `ResponseResource` assembly with explicit field policy**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** ORA-B001
+- **Legacy Issue ID:** ORL-007, ORL-008, ORL-014
+- **Capability / Contract Mapping:** ORC-001, ORC-005, ORC-010
+- **Description:** Extend the canonical aggregate and terminal materializer so one authoritative response model owns the full terminal `ResponseResource`, request-echo fields, usage accounting, operational fields, and the preserve or derive or default policy defined in `TechSpec.md`.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given completed, failed, and incomplete executions with canonical runtime observations
+When the aggregate materializes the terminal response
+Then the same full ResponseResource is valid for JSON output, terminal SSE publication, and persistence, and every required public field is preserved, derived, null, or defaulted according to the documented field policy
+```
 
-> **[ORL-006] Implement exact previous_response_id replay semantics**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 3
-> - **Dependencies:** [ORL-005]
-> - **Description:** Implement the adapter logic that loads and validates prior response records and reconstructs continuation input using the exact required order: prior request input + prior response output + new request input.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a request that includes previous_response_id
-> When the adapter resolves continuation input
-> Then it loads the prior record, validates that the stored record is usable, concatenates prior input plus prior output plus new input in the exact required order, and returns 404 or 409 for missing or unusable records
-> ```
+**ORA-B003 Upgrade continuation records and read-repair behavior**
+- **Type:** Feature
+- **Effort:** 3
+- **Dependencies:** ORA-B002
+- **Legacy Issue ID:** ORL-005, ORL-006
+- **Capability / Contract Mapping:** ORC-004, ORC-009
+- **Description:** Upgrade `StoredResponseRecord` and `PreviousResponseStore` handling so continuation records persist the full normalized request and full terminal response with the contract snapshot version, while older records are either repaired predictably or rejected deterministically.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given continuation records created before and after the full-compliance migration
+When previous_response_id replay loads a stored record
+Then current-shape records round-trip losslessly and older records are either read-repaired into a contract-valid shape or rejected through a deterministic 409-compatible error path
+```
 
-## Epic 2 — Canonical State and Semantic Derivation
+### Epic C — Streaming Fidelity Expansion (ORA)
 
-> **[ORL-007] Implement the response lifecycle state machine**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 2
-> - **Dependencies:** [ORL-003]
-> - **Description:** Implement `ResponseLifecycle` with the permitted response states and single-transition semantics for completion, failure, and incompletion.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a new response lifecycle
-> When start, complete, fail, or incomplete transitions are applied
-> Then only valid state transitions are accepted, completion metadata is written once, and the terminal error payload is retained exactly once when failure occurs
-> ```
+**ORA-C001 Spike truthful publication boundaries for additional event families**
+- **Type:** Spike
+- **Effort:** 2
+- **Dependencies:** ORA-A003
+- **Legacy Issue ID:** ORL-001, ORL-011
+- **Capability / Contract Mapping:** ORC-003, ORC-010
+- **Description:** Validate how each snapshot-required output-item and streaming-event family will be represented truthfully from the current LangChain callback surface, documenting live-delta, coarse-live, or terminal-summary publication rules before widening the public stream union.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the pinned event families and the current LangChain callback surface
+When the spike exercises candidate refusal, reasoning, and auxiliary publication paths
+Then the checked-in note states for each required family whether it is emitted as live delta, coarse live completion, or terminal summary, without fabricating nonexistent observations
+```
 
-> **[ORL-008] Implement the item accumulator and part finalizer guards**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 3
-> - **Dependencies:** [ORL-007]
-> - **Description:** Implement `ItemAccumulator` so canonical message items, function call items, and output text parts can be opened, appended, finalized, and snapshotted while enforcing duplicate-finalizer and close-order rules.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given canonical message and function-call items in progress
-> When text deltas or function-call argument deltas are appended and terminal operations are invoked
-> Then the accumulator returns canonical snapshots, closes text parts before items, and rejects duplicate terminal events for the same item or content part
-> ```
+**ORA-C002 Implement snapshot-required semantic event and output-item coverage**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** ORA-B002, ORA-C001
+- **Legacy Issue ID:** ORL-010, ORL-011, ORL-015, ORL-016
+- **Capability / Contract Mapping:** ORC-003, ORC-005, ORC-010
+- **Description:** Extend the callback bridge, canonical state, and public event union to represent every snapshot-required output-item and stream-event family using the truthful publication rules defined by the observability spike.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given runtime executions that produce text, function calls, and any additional snapshot-required families identified by the observability spike
+When live callbacks are translated into semantic events
+Then the aggregate and public stream represent every required family with truthful ordering, no synthetic deltas, and contract-valid payload shapes using the documented publication mode for each family
+```
 
-> **[ORL-009] Implement the single-writer async event queue**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 2
-> - **Dependencies:** [ORL-008]
-> - **Description:** Implement the in-process async queue that decouples callback bursts from transport writes and gives the serializer a single ordered consumption path.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given multiple semantic events produced concurrently by runtime callbacks
-> When they are pushed into the async event queue and drained by one consumer
-> Then the consumer receives them in queue order and the queue finalizes exactly once on completion or failure
-> ```
+**ORA-C003 Publish full terminal stream events and preserve compliant ordering**
+- **Type:** Feature
+- **Effort:** 3
+- **Dependencies:** ORA-C002
+- **Legacy Issue ID:** ORL-015, ORL-016
+- **Capability / Contract Mapping:** ORC-002, ORC-003
+- **Description:** Upgrade the serializer and streaming adapter so `response.completed`, `response.failed`, and `response.incomplete` embed the same full terminal `ResponseResource` used elsewhere, while `sequence_number` and `[DONE]` ordering remain compliant.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given a streaming request that completes, fails after stream start, or ends incomplete
+When the serializer emits terminal lifecycle events
+Then the terminal event contains the same full ResponseResource used for persistence and JSON output, sequence ordering remains monotonic, and literal [DONE] is emitted only after the terminal event when the contract permits
+```
 
-> **[ORL-010] Bridge text and message callbacks into semantic events**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-004, ORL-009]
-> - **Description:** Implement the callback bridge path for message start, model token deltas, model completion, and runtime failure. This ticket is the first half of live semantic derivation and must remain provider-agnostic.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a text-only agent invocation
-> When model start, token, completion, and error callbacks fire
-> Then the callback bridge emits semantic events that start a message item, produce live text deltas, finalize the content part and item in the correct order, and never write directly to the HTTP response
-> ```
+### Epic D — Boundary Hardening and Release Gating (ORA)
 
-> **[ORL-011] Bridge tool and function-call callbacks into semantic events**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-010]
-> - **Description:** Implement the callback bridge path for agent actions, tool start/end/error, and function-call argument progress. Encode the degraded-fidelity rule so weak provider granularity never causes synthetic deltas.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given an agent invocation that proposes and executes tools
-> When action, tool, and runtime callbacks fire with strong or weak argument granularity
-> Then the callback bridge emits semantically truthful function-call lifecycle events, preserves name and call_id continuity, and degrades to truthful done-only behavior instead of fabricating argument delta chunks
-> ```
+**ORA-D001 Align route orchestration and wire error mapping to the pinned contract**
+- **Type:** Feature
+- **Effort:** 3
+- **Dependencies:** ORA-B003, ORA-C003
+- **Legacy Issue ID:** ORL-017, ORL-019
+- **Capability / Contract Mapping:** ORC-001, ORC-002, ORC-004, ORC-005
+- **Description:** Update the Hono boundary and adapter orchestration so JSON versus SSE paths, content negotiation, 404 and 409 continuation failures, 415 content-type failures, and pre-stream versus post-stream runtime failures match the pinned contract and the new canonical response assembly.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given valid and invalid non-streaming and streaming requests, including missing or stale previous_response_id records
+When the route boundary processes them
+Then successful requests publish contract-valid JSON or SSE outputs, pre-stream failures use the documented wire errors, and post-stream failures resolve through one terminal failure path without contradictory terminal states
+```
 
-## Epic 3 — Request Normalization and Execution Control
+**ORA-D002 Rework regressions, import smoke, and CI around the official pass gate**
+- **Type:** Chore
+- **Effort:** 3
+- **Dependencies:** ORA-A002, ORA-D001
+- **Legacy Issue ID:** ORL-020, ORL-021
+- **Capability / Contract Mapping:** ORC-007, ORC-008, ORC-009
+- **Description:** Split package-local compliance regressions from the official runner path, add import smoke for supported entrypoints, and make the official black-box pass a required CI gate on the certified runtimes.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the built package, the local regression suites, and the pinned official runner harness
+When local verification and CI execute
+Then package-local regressions remain separate from black-box compliance, ESM and CJS entrypoints are smoke-tested, and the official runner pass blocks release on the certified runtimes
+```
 
-> **[ORL-012] Normalize requests and map tool policy once**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-003, ORL-006]
-> - **Description:** Implement request normalization for string and array input, role-specific message handling, minimum supported input parts, tool parsing, duplicate/unknown tool rejection, and runtime-facing `NormalizedToolPolicy`.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given requests that use string input, array input, system or developer messages, user image-bearing input, and multiple tool_choice variants
-> When normalizeRequest runs
-> Then the request is converted into canonical messages, tool policy is derived exactly once, duplicate or unknown tool names are rejected with 400 behavior, and the normalized result is free of provider-specific transport leakage
-> ```
+**ORA-D003 Refresh README, examples, and package claims for the full-compliance release**
+- **Type:** Chore
+- **Effort:** 1
+- **Dependencies:** ORA-D002
+- **Legacy Issue ID:** ORL-021
+- **Capability / Contract Mapping:** ORC-007, ORC-008, ORC-009
+- **Description:** Update the README, examples, package description, and release-facing claims so the published package explains the full-compliance surface truthfully and no longer advertises the old spec-minimal MVP posture.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the completed implementation and release-gating workflow
+When the release-facing docs, examples, and package metadata are refreshed
+Then the published package describes the current contract truthfully, demonstrates the supported library-first integration path, and removes stale MVP-only compliance claims
+```
 
-> **[ORL-013] Enforce tool policy during execution**
-> - **Type:** Security
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-012]
-> - **Description:** Implement the middleware or execution-config layer that enforces `tool_choice`, `allowed_tools`, `parallel_tool_calls`, and the fail-closed posture for `required` where clean enforcement is not fully available upstream.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given normalized tool policies for none, required, specific function, allowed_tools, and parallel_tool_calls false
-> When the runtime attempts tool execution
-> Then disallowed tools are rejected, allowed tool names are enforced from one canonical policy source, tool decisions are serialized when required, and unsupported required-tool situations fail closed where feasible instead of silently relaxing policy
-> ```
+## 5. Legacy ORL Archive Summary
+| Legacy Issue ID | Title | Status |
+| --- | --- | --- |
+| ORL-001 | Spike callback and streaming feasibility | Implemented |
+| ORL-002 | Create the workspace package skeleton | Implemented |
+| ORL-003 | Define the core protocol contract | Implemented |
+| ORL-004 | Build the deterministic testing harness | Implemented |
+| ORL-005 | Implement the continuation persistence port and dev store | Implemented |
+| ORL-006 | Implement exact previous_response_id replay semantics | Implemented |
+| ORL-007 | Implement the response lifecycle state machine | Implemented |
+| ORL-008 | Implement the item accumulator and part finalizer guards | Implemented |
+| ORL-009 | Implement the single-writer async event queue | Implemented |
+| ORL-010 | Bridge text and message callbacks into semantic events | Implemented |
+| ORL-011 | Bridge tool and function-call callbacks into semantic events | Implemented |
+| ORL-012 | Normalize requests and map tool policy once | Implemented |
+| ORL-013 | Enforce tool policy during execution | Implemented |
+| ORL-014 | Materialize the final JSON response resource | Implemented |
+| ORL-015 | Implement the event serializer and SSE framing | Implemented |
+| ORL-016 | Implement the truthful streaming execution path | Implemented |
+| ORL-017 | Implement the Hono route boundary | Implemented |
+| ORL-018 | Implement the minimum image-input path | Implemented |
+| ORL-019 | Harden public error mapping and structured logging | Implemented |
+| ORL-020 | Build the release-blocker regression suite | Implemented |
+| ORL-021 | Wire the compliance workflow, runtime smoke coverage, and publishable examples | Implemented |
 
-> **[ORL-014] Materialize the final JSON response resource**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 3
-> - **Dependencies:** [ORL-008, ORL-012]
-> - **Description:** Implement final response materialization from canonical item state and lifecycle state for the non-streaming path, including error projection and stable metadata and timestamps.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given canonical lifecycle state and canonical output items after a non-streaming invocation
-> When materializeFinalResponse runs
-> Then it returns a spec-minimal OpenResponsesResponse with stable identifiers, correct status, canonical output items, synchronized previous_response_id and metadata behavior, and schema-valid error projection when failures occur
-> ```
+## 6. Archived ORL Detailed Execution Notes
+### Epic 0 — Risk Mitigation and Foundation
+- `ORL-001` remains the historical source for callback richness assumptions, degraded-fidelity rules, and post-stream failure semantics. `ORA-A003` and `ORA-C001` should treat that spike as prior art rather than rediscovering first principles.
+- `ORL-002` established the publishable package shape, tsup/export layout, and workspace script conventions. `ORA-A001`, `ORA-D002`, and `ORA-D003` must preserve those adoption-critical surfaces.
+- `ORL-003` created the original Zod-backed contract and public types. `ORA-A004` replaces its authority source, but not the need for one shared validation and typing boundary.
+- `ORL-004` produced the deterministic clocks, IDs, fake agents, and test harnesses that still anchor all later regression and compliance work.
 
-## Epic 4 — Transport Serialization and Route Publication
+### Epic 1 — Continuation Persistence Boundary
+- `ORL-005` introduced `PreviousResponseStore` and the in-memory store. `ORA-B003` broadens the stored shape; it does not remove the explicit builder-owned boundary.
+- `ORL-006` proved the exact replay rule `prior input -> prior output -> new input`. That semantic ordering remains fixed and is not reopened by the full-compliance migration.
 
-> **[ORL-015] Implement the event serializer and SSE framing**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-003, ORL-009, ORL-010, ORL-011]
-> - **Current State:** Implemented in `src/server/event-serializer.ts` with response-scoped sequence numbers, outgoing event validation, and SSE frame formatting used by the Hono transport.
-> - **Description:** Implement the single serializer that owns response-scoped sequence numbers, converts canonical and internal events into public Open Responses events, validates outgoing events in non-production paths, and formats compliant SSE frames.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given canonical text and function-call state changes for one response
-> When the serializer converts them into public events
-> Then sequence_number increases by exactly one each time, event ordering matches the defined state machines, every SSE frame uses event equal to type, and the terminal payload format is compatible with literal [DONE]
-> ```
+### Epic 2 — Canonical State and Semantic Derivation
+- `ORL-007` established the response lifecycle state machine. `ORA-B002` extends its public field breadth but should preserve its single-terminal-state discipline.
+- `ORL-008` established item and content-part finalizer guards. `ORA-C002` relies on those guards as it broadens output-item families.
+- `ORL-009` created the single-writer async queue. `ORA-C003` still depends on this queue-backed serialization discipline to keep terminal publication deterministic.
+- `ORL-010` created the text callback bridge. Its no-direct-transport-write rule remains mandatory for truthful streaming.
+- `ORL-011` created the tool and function-call bridge plus degraded-fidelity handling. `ORA-C001` and `ORA-C002` extend this precedent to refusal, reasoning, and other required families.
 
-> **[ORL-016] Implement the truthful streaming execution path**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-013, ORL-014, ORL-015]
-> - **Current State:** Implemented in `src/server/adapter.ts`; streaming requests now publish live callback-derived events, preserve canonical state in parallel, persist terminal records, and emit `response.failed` before terminal close on post-start failures.
-> - **Description:** Implement the adapter’s streaming path so live callback-derived semantic events are serialized and published while canonical state accumulates in parallel. This ticket also owns post-stream terminal failure behavior.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a request with stream set to true
-> When live callbacks arrive or the runtime fails after the SSE stream has started
-> Then the adapter emits events from live semantic observations, never replays final output as synthetic deltas, emits response.failed before [DONE] when failure occurs after stream start, and leaves the final canonical response state consistent with the terminal stream event
-> ```
+### Epic 3 — Request Normalization and Execution Control
+- `ORL-012` established one normalization pass and one tool-policy derivation pass. `ORA-B001` broadens the request snapshot but must keep that single-source-of-truth discipline.
+- `ORL-013` enforced tool policy at execution time. `ORA-D001` and `ORA-B001` must preserve that fail-closed posture while the richer request contract is carried end to end.
+- `ORL-014` materialized the earlier subset JSON response. `ORA-B002` upgrades this path to the full terminal `ResponseResource` rather than introducing a second materializer.
 
-> **[ORL-017] Implement the Hono route boundary**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 3
-> - **Dependencies:** [ORL-014, ORL-016]
-> - **Current State:** Implemented in `src/server/hono.ts`; the handler now validates content type and JSON, branches correctly for JSON vs SSE, applies timeout budgets, propagates request context opaquely, and keeps business semantics outside the transport layer.
-> - **Description:** Implement `createOpenResponsesHandler` and the Hono server boundary that verifies content type, parses JSON, validates requests, branches on `stream`, propagates auth and host context opaquely, applies abort budgets, and orchestrates persistence and transport without embedding business logic.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given POST requests to /v1/responses with valid and invalid content types and request bodies
-> When the Hono handler processes them
-> Then it returns the correct JSON or SSE response shape and HTTP status, keeps orchestration logic in the handler without moving business rules into transport code, and avoids relying on generic stream timeout middleware
-> ```
+### Epic 4 — Transport Serialization and Route Publication
+- `ORL-015` established response-scoped `sequence_number`, outgoing event validation, and SSE framing. `ORA-C003` broadens terminal payload shape on top of that existing serializer discipline.
+- `ORL-016` established live callback-derived streaming with canonical state accumulation in parallel. The full-compliance plan still assumes this truthful streaming posture.
+- `ORL-017` established the Hono route boundary with content-type checks, JSON parsing, timeout budgets, and opaque context propagation. `ORA-D001` aligns that same boundary to the broader contract.
 
-## Epic 5 — Bounded Capability Completion
+### Epic 5 — Bounded Capability Completion
+- `ORL-018` established the minimum image-input path through validation, normalization, invocation, and continuation. `ORA-B001` preserves and broadens around that existing path instead of re-scoping it.
+- `ORL-019` established structured logging and sanitized public error mapping. `ORA-D001` and `ORA-D002` should extend these observability guarantees to the new snapshot versioning and official compliance signals.
 
-> **[ORL-018] Implement the minimum image-input path**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 2
-> - **Dependencies:** [ORL-017]
-> - **Current State:** Implemented and covered end to end across validation, normalization, direct invocation, route handling, and `previous_response_id` replay without adding broader multimodal abstractions.
-> - **Description:** Complete the minimum image-input path by validating `input_image`, preserving image-bearing parts through normalization and continuation replay, and passing those parts through without inventing a broader multimodal abstraction.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given requests and continuation records that contain input_image parts
-> When the request is validated, normalized, replayed, and invoked
-> Then image-bearing parts are preserved end to end, passed through to the runtime integration without adapter-level transformation promises, and no broader multimodal output capability is introduced
-> ```
-
-> **[ORL-019] Harden public error mapping and structured logging**
-> - **Type:** Security
-> - **Status:** Implemented
-> - **Effort:** Story Points: 2
-> - **Dependencies:** [ORL-017]
-> - **Current State:** Implemented in the Hono boundary with request-scoped structured logs that include request and response correlation fields, omit token content by default, and preserve sanitized client-visible error mapping.
-> - **Description:** Implement the final public error mapping path, request and response correlation fields, and structured logging discipline so failures are observable without leaking internal state or token content.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given validation, persistence, runtime, and serializer failures across streaming and non-streaming requests
-> When the package maps errors and emits logs
-> Then internal error codes map to the specified public error types and statuses, request_id and response_id are present in structured logs, token content is excluded by default, and clients do not receive raw internal stack traces
-> ```
-
-## Epic 6 — Verification, Release Gates, and Consumer Integration
-
-> **[ORL-020] Build the release-blocker regression suite**
-> - **Type:** Feature
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-018, ORL-019]
-> - **Current State:** Implemented through package-local regression specs covering golden stream order, fake-model baselines, tool calling, image input, continuation, README drift, and a local compliance-oriented suite.
-> - **Description:** Implement the package-local regression suite covering event order, terminal states, tool-calling, continuation, image input, and every event union branch required by the Tech Spec’s release blockers.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the deterministic test doubles and package entrypoints
-> When the release-blocker test suite runs
-> Then basic text response, streaming response, system and developer message handling, tool calling, previous_response_id continuation, image input, event union coverage, terminal state coverage, and event-order regression all pass
-> ```
-
-> **[ORL-021] Wire the compliance workflow, runtime smoke coverage, and publishable examples**
-> - **Type:** Chore
-> - **Status:** Implemented
-> - **Effort:** Story Points: 5
-> - **Dependencies:** [ORL-020]
-> - **Current State:** Implemented with package examples for Node and Bun, smoke entrypoints, a package README aligned to current scope, and a repo-root GitHub Actions workflow covering install, typecheck, lint, unit, golden-stream, compliance, build, node-24-smoke, and bun-smoke.
-> - **Description:** Add the compliance workflow, CI jobs, Node and Bun smoke coverage, optional Deno smoke coverage, and minimal examples and README so a solo builder can adopt the package quickly and release criteria are automated.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the completed package and examples for Node, Bun, and optional Deno
-> When CI runs install, typecheck, lint, unit, golden-stream, compliance, build, node-24-smoke, and bun-smoke jobs
-> Then all required gates pass, the examples demonstrate minimal-user-code integration, and the README documents the supported MVP scope and known degraded-fidelity boundaries
-> ```
+### Epic 6 — Verification, Release Gates, and Consumer Integration
+- `ORL-020` established the deterministic local regression suite. In the new plan, those tests remain necessary but explicitly secondary to the official black-box gate.
+- `ORL-021` established Node/Bun examples, smoke entrypoints, README drift checks, and the first CI workflow. `ORA-A002`, `ORA-D002`, and `ORA-D003` all build directly on this release-integration base.

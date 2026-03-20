@@ -1,517 +1,408 @@
-# Architecture.md
+# Solution Architecture
 
-> **Derived from:** [PRD.md](./PRD.md)
+## 0. Version History & Changelog
+- v2.0.2 - Restored fuller brownfield architecture rules, added an explicit compliance-validation flow, and expanded cross-cutting failure and media-boundary detail.
+- v2.0.1 - Restored bounded-context, request-model, and rejected-pattern detail while preserving the full-compliance direction.
+- v2.0.0 - Revised the architecture from a spec-minimal MVP target to a full current OpenResponses compliance target.
+- ... [Older history truncated, refer to git logs]
 
-## 1. Architectural Strategy
+## 1. Architectural Strategy & Archetype Alignment
+- **Architectural Pattern:** Contract-authoritative modular monolith library with event-serialized streaming and builder-controlled continuation persistence.
+- **Why this pattern fits the PRD:** The product remains a library package adopted inside an existing agent host, so a modular monolith keeps solo-dev operations small while still allowing one authoritative response assembly pipeline to own the full current OpenResponses contract. Full compliance increases contract and state complexity, but it does not justify distributed deployment boundaries.
+- **Core trade-offs accepted:** More internal state assembly and contract validation complexity is accepted to eliminate partial public resources, terminal streaming stubs, and drift against the official OpenResponses surface.
 
-### The Pattern
+### Standards Posture
+- The current published OpenResponses contract snapshot and the official OpenResponses compliance runner are governing external constraints.
+- The architecture remains vendor-agnostic at the logical layer even though the current brownfield target is an existing LangChain-oriented agent runtime family.
+- Public contract fidelity takes precedence over internal convenience or preserving earlier MVP shortcuts.
 
-**Modular Monolith with Event-Serialized Streaming and Builder-Controlled Continuation Persistence**
+### Brownfield Starting Point
+- The current codebase already contains the core logical pieces required for this architecture: public route publication, request normalization, callback observation, canonical response state, tool policy mediation, and continuation persistence.
+- The current codebase does not yet realize the full current contract because non-streaming resources are partial, terminal streaming events carry minimal response stubs, and local compliance checks are narrower than the official runner.
 
-### Justification
+### Brownfield Rules Carried Forward
+- The agent runtime remains the execution engine, not the public protocol authority. The package is responsible for request normalization, public contract assembly, and truth-preserving publication.
+- Runtime policy and runtime observation remain separate logical concerns. Tool enforcement and retries belong in the control plane; semantic events belong in the observation plane.
+- One publication pipeline remains the single writer for JSON and SSE truth. No callback path or policy hook may write directly to the public transport.
+- Continuation remains an explicit builder-controlled persistence boundary keyed by response ID, not hidden runtime memory or implicit session state.
+- Image-bearing and file-bearing inputs stay bounded to the current OpenResponses contract. Full compliance broadens contract coverage, but it does not turn the package into a general multimodal platform.
 
-This system should be implemented as a **modular monolith**, not as microservices. The package is an adapter that exposes a **spec-minimal / acceptance-suite-targeted MVP** Open Responses surface over an existing LangChain agent runtime. The runtime already exists; the package's job is to normalize requests, derive semantic events, maintain canonical response state, and publish a compliant wire protocol. This implementation follows the normative Open Responses specification, not full reference parity. Splitting those responsibilities into separate deployables would impose the microservices premium without solving a real scaling constraint for the primary actor, who is a solo builder.
+## 2. System Containers
+### Host Integration Boundary
+- **Logical Type:** Library boundary
+- **Responsibility:** Expose the package's app factory, handler factory, adapter factory, middleware surface, and persistence port to the builder without forcing a standalone platform deployment model.
+- **Inputs:** Builder configuration, runtime instance, request context, persistence implementation
+- **Outputs:** Mounted HTTP route surface and execution hooks
+- **Depends on:** Public Protocol Boundary, Execution Orchestrator
 
-LangChain documents `createAgent()` as a **production-ready** agent implementation. It also draws a clean distinction between **middleware** for execution control and **callbacks** for lifecycle observation. That separation maps directly onto the Open Responses problem: middleware remains the control plane, callbacks become the semantic observation plane, and the adapter-owned protocol layer guarantees the public contract.[^lc-agents][^lc-callbacks]
+### Public Protocol Boundary
+- **Logical Type:** API boundary
+- **Responsibility:** Own `/v1/responses`, request validation, content negotiation, public error mapping, and contract-level validation of emitted response resources and streaming events.
+- **Inputs:** HTTP requests, host-provided request context, canonical response resources, publication events
+- **Outputs:** `application/json` responses, `text/event-stream` responses, contract-visible errors
+- **Depends on:** Request Composition Boundary, Canonical Response Assembly, Stream Publication Pipeline
 
-Open Responses imposes strict external semantics: a `POST /v1/responses` route, structured JSON for non-streaming, `text/event-stream` for streaming, semantic events such as `response.in_progress`, `response.output_item.added`, `response.output_text.delta`, and a terminal `[DONE]`. Those guarantees can only be made truthfully by a **single authoritative serializer** that owns ordering, framing, response lifecycle state, and final materialization.[^or-reference]
+### Request Composition Boundary
+- **Logical Type:** Translation boundary
+- **Responsibility:** Normalize request input, preserve current request-contract fields, resolve continuation replay, and derive the effective tool contract from the incoming request.
+- **Inputs:** Validated request object, prior continuation record
+- **Outputs:** Canonical transcript, request snapshot, effective tool policy
+- **Depends on:** Continuation Store Port
 
-Per Eric Evans, the design must preserve bounded contexts so protocol concerns do not leak into execution control and runtime observations do not become transport logic.[^evans-ddd] Per Michael Nygard, the architecture must assume partial failure and isolate failures at external boundaries rather than allowing callback, storage, or tool faults to corrupt the public stream.[^nygard-release-it]
+### Execution Orchestrator
+- **Logical Type:** Application service
+- **Responsibility:** Coordinate non-streaming and streaming execution, attach runtime policy and observation hooks, apply timeout budgets, and reconcile runtime completion into the canonical response assembly.
+- **Inputs:** Canonical transcript, request snapshot, tool policy, host execution context
+- **Outputs:** Runtime invocations, semantic event flow, terminal execution outcome
+- **Depends on:** Runtime Policy Boundary, Runtime Observation Boundary, Canonical Response Assembly
 
-### Architectural Decision Record
+### Runtime Policy Boundary
+- **Logical Type:** Control boundary
+- **Responsibility:** Enforce tool visibility, tool choice, allowed-tool restrictions, and execution serialization requirements without owning public protocol emission.
+- **Inputs:** Effective tool policy, execution metadata
+- **Outputs:** Runtime control decisions and fail-closed rejections
+- **Depends on:** None
 
-1. **Use a modular monolith** because the package is library-shaped and optimized for one deployable integration surface.
-1. **Treat LangChain as the execution engine**, not as the protocol implementation.[^lc-agents]
-1. **Treat middleware as policy only**, never as the canonical source of Open Responses events.[^lc-middleware-custom]
-1. **Treat callbacks as a semantic bridge** because they expose a rich lifecycle boundary with correlated run IDs. For actual streaming, we use the agent's `stream()` method; callbacks provide the observation layer for lifecycle events during execution.[^lc-callbacks]
-> **Note:** This is an architectural design decision based on LangChain's callback/lifecycle separation, not an explicit LangChain mandate. Middleware could theoretically serve this purpose, but callbacks provide richer lifecycle events for our semantic derivation needs.
-1. **Treat the serializer as the single writer** to JSON or SSE output so event order, status transitions, and terminal behavior remain deterministic.[^or-spec]
-1. **Treat continuation persistence as a required boundary** because `previous_response_id` requires replay of prior input and output before new input is appended.[^or-spec]
-1. **Support only the minimum image-input behavior required for compliance in MVP**, without broad multimodal commitments.[^or-compliance]
+### Runtime Observation Boundary
+- **Logical Type:** Observation boundary
+- **Responsibility:** Translate live runtime lifecycle signals into semantic events without writing directly to public transports.
+- **Inputs:** Runtime callbacks, stream progression, tool lifecycle signals, runtime failures
+- **Outputs:** Semantic events for text, function calls, refusals, reasoning, and lifecycle transitions
+- **Depends on:** None
 
-## 2. System Containers (C4 Level 2)
+### Canonical Response Assembly
+- **Logical Type:** State boundary
+- **Responsibility:** Maintain the authoritative current `ResponseResource`, output item/content state machines, request-echo fields, usage and operational fields, and terminal lifecycle truth for JSON responses, terminal stream events, and persistence.
+- **Inputs:** Request snapshot, semantic events, runtime outcomes
+- **Outputs:** Authoritative `ResponseResource`, continuation record candidates, publication intents
+- **Depends on:** None
 
-**Open Responses Hono Handler**: HTTP Transport Container - Exposes `POST /v1/responses`, validates protocol requests, negotiates JSON vs SSE, and delegates execution to the adapter.
+### Stream Publication Pipeline
+- **Logical Type:** Streaming transport boundary
+- **Responsibility:** Serialize semantic and canonical state changes into ordered OpenResponses streaming events, embed full terminal `ResponseResource` payloads where required, and emit terminal `[DONE]` semantics.
+- **Inputs:** Publication intents, canonical response assembly state
+- **Outputs:** Ordered SSE frames
+- **Depends on:** Canonical Response Assembly
 
-**Open Responses Adapter**: Application Service Container - Orchestrates request normalization, continuation rehydration, invocation wiring, and response materialization.
+### Continuation Store Port
+- **Logical Type:** Storage boundary
+- **Responsibility:** Load and save continuation records keyed by response ID using a builder-controlled persistence implementation.
+- **Inputs:** Response IDs and full continuation records
+- **Outputs:** Stored or loaded continuation records
+- **Depends on:** None
 
-**Protocol Validator**: Validation Container - Validates request shape, rejects malformed inputs predictably, and enforces protocol-level invariants before execution begins.
+### Compliance Verification Harness
+- **Logical Type:** Test boundary
+- **Responsibility:** Validate the built package against the official OpenResponses compliance runner, package-local regressions, and certified-runtime smoke scenarios.
+- **Inputs:** Built package artifacts, live server target, contract snapshot version
+- **Outputs:** Release-gating pass/fail evidence and drift diagnostics
+- **Depends on:** Public Protocol Boundary
 
-**Input Normalizer**: Translation Container - Converts Open Responses `input` into canonical internal structures built primarily on LangChain messages, with explicit handling for text-first items and minimum image-input pass-through required for compliance.
-
-**Continuation Repository Port**: Persistence Port Container - Abstract interface for loading and saving prior response input/output data by response ID.
-
-**Response Record Repository**: Persistence Container - Builder-supplied implementation of the continuation port. Recommended logical category: document store or key-value store because the persistence shape is response-resource oriented rather than relationally transactional.
-
-**LangChain Agent Runtime**: Execution Container - Existing `createAgent()` runtime that performs model turns, tool execution, and agent loop control.[^lc-agents]
-
-**Execution Policy Middleware**: Control Container - LangChain middleware used for prompt shaping, request metadata propagation, tool policy enforcement, retries, and other execution-control rules.[^lc-middleware-custom]
-
-**Callback Bridge**: Observation Container - Implements LangChain callback methods and converts runtime events into internal semantic events such as run started, item started, text delta, function-call arguments delta, tool started, tool completed, and run failed.[^lc-callbacks]
-
-**Item Accumulator**: State Container - Owns canonical item IDs, output indexes, content indexes, delta buffering, part finalization, item finalization, and prevention of illegal duplicate terminal events.
-
-**Response Lifecycle Manager**: State Container - Owns response ID, timestamps, top-level status transitions, error state, metadata, and final response resource assembly.
-
-**Event Serializer**: Serialization Container - Converts internal semantic events plus canonical state into Open Responses event objects with monotonic sequence numbers.
-
-**SSE Publisher**: Streaming Transport Container - Frames serialized events as SSE with `event` equal to the JSON payload `type`, and emits terminal `[DONE]`.[^or-spec]
-
-**JSON Materializer**: Non-Streaming Transport Container - Produces final `application/json` response resources for non-streaming requests.[^or-spec]
-
-**Tool Mapping Adapter**: Translation Container - Maps Open Responses `tools`, `tool_choice`, and `parallel_tool_calls` request semantics into LangChain-compatible runtime configuration and passes enforceable policy constraints into middleware.[^or-reference]
-
-**Observability Pipeline**: Cross-Cutting Container - Collects structured logs, metrics, correlation IDs, and trace events without mutating the public protocol surface.
-
-**Compliance Harness**: Test Container - Runs deterministic tests and the Open Responses acceptance suite against the exposed route shape.[^or-compliance]
-
-## 3. Container Diagram (C4 Level 2)
-
+## 3. Container Diagram (Mermaid)
 ```mermaid
 C4Container
-    title OpenResponses Adapter for LangChain Agents — C4 Level 2
+title OpenResponses Adapter - Full Compliance Container Diagram
 
-    Person(builder, "Solo Builder", "Configures and exposes an existing LangChain agent")
-    Person(client, "SDK Client", "Calls the Open Responses API surface")
+Person(builder, "Solo Builder", "Integrates the package into an existing agent host")
+Person(client, "SDK Client", "Calls the Open Responses Surface")
+Person(maintainer, "Package Maintainer", "Maintains the package and validates contract fidelity")
 
-    System_Boundary(system, "OpenResponses Adapter Package") {
-        Container(handler, "Open Responses Hono Handler", "HTTP Transport", "Owns POST /v1/responses, request parsing, JSON vs SSE negotiation")
-        Container(validator, "Protocol Validator", "Validation", "Validates request shape and protocol invariants")
-        Container(adapter, "Open Responses Adapter", "Application Service", "Normalizes input, rehydrates continuation, orchestrates execution, materializes response")
-        Container(normalizer, "Input Normalizer", "Translation", "Maps Open Responses input into canonical internal structures")
-        Container(toolmap, "Tool Mapping Adapter", "Translation", "Maps tool semantics into LangChain-compatible runtime config")
-        Container(callbacks, "Callback Bridge", "Observation", "Converts runtime callbacks into internal semantic events")
-        Container(accumulator, "Item Accumulator", "State", "Maintains canonical item/content state machines")
-        Container(lifecycle, "Response Lifecycle Manager", "State", "Maintains response IDs, timestamps, and status transitions")
-        Container(serializer, "Event Serializer", "Serialization", "Serializes canonical events into Open Responses event objects")
-        Container(sse, "SSE Publisher", "Streaming Transport", "Frames serialized events as SSE and writes terminal [DONE]")
-        Container(json, "JSON Materializer", "Non-Streaming Transport", "Builds final application/json response resource")
-        Container(obs, "Observability Pipeline", "Cross-Cutting", "Structured logs, metrics, correlation IDs")
-    }
+System_Boundary(system, "OpenResponses Adapter Package") {
+    Container(host, "Host Integration Boundary", "Library boundary", "Exposes app, handler, adapter, middleware, and persistence integration points")
+    Container(protocol, "Public Protocol Boundary", "API boundary", "Owns /v1/responses, validation, negotiation, and public error mapping")
+    Container(compose, "Request Composition Boundary", "Translation boundary", "Normalizes input, resolves continuation, derives tool contract")
+    Container(orchestrator, "Execution Orchestrator", "Application service", "Coordinates invoke/stream execution and timeout budgets")
+    Container(policy, "Runtime Policy Boundary", "Control boundary", "Enforces tool contract and execution constraints")
+    Container(observe, "Runtime Observation Boundary", "Observation boundary", "Translates live runtime signals into semantic events")
+    Container(state, "Canonical Response Assembly", "State boundary", "Maintains full ResponseResource and output state")
+    Container(streaming, "Stream Publication Pipeline", "Streaming boundary", "Serializes ordered streaming events and terminal full responses")
+    Container(store, "Continuation Store Port", "Storage boundary", "Loads and saves response-ID continuation records")
+    Container(compliance, "Compliance Verification Harness", "Test boundary", "Runs official compliance and runtime smoke validation")
+}
 
-    System_Ext(agent, "LangChain Agent Runtime", "Existing createAgent() runtime")
-    System_Ext(middleware, "Execution Policy Middleware", "LangChain middleware enforcing execution control")
-    System_Ext(repo, "Response Record Repository", "Builder-controlled continuation persistence")
-    System_Ext(compliance, "Compliance Harness", "Acceptance suite and deterministic tests")
+System_Ext(runtime, "Agent Runtime", "Existing runtime that executes model turns and tool calls")
+System_Ext(persistence, "Builder Persistence Implementation", "Builder-controlled continuation storage")
+System_Ext(runner, "Official OpenResponses Compliance Runner", "External black-box validator")
 
-    Rel(builder, handler, "Configures and mounts", "TypeScript")
-    Rel(client, handler, "POST /v1/responses", "HTTPS/JSON or HTTPS/SSE")
-    Rel(handler, validator, "Validates request", "In-process call")
-    Rel(handler, adapter, "Delegates execution", "In-process call")
-    Rel(adapter, normalizer, "Normalizes input", "In-process call")
-    Rel(adapter, toolmap, "Maps tool config", "In-process call")
-    Rel(adapter, repo, "Load/save prior input/output", "Repository API")
-    Rel(adapter, agent, "invoke/stream", "In-process call")
-    Rel(agent, middleware, "Execution control hooks", "LangChain middleware API")
-    Rel(agent, callbacks, "Lifecycle callbacks", "LangChain callback API")
-    Rel(callbacks, accumulator, "Semantic event updates", "In-process event")
-    Rel(callbacks, lifecycle, "Run/error notifications", "In-process event")
-    Rel(accumulator, serializer, "Canonical item/part events", "In-process event")
-    Rel(lifecycle, serializer, "Lifecycle state transitions", "In-process event")
-    Rel(serializer, sse, "Serialized stream events", "Async queue")
-    Rel(serializer, json, "Final response resource", "In-process call")
-    Rel(handler, sse, "Writes streaming response", "text/event-stream")
-    Rel(handler, json, "Writes non-streaming response", "application/json")
-    Rel(handler, obs, "Emit logs/metrics", "In-process call")
-    Rel(adapter, obs, "Emit logs/metrics", "In-process call")
-    Rel(compliance, handler, "Validates surface", "HTTP test traffic")
+Rel(builder, host, "Configures and mounts")
+Rel(client, protocol, "Calls /v1/responses")
+Rel(host, protocol, "Creates and exposes")
+Rel(protocol, compose, "Validates and normalizes requests")
+Rel(compose, store, "Loads prior response records")
+Rel(compose, orchestrator, "Provides canonical transcript and request snapshot")
+Rel(orchestrator, policy, "Applies tool and execution policy")
+Rel(orchestrator, runtime, "invoke / stream")
+Rel(runtime, observe, "Emits lifecycle signals")
+Rel(observe, state, "Publishes semantic events")
+Rel(orchestrator, state, "Publishes terminal outcomes")
+Rel(state, streaming, "Publishes ordered stream intents")
+Rel(protocol, state, "Reads terminal JSON response")
+Rel(streaming, protocol, "Emits SSE frames")
+Rel(state, store, "Persists continuation records")
+Rel(store, persistence, "Delegates storage implementation")
+Rel(maintainer, compliance, "Runs release validation")
+Rel(runner, compliance, "Supplies official test logic")
+Rel(compliance, protocol, "Validates built package over HTTP")
 ```
 
-## 4. Critical Execution Flows (Sequence Diagrams)
-
-### Flow 1 — Non-Streaming Text Response
-
+## 4. Critical Execution Flows
+### 4.1 Non-Streaming Full Response
+- **Maps to PRD capability:** ORC-001, ORC-007
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as SDK Client
-    participant Handler as Open Responses Hono Handler
-    participant Validator as Protocol Validator
-    participant Adapter as Open Responses Adapter
-    participant Normalizer as Input Normalizer
-    participant Agent as LangChain Agent Runtime
-    participant Middleware as Execution Policy Middleware
-    participant Bridge as Callback Bridge
-    participant Acc as Item Accumulator
-    participant Life as Response Lifecycle Manager
-    participant JSON as JSON Materializer
+    participant Protocol as Public Protocol Boundary
+    participant Compose as Request Composition Boundary
+    participant Orchestrator as Execution Orchestrator
+    participant Policy as Runtime Policy Boundary
+    participant Runtime as Agent Runtime
+    participant Observe as Runtime Observation Boundary
+    participant State as Canonical Response Assembly
+    participant Store as Continuation Store Port
 
-    Client->>Handler: POST /v1/responses (stream=false)
-    Handler->>Validator: validate(request)
-    Validator-->>Handler: valid
-    Handler->>Adapter: invoke(request)
-    Adapter->>Normalizer: normalize(input)
-    Normalizer-->>Adapter: canonical input
-    Adapter->>Life: create response (queued -> in_progress)
-    Adapter->>Agent: invoke(canonical input, callbacks)
-    Agent->>Middleware: beforeAgent / beforeModel / wrapModelCall
-    Middleware-->>Agent: execution policy decisions
-    Agent-->>Bridge: model/tool/agent lifecycle callbacks
-    Bridge->>Acc: create/finalize item and content state
-    Bridge->>Life: completion or failure signals
-    Agent-->>Adapter: final runtime state
-    Adapter->>JSON: materialize final response resource
-    JSON->>Life: finalize response (completed or failed)
-    JSON-->>Handler: application/json payload
-    Handler-->>Client: 200 application/json
+    Client->>Protocol: POST /v1/responses (stream=false)
+    Protocol->>Compose: validate + normalize request
+    Compose-->>Protocol: request snapshot + canonical transcript
+    Protocol->>Orchestrator: execute non-streaming turn
+    Orchestrator->>Policy: apply tool / execution policy
+    Orchestrator->>Runtime: invoke(canonical transcript)
+    Runtime-->>Observe: lifecycle signals
+    Observe->>State: semantic events
+    Runtime-->>Orchestrator: terminal runtime outcome
+    Orchestrator->>State: finalize full ResponseResource
+    State->>Store: persist continuation record
+    State-->>Protocol: full terminal ResponseResource
+    Protocol-->>Client: 200 application/json
 ```
 
-### Flow 2 — Streaming Text Response with Live Semantic Deltas
-
+### 4.2 Streaming Response with Full Terminal Resource
+- **Maps to PRD capability:** ORC-002, ORC-003
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as SDK Client
-    participant Handler as Open Responses Hono Handler
-    participant Validator as Protocol Validator
-    participant Adapter as Open Responses Adapter
-    participant Life as Response Lifecycle Manager
-    participant Agent as LangChain Agent Runtime
-    participant Middleware as Execution Policy Middleware
-    participant Bridge as Callback Bridge
-    participant Acc as Item Accumulator
-    participant Serializer as Event Serializer
-    participant SSE as SSE Publisher
+    participant Protocol as Public Protocol Boundary
+    participant Compose as Request Composition Boundary
+    participant Orchestrator as Execution Orchestrator
+    participant Runtime as Agent Runtime
+    participant Observe as Runtime Observation Boundary
+    participant State as Canonical Response Assembly
+    participant Stream as Stream Publication Pipeline
+    participant Store as Continuation Store Port
 
-    Client->>Handler: POST /v1/responses (stream=true)
-    Handler->>Validator: validate(request)
-    Validator-->>Handler: valid
-    Handler->>Adapter: stream(request)
-    Adapter->>Life: create response (queued -> in_progress)
-    Life->>Serializer: response.in_progress
-    Serializer->>SSE: enqueue event
-    SSE-->>Client: response.in_progress
-    Adapter->>Agent: invoke/stream(canonical input, callbacks)
-    Agent->>Middleware: execution-control hooks
-    Middleware-->>Agent: policy decisions
-    Agent-->>Bridge: handleChatModelStart / handleLLMNewToken / tool callbacks
-    Bridge->>Acc: update canonical item and part state
-    Acc->>Serializer: response.output_item.added
-    Serializer->>SSE: write SSE event
-    SSE-->>Client: response.output_item.added
-    Acc->>Serializer: response.content_part.added
-    Serializer->>SSE: write SSE event
-    SSE-->>Client: response.content_part.added
-    Bridge->>Serializer: response.output_text.delta
-    Serializer->>SSE: write SSE event
-    SSE-->>Client: response.output_text.delta
-    Acc->>Serializer: response.output_text.done / response.content_part.done / response.output_item.done
-    Serializer->>SSE: write terminal item events in order
-    SSE-->>Client: done events
-    Agent-->>Bridge: run completed
-    Bridge->>Life: mark completed
-    Life->>Serializer: response.completed
-    Serializer->>SSE: write final event
-    SSE-->>Client: response.completed
-    SSE-->>Client: [DONE]
+    Client->>Protocol: POST /v1/responses (stream=true)
+    Protocol->>Compose: validate + normalize request
+    Compose-->>Protocol: request snapshot + canonical transcript
+    Protocol->>Orchestrator: execute streaming turn
+    Orchestrator->>Runtime: stream(canonical transcript)
+    Runtime-->>Observe: live lifecycle signals
+    Observe->>State: semantic events
+    State->>Stream: ordered publication intents
+    Stream-->>Protocol: SSE frames
+    Protocol-->>Client: lifecycle and output events
+    Runtime-->>Orchestrator: terminal runtime outcome
+    Orchestrator->>State: finalize full terminal ResponseResource
+    State->>Store: persist continuation record
+    State->>Stream: terminal response.completed / response.failed / response.incomplete with full ResponseResource
+    Stream-->>Client: terminal event then [DONE]
 ```
 
-### Flow 3 — Continuation with `previous_response_id`
-
+### 4.3 Tool-Calling Turn
+- **Maps to PRD capability:** ORC-005
 ```mermaid
 sequenceDiagram
     autonumber
     actor Client as SDK Client
-    participant Handler as Open Responses Hono Handler
-    participant Validator as Protocol Validator
-    participant Adapter as Open Responses Adapter
-    participant Repo as Response Record Repository
-    participant Normalizer as Input Normalizer
-    participant Agent as LangChain Agent Runtime
-    participant JSON as JSON Materializer
+    participant Protocol as Public Protocol Boundary
+    participant Compose as Request Composition Boundary
+    participant Policy as Runtime Policy Boundary
+    participant Orchestrator as Execution Orchestrator
+    participant Runtime as Agent Runtime
+    participant Observe as Runtime Observation Boundary
+    participant State as Canonical Response Assembly
 
-    Client->>Handler: POST /v1/responses (previous_response_id, input)
-    Handler->>Validator: validate(request)
-    Validator-->>Handler: valid
-    Handler->>Adapter: invoke(request)
-    Adapter->>Repo: load(previous_response_id)
-    Repo-->>Adapter: prior input + prior output
-    Adapter->>Normalizer: normalize(prior input + prior output + new input)
-    Normalizer-->>Adapter: canonical transcript
-    Adapter->>Agent: invoke(canonical transcript)
-    Agent-->>Adapter: final runtime state
-    Adapter->>Repo: save(new response input/output)
-    Adapter->>JSON: materialize final response resource
-    JSON-->>Handler: application/json payload
-    Handler-->>Client: completed response
+    Client->>Protocol: POST /v1/responses with tools + tool_choice
+    Protocol->>Compose: validate and derive effective tool contract
+    Compose-->>Orchestrator: transcript + tool policy
+    Orchestrator->>Policy: enforce allowed tools and execution constraints
+    Orchestrator->>Runtime: execute turn with tool policy
+    Runtime-->>Observe: tool proposal / start / output / failure signals
+    Observe->>State: function-call and tool lifecycle events
+    State-->>Protocol: full ResponseResource or stream publication intents
+    Protocol-->>Client: compliant function_call output semantics
 ```
 
-## 5. Bounded Contexts and Responsibility Boundaries
-
-### A. Protocol Publication Context
-
-Owns the external Open Responses contract.
-
-**Includes:**
-
-- Open Responses Hono Handler
-- Protocol Validator
-- Event Serializer
-- SSE Publisher
-- JSON Materializer
-
-**Must own:**
-
-- `POST /v1/responses`
-- request parsing and validation
-- JSON vs SSE branching
-- sequence numbering
-- SSE framing
-- `event === type`
-- terminal `[DONE]`
-- canonical final response materialization
-
-**Must not own:**
-
-- agent behavior policy
-- LangChain execution decisions
-- callback interpretation logic beyond serialization
-
-### B. Semantic Derivation Context
-
-Owns translation from runtime lifecycle to protocol semantics.
-
-**Includes:**
-
-- Callback Bridge
-- Item Accumulator
-- Response Lifecycle Manager
-
-**Must own:**
-
-- semantic event derivation
-- item and content-part state machines
-- mapping tokens to text deltas
-- mapping tool-call progress to function-call argument deltas
-- prevention of duplicate finalizers
-- canonical lifecycle truth before serialization
-
-**Must not own:**
-
-- HTTP transport details
-- Hono stream writes
-- public response framing
-- tool policy enforcement
-
-### C. Execution Control Context
-
-Owns runtime steering and policy.
-
-**Includes:**
-
-- LangChain Agent Runtime
-- Execution Policy Middleware
-- Tool Mapping Adapter
-
-**Must own:**
-
-- model/tool routing decisions
-- prompt shaping
-- tool visibility and allowed-tool enforcement
-- retries and fallbacks at execution boundaries
-- request-scoped execution metadata
-
-**Must not own:**
-
-- SSE event emission
-- response lifecycle authority
-- response serialization
-
-### D. Continuation Persistence Context
-
-Owns prior-response storage and replay boundary.
-
-**Includes:**
-
-- Continuation Repository Port
-- Response Record Repository
-
-**Must own:**
-
-- loading prior response input/output by response ID
-- persisting current response input/output for future continuation
-- explicit builder-controlled trust boundary
-
-**Must not own:**
-
-- transcript policy hidden inside agent memory
-- protocol serialization
-- item lifecycle semantics
-
-## 6. Request and Response Model
-
-### Request Path
-
-1. Receive Open Responses request.
-1. Validate shape and required protocol fields.
-1. Normalize `input` into canonical internal form.
-1. If `previous_response_id` exists, load prior input/output through the continuation repository and concatenate in required semantic order.[^or-spec]
-1. Map tool configuration into runtime-compatible policy structures.
-1. Create response lifecycle state.
-1. Invoke LangChain agent with middleware and callback bridge attached.
-1. Consume semantic events through accumulator and lifecycle manager.
-1. Serialize to JSON or SSE.
-1. Persist final input/output for future continuation.
-
-### Canonical Internal Representations
-
-- **Conversation-like content:** LangChain messages remain the primary canonical representation because LangChain describes messages as the fundamental unit of model context.[^lc-messages]
-- **Non-message protocol semantics:** maintained as internal metadata alongside messages rather than forced into message bodies.
-- **Response resource:** maintained independently from agent state.
-- **Item and content-part states:** maintained independently from raw callbacks.
-
-### Logical Data Stores
-
-**Continuation storage category:** Document store or key-value store.
-
-**Why not relational by default:** The data access pattern is response-resource centric: load one response by ID, read its stored input and output, append a new response record, and optionally expire development-only records. This is document-shaped, not join-heavy.
-
-**Recommended stored fields:**
-
-- response ID
-- created/completed timestamps
-- normalized request input
-- canonical response output
-- status
-- error payload if terminal failure occurred
-- model identifier
-- optional metadata
-
-## 7. Resilience and Cross-Cutting Concerns
-
-### Authentication Strategy
-
-Authentication is not the package’s domain model, but the handler must preserve a clean boundary for host applications to enforce it. The recommended architecture is:
-
-- host application authenticates the incoming request before the route handler executes
-- authenticated principal and request metadata are injected into request context
-- adapter and observability layers propagate correlation and principal metadata as opaque context only
-- no authentication internals are serialized into public Open Responses output unless explicitly configured
-
-### Failure Handling Strategy
-
-Per Nygard, failures must be isolated at boundaries.[^nygard-release-it]
-
-**Required logical protections:**
-
-- **Timeouts** at external boundaries: model call, persistence repository call, and any outbound tool invocation.
-- **Retries with bounded backoff** only for idempotent repository operations and explicitly safe tool/network calls.
-- **Circuit breakers** around builder-supplied persistence and unstable external tool providers to prevent cascading failures.
-- **Bulkheads** between request execution and observability so logging failure does not corrupt response delivery.
-- **Single-writer stream discipline** so callback bursts cannot race direct socket writes.
-- **Terminal failure mapping** so any streaming error is translated into `response.failed` before stream termination, when still possible within the transport contract.[^or-spec]
-
-### Streaming Truthfulness Rule
-
-The architecture must emit streaming events from **live semantic observations**, not from replayed final output. LangChain exposes streaming modes and fine-grained callbacks suitable for live observation, and the package’s semantic contract depends on those sources rather than post hoc reconstruction.[^lc-streaming]
-
-### Observability Strategy
-
-The package must emit:
-
-- structured logs
-- correlation IDs per request and per runtime run
-- metrics for response duration, item counts, tool calls, persistence latency, and stream termination mode
-- optional trace-style extension events for debugging, provided they remain implementor-prefixed and ignorable by clients
-
-Observability data must never become part of the normative protocol stream unless intentionally emitted as prefixed extension events permitted by the specification.[^or-spec]
-
-## 8. Minimum Image-Input Strategy
-
-The PRD requires only the minimum image-input behavior needed to pass the compliance suite. Therefore the architecture must support **pass-through normalization of compliant image input items** into the canonical internal representation, while keeping the remainder of the package text-first.[^or-compliance]
-
-This is a bounded concession, not a multimodal architecture. The package must:
-
-- accept the minimum image-bearing request forms required by the compliance tests
-- preserve them through normalization and continuation replay where applicable
-- avoid broad commitments to image generation, multimodal output rendering, or provider-specific media workflows in MVP
-
-## 9. Logical Risks and Technical Debt
-
-### Risk 1 — Callback Semantics May Differ Across Providers
-
-LangChain standardizes the callback interface, but the richness and timing of emitted events can still vary by model/provider behavior. This creates a risk that some providers produce weaker live function-call argument deltas than others.[^lc-callbacks]
-
-**Mitigation:** Keep the semantic bridge provider-agnostic, tolerate degraded granularity where necessary, and treat missing fine-grained argument chunks as reduced fidelity inside the semantic derivation context rather than leaking provider quirks into the public protocol.
-
-### Risk 2 — Streaming Order Corruption Under Concurrency
-
-If callbacks or execution hooks write directly to the network stream, interleaving will eventually violate deterministic order.
-
-**Mitigation:** One serializer, one monotonic sequence, one transport writer.
-
-### Risk 3 — Continuation Repository Becomes a Single Point of Failure
-
-`previous_response_id` replay depends on repository availability.
-
-**Mitigation:** Use circuit breakers, bounded timeouts, and explicit error mapping. Do not silently degrade to partial replay. A failed continuation load must fail the request predictably rather than fabricate context.[^or-spec]
-
-### Risk 4 — Tool Policy Split-Brain
-
-If `tools`, `tool_choice` (including the `allowed_tools` variant), and middleware enforcement are interpreted in different modules without one source of truth, runtime behavior and public semantics will drift.
-
-**Mitigation:** Parse and validate tool semantics in the adapter, translate once in the Tool Mapping Adapter, and enforce only through middleware.
-
-### Risk 5 — Scope Creep into Hosted Memory or Gateway Behavior
-
-Because continuation exists, there will be pressure to add session management, dashboards, hosted persistence, or provider-specific adapters.
-
-**Mitigation:** Hold the boundary: this package is a protocol adapter library, not a platform.
-
-### Risk 6 — Synthetic Delta Temptation
-
-It is easier to emit one final text blob as a fake delta stream.
-
-**Mitigation:** Reject that design. It violates the PRD’s live semantic fidelity requirement and weakens trust in the protocol surface.
-
-## 10. Architecture Decisions That Are Explicitly Rejected
-
-### Rejected: Microservices
-
-Rejected because the system is library-shaped, used by solo builders, and does not justify distributed operational overhead.[^fowler-monolith-first]
-
-### Rejected: Middleware as the Protocol Layer
-
-Rejected because middleware is documented as execution control, not as the richest lifecycle or transport boundary.[^lc-middleware-custom]
-
-### Rejected: Direct Callback-to-Socket Streaming
-
-Rejected because it creates race conditions and breaks deterministic ordering.
-
-### Rejected: Hidden Continuation in Agent Memory Alone
-
-Rejected because Open Responses requires explicit replay of prior input and output, controlled through a persistence boundary, not implicit runtime memory.[^or-spec]
-
-### Rejected: Broad Multimodal MVP
-
-Rejected because the product value is text-first interoperability; MVP supports only the minimum image-input behavior needed for compliance.[^or-compliance]
-
-## 13. Final Architectural Standard
-
-The system shall be judged against this rule:
-
-**This architecture chooses callbacks as the source of Open Responses semantic events (by design, not by vendor mandate). The serializer guarantees Open Responses compliance. Middleware controls execution but never owns the public protocol.**
-
------
-
-## Footnotes
-
-### Normative Sources (Product/Framework)
-
-[^lc-agents]: https://docs.langchain.com/oss/javascript/langchain/agents
-[^lc-middleware-custom]: https://docs.langchain.com/oss/javascript/langchain/middleware/custom
-[^lc-streaming]: https://docs.langchain.com/oss/javascript/langchain-streaming/overview
-[^lc-messages]: https://docs.langchain.com/oss/javascript/langchain/messages
-[^lc-callbacks]: https://reference.langchain.com/javascript/langchain-core/callbacks/base/CallbackHandlerMethods
-[^lc-fake]: https://docs.langchain.com/oss/javascript/integrations/chat/fake
-[^or-spec]: https://www.openresponses.org/specification
-[^or-reference]: https://www.openresponses.org/reference
-[^or-compliance]: https://www.openresponses.org/compliance
-[^hono-streaming]: https://hono.dev/docs/helpers/streaming
-
-### Advisory Sources (Design Literature)
-
-[^fowler-monolith-first]: https://martinfowler.com/bliki/MonolithFirst.html
-[^evans-ddd]: https://domainlanguage.com/ddd/
-[^nygard-release-it]: https://pragprog.com/titles/mnee2/release-it-second-edition/
-
+### 4.4 Continuation Turn by Response ID
+- **Maps to PRD capability:** ORC-004
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as SDK Client
+    participant Protocol as Public Protocol Boundary
+    participant Compose as Request Composition Boundary
+    participant Store as Continuation Store Port
+    participant Orchestrator as Execution Orchestrator
+    participant State as Canonical Response Assembly
+
+    Client->>Protocol: POST /v1/responses with previous_response_id
+    Protocol->>Compose: validate continuation request
+    Compose->>Store: load(previous_response_id)
+    Store-->>Compose: prior request + prior response record
+    Compose->>Compose: replay prior input -> prior output -> new input
+    Compose-->>Orchestrator: canonical continued transcript
+    Orchestrator->>State: execute and finalize next response
+    State->>Store: persist next continuation record
+    State-->>Protocol: next ResponseResource / terminal event payload
+    Protocol-->>Client: continued response
+```
+
+### 4.5 Current Input Coverage Turn
+- **Maps to PRD capability:** ORC-006
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as SDK Client
+    participant Protocol as Public Protocol Boundary
+    participant Compose as Request Composition Boundary
+    participant Orchestrator as Execution Orchestrator
+    participant Runtime as Agent Runtime
+    participant State as Canonical Response Assembly
+
+    Client->>Protocol: POST /v1/responses with structured history and compliant input items
+    Protocol->>Compose: validate request items against current contract snapshot
+    Compose->>Compose: preserve system / developer / assistant history and compliant image or file inputs
+    Compose-->>Orchestrator: canonical transcript without provider-native leakage
+    Orchestrator->>Runtime: execute normalized turn
+    Runtime-->>State: terminal outcome through observation path
+    State-->>Protocol: compliant ResponseResource or streaming lifecycle
+    Protocol-->>Client: contract-valid response
+```
+
+### 4.6 Compliance Release Validation
+- **Maps to PRD capability:** ORC-008, ORC-009
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Maintainer as Package Maintainer
+    participant Compliance as Compliance Verification Harness
+    participant Host as Host Integration Boundary
+    participant Protocol as Public Protocol Boundary
+    participant Runner as Official OpenResponses Compliance Runner
+
+    Maintainer->>Compliance: run release validation for pinned snapshot
+    Compliance->>Host: start live built-package target
+    Host->>Protocol: expose /v1/responses
+    Compliance->>Runner: invoke pinned official suite against base URL
+    Runner->>Protocol: exercise contract scenarios over HTTP
+    Protocol-->>Runner: JSON, SSE, and wire errors
+    Runner-->>Compliance: pass/fail results and scenario diagnostics
+    Compliance-->>Maintainer: release evidence and drift report
+```
+
+## 5. Resilience & Cross-Cutting Concerns
+- **Security / Identity Strategy:** Authentication is enforced by the host before the package route executes. The package may propagate opaque request context internally, but it does not own identity semantics and must never serialize hidden auth state into the public protocol.
+- **Failure Handling Strategy:** Pre-stream validation, continuation, and runtime failures return contract-valid JSON errors. Post-stream failures emit contract-valid terminal failure events when the transport still permits them. The architecture requires single-writer stream publication, bounded timeouts at runtime and persistence boundaries, and fail-closed policy behavior for disallowed tool execution.
+- **Observability Strategy:** Emit structured logs and metrics keyed by request ID, response ID, and contract snapshot version. Capture official compliance-runner results as release artifacts. Distinguish contract validation failures from runtime failures.
+- **Configuration Strategy:** Builder configuration controls runtime integration, continuation persistence, timeout budgets, and request-context propagation. Contract snapshot version and compliance-runner target are build and release settings, not ad hoc runtime guesses.
+- **Data Integrity / Consistency Notes:** The same canonical `ResponseResource` must drive non-streaming JSON responses, terminal streaming events, and persisted continuation records. `previous_response_id` replay order is fixed. Duplicate terminal item and response states are prohibited by the canonical response assembly.
+
+### 5.1 Failure-Class Inventory and Streaming Truthfulness
+- **Pre-stream request or continuation failures:** Validation, unknown `previous_response_id`, and unusable stored-record failures terminate before transport start and return one contract-valid JSON error response.
+- **Pre-stream execution or persistence failures:** Runtime bootstrap, tool-policy setup, and persistence failures before any SSE bytes are published terminate as JSON errors and must not partially open a stream.
+- **Post-stream execution failures:** Once SSE has started, runtime or tool failure must collapse to one terminal failure publication path with no contradictory terminal status.
+- **Post-stream publication failures:** The architecture attempts best-effort failure publication only while the transport still permits it; otherwise it closes cleanly rather than fabricating recovery semantics.
+- **Single-writer discipline:** Callback handlers, runtime-policy hooks, and persistence boundaries must never write directly to the public transport or own `sequence_number` progression.
+- **Truthfulness rule:** Live deltas come only from live observations. When the runtime exposes coarser signals, the architecture prefers coarser truthful publication or terminal summary publication over synthetic fine-grained events.
+- **Observability signal boundary:** Structured logs, metrics, and optional extension diagnostics are permitted, but they must remain separate from the normative OpenResponses surface unless explicitly namespaced and ignorable by clients.
+
+### 5.2 Bounded Contexts and Responsibility Boundaries
+#### A. Protocol Publication Context
+- **Includes:** Host Integration Boundary, Public Protocol Boundary, Stream Publication Pipeline
+- **Must own:** `/v1/responses`, request parsing and validation, JSON vs SSE branching, public error mapping, sequence numbering, SSE framing, terminal `[DONE]` emission, and public contract validation
+- **Must not own:** Runtime steering, hidden runtime memory policy, provider-specific behavior, or tool-policy decision logic beyond publication of already-derived semantics
+
+#### B. Semantic Derivation Context
+- **Includes:** Runtime Observation Boundary and the semantic subdomain inside Canonical Response Assembly
+- **Must own:** Live semantic event derivation, item and content-part lifecycle truth, refusal/reasoning lifecycle interpretation, and prevention of duplicate terminal publication
+- **Must not own:** Direct transport writes, HTTP orchestration, or builder-specific persistence concerns
+
+#### C. Execution Control Context
+- **Includes:** Execution Orchestrator and Runtime Policy Boundary
+- **Must own:** Runtime invocation, timeout budgets, tool visibility and enforcement, request-scoped execution metadata, and coordination of invoke versus stream paths
+- **Must not own:** Public SSE framing, final response serialization authority, or continuation persistence semantics
+
+#### D. Continuation Persistence Context
+- **Includes:** Continuation Store Port
+- **Must own:** Response-ID keyed loading and saving of full continuation records under a builder-controlled trust boundary
+- **Must not own:** Implicit transcript policy hidden inside the runtime, public response serialization, or live event publication
+
+### 5.3 Request and Response Model
+#### Request Path
+1. Receive the OpenResponses request.
+2. Validate shape against the pinned current contract snapshot.
+3. Normalize input items into canonical internal transcript form.
+4. If `previous_response_id` exists, load prior request and prior response material through the continuation store and replay them in the required semantic order before appending new input.
+5. Derive the effective tool contract and execution metadata once.
+6. Execute through the runtime policy and runtime observation boundaries.
+7. Maintain one canonical `ResponseResource` aggregate.
+8. Publish either JSON or SSE from that same aggregate.
+9. Persist the full continuation record for future response-ID replay.
+
+#### Canonical Internal Representations
+- **Conversation-like content:** Canonical transcript items remain the primary execution-facing representation because the existing runtime ecosystem is message-oriented.
+- **Non-message protocol semantics:** Request-echo fields, usage fields, contract-operational fields, and publication state are kept alongside transcript content in the canonical response assembly rather than forced into message bodies.
+- **Response resource:** Maintained independently from raw runtime output so the public contract can be complete even when the runtime is sparse.
+- **Streaming events:** Derived from live semantic observations and the canonical aggregate together, never from direct callback-to-socket writes.
+
+#### Logical Data Stores
+- **Continuation storage category:** Document or key-value persistence remains the logical fit because the primary access pattern is response-resource centric.
+- **Recommended stored fields:** response ID, contract snapshot version, normalized request snapshot, full terminal response resource, lifecycle status, timestamps, and terminal error payload when present.
+- **Why this still matters:** Full compliance increases the size of the persisted record, but it does not fundamentally change the response-resource-oriented access pattern.
+
+### 5.4 Brownfield Capability Boundary Notes
+- **Current contract input-media boundary:** The package must preserve the current contract's image-bearing and file-bearing input forms through validation, normalization, continuation replay, and execution. This is a bounded contract requirement, not a promise of broad multimodal output support.
+- **Continuation boundary continuity:** `previous_response_id` remains explicit response-oriented replay, not thread-oriented hidden memory. The architecture still requires stored prior request material plus stored prior response output before new input is appended.
+- **Compliance proof boundary:** Package-local regressions remain valuable engineering controls, but they are now supporting signals beneath the official black-box release proof rather than the release proof itself.
+- **Preserved MVP architectural assets:** The earlier callback bridge, item accumulator, response lifecycle manager, async event queue, Hono boundary, and smoke examples remain valid assets; the target-state work broadens contract authority and publication correctness rather than replacing those assets wholesale.
+
+### 5.5 Architecture Decisions Explicitly Rejected
+- **Rejected: Microservices**
+  - The package remains library-shaped and optimized for a solo builder; distributed deployment would add operational burden without solving the contract problem.
+- **Rejected: Middleware as the Public Protocol Layer**
+  - Middleware remains execution control, not the authoritative publication boundary for the OpenResponses contract.
+- **Rejected: Direct Callback-to-Socket Streaming**
+  - This would break deterministic ordering and make full terminal response assembly brittle under concurrency and failure.
+- **Rejected: Hidden Continuation in Runtime Memory Alone**
+  - The public contract requires explicit response-ID replay semantics and builder-controlled persistence boundaries.
+- **Rejected: Local-Only Compliance Proof**
+  - Package-local regressions are useful, but the architecture no longer treats them as sufficient release evidence.
+
+## 6. Logical Risks & Technical Debt
+- **Risk:** Upstream OpenResponses contract churn outpaces local documentation and tests.
+- **Why it matters:** A package can appear stable locally while drifting out of black-box compliance.
+- **Mitigation or follow-up:** Pin a contract snapshot, run the official compliance runner in CI, and treat upstream snapshot changes as explicit review triggers.
+
+- **Risk:** Some current published event families may have weaker runtime observability than plain text deltas.
+- **Why it matters:** Refusal and reasoning-related events can tempt synthetic publication or silent omission.
+- **Mitigation or follow-up:** Keep the runtime observation boundary live and truthful, but broaden canonical response assembly so contract-complete terminal resources remain possible without faking live execution.
+
+- **Risk:** Required public fields with weak runtime semantics become a source of dishonest defaults.
+- **Why it matters:** Full compliance can be undermined if required fields are filled in inconsistently or semantically misleading ways.
+- **Mitigation or follow-up:** Define an explicit preserve, derive, or default field policy in the technical specification and test it at the public boundary.
+
+- **Risk:** Tool policy enforcement remains split between request normalization and runtime control.
+- **Why it matters:** Public request semantics and runtime behavior can drift if they are not derived from one authoritative policy.
+- **Mitigation or follow-up:** Keep one logical tool contract source in request composition and enforce only through the runtime policy boundary.
+
+- **Risk:** Brownfield local compliance checks remain narrower than the target contract.
+- **Why it matters:** Maintainers may keep fixing regressions against an obsolete local proxy instead of the governing external suite.
+- **Mitigation or follow-up:** Reframe local compliance tests as regression support only and make the official runner the release gate.
+
+- **Risk:** Continuation persistence becomes a practical single point of failure for multi-turn compatibility.
+- **Why it matters:** Response-ID replay cannot silently degrade to partial context without breaking the public contract.
+- **Mitigation or follow-up:** Use bounded timeouts, fail-closed continuation errors, and explicit record-shape validation or read-repair before transcript reconstruction.
+
+- **Risk:** Engineers may be tempted to replay finished answers as synthetic live deltas to fill observability gaps.
+- **Why it matters:** That breaks the architecture's truthfulness rule and undermines trust in the OpenResponses surface even if some shallow tests still pass.
+- **Mitigation or follow-up:** Keep the single-writer publication path tied to live semantic observations and allow only coarser truthful publication modes, never fabricated fine-grained deltas.
