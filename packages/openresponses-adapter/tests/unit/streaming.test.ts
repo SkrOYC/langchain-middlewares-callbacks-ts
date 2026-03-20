@@ -196,6 +196,45 @@ function* simulateMultiRunToolStream(
   bridge.handleAgentEnd?.({}, agentRunId);
 }
 
+function* simulateToolErrorStream(
+  _input: { messages: LangChainMessageLike[] },
+  config: Record<string, unknown>
+): Iterable<unknown> {
+  const bridge = extractBridge(config);
+  const agentRunId = extractRunId(config);
+
+  bridge.handleAgentAction?.(
+    {
+      tool: "lookup_user",
+      toolInput: { id: "recoverable-user" },
+      toolCallId: "call-tool-error",
+    },
+    agentRunId
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleToolStart?.(
+    {},
+    '{"id":"recoverable-user"}',
+    "tool-run-error",
+    agentRunId,
+    undefined,
+    undefined,
+    "lookup_user",
+    "call-tool-error"
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleToolError?.(
+    new Error("recoverable tool failure"),
+    "tool-run-error",
+    agentRunId
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentEnd?.({}, agentRunId);
+}
+
 const collectStream = async (
   stream: AsyncIterable<OpenResponsesEvent | "[DONE]">
 ): Promise<(OpenResponsesEvent | "[DONE]")[]> => {
@@ -610,6 +649,66 @@ describe("adapter.stream()", () => {
     expect(types.filter((type) => type === "response.completed")).toHaveLength(
       1
     );
+  });
+
+  test("early iterator return stops consumption without persisting a terminal response", async () => {
+    const previousResponseStore = createInMemoryPreviousResponseStore();
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateTextStream,
+      }),
+      previousResponseStore,
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator([
+        "resp-1",
+        "msg-1",
+        "extra-1",
+        "extra-2",
+      ]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const iterator = stream[Symbol.asyncIterator]();
+    await iterator.next();
+    await iterator.return?.();
+    await Promise.resolve();
+
+    const stored = await previousResponseStore.load("resp-1");
+    expect(stored).toBeNull();
+  });
+
+  test("tool-error streams preserve the function call in response output without fabricating tool output replay items", async () => {
+    const previousResponseStore = createInMemoryPreviousResponseStore();
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateToolErrorStream,
+      }),
+      previousResponseStore,
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator(["resp-1", "fc-tool-error"]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    const stored = await previousResponseStore.load(extractResponseId(events));
+
+    expect(stored?.request.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: "Hello",
+      },
+    ]);
+    expect(stored?.response.output).toEqual([
+      {
+        id: "fc-tool-error",
+        type: "function_call",
+        status: "completed",
+        name: "lookup_user",
+        call_id: "call-tool-error",
+        arguments: '{"id":"recoverable-user"}',
+      },
+    ]);
   });
 });
 

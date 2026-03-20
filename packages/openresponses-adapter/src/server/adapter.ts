@@ -472,7 +472,7 @@ export function createOpenResponsesAdapter(
       config.callbacks = [bridge, ...configCallbacks];
 
       // Start agent.stream() drain in background — callbacks push to queue
-      (async () => {
+      const backgroundTask = (async () => {
         try {
           await withTimeout({
             operation: async (phaseSignal) => {
@@ -578,6 +578,7 @@ export function createOpenResponsesAdapter(
               yield event;
             }
           } finally {
+            await backgroundTask;
             await persistStreamResponse();
           }
         },
