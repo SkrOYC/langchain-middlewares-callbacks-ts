@@ -151,6 +151,51 @@ function* simulateToolCallStream(
   bridge.handleAgentEnd?.({}, runId);
 }
 
+function* simulateMultiRunToolStream(
+  _input: { messages: LangChainMessageLike[] },
+  config: Record<string, unknown>
+): Iterable<unknown> {
+  const bridge = extractBridge(config);
+  const agentRunId = extractRunId(config);
+  const llmRunId = "llm-run-1";
+
+  bridge.handleChatModelStart?.({}, [[]], llmRunId, agentRunId);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleLLMNewToken?.("Plan:", undefined, llmRunId);
+  yield { type: "chunk", content: "Plan:" };
+
+  bridge.handleLLMEnd?.({ generations: [] }, llmRunId);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentAction?.(
+    {
+      tool: "get_weather",
+      toolInput: { city: "Boston" },
+      toolCallId: "call-1",
+    },
+    agentRunId
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleToolStart?.(
+    {},
+    '{"city":"Boston"}',
+    "tool-run-1",
+    agentRunId,
+    undefined,
+    undefined,
+    "get_weather",
+    "call-1"
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleToolEnd?.({ temperature: "55F" }, "tool-run-1", agentRunId);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentEnd?.({}, agentRunId);
+}
+
 const collectStream = async (
   stream: AsyncIterable<OpenResponsesEvent | "[DONE]">
 ): Promise<(OpenResponsesEvent | "[DONE]")[]> => {
@@ -525,6 +570,46 @@ describe("adapter.stream()", () => {
       },
     ]);
     expect(stored?.response.output).toEqual([]);
+  });
+
+  test("multi-run callback sequences do not complete the response on sub-run completion", async () => {
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateMultiRunToolStream,
+      }),
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator([
+        "resp-1",
+        "msg-1",
+        "fc-1",
+        "extra-1",
+      ]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    const types = events.map((event) =>
+      typeof event === "string" ? event : event.type
+    );
+
+    expect(types).toEqual([
+      "response.in_progress",
+      "response.output_item.added",
+      "response.content_part.added",
+      "response.output_text.delta",
+      "response.output_text.done",
+      "response.content_part.done",
+      "response.output_item.done",
+      "response.output_item.added",
+      "response.function_call_arguments.done",
+      "response.output_item.done",
+      "response.completed",
+      "[DONE]",
+    ]);
+
+    expect(types.filter((type) => type === "response.completed")).toHaveLength(
+      1
+    );
   });
 });
 

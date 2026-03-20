@@ -2,11 +2,11 @@ import {
   agentExecutionFailed,
   type InternalError,
   internalError,
-} from "../core/errors.js";
+} from "@/core/errors.js";
 import type {
   OpenResponsesExecutionOptions,
   OpenResponsesTimeoutBudgets,
-} from "../core/types.js";
+} from "@/core/types.js";
 
 const DEFAULT_TIMEOUT_BUDGETS = {
   requestValidationMs: 1000,

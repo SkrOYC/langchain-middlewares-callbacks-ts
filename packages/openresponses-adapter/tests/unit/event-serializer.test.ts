@@ -349,9 +349,9 @@ describe("serializeInternalEvent", () => {
 
   test("run.completed emits response.completed", () => {
     const context = createContext();
-    serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
+    serializeInternalEvent({ type: "run.started", runId: "resp-1" }, context);
     serializeInternalEvent(
-      { type: "message.started", itemId: "msg-1", runId: "run-1" },
+      { type: "message.started", itemId: "msg-1", runId: "resp-1" },
       context
     );
     serializeInternalEvent(
@@ -364,7 +364,7 @@ describe("serializeInternalEvent", () => {
     );
 
     const events = serializeInternalEvent(
-      { type: "run.completed", runId: "run-1" },
+      { type: "run.completed", runId: "resp-1" },
       context
     );
 
@@ -379,7 +379,7 @@ describe("serializeInternalEvent", () => {
     const context = createContext();
 
     const events = serializeInternalEvent(
-      { type: "run.completed", runId: "run-1" },
+      { type: "run.completed", runId: "resp-1" },
       context
     );
 
@@ -389,6 +389,22 @@ describe("serializeInternalEvent", () => {
       response: { id: "resp-1", object: "response", status: "completed" },
     });
     expect(context.lifecycle.getStatus()).toBe("completed");
+  });
+
+  test("run.completed from a sub-run does not complete the response lifecycle", () => {
+    const context = createContext();
+    serializeInternalEvent(
+      { type: "message.started", itemId: "msg-1", runId: "llm-run-1" },
+      context
+    );
+
+    const events = serializeInternalEvent(
+      { type: "run.completed", runId: "llm-run-1" },
+      context
+    );
+
+    expect(events).toEqual([]);
+    expect(context.lifecycle.getStatus()).toBe("in_progress");
   });
 
   test("run.failed emits response.failed", () => {
@@ -485,12 +501,12 @@ describe("createEventSerializer", () => {
     });
 
     // Push events
-    queue.push({ type: "run.started", runId: "run-1" });
-    queue.push({ type: "message.started", itemId: "msg-1", runId: "run-1" });
+    queue.push({ type: "run.started", runId: "resp-1" });
+    queue.push({ type: "message.started", itemId: "msg-1", runId: "resp-1" });
     queue.push({ type: "text.delta", itemId: "msg-1", delta: "Hello" });
     queue.push({ type: "text.delta", itemId: "msg-1", delta: " world" });
     queue.push({ type: "text.completed", itemId: "msg-1" });
-    queue.push({ type: "run.completed", runId: "run-1" });
+    queue.push({ type: "run.completed", runId: "resp-1" });
     queue.complete();
 
     const events = await collectEvents(serializer);
