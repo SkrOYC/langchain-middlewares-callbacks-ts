@@ -78,10 +78,10 @@ const linkParentAbortSignal = (
 
 export const createRequestAbortController = (
   signal?: AbortSignal
-): AbortController => {
+): { controller: AbortController; cleanup: () => void } => {
   const controller = new AbortController();
-  linkParentAbortSignal(controller, signal);
-  return controller;
+  const cleanup = linkParentAbortSignal(controller, signal);
+  return { controller, cleanup };
 };
 
 export const withTimeout = async <T>(params: {

@@ -73,12 +73,16 @@ export function createOpenResponsesHandler<E extends Env = Env>(
 ): (c: Context<E>) => Promise<Response> {
   const adapter = createOpenResponsesAdapter(options);
   const timeoutBudgets = resolveTimeoutBudgets(options.timeoutBudgets);
+  const noopCleanup = (): void => {
+    // Intentionally empty until a request abort hook is installed.
+  };
 
   return async (c: Context<E>): Promise<Response> => {
+    let cleanupRequestAbort = noopCleanup;
     try {
-      const requestAbortController = createRequestAbortController(
-        c.req.raw.signal
-      );
+      const requestAbort = createRequestAbortController(c.req.raw.signal);
+      const requestAbortController = requestAbort.controller;
+      cleanupRequestAbort = requestAbort.cleanup;
       const contentType = c.req.header("content-type") ?? "";
       if (!contentType.toLowerCase().includes("application/json")) {
         throw unsupportedMediaType("Content-Type must be application/json");
@@ -133,6 +137,8 @@ export function createOpenResponsesHandler<E extends Env = Env>(
       return c.json(response);
     } catch (error) {
       return toErrorResponse(error, options.onError);
+    } finally {
+      cleanupRequestAbort();
     }
   };
 }

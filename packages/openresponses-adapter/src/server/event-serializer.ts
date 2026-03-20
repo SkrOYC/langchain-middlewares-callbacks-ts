@@ -297,6 +297,9 @@ export const serializeInternalEvent = (
     }
 
     case "run.completed": {
+      if (context.lifecycle.getStatus() === "queued") {
+        context.lifecycle.start();
+      }
       context.lifecycle.complete();
       return [
         {

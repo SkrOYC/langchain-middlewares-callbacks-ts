@@ -375,6 +375,22 @@ describe("serializeInternalEvent", () => {
     });
   });
 
+  test("run.completed starts the lifecycle when no prior in-progress event was emitted", () => {
+    const context = createContext();
+
+    const events = serializeInternalEvent(
+      { type: "run.completed", runId: "run-1" },
+      context
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "response.completed",
+      response: { id: "resp-1", object: "response", status: "completed" },
+    });
+    expect(context.lifecycle.getStatus()).toBe("completed");
+  });
+
   test("run.failed emits response.failed", () => {
     const context = createContext();
     serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
