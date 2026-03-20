@@ -107,6 +107,7 @@ export interface ToolCompletedEvent {
   type: "tool.completed";
   runId: string;
   output: unknown;
+  callId?: string;
 }
 
 /**

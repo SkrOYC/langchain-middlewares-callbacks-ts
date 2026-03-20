@@ -113,6 +113,44 @@ function* simulateFailureStream(
   throw new Error("model crashed");
 }
 
+function* simulateToolCallStream(
+  _input: { messages: LangChainMessageLike[] },
+  config: Record<string, unknown>
+): Iterable<unknown> {
+  const bridge = extractBridge(config);
+  const runId = extractRunId(config);
+
+  bridge.handleChatModelStart?.({}, [[]], runId, undefined);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentAction?.(
+    {
+      tool: "get_weather",
+      toolInput: { city: "Boston" },
+      toolCallId: "call-1",
+    },
+    runId
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleToolStart?.(
+    {},
+    '{"city":"Boston"}',
+    "tool-run-1",
+    runId,
+    undefined,
+    undefined,
+    "get_weather",
+    "call-1"
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleToolEnd?.({ temperature: "55F" }, "tool-run-1", runId);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentEnd?.({}, runId);
+}
+
 const collectStream = async (
   stream: AsyncIterable<OpenResponsesEvent | "[DONE]">
 ): Promise<(OpenResponsesEvent | "[DONE]")[]> => {
@@ -153,6 +191,17 @@ const createDelayedStore = (params: {
       if (params.saveDelayMs) {
         await new Promise((resolve) => setTimeout(resolve, params.saveDelayMs));
       }
+    },
+  };
+};
+
+const createFailingSaveStore = (): PreviousResponseStore => {
+  return {
+    load(): Promise<null> {
+      return Promise.resolve(null);
+    },
+    save(): Promise<void> {
+      throw new Error("save exploded");
     },
   };
 };
@@ -424,6 +473,58 @@ describe("adapter.stream()", () => {
     expect(stored?.response.error).toMatchObject({
       code: "agent_execution_failed",
     });
+  });
+
+  test("streaming best-effort save mode swallows persistence failures", async () => {
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateTextStream,
+      }),
+      previousResponseStore: createFailingSaveStore(),
+      previousResponseSaveMode: "best_effort",
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    expect(events.at(-1)).toBe("[DONE]");
+  });
+
+  test("streaming persistence stores replay tool items separately from response output", async () => {
+    const previousResponseStore = createInMemoryPreviousResponseStore();
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateToolCallStream,
+      }),
+      previousResponseStore,
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator(["resp-1", "fc-1", "extra-1"]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    const stored = await previousResponseStore.load(extractResponseId(events));
+
+    expect(stored?.request.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: "Hello",
+      },
+      {
+        type: "function_call",
+        call_id: "call-1",
+        name: "get_weather",
+        arguments: '{"city":"Boston"}',
+        status: "completed",
+      },
+      {
+        type: "function_call_output",
+        call_id: "call-1",
+        output: '{"temperature":"55F"}',
+        status: "completed",
+      },
+    ]);
+    expect(stored?.response.output).toEqual([]);
   });
 });
 

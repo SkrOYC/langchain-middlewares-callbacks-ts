@@ -704,11 +704,19 @@ export const createOpenResponsesCallbackBridge = (
     },
 
     handleToolEnd(output, runId, parentRunId): void {
-      options.emitter.emit({ type: "tool.completed", runId, output });
-
       const pendingFunctionCall = resolvePendingFunctionCallForToolEnd(
         runId,
         parentRunId
+      );
+      options.emitter.emit(
+        pendingFunctionCall?.callId
+          ? {
+              type: "tool.completed",
+              runId,
+              output,
+              callId: pendingFunctionCall.callId,
+            }
+          : { type: "tool.completed", runId, output }
       );
       completeFunctionCall(pendingFunctionCall);
       cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);

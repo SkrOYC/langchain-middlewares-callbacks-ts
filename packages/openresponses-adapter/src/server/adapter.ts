@@ -15,6 +15,7 @@ import type {
   InternalSemanticEvent,
 } from "../core/events.js";
 import type {
+  InputItem,
   OpenResponsesExecutionOptions,
   OpenResponsesHandlerOptions,
   OpenResponsesRequest,
@@ -111,6 +112,78 @@ const materializeStreamResponseOrThrow = (params: {
   } catch (error) {
     return toInternalServerError("Failed to materialize response", error);
   }
+};
+
+const stringifyReplayOutput = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    const stringified = JSON.stringify(value);
+    return stringified ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
+
+interface ObservedFunctionCall {
+  callId: string;
+  name: string;
+  arguments: string;
+}
+
+const recordReplayPersistenceEvent = (params: {
+  event: InternalSemanticEvent;
+  replayInputItems: InputItem[];
+  replayedCallIds: Set<string>;
+  functionCallsByItemId: Map<string, ObservedFunctionCall>;
+}): void => {
+  const { event, replayInputItems, replayedCallIds, functionCallsByItemId } =
+    params;
+
+  if (event.type === "function_call.started") {
+    functionCallsByItemId.set(event.itemId, {
+      callId: event.callId,
+      name: event.name,
+      arguments: event.arguments ?? "",
+    });
+    return;
+  }
+
+  if (event.type === "function_call_arguments.delta") {
+    const functionCall = functionCallsByItemId.get(event.itemId);
+    if (functionCall) {
+      functionCall.arguments += event.delta;
+    }
+    return;
+  }
+
+  if (event.type !== "tool.completed" || !event.callId) {
+    return;
+  }
+
+  const functionCall = [...functionCallsByItemId.values()].find((candidate) => {
+    return candidate.callId === event.callId;
+  });
+  if (!functionCall || replayedCallIds.has(event.callId)) {
+    return;
+  }
+
+  replayInputItems.push({
+    type: "function_call",
+    call_id: functionCall.callId,
+    name: functionCall.name,
+    arguments: functionCall.arguments,
+    status: "completed",
+  });
+  replayInputItems.push({
+    type: "function_call_output",
+    call_id: functionCall.callId,
+    output: stringifyReplayOutput(event.output),
+    status: "completed",
+  });
+  replayedCallIds.add(event.callId);
 };
 
 const requiresExecutionTimeEnforcement = (
@@ -355,9 +428,28 @@ export function createOpenResponsesAdapter(
         createdAt,
         clock,
       });
+      const replayInputItems: InputItem[] = structuredClone(
+        normalizedRequest.inputItems
+      );
+      const replayedCallIds = new Set<string>();
+      const functionCallsByItemId = new Map<
+        string,
+        {
+          callId: string;
+          name: string;
+          arguments: string;
+        }
+      >();
 
       const emitter: InternalEventEmitter = {
         emit(event: InternalSemanticEvent): void {
+          recordReplayPersistenceEvent({
+            event,
+            replayInputItems,
+            replayedCallIds,
+            functionCallsByItemId,
+          });
+
           if (!queue.isFinalized()) {
             queue.push(event);
           }
@@ -443,24 +535,38 @@ export function createOpenResponsesAdapter(
           createdAt,
           completedAt: lifecycle.getCompletedAt(),
           status,
-          output: accumulator.snapshot(),
+          output: accumulator.snapshot().filter((item) => {
+            return !(
+              item.type === "function_call" && replayedCallIds.has(item.call_id)
+            );
+          }),
           error: lifecycle.getError(),
         });
 
         const storedRecord = createStoredResponseRecord({
           request: normalizedRequest.original,
-          normalizedInputItems: normalizedRequest.inputItems,
+          normalizedInputItems: replayInputItems,
           response,
         });
 
-        await withTimeout({
-          operation: (phaseSignal) =>
-            previousResponseStore.save(storedRecord, phaseSignal),
-          signal: executionOptions.signal,
-          timeoutMs: timeoutBudgets.previousResponseSaveMs,
-          onTimeout: () =>
-            previousResponseSaveTimedOut(timeoutBudgets.previousResponseSaveMs),
-        });
+        try {
+          await withTimeout({
+            operation: (phaseSignal) =>
+              previousResponseStore.save(storedRecord, phaseSignal),
+            signal: executionOptions.signal,
+            timeoutMs: timeoutBudgets.previousResponseSaveMs,
+            onTimeout: () =>
+              previousResponseSaveTimedOut(
+                timeoutBudgets.previousResponseSaveMs
+              ),
+          });
+        } catch (error) {
+          if (previousResponseSaveMode === "best_effort") {
+            return;
+          }
+
+          toInternalServerError("Failed to save previous response", error);
+        }
       };
 
       return {
