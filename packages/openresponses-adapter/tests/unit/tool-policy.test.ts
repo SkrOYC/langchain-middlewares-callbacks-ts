@@ -127,9 +127,7 @@ describe("tool policy normalization", () => {
       normalizeRequest(
         {
           ...createBaseRequest(),
-          tools: [
-            lookupFactTool,
-          ],
+          tools: [lookupFactTool],
           tool_choice: {
             type: "allowed_tools",
             tools: [{ type: "function", name: "missing_tool" }],
@@ -250,24 +248,18 @@ describe("tool policy middleware", () => {
         },
       }) as Parameters<typeof wrapToolCall>[0];
 
-    const first = wrapToolCall(
-      createRequest("call-1"),
-      (async () => {
-        order.push("first:start");
-        await firstDone;
-        order.push("first:end");
-        return {} as never;
-      }) as Parameters<typeof wrapToolCall>[1]
-    );
+    const first = wrapToolCall(createRequest("call-1"), (async () => {
+      order.push("first:start");
+      await firstDone;
+      order.push("first:end");
+      return {} as never;
+    }) as Parameters<typeof wrapToolCall>[1]);
 
-    const second = wrapToolCall(
-      createRequest("call-2"),
-      (async () => {
-        order.push("second:start");
-        order.push("second:end");
-        return {} as never;
-      }) as Parameters<typeof wrapToolCall>[1]
-    );
+    const second = wrapToolCall(createRequest("call-2"), (() => {
+      order.push("second:start");
+      order.push("second:end");
+      return Promise.resolve({} as never);
+    }) as Parameters<typeof wrapToolCall>[1]);
 
     await Promise.resolve();
     expect(order).toEqual(["first:start"]);
@@ -327,14 +319,11 @@ describe("tool policy middleware", () => {
       }) as Parameters<typeof wrapToolCall>[1]
     );
 
-    const second = wrapToolCall(
-      createRequest("thread-b", "call-2"),
-      (async () => {
-        order.push("second:start");
-        order.push("second:end");
-        return {} as never;
-      }) as Parameters<typeof wrapToolCall>[1]
-    );
+    const second = wrapToolCall(createRequest("thread-b", "call-2"), (() => {
+      order.push("second:start");
+      order.push("second:end");
+      return Promise.resolve({} as never);
+    }) as Parameters<typeof wrapToolCall>[1]);
 
     await Promise.resolve();
     expect(order).toEqual(["first:start", "second:start", "second:end"]);
@@ -349,7 +338,7 @@ describe("tool policy middleware", () => {
     const secondMiddleware = createOpenResponsesToolPolicyMiddleware();
     const firstWrap = firstMiddleware.wrapToolCall;
     const secondWrap = secondMiddleware.wrapToolCall;
-    if (!firstWrap || !secondWrap) {
+    if (!(firstWrap && secondWrap)) {
       throw new Error("Expected wrapToolCall to be defined");
     }
 
@@ -378,24 +367,18 @@ describe("tool policy middleware", () => {
         },
       }) as Parameters<typeof firstWrap>[0];
 
-    const first = firstWrap(
-      createRequest(),
-      (async () => {
-        order.push("first:start");
-        await firstDone;
-        order.push("first:end");
-        return {} as never;
-      }) as Parameters<typeof firstWrap>[1]
-    );
+    const first = firstWrap(createRequest(), (async () => {
+      order.push("first:start");
+      await firstDone;
+      order.push("first:end");
+      return {} as never;
+    }) as Parameters<typeof firstWrap>[1]);
 
-    const second = secondWrap(
-      createRequest(),
-      (async () => {
-        order.push("second:start");
-        order.push("second:end");
-        return {} as never;
-      }) as Parameters<typeof secondWrap>[1]
-    );
+    const second = secondWrap(createRequest(), (() => {
+      order.push("second:start");
+      order.push("second:end");
+      return Promise.resolve({} as never);
+    }) as Parameters<typeof secondWrap>[1]);
 
     await Promise.resolve();
     expect(order).toEqual(["first:start", "second:start", "second:end"]);
@@ -409,7 +392,7 @@ describe("tool policy middleware", () => {
     const middleware = createOpenResponsesToolPolicyMiddleware();
     const wrapToolCall = middleware.wrapToolCall;
     const afterAgent = middleware.afterAgent;
-    if (!wrapToolCall || !afterAgent) {
+    if (!(wrapToolCall && afterAgent)) {
       throw new Error("Expected middleware hooks to be defined");
     }
 
@@ -438,15 +421,12 @@ describe("tool policy middleware", () => {
       },
     } as Parameters<typeof wrapToolCall>[0];
 
-    const first = wrapToolCall(
-      request,
-      (async () => {
-        order.push("first:start");
-        await firstDone;
-        order.push("first:end");
-        return {} as never;
-      }) as Parameters<typeof wrapToolCall>[1]
-    );
+    const first = wrapToolCall(request, (async () => {
+      order.push("first:start");
+      await firstDone;
+      order.push("first:end");
+      return {} as never;
+    }) as Parameters<typeof wrapToolCall>[1]);
 
     releaseFirst();
     await first;
@@ -456,14 +436,11 @@ describe("tool policy middleware", () => {
       await afterAgent.hook({ messages: [] }, request.runtime as never);
     }
 
-    await wrapToolCall(
-      request,
-      (async () => {
-        order.push("second:start");
-        order.push("second:end");
-        return {} as never;
-      }) as Parameters<typeof wrapToolCall>[1]
-    );
+    await wrapToolCall(request, (() => {
+      order.push("second:start");
+      order.push("second:end");
+      return Promise.resolve({} as never);
+    }) as Parameters<typeof wrapToolCall>[1]);
 
     expect(order).toEqual([
       "first:start",
@@ -500,20 +477,13 @@ describe("tool policy middleware", () => {
     } as Parameters<typeof wrapToolCall>[0];
 
     await expect(
-      wrapToolCall(
-        request,
-        (async () => {
-          throw new Error("tool exploded");
-        }) as Parameters<typeof wrapToolCall>[1]
-      )
+      wrapToolCall(request, (() => {
+        throw new Error("tool exploded");
+      }) as Parameters<typeof wrapToolCall>[1])
     ).rejects.toThrow("tool exploded");
 
-    const recoveredResult = await wrapToolCall(
-      request,
-      (async () => {
-        return {} as never;
-      }) as Parameters<typeof wrapToolCall>[1]
-    );
+    const recoveredResult = await wrapToolCall(request, (() =>
+      Promise.resolve({} as never)) as Parameters<typeof wrapToolCall>[1]);
 
     expect(recoveredResult).toBeDefined();
   });
@@ -527,9 +497,7 @@ describe("adapter tool policy enforcement", () => {
     await expect(
       adapter.invoke({
         ...createBaseRequest(),
-        tools: [
-          lookupFactTool,
-        ],
+        tools: [lookupFactTool],
         tool_choice: {
           type: "function",
           name: "lookup_fact",
@@ -576,7 +544,9 @@ describe("adapter tool policy enforcement", () => {
 
   test("fails closed when required tool execution does not occur", async () => {
     const agent = createFakeAgent({
-      responses: [{ type: "ai", id: "ai-1", content: "No tool call happened." }],
+      responses: [
+        { type: "ai", id: "ai-1", content: "No tool call happened." },
+      ],
     });
     const adapter = createOpenResponsesAdapter({ agent });
 

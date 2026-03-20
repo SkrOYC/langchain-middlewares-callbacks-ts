@@ -834,12 +834,17 @@ export const validateRequiredToolCallResult = (params: {
   inputMessageCount: number;
   toolPolicy: NormalizedToolPolicy;
 }): void => {
-  const effectiveMode = getEffectiveToolChoiceMode(params.toolPolicy.toolChoice);
+  const effectiveMode = getEffectiveToolChoiceMode(
+    params.toolPolicy.toolChoice
+  );
   if (effectiveMode !== "required") {
     return;
   }
 
-  const resultMessages = getResultMessages(params.result, params.inputMessageCount);
+  const resultMessages = getResultMessages(
+    params.result,
+    params.inputMessageCount
+  );
   if (!resultMessages) {
     throw agentExecutionFailed(
       "tool_choice requires a tool call, but the agent result did not include message history"
@@ -859,13 +864,12 @@ export const validateRequiredToolCallResult = (params: {
 
   if (
     typeof params.toolPolicy.toolChoice === "object" &&
-    params.toolPolicy.toolChoice.type === "function"
+    params.toolPolicy.toolChoice.type === "function" &&
+    !calledToolNames.has(params.toolPolicy.toolChoice.name)
   ) {
-    if (!calledToolNames.has(params.toolPolicy.toolChoice.name)) {
-      throw agentExecutionFailed(
-        `tool_choice requires tool '${params.toolPolicy.toolChoice.name}', but the agent called a different tool`
-      );
-    }
+    throw agentExecutionFailed(
+      `tool_choice requires tool '${params.toolPolicy.toolChoice.name}', but the agent called a different tool`
+    );
   }
 
   if (

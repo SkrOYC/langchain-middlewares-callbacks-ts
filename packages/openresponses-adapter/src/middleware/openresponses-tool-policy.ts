@@ -1,5 +1,5 @@
-import { createMiddleware } from "langchain";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { createMiddleware } from "langchain";
 import { agentExecutionFailed } from "@/core/errors.js";
 import {
   getEffectiveToolChoiceMode,
@@ -47,9 +47,7 @@ const getPolicyKey = (configurable: Record<string, unknown> | null): string => {
   return "openresponses-default-run";
 };
 
-const getSerializedPolicy = (
-  configurable: Record<string, unknown> | null
-) => {
+const getSerializedPolicy = (configurable: Record<string, unknown> | null) => {
   const policyValue = configurable?.[OPENRESPONSES_TOOL_POLICY_CONFIG_KEY];
   const result = SerializedNormalizedToolPolicySchema.safeParse(policyValue);
   return result.success ? result.data : null;

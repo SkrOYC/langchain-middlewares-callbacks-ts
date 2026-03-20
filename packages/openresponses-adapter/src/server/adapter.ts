@@ -4,24 +4,34 @@
  * Programmatic adapter without HTTP transport.
  */
 
+import { createOpenResponsesCallbackBridge } from "../callbacks/openresponses-callback-bridge.js";
 import {
   agentExecutionFailed,
-  type InternalError,
   internalError,
   invalidRequest,
 } from "../core/errors.js";
-import {
-  getEffectiveToolChoiceMode,
-  OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,
-  serializeNormalizedToolPolicy,
-} from "../core/tool-policy.js";
 import type {
+  InternalEventEmitter,
+  InternalSemanticEvent,
+} from "../core/events.js";
+import type {
+  OpenResponsesExecutionOptions,
   OpenResponsesHandlerOptions,
   OpenResponsesRequest,
   OpenResponsesResponse,
   PreviousResponseStore,
 } from "../core/index.js";
 import type { OpenResponsesEvent } from "../core/schemas.js";
+import {
+  getEffectiveToolChoiceMode,
+  OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,
+  serializeNormalizedToolPolicy,
+} from "../core/tool-policy.js";
+import { OPENRESPONSES_REQUEST_CONTEXT_CONFIG_KEY } from "../core/types.js";
+import { createAsyncEventQueue } from "../state/async-event-queue.js";
+import { createCanonicalItemAccumulator } from "../state/item-accumulator.js";
+import { createResponseLifecycle } from "../state/response-lifecycle.js";
+import { createEventSerializer } from "./event-serializer.js";
 import {
   buildStoredRequestInputItems,
   createStoredResponseRecord,
@@ -30,17 +40,25 @@ import {
   normalizeRequest,
   validateRequiredToolCallResult,
 } from "./previous-response.js";
+import {
+  agentExecutionTimedOut,
+  normalizeExecutionOptions,
+  previousResponseLoadTimedOut,
+  previousResponseSaveTimedOut,
+  resolveTimeoutBudgets,
+  withTimeout,
+} from "./timeout.js";
 
 export interface OpenResponsesAdapter {
   invoke(
     request: OpenResponsesRequest,
-    signal?: AbortSignal
+    signalOrOptions?: AbortSignal | OpenResponsesExecutionOptions
   ): Promise<OpenResponsesResponse>;
 
   stream(
     request: OpenResponsesRequest,
-    signal?: AbortSignal
-  ): AsyncIterable<OpenResponsesEvent | "[DONE]">;
+    signalOrOptions?: AbortSignal | OpenResponsesExecutionOptions
+  ): Promise<AsyncIterable<OpenResponsesEvent | "[DONE]">>;
 }
 
 const toAgentExecutionFailed = (error: unknown): never => {
@@ -86,7 +104,10 @@ const requiresExecutionTimeEnforcement = (
     return true;
   }
 
-  if (typeof policy.toolChoice === "object" && policy.toolChoice.type === "function") {
+  if (
+    typeof policy.toolChoice === "object" &&
+    policy.toolChoice.type === "function"
+  ) {
     return true;
   }
 
@@ -118,9 +139,11 @@ const assertToolPolicySupport = (params: {
 };
 
 const buildAgentConfig = (params: {
-  signal?: AbortSignal;
+  signal: AbortSignal | undefined;
   runId: string;
   toolPolicy: Awaited<ReturnType<typeof normalizeRequest>>["toolPolicy"];
+  requestContext: Record<string, unknown> | undefined;
+  callbacks: OpenResponsesHandlerOptions["callbacks"] | undefined;
 }): Record<string, unknown> => {
   const configurable: Record<string, unknown> = {
     run_id: params.runId,
@@ -128,6 +151,11 @@ const buildAgentConfig = (params: {
       params.toolPolicy
     ),
   };
+
+  if (params.requestContext) {
+    configurable[OPENRESPONSES_REQUEST_CONTEXT_CONFIG_KEY] =
+      params.requestContext;
+  }
 
   const config: Record<string, unknown> = {
     configurable,
@@ -137,7 +165,31 @@ const buildAgentConfig = (params: {
     config.signal = params.signal;
   }
 
+  if (params.callbacks && params.callbacks.length > 0) {
+    config.callbacks = [...params.callbacks];
+  }
+
   return config;
+};
+
+const buildNormalizeDeps = (
+  options: OpenResponsesHandlerOptions,
+  signal?: AbortSignal
+): { previousResponseStore?: PreviousResponseStore; signal?: AbortSignal } => {
+  const deps: {
+    previousResponseStore?: PreviousResponseStore;
+    signal?: AbortSignal;
+  } = {};
+
+  if (options.previousResponseStore) {
+    deps.previousResponseStore = options.previousResponseStore;
+  }
+
+  if (signal) {
+    deps.signal = signal;
+  }
+
+  return deps;
 };
 
 /**
@@ -152,26 +204,25 @@ export function createOpenResponsesAdapter(
   const clock = options.clock ?? (() => Date.now());
   const generateId = options.generateId ?? (() => crypto.randomUUID());
   const toolPolicySupport = options.toolPolicySupport ?? "metadata-only";
+  const timeoutBudgets = resolveTimeoutBudgets(options.timeoutBudgets);
+  const previousResponseSaveMode = options.previousResponseSaveMode ?? "strict";
 
   return {
     async invoke(
       request: OpenResponsesRequest,
-      signal?: AbortSignal
+      signalOrOptions?: AbortSignal | OpenResponsesExecutionOptions
     ): Promise<OpenResponsesResponse> {
-      const normalizeDeps: {
-        previousResponseStore?: PreviousResponseStore;
-        signal?: AbortSignal;
-      } = {};
-
-      if (options.previousResponseStore) {
-        normalizeDeps.previousResponseStore = options.previousResponseStore;
-      }
-
-      if (signal) {
-        normalizeDeps.signal = signal;
-      }
-
-      const normalizedRequest = await normalizeRequest(request, normalizeDeps);
+      const executionOptions = normalizeExecutionOptions(signalOrOptions);
+      const normalizedRequest = await withTimeout<
+        Awaited<ReturnType<typeof normalizeRequest>>
+      >({
+        operation: (phaseSignal) =>
+          normalizeRequest(request, buildNormalizeDeps(options, phaseSignal)),
+        signal: executionOptions.signal,
+        timeoutMs: timeoutBudgets.previousResponseLoadMs,
+        onTimeout: () =>
+          previousResponseLoadTimedOut(timeoutBudgets.previousResponseLoadMs),
+      });
       assertToolPolicySupport({
         toolPolicy: normalizedRequest.toolPolicy,
         supportMode: toolPolicySupport,
@@ -182,21 +233,23 @@ export function createOpenResponsesAdapter(
 
       let agentResult: unknown;
       try {
-        agentResult = await options.agent.invoke(
-          { messages: normalizedRequest.messages },
-          buildAgentConfig(
-            signal === undefined
-              ? {
-                  runId: responseId,
-                  toolPolicy: normalizedRequest.toolPolicy,
-                }
-              : {
-                  signal,
-                  runId: responseId,
-                  toolPolicy: normalizedRequest.toolPolicy,
-                }
-          )
-        );
+        agentResult = await withTimeout({
+          operation: (phaseSignal) =>
+            options.agent.invoke(
+              { messages: normalizedRequest.messages },
+              buildAgentConfig({
+                signal: phaseSignal,
+                runId: responseId,
+                toolPolicy: normalizedRequest.toolPolicy,
+                requestContext: executionOptions.requestContext,
+                callbacks: options.callbacks,
+              })
+            ),
+          signal: executionOptions.signal,
+          timeoutMs: timeoutBudgets.agentExecutionMs,
+          onTimeout: () =>
+            agentExecutionTimedOut(timeoutBudgets.agentExecutionMs),
+        });
       } catch (error) {
         return toAgentExecutionFailed(error);
       }
@@ -220,6 +273,7 @@ export function createOpenResponsesAdapter(
       });
 
       if (options.previousResponseStore) {
+        const previousResponseStore = options.previousResponseStore;
         try {
           const storedRecord = createStoredResponseRecord({
             request: normalizedRequest.original,
@@ -230,33 +284,127 @@ export function createOpenResponsesAdapter(
             }),
             response,
           });
-          await options.previousResponseStore.save(storedRecord, signal);
+          await withTimeout({
+            operation: (phaseSignal) =>
+              previousResponseStore.save(storedRecord, phaseSignal),
+            signal: executionOptions.signal,
+            timeoutMs: timeoutBudgets.previousResponseSaveMs,
+            onTimeout: () =>
+              previousResponseSaveTimedOut(
+                timeoutBudgets.previousResponseSaveMs
+              ),
+          });
         } catch (error) {
+          if (previousResponseSaveMode === "best_effort") {
+            return response;
+          }
           toInternalServerError("Failed to save previous response", error);
         }
       }
 
       return response;
     },
-    stream(
-      _request: OpenResponsesRequest,
-      _signal?: AbortSignal
-    ): AsyncIterable<OpenResponsesEvent | "[DONE]"> {
-      const error: InternalError = invalidRequest(
-        "Streaming responses are not implemented yet"
-      );
 
-      const iterator: AsyncIterator<OpenResponsesEvent | "[DONE]"> = {
-        next(): Promise<IteratorResult<OpenResponsesEvent | "[DONE]">> {
-          return Promise.reject(error);
+    async stream(
+      request: OpenResponsesRequest,
+      signalOrOptions?: AbortSignal | OpenResponsesExecutionOptions
+    ): Promise<AsyncIterable<OpenResponsesEvent | "[DONE]">> {
+      const executionOptions = normalizeExecutionOptions(signalOrOptions);
+
+      // Pre-stream validation — throws before SSE headers are sent
+      const normalizedRequest = await withTimeout<
+        Awaited<ReturnType<typeof normalizeRequest>>
+      >({
+        operation: (phaseSignal) =>
+          normalizeRequest(request, buildNormalizeDeps(options, phaseSignal)),
+        signal: executionOptions.signal,
+        timeoutMs: timeoutBudgets.previousResponseLoadMs,
+        onTimeout: () =>
+          previousResponseLoadTimedOut(timeoutBudgets.previousResponseLoadMs),
+      });
+      assertToolPolicySupport({
+        toolPolicy: normalizedRequest.toolPolicy,
+        supportMode: toolPolicySupport,
+      });
+
+      const responseId = generateId();
+      const createdAt = clock();
+
+      // Wire up streaming infrastructure
+      const queue = createAsyncEventQueue<InternalSemanticEvent>();
+      const accumulator = createCanonicalItemAccumulator({ generateId });
+      const lifecycle = createResponseLifecycle({
+        responseId,
+        createdAt,
+        clock,
+      });
+
+      const emitter: InternalEventEmitter = {
+        emit(event: InternalSemanticEvent): void {
+          if (!queue.isFinalized()) {
+            queue.push(event);
+          }
         },
       };
 
-      return {
-        [Symbol.asyncIterator](): AsyncIterator<OpenResponsesEvent | "[DONE]"> {
-          return iterator;
-        },
-      };
+      const bridge = createOpenResponsesCallbackBridge({ emitter, generateId });
+
+      const config = buildAgentConfig({
+        signal: executionOptions.signal,
+        runId: responseId,
+        toolPolicy: normalizedRequest.toolPolicy,
+        requestContext: executionOptions.requestContext,
+        callbacks: options.callbacks,
+      });
+      const configCallbacks = (config.callbacks ?? []) as Record<
+        string,
+        unknown
+      >[];
+      config.callbacks = [bridge, ...configCallbacks];
+
+      // Start agent.stream() drain in background — callbacks push to queue
+      (async () => {
+        try {
+          await withTimeout({
+            operation: async (phaseSignal) => {
+              const streamConfig = {
+                ...config,
+                signal: phaseSignal,
+              };
+              for await (const _chunk of options.agent.stream(
+                { messages: normalizedRequest.messages },
+                streamConfig
+              )) {
+                // Chunks consumed to drive callbacks; raw chunks are not used.
+              }
+            },
+            signal: executionOptions.signal,
+            timeoutMs: timeoutBudgets.agentExecutionMs,
+            onTimeout: () =>
+              agentExecutionTimedOut(timeoutBudgets.agentExecutionMs),
+          });
+          if (!queue.isFinalized()) {
+            queue.complete();
+          }
+        } catch (error) {
+          if (!queue.isFinalized()) {
+            emitter.emit({
+              type: "run.failed",
+              runId: responseId,
+              error,
+            });
+            queue.complete();
+          }
+        }
+      })();
+
+      // Return the serializer generator — drains queue in foreground
+      return createEventSerializer({
+        queue,
+        accumulator,
+        lifecycle,
+        responseId,
+      });
     },
   };
 }
