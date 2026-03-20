@@ -33,17 +33,9 @@ export const createSequenceGenerator = (): SequenceGenerator => {
   };
 };
 
-const shouldValidateOutgoingEvents = (): boolean => {
-  return process.env.NODE_ENV !== "production";
-};
-
 export const validateOutgoingEvent = (
   event: OpenResponsesEvent
 ): OpenResponsesEvent => {
-  if (!shouldValidateOutgoingEvents()) {
-    return event;
-  }
-
   return OpenResponsesEventSchema.parse(event);
 };
 

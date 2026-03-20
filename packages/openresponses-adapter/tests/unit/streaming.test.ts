@@ -718,6 +718,32 @@ describe("Hono streaming route", () => {
     });
   });
 
+  test("strict streaming persistence failures do not write [DONE]", async () => {
+    const app = await buildOpenResponsesApp({
+      agent: createCallbackDrivenAgent({ onStream: simulateTextStream }),
+      previousResponseStore: createFailingSaveStore(),
+      previousResponseSaveMode: "strict",
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator([
+        "resp-1",
+        "msg-1",
+        "extra-1",
+        "extra-2",
+      ]),
+    });
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(baseRequest),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("event: response.completed");
+    expect(body).not.toContain("data: [DONE]");
+  });
+
   test("request validation timeout returns JSON error response", async () => {
     const handler = createOpenResponsesHandler({
       agent: createFakeAgent(),
