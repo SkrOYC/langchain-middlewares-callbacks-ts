@@ -159,6 +159,7 @@ try {
   }
 
   process.stdout.write(summarizeScenarioResults(payload));
+  process.exit(summary.failed > 0 ? 1 : 0);
 } finally {
   await server.stop();
 }
