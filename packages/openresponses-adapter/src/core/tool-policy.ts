@@ -3,7 +3,7 @@ import {
   FunctionToolSchema,
   type ToolChoice,
   ToolChoiceSchema,
-} from "./schemas.js";
+} from "./internal-schemas.js";
 import type { NormalizedToolPolicy } from "./types.js";
 
 export type EffectiveToolChoiceMode = "none" | "auto" | "required";

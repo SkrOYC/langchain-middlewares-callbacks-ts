@@ -11,6 +11,18 @@
           }
         }
       }
+    },
+    {
+      "includes": ["contracts/openresponses/compliance-runner/**"],
+      "assist": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      }
     }
   ]
 }

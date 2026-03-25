@@ -26,7 +26,7 @@ import {
   ResponseCompletedEventSchema,
   ResponseFailedEventSchema,
   ResponseInProgressEventSchema,
-} from "@/core/schemas.js";
+} from "@/core/internal-schemas.js";
 import type { StoredResponseRecord } from "@/core/types.js";
 import {
   createCyclingIdGenerator,

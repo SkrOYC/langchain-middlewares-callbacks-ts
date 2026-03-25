@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { InternalSemanticEvent } from "@/core/events.js";
-import type { OpenResponsesEvent } from "@/core/schemas.js";
+import type { OpenResponsesEvent } from "@/core/internal-schemas.js";
 import {
   createEventSerializer,
   createSequenceGenerator,

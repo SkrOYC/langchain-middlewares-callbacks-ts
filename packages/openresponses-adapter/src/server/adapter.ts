@@ -16,14 +16,16 @@ import type {
   InternalSemanticEvent,
 } from "@/core/events.js";
 import type {
-  InputItem,
   OpenResponsesExecutionOptions,
   OpenResponsesHandlerOptions,
-  OpenResponsesRequest,
-  OpenResponsesResponse,
   PreviousResponseStore,
 } from "@/core/index.js";
-import type { OpenResponsesEvent } from "@/core/schemas.js";
+import type {
+  InputItem,
+  OpenResponsesEvent,
+  OpenResponsesRequest,
+  OpenResponsesResponse,
+} from "@/core/internal-schemas.js";
 import {
   getEffectiveToolChoiceMode,
   OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,

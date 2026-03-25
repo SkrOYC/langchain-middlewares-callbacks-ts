@@ -4,7 +4,7 @@ import type {
   MessageOutputItem,
   OutputItem,
   OutputTextPart,
-} from "@/core/schemas.js";
+} from "@/core/internal-schemas.js";
 
 export type CanonicalOutputItem = OutputItem;
 export type CanonicalMessageItem = MessageOutputItem;

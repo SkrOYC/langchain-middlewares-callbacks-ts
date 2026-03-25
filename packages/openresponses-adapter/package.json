@@ -44,10 +44,12 @@
   ],
   "scripts": {
     "build": "tsup",
+    "contract:update": "bun ./scripts/update-openresponses-contract.ts",
     "test": "bun test",
     "test:unit": "bun test",
     "test:golden-stream": "bun test tests/event-order.spec.ts tests/fake-model.spec.ts",
     "test:compliance": "bun test tests/compliance.spec.ts",
+    "test:compliance:official": "bun ./scripts/run-official-compliance.ts",
     "lint": "bunx --bun @biomejs/biome check .",
     "format": "bunx --bun @biomejs/biome format --write .",
     "typecheck": "tsc --noEmit",
