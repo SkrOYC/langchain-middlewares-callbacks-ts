@@ -95,7 +95,17 @@ export const ReasoningItemSchema = reasoningBodySchema;
 export const MessageOutputItemSchema = messageSchema;
 export const OutputItemSchema = itemFieldSchema;
 
-export const ErrorObjectSchema = errorSchema;
+export const ErrorTypeSchema = z.enum([
+  "server_error",
+  "invalid_request_error",
+  "not_found",
+  "model_error",
+  "too_many_requests",
+]);
+export const ErrorObjectSchema = errorSchema.extend({
+  param: z.string().nullable().optional(),
+  type: ErrorTypeSchema,
+});
 export const OpenResponsesResponseSchema = responseResourceSchema;
 
 export const ResponseCreatedEventSchema = responseCreatedStreamingEventSchema;

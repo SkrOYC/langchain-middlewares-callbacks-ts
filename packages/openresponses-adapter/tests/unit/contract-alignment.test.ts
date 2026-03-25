@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   contractSnapshotVersion,
+  ErrorObjectSchema,
   FunctionCallOutputItemSchema,
   OpenResponsesEventSchema,
   OpenResponsesRequestSchema,
@@ -119,6 +120,19 @@ describe("snapshot-aligned contract facade", () => {
 
     expect(reasoningResult.success).toBe(true);
     expect(toolOutputResult.success).toBe(true);
+  });
+
+  test("preserves emitted error object fields used by the adapter", () => {
+    const result = ErrorObjectSchema.safeParse({
+      code: "invalid_request",
+      message: "model is required",
+      type: "invalid_request_error",
+      param: "model",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.type).toBe("invalid_request_error");
+    expect(result.data?.param).toBe("model");
   });
 
   test("accepts streaming terminal events that embed a full response resource", () => {
