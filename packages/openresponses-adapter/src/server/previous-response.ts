@@ -2,6 +2,7 @@
  * Continuation persistence and replay helpers.
  */
 
+import { contractSnapshotVersion } from "@/contract/snapshot.js";
 import {
   agentExecutionFailed,
   internalError,
@@ -9,27 +10,29 @@ import {
   previousResponseNotFound,
   previousResponseUnusable,
 } from "@/core/errors.js";
+import type {
+  ErrorObject,
+  FunctionTool,
+  InputItem,
+  OutputItem,
+  OutputTextPart,
+  ToolChoice,
+} from "@/core/internal-schemas.js";
 import {
-  type ErrorObject,
-  type FunctionTool,
-  type InputItem,
   type OpenResponsesRequest,
   OpenResponsesRequestSchema,
   type OpenResponsesResponse,
-  OpenResponsesResponseSchema,
-  type OutputItem,
-  type OutputTextPart,
-  StoredResponseRecordSchema,
-  type ToolChoice,
-} from "@/core/internal-schemas.js";
+} from "@/core/schemas.js";
 import { getEffectiveToolChoiceMode } from "@/core/tool-policy.js";
 import type {
   LangChainMessageLike,
   NormalizedRequest,
   NormalizedToolPolicy,
+  OpenResponsesRequestSnapshot,
   PreviousResponseStore,
   StoredResponseRecord,
 } from "@/core/types.js";
+import { materializeTerminalResponse } from "@/state/response-aggregate.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
@@ -54,6 +57,69 @@ const getStringProperty = (
 const safeStructuredClone = <T>(value: T): T => {
   return structuredClone(value);
 };
+
+interface ResolvedOpenResponsesRequest {
+  model: string;
+  input: unknown;
+  previous_response_id: string | null;
+  include: string[];
+  tools: FunctionTool[];
+  tool_choice: ToolChoice;
+  metadata: Record<string, string>;
+  text: OpenResponsesResponse["text"];
+  temperature: number;
+  top_p: number;
+  presence_penalty: number;
+  frequency_penalty: number;
+  parallel_tool_calls: boolean;
+  stream: boolean;
+  stream_options: Record<string, unknown> | null;
+  background: boolean;
+  max_output_tokens: number | null;
+  max_tool_calls: number | null;
+  reasoning: OpenResponsesResponse["reasoning"];
+  safety_identifier: string | null;
+  prompt_cache_key: string | null;
+  truncation: OpenResponsesResponse["truncation"];
+  instructions: string | null;
+  store: boolean;
+  service_tier: OpenResponsesResponse["service_tier"];
+  top_logprobs: number;
+}
+
+const DEFAULT_TEXT_RESPONSE = {
+  format: {
+    type: "text",
+  },
+  verbosity: "medium",
+} as const satisfies OpenResponsesResponse["text"];
+
+const DEFAULT_REQUEST_SETTINGS = {
+  background: false,
+  frequency_penalty: 0,
+  include: [],
+  instructions: null,
+  max_output_tokens: null,
+  max_tool_calls: null,
+  metadata: {},
+  parallel_tool_calls: true,
+  presence_penalty: 0,
+  prompt_cache_key: null,
+  reasoning: null,
+  safety_identifier: null,
+  service_tier: "default",
+  store: false,
+  stream: false,
+  stream_options: null,
+  temperature: 1,
+  text: DEFAULT_TEXT_RESPONSE,
+  tool_choice: "auto",
+  tools: [],
+  top_logprobs: 0,
+  top_p: 1,
+  truncation: "disabled",
+} as const;
+
 const formatZodIssues = (
   issues: { message: string; path: PropertyKey[] }[]
 ): string => {
@@ -68,7 +134,7 @@ const formatZodIssues = (
     .join("; ");
 };
 
-const inputToItems = (input: OpenResponsesRequest["input"]): InputItem[] => {
+const inputToItems = (input: unknown): InputItem[] => {
   if (typeof input === "string") {
     return [
       {
@@ -79,7 +145,126 @@ const inputToItems = (input: OpenResponsesRequest["input"]): InputItem[] => {
     ];
   }
 
-  return safeStructuredClone(input);
+  if (input === undefined || input === null) {
+    return [];
+  }
+
+  if (Array.isArray(input)) {
+    return safeStructuredClone(input as InputItem[]);
+  }
+
+  return [];
+};
+
+const normalizeTextConfig = (
+  text: OpenResponsesRequest["text"]
+): OpenResponsesResponse["text"] => {
+  if (text === undefined || text === null) {
+    return safeStructuredClone(DEFAULT_REQUEST_SETTINGS.text);
+  }
+
+  return {
+    format:
+      text.format === undefined || text.format === null
+        ? safeStructuredClone(DEFAULT_REQUEST_SETTINGS.text.format)
+        : safeStructuredClone(text.format),
+    verbosity:
+      text.verbosity ??
+      safeStructuredClone(DEFAULT_REQUEST_SETTINGS.text.verbosity),
+  };
+};
+
+const normalizeReasoningConfig = (
+  reasoning: OpenResponsesRequest["reasoning"]
+): OpenResponsesResponse["reasoning"] => {
+  if (reasoning === undefined || reasoning === null) {
+    return null;
+  }
+
+  return {
+    effort: reasoning.effort ?? null,
+    summary: reasoning.summary ?? null,
+  };
+};
+
+const normalizeMetadata = (
+  metadata: OpenResponsesRequest["metadata"]
+): Record<string, string> => {
+  if (metadata === undefined || metadata === null) {
+    return {};
+  }
+
+  return safeStructuredClone(metadata as Record<string, string>);
+};
+
+const arrayPropertyIfPresent = <T>(
+  record: Record<string, unknown>,
+  key: string
+): T[] | undefined => {
+  const value = record[key];
+  return Array.isArray(value) ? safeStructuredClone(value as T[]) : undefined;
+};
+
+const booleanPropertyIfPresent = (
+  record: Record<string, unknown>,
+  key: string
+): boolean | undefined => {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
+};
+
+const numberPropertyIfPresent = (
+  record: Record<string, unknown>,
+  key: string
+): number | undefined => {
+  const value = record[key];
+  return typeof value === "number" ? value : undefined;
+};
+
+const nullableNumberPropertyIfPresent = (
+  record: Record<string, unknown>,
+  key: string
+): number | null | undefined => {
+  const value = record[key];
+  if (typeof value === "number" || value === null) {
+    return value;
+  }
+
+  return undefined;
+};
+
+const clonedPropertyIfPresent = <T>(
+  record: Record<string, unknown>,
+  key: string
+): T | undefined => {
+  if (!(key in record)) {
+    return undefined;
+  }
+
+  return safeStructuredClone(record[key] as T);
+};
+
+const normalizeTools = (
+  tools: OpenResponsesRequest["tools"]
+): FunctionTool[] => {
+  if (tools === undefined || tools === null) {
+    return [];
+  }
+
+  return tools.map((tool) => {
+    return {
+      type: "function",
+      name: tool.name,
+      description: tool.description ?? "",
+      parameters:
+        tool.parameters === undefined
+          ? null
+          : safeStructuredClone(
+              tool.parameters as Record<string, unknown> | null
+            ),
+      strict: tool.strict ?? true,
+    };
+  });
 };
 
 const normalizeToolChoice = (
@@ -655,7 +840,7 @@ const inputItemToMessage = (item: InputItem): LangChainMessageLike => {
 };
 
 const normalizeToolPolicy = (
-  request: OpenResponsesRequest
+  request: ResolvedOpenResponsesRequest
 ): NormalizedToolPolicy => {
   const tools = safeStructuredClone(request.tools);
   assertUniqueToolNames(tools);
@@ -671,65 +856,429 @@ const normalizeToolPolicy = (
   };
 };
 
-const parseRequest = (request: OpenResponsesRequest): OpenResponsesRequest => {
+const assertRequiredRequestFields = (
+  request: OpenResponsesRequest
+): asserts request is OpenResponsesRequest & {
+  model: string;
+  input: unknown;
+} => {
+  if (!request.model) {
+    throw invalidRequest("model is required");
+  }
+
+  if (request.input === undefined || request.input === null) {
+    throw invalidRequest("input is required");
+  }
+};
+
+const buildResolvedRequest = (
+  parsedRequest: OpenResponsesRequest & {
+    model: string;
+    input: unknown;
+  }
+): ResolvedOpenResponsesRequest => {
+  return {
+    model: parsedRequest.model,
+    input: parsedRequest.input,
+    previous_response_id: parsedRequest.previous_response_id ?? null,
+    include: parsedRequest.include
+      ? safeStructuredClone(parsedRequest.include)
+      : [...DEFAULT_REQUEST_SETTINGS.include],
+    tools: normalizeTools(parsedRequest.tools),
+    tool_choice: normalizeToolChoice(parsedRequest.tool_choice),
+    metadata: normalizeMetadata(parsedRequest.metadata),
+    text: normalizeTextConfig(parsedRequest.text),
+    temperature:
+      parsedRequest.temperature ?? DEFAULT_REQUEST_SETTINGS.temperature,
+    top_p: parsedRequest.top_p ?? DEFAULT_REQUEST_SETTINGS.top_p,
+    presence_penalty:
+      parsedRequest.presence_penalty ??
+      DEFAULT_REQUEST_SETTINGS.presence_penalty,
+    frequency_penalty:
+      parsedRequest.frequency_penalty ??
+      DEFAULT_REQUEST_SETTINGS.frequency_penalty,
+    parallel_tool_calls:
+      parsedRequest.parallel_tool_calls ??
+      DEFAULT_REQUEST_SETTINGS.parallel_tool_calls,
+    stream: parsedRequest.stream ?? DEFAULT_REQUEST_SETTINGS.stream,
+    stream_options: parsedRequest.stream_options
+      ? safeStructuredClone(
+          parsedRequest.stream_options as Record<string, unknown>
+        )
+      : DEFAULT_REQUEST_SETTINGS.stream_options,
+    background: parsedRequest.background ?? DEFAULT_REQUEST_SETTINGS.background,
+    max_output_tokens:
+      parsedRequest.max_output_tokens ??
+      DEFAULT_REQUEST_SETTINGS.max_output_tokens,
+    max_tool_calls:
+      parsedRequest.max_tool_calls ?? DEFAULT_REQUEST_SETTINGS.max_tool_calls,
+    reasoning: normalizeReasoningConfig(parsedRequest.reasoning),
+    safety_identifier:
+      parsedRequest.safety_identifier ??
+      DEFAULT_REQUEST_SETTINGS.safety_identifier,
+    prompt_cache_key:
+      parsedRequest.prompt_cache_key ??
+      DEFAULT_REQUEST_SETTINGS.prompt_cache_key,
+    truncation: parsedRequest.truncation ?? DEFAULT_REQUEST_SETTINGS.truncation,
+    instructions:
+      parsedRequest.instructions ?? DEFAULT_REQUEST_SETTINGS.instructions,
+    store: parsedRequest.store ?? DEFAULT_REQUEST_SETTINGS.store,
+    service_tier:
+      parsedRequest.service_tier ?? DEFAULT_REQUEST_SETTINGS.service_tier,
+    top_logprobs:
+      parsedRequest.top_logprobs ?? DEFAULT_REQUEST_SETTINGS.top_logprobs,
+  };
+};
+
+const parseRequest = (
+  request: OpenResponsesRequest
+): ResolvedOpenResponsesRequest => {
   const result = OpenResponsesRequestSchema.safeParse(request);
 
   if (!result.success) {
     throw invalidRequest(formatZodIssues(result.error.issues));
   }
 
-  return result.data;
+  const parsedRequest = result.data;
+  assertRequiredRequestFields(parsedRequest);
+  return buildResolvedRequest(parsedRequest);
+};
+
+const buildRequestSnapshot = (params: {
+  request: ResolvedOpenResponsesRequest;
+  inputItems: InputItem[];
+}): OpenResponsesRequestSnapshot => {
+  return {
+    model: params.request.model,
+    input: safeStructuredClone(params.inputItems),
+    previous_response_id: params.request.previous_response_id,
+    include: safeStructuredClone(params.request.include),
+    tools: safeStructuredClone(params.request.tools),
+    tool_choice: safeStructuredClone(params.request.tool_choice),
+    parallel_tool_calls: params.request.parallel_tool_calls,
+    instructions: params.request.instructions,
+    store: params.request.store,
+    background: params.request.background,
+    truncation: params.request.truncation,
+    text: safeStructuredClone(params.request.text),
+    reasoning: params.request.reasoning
+      ? safeStructuredClone(params.request.reasoning)
+      : null,
+    top_p: params.request.top_p,
+    presence_penalty: params.request.presence_penalty,
+    frequency_penalty: params.request.frequency_penalty,
+    top_logprobs: params.request.top_logprobs,
+    temperature: params.request.temperature,
+    max_output_tokens: params.request.max_output_tokens,
+    max_tool_calls: params.request.max_tool_calls,
+    service_tier: params.request.service_tier,
+    safety_identifier: params.request.safety_identifier,
+    prompt_cache_key: params.request.prompt_cache_key,
+    metadata: safeStructuredClone(params.request.metadata),
+    stream_options: params.request.stream_options
+      ? safeStructuredClone(params.request.stream_options)
+      : null,
+  };
 };
 
 export const parseStoredResponseRecord = (
   value: unknown,
   responseId: string
 ): StoredResponseRecord => {
-  const result = StoredResponseRecordSchema.safeParse(value);
-
-  if (!result.success) {
+  try {
+    return synchronizeStoredResponseRecord(value as StoredResponseRecord);
+  } catch (error) {
     throw previousResponseUnusable(
       responseId,
-      formatZodIssues(result.error.issues)
+      error instanceof Error ? error.message : "stored record is invalid"
+    );
+  }
+};
+
+const normalizeStoredOutputTextPart = (
+  value: unknown
+): OutputTextPart | null => {
+  if (typeof value === "string") {
+    return {
+      type: "output_text",
+      text: value,
+      annotations: [],
+    };
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const partType = getStringProperty(value, "type");
+  if (partType === "output_text" || partType === "text") {
+    const text = getStringProperty(value, "text") ?? "";
+    const annotations = Array.isArray(value.annotations)
+      ? safeStructuredClone(value.annotations)
+      : [];
+
+    return {
+      type: "output_text",
+      text,
+      annotations,
+    };
+  }
+
+  return null;
+};
+
+const normalizeStoredResponseOutput = (
+  output: unknown,
+  generateId: () => string
+): OutputItem[] => {
+  if (!Array.isArray(output)) {
+    return [];
+  }
+
+  const normalizedOutput: OutputItem[] = [];
+
+  for (const candidate of output) {
+    if (
+      isRecord(candidate) &&
+      getStringProperty(candidate, "type") === "message"
+    ) {
+      const content = Array.isArray(candidate.content)
+        ? candidate.content
+        : [candidate.content];
+      normalizedOutput.push({
+        id: getStringProperty(candidate, "id") ?? generateId(),
+        type: "message",
+        role: "assistant",
+        status: normalizeOutputItemStatus(candidate.status),
+        content: content
+          .map(normalizeStoredOutputTextPart)
+          .filter((part): part is OutputTextPart => part !== null),
+      });
+      continue;
+    }
+
+    if (
+      isRecord(candidate) &&
+      getStringProperty(candidate, "type") === "function_call"
+    ) {
+      normalizedOutput.push({
+        id: getStringProperty(candidate, "id") ?? generateId(),
+        type: "function_call",
+        status: normalizeOutputItemStatus(candidate.status),
+        name: getStringProperty(candidate, "name") ?? "unknown_tool",
+        call_id: getStringProperty(candidate, "call_id") ?? generateId(),
+        arguments: getStringProperty(candidate, "arguments") ?? "",
+      });
+    }
+  }
+
+  return normalizedOutput;
+};
+
+const repairRequestSnapshot = (params: {
+  request: unknown;
+  response: unknown;
+}): OpenResponsesRequestSnapshot => {
+  const requestRecord = isRecord(params.request) ? params.request : {};
+  const responseRecord = isRecord(params.response) ? params.response : {};
+  const repairedRequest = parseRequest({
+    model:
+      getStringProperty(responseRecord, "model") ??
+      getStringProperty(requestRecord, "model") ??
+      "unknown-model",
+    input:
+      ("input" in requestRecord
+        ? (requestRecord.input as OpenResponsesRequest["input"])
+        : []) ?? [],
+    previous_response_id:
+      getStringProperty(requestRecord, "previous_response_id") ??
+      (responseRecord.previous_response_id as string | null | undefined) ??
+      null,
+    include: arrayPropertyIfPresent<string>(requestRecord, "include"),
+    tools: arrayPropertyIfPresent<FunctionTool>(requestRecord, "tools"),
+    tool_choice: clonedPropertyIfPresent<OpenResponsesRequest["tool_choice"]>(
+      requestRecord,
+      "tool_choice"
+    ),
+    metadata: normalizeMetadata(
+      ("metadata" in requestRecord
+        ? requestRecord.metadata
+        : responseRecord.metadata) as OpenResponsesRequest["metadata"]
+    ),
+    text: clonedPropertyIfPresent<OpenResponsesRequest["text"]>(
+      requestRecord,
+      "text"
+    ),
+    temperature: numberPropertyIfPresent(requestRecord, "temperature"),
+    top_p: numberPropertyIfPresent(requestRecord, "top_p"),
+    presence_penalty: numberPropertyIfPresent(
+      requestRecord,
+      "presence_penalty"
+    ),
+    frequency_penalty: numberPropertyIfPresent(
+      requestRecord,
+      "frequency_penalty"
+    ),
+    parallel_tool_calls: booleanPropertyIfPresent(
+      requestRecord,
+      "parallel_tool_calls"
+    ),
+    background: booleanPropertyIfPresent(requestRecord, "background"),
+    max_output_tokens: nullableNumberPropertyIfPresent(
+      requestRecord,
+      "max_output_tokens"
+    ),
+    max_tool_calls: nullableNumberPropertyIfPresent(
+      requestRecord,
+      "max_tool_calls"
+    ),
+    reasoning: clonedPropertyIfPresent<OpenResponsesRequest["reasoning"]>(
+      requestRecord,
+      "reasoning"
+    ),
+    safety_identifier:
+      getStringProperty(requestRecord, "safety_identifier") ??
+      (typeof responseRecord.safety_identifier === "string"
+        ? responseRecord.safety_identifier
+        : null),
+    prompt_cache_key:
+      getStringProperty(requestRecord, "prompt_cache_key") ??
+      (typeof responseRecord.prompt_cache_key === "string"
+        ? responseRecord.prompt_cache_key
+        : null),
+    truncation:
+      (getStringProperty(requestRecord, "truncation") as
+        | OpenResponsesRequest["truncation"]
+        | undefined) ?? undefined,
+    instructions:
+      getStringProperty(requestRecord, "instructions") ??
+      (typeof responseRecord.instructions === "string"
+        ? responseRecord.instructions
+        : null),
+    store: booleanPropertyIfPresent(requestRecord, "store"),
+    service_tier:
+      (getStringProperty(requestRecord, "service_tier") as
+        | OpenResponsesRequest["service_tier"]
+        | undefined) ?? undefined,
+    top_logprobs: numberPropertyIfPresent(requestRecord, "top_logprobs"),
+    stream_options: clonedPropertyIfPresent<
+      OpenResponsesRequest["stream_options"]
+    >(requestRecord, "stream_options"),
+  });
+
+  return buildRequestSnapshot({
+    request: repairedRequest,
+    inputItems: inputToItems(repairedRequest.input),
+  });
+};
+
+const repairStoredResponseResource = (params: {
+  response: unknown;
+  responseId: string;
+  requestSnapshot: OpenResponsesRequestSnapshot;
+}): OpenResponsesResponse => {
+  if (!isRecord(params.response)) {
+    throw new Error("stored response must be an object");
+  }
+
+  const status = getStringProperty(params.response, "status");
+  if (
+    status !== "completed" &&
+    status !== "failed" &&
+    status !== "incomplete"
+  ) {
+    throw new Error(
+      "stored response must reference a terminal response resource"
     );
   }
 
-  return safeStructuredClone(result.data);
+  const createdAt =
+    typeof params.response.created_at === "number"
+      ? params.response.created_at
+      : 0;
+
+  let completedAt: number | null;
+  if (typeof params.response.completed_at === "number") {
+    completedAt = params.response.completed_at;
+  } else if (params.response.completed_at === null) {
+    completedAt = null;
+  } else if (status === "completed" || status === "failed") {
+    completedAt = createdAt;
+  } else {
+    completedAt = null;
+  }
+
+  const error =
+    isRecord(params.response.error) &&
+    typeof params.response.error.code === "string" &&
+    typeof params.response.error.message === "string"
+      ? ({
+          code: params.response.error.code,
+          message: params.response.error.message,
+          type: "server_error",
+        } satisfies ErrorObject)
+      : null;
+
+  const incompleteDetails =
+    status === "incomplete" && isRecord(params.response.incomplete_details)
+      ? (safeStructuredClone(
+          params.response.incomplete_details
+        ) as OpenResponsesResponse["incomplete_details"])
+      : null;
+
+  const usage =
+    isRecord(params.response.usage) || params.response.usage === null
+      ? (safeStructuredClone(
+          params.response.usage
+        ) as OpenResponsesResponse["usage"])
+      : null;
+
+  return materializeTerminalResponse({
+    request: params.requestSnapshot,
+    responseId: getStringProperty(params.response, "id") ?? params.responseId,
+    createdAt,
+    completedAt,
+    status,
+    output: normalizeStoredResponseOutput(params.response.output, () =>
+      crypto.randomUUID()
+    ),
+    error,
+    incompleteDetails,
+    usage,
+  });
 };
 
 export const synchronizeStoredResponseRecord = (
   record: StoredResponseRecord
 ): StoredResponseRecord => {
-  const synchronizedRequest: StoredResponseRecord["request"] = {
-    model: record.response.model,
-    input: inputToItems(record.request.input),
-    metadata: safeStructuredClone(record.request.metadata),
-    tools: safeStructuredClone(record.request.tools),
-    parallel_tool_calls: record.request.parallel_tool_calls,
-  };
-
-  if (record.request.tool_choice !== undefined) {
-    synchronizedRequest.tool_choice = safeStructuredClone(
-      record.request.tool_choice
-    );
+  if (!isRecord(record)) {
+    throw new Error("stored record must be an object");
   }
 
-  const synchronizedRecord: StoredResponseRecord = {
-    ...record,
-    response_id: record.response.id,
-    created_at: record.response.created_at,
-    completed_at: record.response.completed_at,
-    model: record.response.model,
-    request: synchronizedRequest,
-    response: safeStructuredClone(record.response),
-    status: toStoredTerminalStatus(record.response.status),
-    error: record.response.error,
-  };
+  const rawResponse = record.response;
+  const requestSnapshot = repairRequestSnapshot({
+    request: record.request,
+    response: rawResponse,
+  });
 
-  return parseStoredResponseRecord(
-    synchronizedRecord,
-    synchronizedRecord.response_id
-  );
+  const response = repairStoredResponseResource({
+    response: rawResponse,
+    responseId:
+      typeof record.response_id === "string"
+        ? record.response_id
+        : "stored-response",
+    requestSnapshot,
+  });
+
+  return {
+    response_id: response.id,
+    request: requestSnapshot,
+    response,
+    status: toStoredTerminalStatus(response.status),
+    created_at: response.created_at,
+    completed_at: response.completed_at,
+    contract_snapshot_version: contractSnapshotVersion,
+  };
 };
 
 export const normalizeRequest = async (
@@ -770,9 +1319,9 @@ export const normalizeRequest = async (
     );
 
     const priorRequestItems = inputToItems(validatedRecord.request.input);
-    const priorResponseItems = validatedRecord.response.output.map(
-      outputItemToInputItem
-    );
+    const priorResponseItems = validatedRecord.response.output.map((item) => {
+      return outputItemToInputItem(item as unknown as OutputItem);
+    });
 
     replayedInputItems = [
       ...priorRequestItems,
@@ -784,7 +1333,10 @@ export const normalizeRequest = async (
   return {
     inputItems: replayedInputItems,
     messages: replayedInputItems.map(inputItemToMessage),
-    original: parsedRequest,
+    requestSnapshot: buildRequestSnapshot({
+      request: parsedRequest,
+      inputItems: replayedInputItems,
+    }),
     toolPolicy: normalizeToolPolicy(parsedRequest),
   };
 };
@@ -939,7 +1491,7 @@ export const buildStoredRequestInputItems = (params: {
 };
 
 export const materializeInvokeResponse = (params: {
-  request: OpenResponsesRequest;
+  request: OpenResponsesRequestSnapshot;
   responseId: string;
   result: unknown;
   inputMessageCount: number;
@@ -947,77 +1499,57 @@ export const materializeInvokeResponse = (params: {
   completedAt: number;
   generateId: () => string;
 }): OpenResponsesResponse => {
-  const response = {
-    id: params.responseId,
-    object: "response",
-    created_at: params.createdAt,
-    completed_at: params.completedAt,
+  return materializeTerminalResponse({
+    request: params.request,
+    responseId: params.responseId,
+    createdAt: params.createdAt,
+    completedAt: params.completedAt,
     status: "completed",
-    model: params.request.model,
-    previous_response_id: params.request.previous_response_id ?? null,
     output: asOutputItems({
       inputMessageCount: params.inputMessageCount,
       result: params.result,
       generateId: params.generateId,
     }),
     error: null,
-    metadata: safeStructuredClone(params.request.metadata),
-  } satisfies OpenResponsesResponse;
-
-  return OpenResponsesResponseSchema.parse(response);
+  });
 };
 
 export const materializeStreamResponse = (params: {
-  request: OpenResponsesRequest;
+  request: OpenResponsesRequestSnapshot;
   responseId: string;
   createdAt: number;
   completedAt: number | null;
   status: OpenResponsesResponse["status"];
-  output: OutputItem[];
-  error: ErrorObject | null;
+  output: unknown[];
+  error: unknown;
 }): OpenResponsesResponse => {
-  const response = {
-    id: params.responseId,
-    object: "response",
-    created_at: params.createdAt,
-    completed_at: params.completedAt,
+  return materializeTerminalResponse({
+    request: params.request,
+    responseId: params.responseId,
+    createdAt: params.createdAt,
+    completedAt: params.completedAt,
     status: params.status,
-    model: params.request.model,
-    previous_response_id: params.request.previous_response_id ?? null,
     output: safeStructuredClone(params.output),
-    error: params.error ? safeStructuredClone(params.error) : null,
-    metadata: safeStructuredClone(params.request.metadata),
-  } satisfies OpenResponsesResponse;
-
-  return OpenResponsesResponseSchema.parse(response);
+    error: (params.error as ErrorObject | null) ?? null,
+  });
 };
 
 export const createStoredResponseRecord = (params: {
-  request: OpenResponsesRequest;
+  request: OpenResponsesRequestSnapshot;
   normalizedInputItems: InputItem[];
   response: OpenResponsesResponse;
 }): StoredResponseRecord => {
-  const requestRecord: StoredResponseRecord["request"] = {
-    model: params.request.model,
-    input: safeStructuredClone(params.normalizedInputItems),
-    metadata: safeStructuredClone(params.request.metadata),
-    tools: safeStructuredClone(params.request.tools),
-    parallel_tool_calls: params.request.parallel_tool_calls,
-  };
-
-  if (params.request.tool_choice !== undefined) {
-    requestRecord.tool_choice = safeStructuredClone(params.request.tool_choice);
-  }
-
   return synchronizeStoredResponseRecord({
     response_id: params.response.id,
-    created_at: params.response.created_at,
-    completed_at: params.response.completed_at,
-    model: params.response.model,
-    request: requestRecord,
+    request: {
+      ...safeStructuredClone(params.request),
+      input: safeStructuredClone(params.normalizedInputItems),
+    },
     response: safeStructuredClone(params.response),
     status: toStoredTerminalStatus(params.response.status),
-    error: params.response.error,
+    created_at: params.response.created_at,
+    completed_at: params.response.completed_at,
+    contract_snapshot_version: contractSnapshotVersion,
   });
 };
 

@@ -18,14 +18,14 @@ import type {
 import type {
   OpenResponsesExecutionOptions,
   OpenResponsesHandlerOptions,
+  OpenResponsesRequestSnapshot,
   PreviousResponseStore,
 } from "@/core/index.js";
+import type { InputItem, OpenResponsesEvent } from "@/core/internal-schemas.js";
 import type {
-  InputItem,
-  OpenResponsesEvent,
   OpenResponsesRequest,
   OpenResponsesResponse,
-} from "@/core/internal-schemas.js";
+} from "@/core/schemas.js";
 import {
   getEffectiveToolChoiceMode,
   OPENRESPONSES_TOOL_POLICY_CONFIG_KEY,
@@ -85,7 +85,7 @@ const toInternalServerError = (message: string, error: unknown): never => {
 };
 
 const materializeResponseOrThrow = (params: {
-  request: OpenResponsesRequest;
+  request: OpenResponsesRequestSnapshot;
   responseId: string;
   result: unknown;
   inputMessageCount: number;
@@ -101,13 +101,13 @@ const materializeResponseOrThrow = (params: {
 };
 
 const materializeStreamResponseOrThrow = (params: {
-  request: OpenResponsesRequest;
+  request: OpenResponsesRequestSnapshot;
   responseId: string;
   createdAt: number;
   completedAt: number | null;
   status: OpenResponsesResponse["status"];
-  output: OpenResponsesResponse["output"];
-  error: OpenResponsesResponse["error"];
+  output: unknown[];
+  error: unknown;
 }): OpenResponsesResponse => {
   try {
     return materializeStreamResponse(params);
@@ -355,7 +355,7 @@ export function createOpenResponsesAdapter(
       const completedAt = clock();
 
       const response = materializeResponseOrThrow({
-        request: normalizedRequest.original,
+        request: normalizedRequest.requestSnapshot,
         responseId,
         result: agentResult,
         inputMessageCount: normalizedRequest.messages.length,
@@ -368,7 +368,7 @@ export function createOpenResponsesAdapter(
         const previousResponseStore = options.previousResponseStore;
         try {
           const storedRecord = createStoredResponseRecord({
-            request: normalizedRequest.original,
+            request: normalizedRequest.requestSnapshot,
             normalizedInputItems: buildStoredRequestInputItems({
               normalizedInputItems: normalizedRequest.inputItems,
               result: agentResult,
@@ -532,7 +532,7 @@ export function createOpenResponsesAdapter(
         }
 
         const response = materializeStreamResponseOrThrow({
-          request: normalizedRequest.original,
+          request: normalizedRequest.requestSnapshot,
           responseId,
           createdAt,
           completedAt: lifecycle.getCompletedAt(),
@@ -546,7 +546,7 @@ export function createOpenResponsesAdapter(
         });
 
         const storedRecord = createStoredResponseRecord({
-          request: normalizedRequest.original,
+          request: normalizedRequest.requestSnapshot,
           normalizedInputItems: replayInputItems,
           response,
         });

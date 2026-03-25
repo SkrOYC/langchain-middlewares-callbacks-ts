@@ -5,4 +5,4 @@
 
 import { z } from "zod";
 
-export const emptyModelParamSchema = z.object({});
+export const emptyModelParamSchema = z.record(z.string(), z.unknown());

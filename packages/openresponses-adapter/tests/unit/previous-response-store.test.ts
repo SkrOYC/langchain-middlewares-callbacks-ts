@@ -1,15 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
+import { contractSnapshotVersion } from "@/core/schemas.js";
 import type { StoredResponseRecord } from "@/core/types.js";
 import { createInMemoryPreviousResponseStore } from "@/testing/index.js";
+import {
+  createRequestSnapshot,
+  createTerminalResponse,
+} from "../helpers/records.ts";
 
 const createRecord = (): StoredResponseRecord => {
   return {
     response_id: "outer-id",
-    created_at: 1,
-    completed_at: 2,
-    model: "outer-model",
-    request: {
+    request: createRequestSnapshot({
       model: "outer-model",
       input: [
         {
@@ -19,17 +21,12 @@ const createRecord = (): StoredResponseRecord => {
         },
       ],
       metadata: { source: "test" },
-      tools: [],
-      parallel_tool_calls: true,
-    },
-    response: {
+    }),
+    response: createTerminalResponse({
       id: "resp-1",
-      object: "response",
       created_at: 1000,
       completed_at: 2000,
-      status: "completed",
-      model: "gpt-4.1-mini",
-      previous_response_id: null,
+      metadata: { source: "test" },
       output: [
         {
           id: "msg-1",
@@ -41,19 +38,16 @@ const createRecord = (): StoredResponseRecord => {
               type: "output_text",
               text: "World",
               annotations: [],
+              logprobs: [],
             },
           ],
         },
       ],
-      error: null,
-      metadata: { source: "test" },
-    },
+    }),
     status: "incomplete",
-    error: {
-      code: "wrong",
-      message: "wrong",
-      type: "server_error",
-    },
+    created_at: 1,
+    completed_at: 2,
+    contract_snapshot_version: contractSnapshotVersion,
   };
 };
 
@@ -69,11 +63,10 @@ describe("InMemoryPreviousResponseStore", () => {
     expect(loaded?.response_id).toBe("resp-1");
     expect(loaded?.created_at).toBe(1000);
     expect(loaded?.completed_at).toBe(2000);
-    expect(loaded?.model).toBe("gpt-4.1-mini");
     expect(loaded?.status).toBe("completed");
-    expect(loaded?.error).toBeNull();
     expect(loaded?.request.model).toBe("gpt-4.1-mini");
     expect(loaded?.response.id).toBe("resp-1");
+    expect(loaded?.contract_snapshot_version).toBe(contractSnapshotVersion);
   });
 
   test("provides immediate read-after-write consistency for saved records", async () => {

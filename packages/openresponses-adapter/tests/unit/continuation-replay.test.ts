@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { contractSnapshotVersion } from "@/core/schemas.js";
 import type {
   PreviousResponseStore,
   StoredResponseRecord,
@@ -11,15 +12,15 @@ import {
   createFakeAgent,
   createInMemoryPreviousResponseStore,
 } from "@/testing/index.js";
+import {
+  createRequestSnapshot,
+  createTerminalResponse,
+} from "../helpers/records.ts";
 
 const createPriorRecord = (): StoredResponseRecord => {
   return {
     response_id: "resp-prev",
-    created_at: 1000,
-    completed_at: 2000,
-    model: "gpt-4.1-mini",
-    request: {
-      model: "gpt-4.1-mini",
+    request: createRequestSnapshot({
       input: [
         {
           type: "message",
@@ -45,38 +46,12 @@ const createPriorRecord = (): StoredResponseRecord => {
           status: "completed",
         },
       ],
-      metadata: {},
-      tools: [],
-      parallel_tool_calls: true,
-    },
-    response: {
-      id: "resp-prev",
-      object: "response",
-      created_at: 1000,
-      completed_at: 2000,
-      status: "completed",
-      model: "gpt-4.1-mini",
-      previous_response_id: null,
-      output: [
-        {
-          id: "msg-prev",
-          type: "message",
-          role: "assistant",
-          status: "completed",
-          content: [
-            {
-              type: "output_text",
-              text: "Why did the test cross the road?",
-              annotations: [],
-            },
-          ],
-        },
-      ],
-      error: null,
-      metadata: {},
-    },
+    }),
+    response: createTerminalResponse(),
     status: "completed",
-    error: null,
+    created_at: 1000,
+    completed_at: 2000,
+    contract_snapshot_version: contractSnapshotVersion,
   };
 };
 
@@ -85,7 +60,10 @@ const createMalformedStore = (): PreviousResponseStore => {
     load(): Promise<StoredResponseRecord> {
       return Promise.resolve({
         ...createPriorRecord(),
-        response_id: "drifted-id",
+        response: {
+          ...createPriorRecord().response,
+          status: "queued",
+        },
       });
     },
     save(): Promise<void> {
@@ -192,6 +170,7 @@ describe("continuation replay", () => {
             type: "output_text",
             text: "Why did the test cross the road?",
             annotations: [],
+            logprobs: [],
           },
         ],
       },
@@ -361,6 +340,7 @@ describe("continuation replay", () => {
             type: "output_text",
             text: "Because it is a testing pun.",
             annotations: [],
+            logprobs: [],
           },
         ],
       },
@@ -480,6 +460,7 @@ describe("continuation replay", () => {
             type: "output_text",
             text: "Because it is a testing pun.",
             annotations: [],
+            logprobs: [],
           },
         ],
       },
@@ -631,6 +612,7 @@ describe("continuation replay", () => {
             type: "output_text",
             text: "Second answer",
             annotations: [],
+            logprobs: [],
           },
         ],
       },

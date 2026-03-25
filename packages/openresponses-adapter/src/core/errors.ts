@@ -5,7 +5,7 @@
  * and public error types that are emitted on the wire per the Open Responses spec.
  */
 
-import type { ErrorObject } from "@/core/internal-schemas.js";
+import type { ErrorObject } from "@/core/schemas.js";
 
 // =============================================================================
 // Internal Error Codes

@@ -200,7 +200,7 @@ export const FunctionToolSchema = z.object({
   type: z.literal("function"),
   name: z.string().min(1).max(64),
   description: z.string().min(1),
-  parameters: z.record(z.string(), z.unknown()),
+  parameters: z.record(z.string(), z.unknown()).nullable().optional(),
   strict: z.boolean().default(true),
 });
 
