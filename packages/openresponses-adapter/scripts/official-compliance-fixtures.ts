@@ -2,6 +2,10 @@ import type { OpenResponsesCompatibleAgent } from "../src/core/types.ts";
 
 type BridgeHandler = Record<string, (...args: unknown[]) => void>;
 
+const TOOL_CALL_ARGUMENTS = JSON.stringify({
+  location: "San Francisco, CA",
+});
+
 const extractBridge = (config: Record<string, unknown>): BridgeHandler => {
   const callbacks = (config.callbacks ?? []) as Record<string, unknown>[];
   return (callbacks[0] ?? {}) as BridgeHandler;
@@ -39,7 +43,7 @@ const createInvokeResult = (
               id: "call-weather-1",
               type: "function_call",
               name: serializedToolPolicy.tools?.[0]?.name ?? "get_weather",
-              arguments: { location: "San Francisco, CA" },
+              arguments: TOOL_CALL_ARGUMENTS,
             },
           ],
         },

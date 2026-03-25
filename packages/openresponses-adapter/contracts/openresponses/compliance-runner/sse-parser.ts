@@ -98,7 +98,10 @@ export async function parseSSEStream(
         if (line.startsWith("event:")) {
           currentEvent = line.slice(6).trim();
         } else if (line.startsWith("data:")) {
-          currentData = line.slice(5).trim();
+          const nextDataLine = line.slice(5).trim();
+          currentData = currentData
+            ? `${currentData}\n${nextDataLine}`
+            : nextDataLine;
         } else if (line === "" && currentData) {
           if (currentData === "[DONE]") {
             currentEvent = "";
