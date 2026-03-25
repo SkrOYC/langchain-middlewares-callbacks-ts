@@ -116,6 +116,7 @@ const summarizeScenarioResults = (parsed: {
 const options = parseArgs(process.argv.slice(2));
 await buildPackage();
 const server = await startFixtureServer();
+let exitCode = 0;
 
 try {
   const config: TestConfig = {
@@ -159,7 +160,9 @@ try {
   }
 
   process.stdout.write(summarizeScenarioResults(payload));
-  process.exit(summary.failed > 0 ? 1 : 0);
+  exitCode = summary.failed > 0 ? 1 : 0;
 } finally {
   await server.stop();
 }
+
+process.exit(exitCode);
