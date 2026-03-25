@@ -32,5 +32,9 @@
       "@/*": ["./src/*"]
     }
   },
-  "exclude": ["dist", "examples/*smoke.*"]
+  "exclude": [
+    "dist",
+    "examples/*smoke.*",
+    "contracts/openresponses/compliance-runner/upstream-*.ts"
+  ]
 }

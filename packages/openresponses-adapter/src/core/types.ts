@@ -15,7 +15,7 @@ import type {
   OpenResponsesRequest,
   OpenResponsesResponse,
   ToolChoice,
-} from "./schemas.js";
+} from "./internal-schemas.js";
 
 // =============================================================================
 // Persistence Types

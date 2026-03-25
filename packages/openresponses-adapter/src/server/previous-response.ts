@@ -21,7 +21,7 @@ import {
   type OutputTextPart,
   StoredResponseRecordSchema,
   type ToolChoice,
-} from "@/core/schemas.js";
+} from "@/core/internal-schemas.js";
 import { getEffectiveToolChoiceMode } from "@/core/tool-policy.js";
 import type {
   LangChainMessageLike,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { OpenResponsesEvent } from "@/core/schemas.js";
+import type { OpenResponsesEvent } from "@/core/internal-schemas.js";
 import type {
   LangChainMessageLike,
   OpenResponsesCompatibleAgent,

@@ -12,12 +12,12 @@ import {
   isInternalError,
   unsupportedMediaType,
 } from "@/core/errors.js";
+import type { OpenResponsesHandlerOptions } from "@/core/index.js";
 import {
-  type OpenResponsesHandlerOptions,
+  type OpenResponsesEvent,
   type OpenResponsesRequest,
   OpenResponsesRequestSchema,
-} from "@/core/index.js";
-import type { OpenResponsesEvent } from "@/core/schemas.js";
+} from "@/core/internal-schemas.js";
 import { createOpenResponsesAdapter } from "@/server/adapter.js";
 import { formatSSEFrame } from "@/server/event-serializer.js";
 import {

@@ -15,7 +15,7 @@ import type { InternalSemanticEvent } from "@/core/events.js";
 import {
   type OpenResponsesEvent,
   OpenResponsesEventSchema,
-} from "@/core/schemas.js";
+} from "@/core/internal-schemas.js";
 import type { SequenceGenerator, SSEFrame } from "@/core/types.js";
 import type { AsyncEventQueue } from "@/state/async-event-queue.js";
 import type { CanonicalItemAccumulator } from "@/state/item-accumulator.js";
