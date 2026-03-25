@@ -270,7 +270,7 @@ const normalizeTools = (
 const normalizeToolChoice = (
   toolChoice: OpenResponsesRequest["tool_choice"]
 ): ToolChoice => {
-  if (toolChoice === undefined) {
+  if (toolChoice === undefined || toolChoice === null) {
     return "auto";
   }
 
@@ -287,6 +287,16 @@ const normalizeToolChoice = (
   }
 
   return safeStructuredClone(toolChoice);
+};
+
+const normalizePreviousResponseId = (
+  previousResponseId: OpenResponsesRequest["previous_response_id"]
+): string | null => {
+  if (typeof previousResponseId !== "string") {
+    return null;
+  }
+
+  return previousResponseId.length > 0 ? previousResponseId : null;
 };
 
 const assertUniqueToolNames = (tools: FunctionTool[]): void => {
@@ -880,7 +890,9 @@ const buildResolvedRequest = (
   return {
     model: parsedRequest.model,
     input: parsedRequest.input,
-    previous_response_id: parsedRequest.previous_response_id ?? null,
+    previous_response_id: normalizePreviousResponseId(
+      parsedRequest.previous_response_id
+    ),
     include: parsedRequest.include
       ? safeStructuredClone(parsedRequest.include)
       : [...DEFAULT_REQUEST_SETTINGS.include],

@@ -140,6 +140,31 @@ describe("tool policy normalization", () => {
       message: "tool_choice references unknown tool 'missing_tool'",
     });
   });
+
+  test("normalizes null tool_choice to auto for response echo and policy", async () => {
+    const normalized = await normalizeRequest(
+      {
+        ...createBaseRequest(),
+        tool_choice: null,
+      },
+      {}
+    );
+
+    expect(normalized.requestSnapshot.tool_choice).toBe("auto");
+    expect(normalized.toolPolicy.toolChoice).toBe("auto");
+  });
+
+  test("normalizes empty-string previous_response_id to null", async () => {
+    const normalized = await normalizeRequest(
+      {
+        ...createBaseRequest(),
+        previous_response_id: "",
+      },
+      {}
+    );
+
+    expect(normalized.requestSnapshot.previous_response_id).toBeNull();
+  });
 });
 
 describe("tool policy middleware", () => {
