@@ -856,12 +856,12 @@ const normalizeToolPolicy = (
   };
 };
 
-const assertRequiredRequestFields = (
+const assertRequiredRequestFields: (
   request: OpenResponsesRequest
-): asserts request is OpenResponsesRequest & {
+) => asserts request is OpenResponsesRequest & {
   model: string;
   input: unknown;
-} => {
+} = (request: OpenResponsesRequest): void => {
   if (!request.model) {
     throw invalidRequest("model is required");
   }
@@ -1094,7 +1094,9 @@ const repairRequestSnapshot = (params: {
       getStringProperty(requestRecord, "previous_response_id") ??
       (responseRecord.previous_response_id as string | null | undefined) ??
       null,
-    include: arrayPropertyIfPresent<string>(requestRecord, "include"),
+    include: arrayPropertyIfPresent<
+      "reasoning.encrypted_content" | "message.output_text.logprobs"
+    >(requestRecord, "include"),
     tools: arrayPropertyIfPresent<FunctionTool>(requestRecord, "tools"),
     tool_choice: clonedPropertyIfPresent<OpenResponsesRequest["tool_choice"]>(
       requestRecord,
