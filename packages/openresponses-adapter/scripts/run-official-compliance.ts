@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   runAllTests,
   type TestConfig,
@@ -67,7 +68,12 @@ const startFixtureServer = async (): Promise<{
   baseUrl: string;
   stop: () => Promise<void>;
 }> => {
-  const { buildOpenResponsesApp } = await import("../dist/server.js");
+  const builtServerModulePath = pathToFileURL(
+    resolve(packageRoot, "dist/server.js")
+  ).href;
+  const { buildOpenResponsesApp } = (await import(
+    builtServerModulePath
+  )) as typeof import("../src/server/index.ts");
   const app = await buildOpenResponsesApp({
     agent: createOfficialComplianceFixtureAgent(),
   });
