@@ -12,10 +12,9 @@ import type {
   FunctionTool,
   InputItem,
   OpenResponsesEvent,
-  OpenResponsesRequest,
-  OpenResponsesResponse,
   ToolChoice,
 } from "./internal-schemas.js";
+import type { OpenResponsesResponse } from "./schemas.js";
 
 // =============================================================================
 // Persistence Types
@@ -28,20 +27,12 @@ import type {
  */
 export interface StoredResponseRecord {
   response_id: string;
-  created_at: number;
-  completed_at: number | null;
-  model: string;
-  request: {
-    model: string;
-    input: InputItem[];
-    metadata: Record<string, string>;
-    tools: FunctionTool[];
-    tool_choice?: ToolChoice | undefined;
-    parallel_tool_calls: boolean;
-  };
+  request: OpenResponsesRequestSnapshot;
   response: OpenResponsesResponse;
   status: "completed" | "failed" | "incomplete";
-  error: ErrorObject | null;
+  created_at: number;
+  completed_at: number | null;
+  contract_snapshot_version: string;
 }
 
 /**
@@ -144,13 +135,41 @@ export interface NormalizedToolPolicy {
   parallelToolCalls: boolean;
 }
 
+export interface OpenResponsesRequestSnapshot {
+  model: string;
+  input: InputItem[];
+  previous_response_id: string | null;
+  include: string[];
+  tools: FunctionTool[];
+  tool_choice: ToolChoice;
+  parallel_tool_calls: boolean;
+  instructions: string | null;
+  store: boolean;
+  background: boolean;
+  truncation: OpenResponsesResponse["truncation"];
+  text: OpenResponsesResponse["text"];
+  reasoning: OpenResponsesResponse["reasoning"];
+  top_p: number;
+  presence_penalty: number;
+  frequency_penalty: number;
+  top_logprobs: number;
+  temperature: number;
+  max_output_tokens: number | null;
+  max_tool_calls: number | null;
+  service_tier: OpenResponsesResponse["service_tier"];
+  safety_identifier: string | null;
+  prompt_cache_key: string | null;
+  metadata: Record<string, string>;
+  stream_options: Record<string, unknown> | null;
+}
+
 /**
  * Normalized request after input transformation.
  */
 export interface NormalizedRequest {
   inputItems: InputItem[];
   messages: LangChainMessageLike[];
-  original: OpenResponsesRequest;
+  requestSnapshot: OpenResponsesRequestSnapshot;
   toolPolicy: NormalizedToolPolicy;
 }
 

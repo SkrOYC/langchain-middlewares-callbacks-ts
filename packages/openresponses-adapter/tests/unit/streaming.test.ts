@@ -556,6 +556,7 @@ describe("adapter.stream()", () => {
             type: "output_text",
             text: "Hello world",
             annotations: [],
+            logprobs: [],
           },
         ],
       },

@@ -94,6 +94,7 @@ describe("image input minimum path", () => {
             type: "output_text",
             text: "Why did the test cross the road?",
             annotations: [],
+            logprobs: [],
           },
         ],
       },

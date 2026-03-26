@@ -10,7 +10,7 @@ import type {
   OpenResponsesEvent,
   OpenResponsesRequest,
   OpenResponsesResponse,
-} from "./internal-schemas.js";
+} from "./schemas.js";
 import type {
   OpenResponsesExecutionOptions,
   OpenResponsesHandlerOptions,

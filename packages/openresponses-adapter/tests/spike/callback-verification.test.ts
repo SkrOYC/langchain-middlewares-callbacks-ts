@@ -27,6 +27,7 @@ import {
   ResponseFailedEventSchema,
   ResponseInProgressEventSchema,
 } from "@/core/internal-schemas.js";
+import { contractSnapshotVersion } from "@/core/schemas.js";
 import type { StoredResponseRecord } from "@/core/types.js";
 import {
   createCyclingIdGenerator,
@@ -35,6 +36,10 @@ import {
   createInMemoryPreviousResponseStore,
   createSequentialIdGenerator,
 } from "@/testing/index.js";
+import {
+  createRequestSnapshot,
+  createTerminalResponse,
+} from "../helpers/records.ts";
 
 // =============================================================================
 // Test 1: Fake Agent Behavior (NOT just type checking)
@@ -529,10 +534,7 @@ describe("In-Memory Store", () => {
 
     const record: StoredResponseRecord = {
       response_id: "resp-1",
-      created_at: 1000,
-      completed_at: 2000,
-      model: "gpt-4",
-      request: {
+      request: createRequestSnapshot({
         model: "gpt-4",
         input: [
           {
@@ -541,24 +543,17 @@ describe("In-Memory Store", () => {
             content: "Hello",
           },
         ],
-        metadata: {},
-        tools: [],
-        parallel_tool_calls: true,
-      },
-      response: {
+      }),
+      response: createTerminalResponse({
         id: "resp-1",
-        object: "response" as const,
+        model: "gpt-4",
         created_at: 1000,
         completed_at: 2000,
-        status: "completed" as const,
-        model: "gpt-4",
-        previous_response_id: null,
-        output: [],
-        error: null,
-        metadata: {},
-      },
+      }),
       status: "completed" as const,
-      error: null,
+      created_at: 1000,
+      completed_at: 2000,
+      contract_snapshot_version: contractSnapshotVersion,
     };
 
     await store.save(record);
@@ -580,25 +575,17 @@ describe("In-Memory Store", () => {
   test("should overwrite existing record on save", async () => {
     const store = createInMemoryPreviousResponseStore();
 
-    const baseResponse = {
+    const baseResponse = createTerminalResponse({
       id: "resp-1",
-      object: "response" as const,
+      model: "gpt-4",
       created_at: 1000,
       completed_at: 2000,
-      status: "completed" as const,
-      model: "gpt-4",
-      previous_response_id: null,
       output: [],
-      error: null,
-      metadata: {},
-    };
+    });
 
     await store.save({
       response_id: "resp-1",
-      created_at: 1000,
-      completed_at: 2000,
-      model: "gpt-4",
-      request: {
+      request: createRequestSnapshot({
         model: "gpt-4",
         input: [
           {
@@ -607,21 +594,17 @@ describe("In-Memory Store", () => {
             content: "Hello",
           },
         ],
-        metadata: {},
-        tools: [],
-        parallel_tool_calls: true,
-      },
+      }),
       response: baseResponse,
       status: "completed",
-      error: null,
+      created_at: 1000,
+      completed_at: 2000,
+      contract_snapshot_version: contractSnapshotVersion,
     });
 
     await store.save({
       response_id: "resp-1",
-      created_at: 1000,
-      completed_at: 3000,
-      model: "gpt-4",
-      request: {
+      request: createRequestSnapshot({
         model: "gpt-4",
         input: [
           {
@@ -630,16 +613,15 @@ describe("In-Memory Store", () => {
             content: "Updated",
           },
         ],
-        metadata: {},
-        tools: [],
-        parallel_tool_calls: true,
-      },
+      }),
       response: {
         ...baseResponse,
         completed_at: 3000,
       },
       status: "completed",
-      error: null,
+      created_at: 1000,
+      completed_at: 3000,
+      contract_snapshot_version: contractSnapshotVersion,
     });
 
     const loaded = await store.load("resp-1");
