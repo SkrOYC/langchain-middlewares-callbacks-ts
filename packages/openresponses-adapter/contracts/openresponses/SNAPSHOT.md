@@ -18,3 +18,4 @@ module rather than ad hoc URLs or floating upstream branches.
 - `contracts/openresponses/openapi.json`
 - `src/contract/generated/kubb/zod/**`
 - `contracts/openresponses/compliance-runner/**`
+- `contracts/openresponses/official/**`

@@ -1,24 +1,26 @@
 # `@skroyc/openresponses-adapter`
 
-Spec-minimal Open Responses adapter for existing LangChain `createAgent()` runtimes.
+Open Responses adapter for existing LangChain `createAgent()` runtimes.
 
-It exposes a `POST /v1/responses` route, supports non-streaming JSON plus truthful SSE streaming, preserves `previous_response_id` replay semantics through a builder-controlled store, and keeps tool policy enforcement separate from protocol publication.
+It exposes a `POST /v1/responses` route, preserves `previous_response_id` replay semantics through a builder-controlled store, keeps tool policy enforcement separate from protocol publication, and targets the pinned OpenResponses snapshot vendored in this package.
 
 ## Status
 
-This package targets the MVP subset described in [`docs/TechSpec.md`](./docs/TechSpec.md), not full reference parity.
+This package targets full compliance with the pinned OpenResponses snapshot, uses the official OpenResponses CLI runner as a baseline release gate, and treats broader pinned-spec conformance as a separate proof obligation.
 
 Implemented release-blocker capabilities:
 
-- Non-streaming `application/json` responses
-- Streaming `text/event-stream` responses with semantic events and literal `[DONE]`
+- Non-streaming full `ResponseResource` JSON responses
+- Streaming `text/event-stream` responses with semantic events, full terminal response payloads, and literal `[DONE]`
 - `previous_response_id` continuation through `PreviousResponseStore`
 - Tool-calling normalization and enforcement
-- Minimum `input_image` pass-through support
-- Node and Bun smoke coverage
+- `input_image` pass-through support
+- Package-local regressions separated from the official black-box compliance runner
+- Node 24 and Bun built-package smoke coverage for root, `./server`, and `./testing` entrypoints
 
 Deliberate boundaries:
 
+- `application/json` is the only accepted request-body encoding in this package overlay, even though the upstream vendored OpenAPI currently advertises a broader request-body surface
 - No broad multimodal output support
 - No bundled durable persistence adapter
 - No synthetic text or function-call deltas when callbacks are too weak to support them truthfully
@@ -91,9 +93,9 @@ The route is available at `POST /v1/responses`.
 
 ## Public Surface
 
-- `buildOpenResponsesApp(options)`
-- `createOpenResponsesHandler(options)`
-- `createOpenResponsesAdapter(options)`
+- Root entrypoint exports the main factories plus types and testing helpers
+- `./server` exports `buildOpenResponsesApp()`, `createOpenResponsesHandler()`, and `createOpenResponsesAdapter()`
+- `./testing` exports deterministic clocks, IDs, fake agents, and the in-memory `PreviousResponseStore`
 - `createOpenResponsesToolPolicyMiddleware()`
 - `PreviousResponseStore`
 - request, response, and stream event schemas/types
@@ -105,6 +107,14 @@ The route is available at `POST /v1/responses`.
 Streaming output is derived from live LangChain callbacks observed during `agent.stream()`. The adapter does not replay the final answer as synthetic deltas.
 
 If the runtime fails after headers are already sent, the stream emits `response.failed` and then terminates. If a strict persistence failure happens after stream completion, the stream closes without appending `[DONE]`.
+
+### Compliance and release gating
+
+Local regression tests and the official runner are intentionally separate:
+
+- `bun run test:compliance:local` covers package-owned regression scenarios
+- `bun run test:compliance:official` runs the vendored official OpenResponses CLI mirror against the built package
+- `bun run test:compliance` remains an alias to the local regression suite for backwards compatibility
 
 ### Tool policy enforcement
 
@@ -125,18 +135,21 @@ exactly in that order.
 
 ### Image input
 
-`input_image` is accepted and passed through as-is for MVP compliance coverage. The package does not fetch, proxy, transform, or store image binaries.
+`input_image` is accepted and passed through as-is. The package does not fetch, proxy, transform, or store image binaries.
 
 ### Logging
 
 The Hono boundary emits structured internal logs with:
 
+- `contract_snapshot_version`
 - `request_id`
 - `response_id`
 - `path`
 - `stream`
 - `status_code`
 - `error_code`
+- `terminal_status`
+- `failure_class`
 - `duration_ms`
 
 Token content, request bodies, tool inputs, and tool outputs are excluded by default.
@@ -155,6 +168,8 @@ bun run lint
 bun run test
 bun run test:golden-stream
 bun run test:compliance
+bun run test:compliance:local
+bun run test:compliance:official
 bun run smoke:node
 bun run smoke:bun
 ```
@@ -163,7 +178,7 @@ bun run smoke:bun
 
 - Shared modules stay on Web Platform primitives
 - Bun is the default package manager and test runner
-- The package is built as ESM + CJS
+- The package is built as ESM + CJS and smoke-tested as a built package before release
 
 ## Source References
 

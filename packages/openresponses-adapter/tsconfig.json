@@ -29,10 +29,11 @@
 
     // Path aliases
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*", "./tests/*"]
     }
   },
   "exclude": [
+    "contracts/openresponses/official/**",
     "dist",
     "examples/*smoke.*",
     "contracts/openresponses/compliance-runner/upstream-*.ts"

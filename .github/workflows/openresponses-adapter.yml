@@ -67,7 +67,7 @@ jobs:
       - name: Golden stream regression
         run: bun run --filter @skroyc/openresponses-adapter test:golden-stream
 
-  compliance:
+  compliance-local:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +75,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Local compliance regression
-        run: bun run --filter @skroyc/openresponses-adapter test:compliance
+        run: bun run --filter @skroyc/openresponses-adapter test:compliance:local
+
+  compliance-official:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Official compliance gate
+        run: bun run --filter @skroyc/openresponses-adapter test:compliance:official
 
   build:
     runs-on: ubuntu-latest

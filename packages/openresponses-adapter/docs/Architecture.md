@@ -1,6 +1,8 @@
 # Solution Architecture
 
 ## 0. Version History & Changelog
+- v2.2.0 - Upgraded the compliance architecture from official acceptance gating to full pinned-spec conformance proof with explicit local black-box coverage for upstream gaps.
+- v2.1.0 - Recorded that the pinned-snapshot route boundary, official runner gate, and built-package smoke coverage now converge in the implemented package.
 - v2.0.2 - Restored fuller brownfield architecture rules, added an explicit compliance-validation flow, and expanded cross-cutting failure and media-boundary detail.
 - v2.0.1 - Restored bounded-context, request-model, and rejected-pattern detail while preserving the full-compliance direction.
 - v2.0.0 - Revised the architecture from a spec-minimal MVP target to a full current OpenResponses compliance target.
@@ -13,12 +15,13 @@
 
 ### Standards Posture
 - The current published OpenResponses contract snapshot and the official OpenResponses compliance runner are governing external constraints.
+- The official compliance runner is the upstream acceptance baseline, but full pinned-spec conformance requires additional package-owned proof for rules the upstream suite does not exercise.
 - The architecture remains vendor-agnostic at the logical layer even though the current brownfield target is an existing LangChain-oriented agent runtime family.
 - Public contract fidelity takes precedence over internal convenience or preserving earlier MVP shortcuts.
 
 ### Brownfield Starting Point
 - The current codebase already contains the core logical pieces required for this architecture: public route publication, request normalization, callback observation, canonical response state, tool policy mediation, and continuation persistence.
-- The current codebase does not yet realize the full current contract because non-streaming resources are partial, terminal streaming events carry minimal response stubs, and local compliance checks are narrower than the official runner.
+- The current codebase now realizes the pinned current contract for the vendored snapshot, with the official runner and built-package smoke checks acting as release validation rather than aspirational targets.
 
 ### Brownfield Rules Carried Forward
 - The agent runtime remains the execution engine, not the public protocol authority. The package is responsible for request normalization, public contract assembly, and truth-preserving publication.
@@ -93,7 +96,7 @@
 
 ### Compliance Verification Harness
 - **Logical Type:** Test boundary
-- **Responsibility:** Validate the built package against the official OpenResponses compliance runner, package-local regressions, and certified-runtime smoke scenarios.
+- **Responsibility:** Validate the built package against the official OpenResponses compliance runner, package-owned black-box conformance checks for runner gaps, package-local regressions, and certified-runtime smoke scenarios.
 - **Inputs:** Built package artifacts, live server target, contract snapshot version
 - **Outputs:** Release-gating pass/fail evidence and drift diagnostics
 - **Depends on:** Public Protocol Boundary
@@ -122,7 +125,7 @@ System_Boundary(system, "OpenResponses Adapter Package") {
 
 System_Ext(runtime, "Agent Runtime", "Existing runtime that executes model turns and tool calls")
 System_Ext(persistence, "Builder Persistence Implementation", "Builder-controlled continuation storage")
-System_Ext(runner, "Official OpenResponses Compliance Runner", "External black-box validator")
+System_Ext(runner, "Official OpenResponses Compliance Runner", "External black-box validator for the upstream acceptance baseline")
 
 Rel(builder, host, "Configures and mounts")
 Rel(client, protocol, "Calls /v1/responses")

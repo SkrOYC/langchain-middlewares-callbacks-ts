@@ -3,11 +3,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  runAllTests,
-  type TestConfig,
-  type TestResult,
-} from "../contracts/openresponses/compliance-runner/compliance-tests.ts";
-import {
   OPENRESPONSES_BASE_URL_SUFFIX,
   openResponsesSnapshotMetadata,
 } from "../src/contract/snapshot.ts";
@@ -16,6 +11,10 @@ import { createOfficialComplianceFixtureAgent } from "./official-compliance-fixt
 declare const Bun: typeof import("bun");
 
 const packageRoot = resolve(import.meta.dir, "..");
+const officialCliEntrypoint = resolve(
+  packageRoot,
+  "contracts/openresponses/official/bin/compliance-test.ts"
+);
 
 interface CliOptions {
   filter?: string;
@@ -50,6 +49,11 @@ const parseArgs = (argv: string[]): CliOptions => {
 
   return options;
 };
+
+interface OfficialRunnerPayload {
+  results: Array<{ id?: string; status?: string }>;
+  summary: { passed: number; failed: number; total: number };
+}
 
 const buildPackage = async (): Promise<void> => {
   const proc = Bun.spawn({
@@ -113,44 +117,67 @@ const summarizeScenarioResults = (parsed: {
   return `${lines.join("\n")}\n`;
 };
 
+const runOfficialCli = async (params: {
+  baseUrl: string;
+  filter?: string;
+  model: string;
+}): Promise<OfficialRunnerPayload> => {
+  const cmd = [
+    "bun",
+    officialCliEntrypoint,
+    "--base-url",
+    params.baseUrl,
+    "--api-key",
+    "test-key",
+    "--auth-header",
+    "Authorization",
+    "--model",
+    params.model,
+    "--json",
+  ];
+
+  if (params.filter) {
+    cmd.push("--filter", params.filter);
+  }
+
+  const proc = Bun.spawn({
+    cmd,
+    cwd: packageRoot,
+    stderr: "inherit",
+    stdout: "pipe",
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const exitCode = await proc.exited;
+  const payload = JSON.parse(stdout) as OfficialRunnerPayload;
+
+  if (exitCode !== 0) {
+    process.stdout.write(summarizeScenarioResults(payload));
+    process.exit(exitCode);
+  }
+
+  return payload;
+};
+
 const options = parseArgs(process.argv.slice(2));
 await buildPackage();
 const server = await startFixtureServer();
-let exitCode = 0;
 
 try {
-  const config: TestConfig = {
-    apiKey: "test-key",
-    authHeaderName: "Authorization",
+  const officialRunnerOptions: {
+    baseUrl: string;
+    filter?: string;
+    model: string;
+  } = {
     baseUrl: server.baseUrl,
     model: options.model ?? "gpt-4.1-mini",
-    useBearerPrefix: true,
   };
 
-  const scenarioResults: TestResult[] = [];
-  await runAllTests(config, (result) => {
-    if (result.status === "running") {
-      return;
-    }
+  if (options.filter) {
+    officialRunnerOptions.filter = options.filter;
+  }
 
-    if (options.filter) {
-      const allowedIds = options.filter.split(",").map((value) => value.trim());
-      if (!allowedIds.includes(result.id)) {
-        return;
-      }
-    }
-
-    scenarioResults.push(result);
-  });
-
-  const summary = {
-    failed: scenarioResults.filter((result) => result.status === "failed")
-      .length,
-    passed: scenarioResults.filter((result) => result.status === "passed")
-      .length,
-    total: scenarioResults.length,
-  };
-  const payload = { results: scenarioResults, summary };
+  const payload = await runOfficialCli(officialRunnerOptions);
 
   if (options.jsonOut) {
     await Bun.write(
@@ -160,9 +187,6 @@ try {
   }
 
   process.stdout.write(summarizeScenarioResults(payload));
-  exitCode = summary.failed > 0 ? 1 : 0;
 } finally {
   await server.stop();
 }
-
-process.exit(exitCode);

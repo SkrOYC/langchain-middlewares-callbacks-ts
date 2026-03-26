@@ -1,6 +1,7 @@
 # Product Requirements Document
 
 ## 0. Version History & Changelog
+- v2.1.0 - Upgraded the compliance target from official-runner proof alone to full pinned-spec conformance with explicit proof coverage.
 - v2.0.2 - Clarified the streaming-family truthfulness boundary so downstream stages cannot silently narrow ORC-003.
 - v2.0.1 - Restored brownfield continuity, product-risk framing, and release-quality detail while preserving the full-compliance direction.
 - v2.0.0 - Re-scoped the adapter from a spec-minimal MVP to a full current OpenResponses compliance target.
@@ -14,8 +15,10 @@
 
 ### Release-Quality Thresholds
 - A built package must pass the official OpenResponses CLI compliance runner against a live `/v1/responses` server on the certified runtimes.
+- A built package must also have executable proof for every normative pinned-spec requirement not exercised by the official upstream runner.
 - Non-streaming and streaming outputs must validate against the current published OpenResponses contract snapshot rather than a local subset schema.
 - Local regression tests are supporting evidence only; they are not sufficient release proof by themselves.
+- The official runner is a necessary release gate, but it is not sufficient proof of full pinned-spec conformance by itself.
 
 ### Product Posture
 - Contract truth beats convenience.
@@ -42,7 +45,8 @@
 - **Role:** Solo Builder integrating an existing LangChain-based agent into a Responses-style ecosystem.
 - **Context:** Already has a functioning agent loop and wants standards-compliant interoperability without rewriting the agent itself.
 - **Goals:** Mount the package quickly, preserve runtime behavior, pass the official compliance workflow, and ship a trustworthy API surface.
-- **Frictions:** Contract drift between local tests and official validation, complex streaming semantics, continuation replay correctness, and required response fields that do not naturally fall out of the runtime.
+- **Goals:** Mount the package quickly, preserve runtime behavior, pass the official compliance workflow, and ship a trustworthy API surface whose broader pinned-spec claims are actually proven.
+- **Frictions:** Contract drift between local tests and official validation, complex streaming semantics, continuation replay correctness, required response fields that do not naturally fall out of the runtime, and the risk of overclaiming full compliance from a narrower upstream acceptance suite.
 
 ### 3.2 Secondary Actor — SDK Client
 - **Role:** SDK Client consuming the exposed Open Responses Surface.
@@ -105,6 +109,12 @@
 - **Capability:** The builder must be able to validate the package against the official OpenResponses compliance runner using a live built package rather than only package-local test doubles.
 - **Rationale:** Local-only validation has already proven insufficient as a release signal.
 
+### Epic: Full Pinned-Spec Conformance Proof
+- **Priority:** P0
+- **Capability ID:** ORC-011
+- **Capability:** The maintainer must be able to trace every normative requirement in the pinned OpenResponses spec to executable proof, whether through the upstream official runner, package-owned black-box conformance tests, or both.
+- **Rationale:** The official upstream acceptance suite is necessary but narrower than the full normative spec, so full compliance claims need explicit coverage beyond the upstream baseline.
+
 ### Epic: Upstream Contract Drift Management
 - **Priority:** P1
 - **Capability ID:** ORC-009
@@ -122,13 +132,16 @@
 - **Reliability:** The built package must produce deterministic public behavior across non-streaming, streaming, continuation, and tool-calling paths on the certified runtimes. Failures before stream start must be reported predictably; failures after stream start must resolve within the contract's terminal semantics.
 - **Security & Privacy:** Authentication remains host-controlled. The package must not leak hidden execution state, raw stack traces, or private request data into the public protocol. Continuation data must only cross an explicit builder-controlled persistence boundary.
 - **Operability:** Maintainers must be able to pin, review, and revalidate the current OpenResponses contract snapshot. Structured logs and compliance artifacts must support debugging of black-box contract failures.
+- **Operability:** Maintainers must be able to maintain a requirement-to-proof map for the pinned spec so compliance claims remain auditable after upstream refreshes.
 - **Domain-specific Constraints:** The package must stay library-shaped, preserve an existing LangChain agent runtime rather than replacing it, and avoid provider-native chunk formats as the public API.
 - **Accessibility & Adoption:** The integration surface must remain understandable to a solo builder without requiring deep protocol archaeology. Documentation and examples must optimize for fast adoption despite the broader contract target.
 - **Maintainability:** Full compliance must not dissolve the package’s core boundary between execution control, semantic derivation, and protocol publication. The product still fails if compliance is achieved only through brittle, opaque glue.
 - **Interoperability:** The package must behave predictably with generic Responses-style SDK clients and the official OpenResponses validation workflow, not just with the package’s own regression harness.
+- **Interoperability:** The package must behave predictably with generic Responses-style SDK clients and the official OpenResponses validation workflow, not just with the package’s own regression harness or only the current upstream scenario slice.
 
 ### Prohibited Patterns
 - Claiming compliance based only on local subset tests
+- Claiming full pinned-spec compliance based only on an official-runner green result
 - Emitting partial terminal response resources
 - Replaying final answers as synthetic live deltas
 - Hiding continuation inside implicit runtime memory only

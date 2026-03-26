@@ -1,4 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { createPriorRecord } from "@/helpers/records.ts";
+import {
+  collectStream,
+  createBaseRequest,
+  createCallbackDrivenAgent,
+  simulateTextStream,
+  simulateToolCallStream,
+} from "@/helpers/streaming-fixtures.ts";
 import {
   buildOpenResponsesApp as buildOpenResponsesServerApp,
   createOpenResponsesAdapter as createAdapter,
@@ -7,14 +15,6 @@ import {
   createFakeAgent,
   createInMemoryPreviousResponseStore,
 } from "@/testing/index.js";
-import { createPriorRecord } from "./helpers/records.ts";
-import {
-  collectStream,
-  createBaseRequest,
-  createCallbackDrivenAgent,
-  simulateTextStream,
-  simulateToolCallStream,
-} from "./helpers/streaming-fixtures.ts";
 
 const weatherTool = {
   type: "function" as const,

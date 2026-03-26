@@ -5,6 +5,10 @@ const baselineFiles = [
   "contracts/openresponses/openapi.json",
   "contracts/openresponses/SNAPSHOT.md",
   "contracts/openresponses/compliance-runner.md",
+  "contracts/openresponses/official/bin/compliance-test.ts",
+  "contracts/openresponses/official/src/lib/compliance-tests.ts",
+  "contracts/openresponses/official/src/lib/sse-parser.ts",
+  "contracts/openresponses/official/public/openapi/openapi.json",
   "contracts/openresponses/compliance-runner/compliance-test.ts",
   "contracts/openresponses/compliance-runner/compliance-tests.ts",
   "contracts/openresponses/compliance-runner/sse-parser.ts",
@@ -33,5 +37,6 @@ describe("Epic A contract baseline", () => {
     expect(snapshotDoc).toContain(
       "contracts/openresponses/compliance-runner/**"
     );
+    expect(snapshotDoc).toContain("contracts/openresponses/official/**");
   });
 });
