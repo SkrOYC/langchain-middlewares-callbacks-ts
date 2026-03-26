@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  buildOpenResponsesApp,
-  createOpenResponsesAdapter,
+  buildOpenResponsesApp as buildOpenResponsesServerApp,
+  createOpenResponsesAdapter as createAdapter,
 } from "@/server/index.js";
 import {
   createFakeAgent,
@@ -32,7 +32,7 @@ const weatherTool = {
 
 describe("local compliance suite", () => {
   test("basic text response returns a response resource", async () => {
-    const app = await buildOpenResponsesApp({
+    const app = await buildOpenResponsesServerApp({
       agent: createFakeAgent(),
     });
 
@@ -57,7 +57,7 @@ describe("local compliance suite", () => {
   });
 
   test("streaming response returns SSE events and literal [DONE]", async () => {
-    const adapter = createOpenResponsesAdapter({
+    const adapter = createAdapter({
       agent: createCallbackDrivenAgent({ onStream: simulateTextStream }),
     });
 
@@ -66,14 +66,21 @@ describe("local compliance suite", () => {
     );
 
     expect(events[0]).toMatchObject({
-      type: "response.in_progress",
+      type: "response.created",
     });
+    expect(
+      events.some((event) => {
+        return (
+          typeof event !== "string" && event.type === "response.in_progress"
+        );
+      })
+    ).toBe(true);
     expect(events.at(-1)).toBe("[DONE]");
   });
 
   test("system prompt is preserved in the runtime input", async () => {
     const agent = createFakeAgent();
-    const app = await buildOpenResponsesApp({ agent });
+    const app = await buildOpenResponsesServerApp({ agent });
 
     await app.request("/v1/responses", {
       method: "POST",
@@ -107,7 +114,7 @@ describe("local compliance suite", () => {
   });
 
   test("tool calling produces function-call stream items", async () => {
-    const adapter = createOpenResponsesAdapter({
+    const adapter = createAdapter({
       agent: createCallbackDrivenAgent({ onStream: simulateToolCallStream }),
       toolPolicySupport: "middleware",
     });
@@ -132,7 +139,7 @@ describe("local compliance suite", () => {
 
   test("image input remains visible to the runtime", async () => {
     const agent = createFakeAgent();
-    const app = await buildOpenResponsesApp({ agent });
+    const app = await buildOpenResponsesServerApp({ agent });
 
     await app.request("/v1/responses", {
       method: "POST",
@@ -179,7 +186,7 @@ describe("local compliance suite", () => {
     await previousResponseStore.save(createPriorRecord());
 
     const agent = createFakeAgent();
-    const app = await buildOpenResponsesApp({
+    const app = await buildOpenResponsesServerApp({
       agent,
       previousResponseStore,
     });

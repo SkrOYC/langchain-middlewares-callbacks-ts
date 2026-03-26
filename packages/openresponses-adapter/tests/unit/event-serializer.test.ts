@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { InternalSemanticEvent } from "@/core/events.js";
-import type { OpenResponsesEvent } from "@/core/internal-schemas.js";
+import type { OpenResponsesEvent } from "@/core/schemas.js";
 import {
   createEventSerializer,
   createSequenceGenerator,
@@ -16,6 +16,34 @@ import {
   createDeterministicClock,
   createSequentialIdGenerator,
 } from "@/testing/index.js";
+
+const createRequestSnapshot = () => ({
+  model: "test-model",
+  input: [],
+  previous_response_id: null,
+  include: [],
+  tools: [],
+  tool_choice: "auto" as const,
+  parallel_tool_calls: true,
+  instructions: null,
+  store: false,
+  background: false,
+  truncation: "disabled" as const,
+  text: { format: { type: "text" as const }, verbosity: "medium" as const },
+  reasoning: null,
+  top_p: 1,
+  presence_penalty: 0,
+  frequency_penalty: 0,
+  top_logprobs: 0,
+  temperature: 1,
+  max_output_tokens: null,
+  max_tool_calls: null,
+  service_tier: "default" as const,
+  safety_identifier: null,
+  prompt_cache_key: null,
+  metadata: {},
+  stream_options: null,
+});
 
 const createContext = (
   overrides: Partial<SerializerContext> = {}
@@ -35,6 +63,7 @@ const createContext = (
       createdAt: 1000,
       clock: createDeterministicClock(2000),
     }),
+    request: createRequestSnapshot(),
     inProgressEmitted: { value: false },
     itemOutputIndices: new Map(),
     ...overrides,
@@ -77,7 +106,7 @@ describe("serializeInternalEvent", () => {
       sequence_number: 1,
       response: { id: "resp-1", object: "response", status: "in_progress" },
     });
-    expect(context.inProgressEmitted.value).toBe(true);
+    expect(context.inProgressEmitted?.value).toBe(true);
     expect(context.lifecycle.getStatus()).toBe("in_progress");
   });
 
@@ -417,11 +446,15 @@ describe("serializeInternalEvent", () => {
     );
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: "response.failed",
-      response: { id: "resp-1", object: "response", status: "failed" },
-      error: { type: "model_error", message: "boom" },
-    });
+    expect(events[0]?.type).toBe("response.failed");
+    if (events[0]?.type === "response.failed") {
+      expect(events[0].response.id).toBe("resp-1");
+      expect(events[0].response.status).toBe("failed");
+      expect(events[0].response.error).toMatchObject({
+        type: "model_error",
+        message: "boom",
+      });
+    }
   });
 
   test("run.failed from a sub-run does not fail the response lifecycle", () => {
@@ -527,12 +560,12 @@ describe("createEventSerializer", () => {
 
     const events = await collectEvents(serializer);
 
-    // Expected: in_progress, item.added, part.added, delta, delta,
-    //   text.done, part.done, item.done, completed, [DONE]
-    expect(events).toHaveLength(10);
+    expect(events).toHaveLength(12);
 
     const types = events.map((e) => (typeof e === "string" ? e : e.type));
     expect(types).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.content_part.added",
@@ -545,11 +578,11 @@ describe("createEventSerializer", () => {
       "[DONE]",
     ]);
 
-    // Verify sequence numbers are 1..9
+    // Verify sequence numbers are 1..11
     const seqNums = events
       .filter((e): e is OpenResponsesEvent => typeof e !== "string")
       .map((e) => e.sequence_number);
-    expect(seqNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(seqNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 
   test("queue failure emits response.failed + [DONE]", async () => {
@@ -578,6 +611,8 @@ describe("createEventSerializer", () => {
 
     const types = events.map((e) => (typeof e === "string" ? e : e.type));
     expect(types).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.content_part.added",
@@ -618,6 +653,8 @@ describe("createEventSerializer", () => {
 
     const types = events.map((e) => (typeof e === "string" ? e : e.type));
     expect(types).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.content_part.added",
@@ -633,7 +670,39 @@ describe("formatSSEFrame", () => {
     const event: OpenResponsesEvent = {
       type: "response.in_progress",
       sequence_number: 1,
-      response: { id: "resp-1", object: "response", status: "in_progress" },
+      response: {
+        id: "resp-1",
+        object: "response",
+        created_at: 1,
+        completed_at: null,
+        status: "in_progress",
+        incomplete_details: null,
+        model: "test-model",
+        previous_response_id: null,
+        instructions: null,
+        output: [],
+        error: null,
+        tools: [],
+        tool_choice: "auto",
+        truncation: "disabled",
+        parallel_tool_calls: true,
+        text: { format: { type: "text" }, verbosity: "medium" },
+        top_p: 1,
+        presence_penalty: 0,
+        frequency_penalty: 0,
+        top_logprobs: 0,
+        temperature: 1,
+        reasoning: null,
+        usage: null,
+        max_output_tokens: null,
+        max_tool_calls: null,
+        store: false,
+        background: false,
+        service_tier: "default",
+        metadata: {},
+        safety_identifier: null,
+        prompt_cache_key: null,
+      },
     };
 
     const frame = formatSSEFrame(event);

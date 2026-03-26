@@ -21,8 +21,9 @@ import type {
   OpenResponsesRequestSnapshot,
   PreviousResponseStore,
 } from "@/core/index.js";
-import type { InputItem, OpenResponsesEvent } from "@/core/internal-schemas.js";
 import type {
+  InputItem,
+  OpenResponsesEvent,
   OpenResponsesRequest,
   OpenResponsesResponse,
 } from "@/core/schemas.js";
@@ -513,6 +514,7 @@ export function createOpenResponsesAdapter(
         queue,
         accumulator,
         lifecycle,
+        request: normalizedRequest.requestSnapshot,
         responseId,
       });
 

@@ -12,9 +12,9 @@ import type {
   FunctionTool,
   InputItem,
   OpenResponsesEvent,
+  OpenResponsesResponse,
   ToolChoice,
-} from "./internal-schemas.js";
-import type { OpenResponsesResponse } from "./schemas.js";
+} from "./schemas.js";
 
 // =============================================================================
 // Persistence Types

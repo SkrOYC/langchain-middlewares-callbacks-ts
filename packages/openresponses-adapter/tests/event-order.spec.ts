@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { OpenResponsesEvent } from "@/core/internal-schemas.js";
+import type { OpenResponsesEvent } from "@/core/schemas.js";
 import { createOpenResponsesAdapter } from "@/server/index.js";
 import {
   createDeterministicClock,
@@ -33,6 +33,8 @@ describe("event order regression", () => {
     expect(
       events.map((event) => (typeof event === "string" ? event : event.type))
     ).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.content_part.added",
@@ -51,7 +53,7 @@ describe("event order regression", () => {
           (event): event is OpenResponsesEvent => typeof event !== "string"
         )
         .map((event) => event.sequence_number)
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 
   test("never emits response.completed after a failed stream", async () => {

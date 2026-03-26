@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { OpenResponsesEvent } from "@/core/internal-schemas.js";
+import type { OpenResponsesEvent } from "@/core/schemas.js";
 import type {
   LangChainMessageLike,
   OpenResponsesCompatibleAgent,
@@ -248,16 +248,14 @@ const collectStream = async (
 const extractResponseId = (
   events: (OpenResponsesEvent | "[DONE]")[]
 ): string => {
-  const firstEvent = events[0];
-  if (
-    !firstEvent ||
-    typeof firstEvent === "string" ||
-    firstEvent.type !== "response.in_progress"
-  ) {
-    throw new Error("Expected first stream event to be response.in_progress");
+  const inProgressEvent = events.find((event) => {
+    return typeof event !== "string" && event.type === "response.in_progress";
+  });
+  if (!inProgressEvent || typeof inProgressEvent === "string") {
+    throw new Error("Expected stream to emit response.in_progress");
   }
 
-  return firstEvent.response.id;
+  return inProgressEvent.response.id;
 };
 
 const createDelayedStore = (params: {
@@ -383,6 +381,8 @@ describe("adapter.stream()", () => {
 
     const types = events.map((e) => (typeof e === "string" ? e : e.type));
     expect(types).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.content_part.added",
@@ -395,14 +395,16 @@ describe("adapter.stream()", () => {
       "[DONE]",
     ]);
 
-    // Verify sequence numbers are strictly incrementing 1..9
+    // Verify sequence numbers are strictly incrementing 1..11
     const seqNums = events
       .filter((e): e is OpenResponsesEvent => typeof e !== "string")
       .map((e) => e.sequence_number);
-    expect(seqNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(seqNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 
     // Verify response ID is consistent
-    const inProgressEvent = events[0] as OpenResponsesEvent & {
+    const inProgressEvent = events.find((event) => {
+      return typeof event !== "string" && event.type === "response.in_progress";
+    }) as OpenResponsesEvent & {
       response: { id: string };
     };
     expect(inProgressEvent.response.id).toBe("resp-1");
@@ -521,7 +523,12 @@ describe("adapter.stream()", () => {
 
     expect(
       events.map((event) => (typeof event === "string" ? event : event.type))
-    ).toEqual(["response.failed", "[DONE]"]);
+    ).toEqual([
+      "response.created",
+      "response.queued",
+      "response.failed",
+      "[DONE]",
+    ]);
   });
 
   test("streaming completion persists a response record for continuation", async () => {
@@ -657,6 +664,8 @@ describe("adapter.stream()", () => {
     );
 
     expect(types).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.content_part.added",
@@ -666,6 +675,8 @@ describe("adapter.stream()", () => {
       "response.output_item.done",
       "response.output_item.added",
       "response.function_call_arguments.done",
+      "response.output_item.done",
+      "response.output_item.added",
       "response.output_item.done",
       "response.completed",
       "[DONE]",

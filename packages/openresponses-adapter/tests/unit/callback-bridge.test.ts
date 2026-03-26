@@ -102,7 +102,7 @@ describe("OpenResponsesCallbackBridge", () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
       emitter,
-      generateId: createSequentialIdGenerator(["fc-1"]),
+      generateId: createSequentialIdGenerator(["fc-1", "fc-out-1"]),
     });
 
     const actionWithDelta: AgentActionWithBridgeFields = {
@@ -158,6 +158,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "call-1",
       },
       { type: "function_call.completed", itemId: "fc-1" },
+      {
+        type: "function_call_output.completed",
+        itemId: "fc-out-1",
+        callId: "call-1",
+        output: '{"temperature":"55F"}',
+      },
       { type: "run.completed", runId: "agent-run-1" },
     ]);
   });
@@ -166,7 +172,7 @@ describe("OpenResponsesCallbackBridge", () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
       emitter,
-      generateId: createSequentialIdGenerator(["fc-2"]),
+      generateId: createSequentialIdGenerator(["fc-2", "fc-out-2"]),
     });
 
     const actionWithoutDeltas: AgentActionWithBridgeFields = {
@@ -199,6 +205,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "call-2",
       },
       { type: "function_call.completed", itemId: "fc-2" },
+      {
+        type: "function_call_output.completed",
+        itemId: "fc-out-2",
+        callId: "call-2",
+        output: "ok",
+      },
     ]);
 
     expect(
@@ -210,7 +222,12 @@ describe("OpenResponsesCallbackBridge", () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
       emitter,
-      generateId: createSequentialIdGenerator(["fc-1", "fc-2"]),
+      generateId: createSequentialIdGenerator([
+        "fc-1",
+        "fc-2",
+        "fc-out-2",
+        "fc-out-1",
+      ]),
     });
 
     const firstAction: AgentActionWithBridgeFields = {
@@ -293,6 +310,12 @@ describe("OpenResponsesCallbackBridge", () => {
       },
       { type: "function_call.completed", itemId: "fc-2" },
       {
+        type: "function_call_output.completed",
+        itemId: "fc-out-2",
+        callId: "call-2",
+        output: '{"now":"10:00"}',
+      },
+      {
         type: "tool.started",
         runId: "tool-run-1",
         toolName: "get_weather",
@@ -305,6 +328,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "call-1",
       },
       { type: "function_call.completed", itemId: "fc-1" },
+      {
+        type: "function_call_output.completed",
+        itemId: "fc-out-1",
+        callId: "call-1",
+        output: '{"temperature":"55F"}',
+      },
     ]);
   });
 
@@ -394,7 +423,7 @@ describe("OpenResponsesCallbackBridge", () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
       emitter,
-      generateId: createSequentialIdGenerator(["fc-3"]),
+      generateId: createSequentialIdGenerator(["fc-3", "fc-out-3"]),
     });
 
     const actionWithoutCallId: AgentAction = {
@@ -443,6 +472,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "real-call-5",
       },
       { type: "function_call.completed", itemId: "fc-3" },
+      {
+        type: "function_call_output.completed",
+        itemId: "fc-out-3",
+        callId: "real-call-5",
+        output: "ok",
+      },
     ]);
   });
 
@@ -450,7 +485,12 @@ describe("OpenResponsesCallbackBridge", () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
       emitter,
-      generateId: createSequentialIdGenerator(["fc-4", "fc-5"]),
+      generateId: createSequentialIdGenerator([
+        "fc-4",
+        "fc-5",
+        "fc-out-5",
+        "fc-out-4",
+      ]),
     });
 
     const firstAction: AgentAction = {
@@ -526,6 +566,12 @@ describe("OpenResponsesCallbackBridge", () => {
       },
       { type: "function_call.completed", itemId: "fc-5" },
       {
+        type: "function_call_output.completed",
+        itemId: "fc-out-5",
+        callId: "fc-5",
+        output: '{"now":"10:00"}',
+      },
+      {
         type: "function_call.started",
         itemId: "fc-4",
         name: "get_weather",
@@ -545,6 +591,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "fc-4",
       },
       { type: "function_call.completed", itemId: "fc-4" },
+      {
+        type: "function_call_output.completed",
+        itemId: "fc-out-4",
+        callId: "fc-4",
+        output: '{"temperature":"55F"}',
+      },
     ]);
   });
 
@@ -552,7 +604,10 @@ describe("OpenResponsesCallbackBridge", () => {
     const { events, emitter } = createEmitter();
     const bridge = createOpenResponsesCallbackBridge({
       emitter,
-      generateId: createSequentialIdGenerator(["fc-tool-only"]),
+      generateId: createSequentialIdGenerator([
+        "fc-tool-only",
+        "fc-tool-only-out",
+      ]),
     });
 
     const action: AgentActionWithBridgeFields = {
@@ -615,6 +670,12 @@ describe("OpenResponsesCallbackBridge", () => {
         callId: "call-tool-only",
       },
       { type: "function_call.completed", itemId: "fc-tool-only" },
+      {
+        type: "function_call_output.completed",
+        itemId: "fc-tool-only-out",
+        callId: "call-tool-only",
+        output: "ok",
+      },
       { type: "run.completed", runId: "tool-only-run" },
     ]);
   });
@@ -865,5 +926,66 @@ describe("OpenResponsesCallbackBridge", () => {
       type: "run.failed",
       runId: "bounded-run-0",
     });
+  });
+
+  test("keeps restarted terminal runs suppressing duplicates after retention eviction", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["msg-restarted"]),
+    });
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-restarted"
+    );
+    await callHandler(
+      bridge.handleLLMError,
+      new Error("first failure"),
+      "run-restarted"
+    );
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-restarted"
+    );
+    await callHandler(
+      bridge.handleLLMError,
+      new Error("second failure"),
+      "run-restarted"
+    );
+
+    for (let index = 0; index < 255; index++) {
+      const runId = `retained-run-${index}`;
+      await callHandler(
+        bridge.handleChatModelStart,
+        serializedFixture,
+        [],
+        runId
+      );
+      await callHandler(
+        bridge.handleLLMError,
+        new Error(`failure-${index}`),
+        runId
+      );
+    }
+
+    const eventsBeforeDuplicateFailure = events.length;
+    await callHandler(
+      bridge.handleLLMError,
+      new Error("should stay suppressed"),
+      "run-restarted"
+    );
+
+    expect(events).toHaveLength(eventsBeforeDuplicateFailure);
+    expect(
+      events.filter((event) => {
+        return event.type === "run.failed" && event.runId === "run-restarted";
+      })
+    ).toHaveLength(2);
   });
 });

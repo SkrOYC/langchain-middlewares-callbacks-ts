@@ -1,5 +1,5 @@
 import { invalidRequest } from "@/core/errors.js";
-import type { ErrorObject } from "@/core/internal-schemas.js";
+import type { ErrorObject } from "@/core/schemas.js";
 
 export type ResponseLifecycleStatus =
   | "queued"
