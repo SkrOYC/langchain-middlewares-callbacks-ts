@@ -64,7 +64,9 @@ export const materializeResponseSnapshot = (
     status: params.status,
     incomplete_details:
       params.status === "incomplete"
-        ? (params.incompleteDetails ?? { reason: "stream_ended_before_terminal_state" })
+        ? (params.incompleteDetails ?? {
+            reason: "stream_ended_before_terminal_state",
+          })
         : null,
     model: params.request.model,
     previous_response_id: params.request.previous_response_id,

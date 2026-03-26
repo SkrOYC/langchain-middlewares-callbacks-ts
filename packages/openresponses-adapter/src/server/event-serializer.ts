@@ -128,7 +128,10 @@ const getOutputIndexOrThrow = (
   return outputIndex;
 };
 
-const nextOutputIndex = (context: SerializerContext, itemId: string): number => {
+const nextOutputIndex = (
+  context: SerializerContext,
+  itemId: string
+): number => {
   const outputIndex = context.itemOutputIndices.size;
   context.itemOutputIndices.set(itemId, outputIndex);
   return outputIndex;
@@ -185,7 +188,9 @@ export const serializeInternalEvent = (
     }
 
     case "message.started": {
-      const item = context.accumulator.startTextMessageItem({ id: event.itemId });
+      const item = context.accumulator.startTextMessageItem({
+        id: event.itemId,
+      });
       const outputIndex = nextOutputIndex(context, event.itemId);
       const events: OpenResponsesEvent[] = [];
       const inProgressEvent = ensureInProgressEvent(context);
@@ -206,7 +211,9 @@ export const serializeInternalEvent = (
           item_id: event.itemId,
           output_index: outputIndex,
           content_index: 0,
-          part: item.content[0] as OpenResponsesEvent extends never ? never : any,
+          part: item.content[0] as OpenResponsesEvent extends never
+            ? never
+            : any,
         }
       );
 
@@ -214,7 +221,11 @@ export const serializeInternalEvent = (
     }
 
     case "text.delta": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       context.accumulator.appendOutputTextDelta(event.itemId, event.delta);
       return [
         {
@@ -230,7 +241,11 @@ export const serializeInternalEvent = (
     }
 
     case "text.completed": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       const finalizedItem = context.accumulator.finalizeMessageItem(
         event.itemId,
         "completed"
@@ -271,7 +286,9 @@ export const serializeInternalEvent = (
     }
 
     case "refusal.started": {
-      const item = context.accumulator.startRefusalMessageItem({ id: event.itemId });
+      const item = context.accumulator.startRefusalMessageItem({
+        id: event.itemId,
+      });
       const outputIndex = nextOutputIndex(context, event.itemId);
       const events: OpenResponsesEvent[] = [];
       const inProgressEvent = ensureInProgressEvent(context);
@@ -292,7 +309,9 @@ export const serializeInternalEvent = (
           item_id: event.itemId,
           output_index: outputIndex,
           content_index: 0,
-          part: item.content[0] as OpenResponsesEvent extends never ? never : any,
+          part: item.content[0] as OpenResponsesEvent extends never
+            ? never
+            : any,
         }
       );
 
@@ -300,7 +319,11 @@ export const serializeInternalEvent = (
     }
 
     case "refusal.delta": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       context.accumulator.appendRefusalDelta(event.itemId, event.delta);
       return [
         {
@@ -315,7 +338,11 @@ export const serializeInternalEvent = (
     }
 
     case "refusal.completed": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       const finalizedItem = context.accumulator.finalizeMessageItem(
         event.itemId,
         "completed"
@@ -384,7 +411,11 @@ export const serializeInternalEvent = (
     }
 
     case "reasoning.delta": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       context.accumulator.appendReasoningDelta(event.itemId, event.delta);
       return [
         {
@@ -399,11 +430,17 @@ export const serializeInternalEvent = (
     }
 
     case "reasoning.completed": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       for (const summaryText of event.summaryTexts ?? []) {
         context.accumulator.appendReasoningSummary(event.itemId, summaryText);
       }
-      const finalizedItem = context.accumulator.finalizeReasoningItem(event.itemId);
+      const finalizedItem = context.accumulator.finalizeReasoningItem(
+        event.itemId
+      );
       const reasoningText = finalizedItem.content?.[0];
       if (!reasoningText || reasoningText.type !== "reasoning_text") {
         throw new Error(
@@ -438,8 +475,15 @@ export const serializeInternalEvent = (
     }
 
     case "output_text.annotation.added": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
-      context.accumulator.addOutputTextAnnotation(event.itemId, event.annotation);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
+      context.accumulator.addOutputTextAnnotation(
+        event.itemId,
+        event.annotation
+      );
       const item = context.accumulator.snapshot().find((candidate) => {
         return candidate.type === "message" && candidate.id === event.itemId;
       });
@@ -470,24 +514,31 @@ export const serializeInternalEvent = (
         id: event.itemId,
         name: event.name,
         callId: event.callId,
-        ...(event.arguments !== undefined ? { arguments: event.arguments } : {}),
+        ...(event.arguments !== undefined
+          ? { arguments: event.arguments }
+          : {}),
       });
       const outputIndex = nextOutputIndex(context, event.itemId);
-      events.push(
-        {
-          type: "response.output_item.added",
-          sequence_number: context.sequence.next(),
-          output_index: outputIndex,
-          item,
-        }
-      );
+      events.push({
+        type: "response.output_item.added",
+        sequence_number: context.sequence.next(),
+        output_index: outputIndex,
+        item,
+      });
 
       return events;
     }
 
     case "function_call_arguments.delta": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
-      context.accumulator.appendFunctionCallArgumentsDelta(event.itemId, event.delta);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
+      context.accumulator.appendFunctionCallArgumentsDelta(
+        event.itemId,
+        event.delta
+      );
       return [
         {
           type: "response.function_call_arguments.delta",
@@ -500,7 +551,11 @@ export const serializeInternalEvent = (
     }
 
     case "function_call.completed": {
-      const outputIndex = getOutputIndexOrThrow(context, event.itemId, event.type);
+      const outputIndex = getOutputIndexOrThrow(
+        context,
+        event.itemId,
+        event.type
+      );
       const finalizedItem = context.accumulator.finalizeFunctionCallItem(
         event.itemId,
         "completed"

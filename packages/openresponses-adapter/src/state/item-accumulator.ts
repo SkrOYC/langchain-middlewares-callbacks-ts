@@ -44,7 +44,10 @@ export interface CanonicalItemAccumulator {
     delta?: string
   ): void;
   appendRefusalDelta(itemId: string, delta: string): void;
-  addOutputTextAnnotation(itemId: string, annotation: Record<string, unknown>): void;
+  addOutputTextAnnotation(
+    itemId: string,
+    annotation: Record<string, unknown>
+  ): void;
   finalizeOutputTextPart(
     itemId: string,
     contentIndex?: number
@@ -150,7 +153,9 @@ const duplicateTerminalError = (target: string): never => {
   throw invalidRequest(`${target} already received a terminal event`);
 };
 
-const asOutputTextPart = (part: MutableOutputTextPart): CanonicalOutputTextPart => {
+const asOutputTextPart = (
+  part: MutableOutputTextPart
+): CanonicalOutputTextPart => {
   return {
     type: "output_text",
     text: part.text,
@@ -169,7 +174,9 @@ const asRefusalPart = (part: MutableRefusalPart): CanonicalRefusalPart => {
 };
 
 const asMessagePart = (part: MutableMessagePart): MessagePart => {
-  return part.kind === "output_text" ? asOutputTextPart(part) : asRefusalPart(part);
+  return part.kind === "output_text"
+    ? asOutputTextPart(part)
+    : asRefusalPart(part);
 };
 
 const asMessageItem = (item: MutableMessageItem): CanonicalMessageItem => {
@@ -202,7 +209,9 @@ const asFunctionCallOutputItem = (
     id: item.id,
     type: "function_call_output",
     call_id: item.callId,
-    output: structuredClone(item.output) as CanonicalFunctionCallOutputItem["output"],
+    output: structuredClone(
+      item.output
+    ) as CanonicalFunctionCallOutputItem["output"],
     status: item.status,
   };
 };
@@ -316,7 +325,9 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
     }
 
     const nextDelta =
-      typeof contentIndexOrDelta === "string" ? contentIndexOrDelta : (delta ?? "");
+      typeof contentIndexOrDelta === "string"
+        ? contentIndexOrDelta
+        : (delta ?? "");
     part.text += nextDelta;
   }
 
@@ -329,7 +340,10 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
     part.refusal += delta;
   }
 
-  addOutputTextAnnotation(itemId: string, annotation: Record<string, unknown>): void {
+  addOutputTextAnnotation(
+    itemId: string,
+    annotation: Record<string, unknown>
+  ): void {
     const part = this.#getOutputTextPart(itemId);
     part.annotations.push(structuredClone(annotation));
   }
@@ -552,7 +566,9 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
   #getReasoningItem(itemId: string): MutableReasoningItem {
     const item = this.#getItem(itemId);
     if (item.kind !== "reasoning") {
-      throw invalidRequest(`Canonical item '${itemId}' is not a reasoning item`);
+      throw invalidRequest(
+        `Canonical item '${itemId}' is not a reasoning item`
+      );
     }
 
     return item;

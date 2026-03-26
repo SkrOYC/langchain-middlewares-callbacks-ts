@@ -154,7 +154,8 @@ const streamOpenResponses = <E extends Env = Env>(params: {
         }
 
         if (chunk.type === "response.failed") {
-          terminalErrorCode = chunk.response.error?.code ?? "agent_execution_failed";
+          terminalErrorCode =
+            chunk.response.error?.code ?? "agent_execution_failed";
         }
 
         await stream.writeSSE(formatSSEFrame(chunk));

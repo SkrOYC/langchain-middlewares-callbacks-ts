@@ -880,14 +880,6 @@ const inputItemToMessage = (item: InputItem): LangChainMessageLike => {
     };
   }
 
-  if (item.type !== "function_call_output") {
-    return {
-      type: "ai",
-      role: "assistant",
-      content: [],
-    };
-  }
-
   return {
     type: "tool",
     role: "tool",

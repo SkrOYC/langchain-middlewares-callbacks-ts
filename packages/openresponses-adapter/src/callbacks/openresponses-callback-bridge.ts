@@ -313,7 +313,11 @@ const getChunkLike = (...candidates: unknown[]): RecordValue | undefined => {
       return wrappedChunk;
     }
 
-    if ("message" in candidate || "content" in candidate || "contentBlocks" in candidate) {
+    if (
+      "message" in candidate ||
+      "content" in candidate ||
+      "contentBlocks" in candidate
+    ) {
       return candidate;
     }
   }
@@ -554,7 +558,10 @@ export const createOpenResponsesCallbackBridge = (
 
     const refusalItemId = activeRefusalItems.get(runId);
     if (refusalItemId) {
-      options.emitter.emit({ type: "refusal.completed", itemId: refusalItemId });
+      options.emitter.emit({
+        type: "refusal.completed",
+        itemId: refusalItemId,
+      });
       activeRefusalItems.delete(runId);
     }
 
@@ -699,11 +706,9 @@ export const createOpenResponsesCallbackBridge = (
       }
     }
 
-    return (
-      pendingFunctionCalls.find((pendingFunctionCall) => {
-        return pendingFunctionCall.toolName === toolName;
-      }) ?? pendingFunctionCalls[0]
-    );
+    return pendingFunctionCalls.find((pendingFunctionCall) => {
+      return pendingFunctionCall.toolName === toolName;
+    });
   };
 
   const resolvePendingFunctionCallForToolEnd = (
@@ -724,8 +729,7 @@ export const createOpenResponsesCallbackBridge = (
       return undefined;
     }
 
-    return pendingFunctionCalls.find((candidate) => candidate.startedEmitted)
-      ?? pendingFunctionCalls[0];
+    return pendingFunctionCalls.find((candidate) => candidate.startedEmitted);
   };
 
   const cleanupFunctionCallState = (
@@ -786,7 +790,10 @@ export const createOpenResponsesCallbackBridge = (
     }
   };
 
-  const emitObservedAnnotations = (runId: string, blocks: RecordValue[]): void => {
+  const emitObservedAnnotations = (
+    runId: string,
+    blocks: RecordValue[]
+  ): void => {
     const messageItemId = activeMessageItems.get(runId);
     if (!messageItemId) {
       return;
@@ -855,7 +862,10 @@ export const createOpenResponsesCallbackBridge = (
 
     const refusalItemId = activeRefusalItems.get(runId);
     if (refusalItemId) {
-      options.emitter.emit({ type: "refusal.completed", itemId: refusalItemId });
+      options.emitter.emit({
+        type: "refusal.completed",
+        itemId: refusalItemId,
+      });
       activeRefusalItems.delete(runId);
     }
 
@@ -875,7 +885,14 @@ export const createOpenResponsesCallbackBridge = (
       emitRunStarted(runId, parentRunId);
     },
 
-    handleLLMNewToken(token, idxOrChunk, runId, parentRunId, tags, fields): void {
+    handleLLMNewToken(
+      token,
+      idxOrChunk,
+      runId,
+      parentRunId,
+      tags,
+      fields
+    ): void {
       emitRunStarted(runId, parentRunId);
 
       if (token.length > 0) {
@@ -965,10 +982,7 @@ export const createOpenResponsesCallbackBridge = (
             type: "function_call_output.completed",
             itemId: options.generateId(),
             callId: pendingFunctionCall.callId,
-            output:
-              typeof output === "string"
-                ? output
-                : safeStringify(output),
+            output: typeof output === "string" ? output : safeStringify(output),
           });
         }
       }
