@@ -13,8 +13,8 @@ import type {
   InputItem,
   OpenResponsesEvent,
   ToolChoice,
-} from "./internal-schemas.js";
-import type { OpenResponsesResponse } from "./schemas.js";
+  OpenResponsesResponse,
+} from "./schemas.js";
 
 // =============================================================================
 // Persistence Types

@@ -17,12 +17,10 @@ import type {
   OutputItem,
   OutputTextPart,
   ToolChoice,
-} from "@/core/internal-schemas.js";
-import {
-  type OpenResponsesRequest,
-  OpenResponsesRequestSchema,
-  type OpenResponsesResponse,
+  OpenResponsesRequest,
+  OpenResponsesResponse,
 } from "@/core/schemas.js";
+import { OpenResponsesRequestSchema } from "@/core/schemas.js";
 import { getEffectiveToolChoiceMode } from "@/core/tool-policy.js";
 import type {
   LangChainMessageLike,
@@ -357,7 +355,32 @@ const outputItemToInputItem = (item: OutputItem): InputItem => {
     return {
       type: "message",
       role: "assistant",
-      content: safeStructuredClone(item.content),
+      content: safeStructuredClone(
+        item.content.filter((part) => {
+          return part.type === "output_text" || part.type === "refusal";
+        })
+      ),
+    };
+  }
+
+  if (item.type === "reasoning") {
+    return {
+      type: "message",
+      role: "assistant",
+      content: item.summary
+        .map((part) => {
+          return "text" in part ? part.text : "";
+        })
+        .join(" "),
+    };
+  }
+
+  if (item.type === "function_call_output") {
+    return {
+      type: "function_call_output",
+      call_id: item.call_id,
+      output: safeStructuredClone(item.output),
+      status: item.status,
     };
   }
 
@@ -389,6 +412,7 @@ const createOutputTextPart = (text: string): OutputTextPart => {
     type: "output_text",
     text,
     annotations: [],
+    logprobs: [],
   };
 };
 
@@ -583,8 +607,19 @@ const toFunctionCallOutputValue = (
     return value;
   }
 
-  if (Array.isArray(value) && value.every(isRecord)) {
-    return safeStructuredClone(value);
+  if (
+    Array.isArray(value) &&
+    value.every((candidate) => {
+      return (
+        isRecord(candidate) &&
+        typeof candidate.type === "string" &&
+        (candidate.type === "input_text" ||
+          candidate.type === "input_image" ||
+          candidate.type === "input_file")
+      );
+    })
+  ) {
+    return safeStructuredClone(value) as Record<string, unknown>[];
   }
 
   if (value === undefined) {
@@ -605,11 +640,15 @@ const createToolResultInputItems = (
   }
 
   const status = toOptionalInputStatus(value.status);
+  const output = toFunctionCallOutputValue(value.content) as Extract<
+    InputItem,
+    { type: "function_call_output" }
+  >["output"];
   return [
     {
       type: "function_call_output",
       call_id: callId,
-      output: toFunctionCallOutputValue(value.content),
+      output,
       ...(status === undefined ? {} : { status }),
     },
   ];
@@ -841,6 +880,14 @@ const inputItemToMessage = (item: InputItem): LangChainMessageLike => {
     };
   }
 
+  if (item.type !== "function_call_output") {
+    return {
+      type: "ai",
+      role: "assistant",
+      content: [],
+    };
+  }
+
   return {
     type: "tool",
     role: "tool",
@@ -1015,6 +1062,7 @@ const normalizeStoredOutputTextPart = (
       type: "output_text",
       text: value,
       annotations: [],
+      logprobs: [],
     };
   }
 
@@ -1033,6 +1081,7 @@ const normalizeStoredOutputTextPart = (
       type: "output_text",
       text,
       annotations,
+      logprobs: [],
     };
   }
 

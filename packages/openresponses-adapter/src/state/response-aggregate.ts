@@ -11,7 +11,6 @@ const normalizeTimestamp = (value: number | null): number | null => {
     return null;
   }
 
-  // Default clocks still commonly provide Date.now() millisecond values.
   if (value >= 1_000_000_000_000) {
     return Math.floor(value / 1000);
   }
@@ -33,50 +32,16 @@ const normalizeError = (
   return {
     code: error.code,
     message: error.message,
+    type: error.type,
+    ...(error.param !== undefined ? { param: error.param } : {}),
   };
 };
 
 const normalizeOutput = (output: unknown[]): unknown[] => {
-  return output.map((item) => {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      !("type" in item) ||
-      item.type !== "message"
-    ) {
-      return clone(item);
-    }
-
-    const messageItem = item as Record<string, unknown>;
-    const content = Array.isArray(messageItem.content)
-      ? messageItem.content
-      : [];
-
-    return {
-      ...clone(messageItem),
-      content: content.map((part) => {
-        if (
-          typeof part === "object" &&
-          part !== null &&
-          "type" in part &&
-          part.type === "output_text"
-        ) {
-          return {
-            ...clone(part),
-            annotations: Array.isArray(part.annotations)
-              ? clone(part.annotations)
-              : [],
-            logprobs: Array.isArray(part.logprobs) ? clone(part.logprobs) : [],
-          };
-        }
-
-        return clone(part);
-      }),
-    };
-  });
+  return clone(output);
 };
 
-export interface TerminalResponseMaterializationParams {
+export interface ResponseSnapshotMaterializationParams {
   request: OpenResponsesRequestSnapshot;
   responseId: string;
   createdAt: number;
@@ -84,12 +49,12 @@ export interface TerminalResponseMaterializationParams {
   status: OpenResponsesResponse["status"];
   output: unknown[];
   error: ErrorObject | null;
-  incompleteDetails?: unknown;
-  usage?: unknown;
+  incompleteDetails?: OpenResponsesResponse["incomplete_details"];
+  usage?: OpenResponsesResponse["usage"];
 }
 
-export const materializeTerminalResponse = (
-  params: TerminalResponseMaterializationParams
+export const materializeResponseSnapshot = (
+  params: ResponseSnapshotMaterializationParams
 ): OpenResponsesResponse => {
   const response = {
     id: params.responseId,
@@ -99,7 +64,7 @@ export const materializeTerminalResponse = (
     status: params.status,
     incomplete_details:
       params.status === "incomplete"
-        ? (params.incompleteDetails ?? { reason: "max_output_tokens" })
+        ? (params.incompleteDetails ?? { reason: "stream_ended_before_terminal_state" })
         : null,
     model: params.request.model,
     previous_response_id: params.request.previous_response_id,
@@ -131,4 +96,13 @@ export const materializeTerminalResponse = (
   };
 
   return OpenResponsesResponseSchema.parse(response);
+};
+
+export type TerminalResponseMaterializationParams =
+  ResponseSnapshotMaterializationParams;
+
+export const materializeTerminalResponse = (
+  params: TerminalResponseMaterializationParams
+): OpenResponsesResponse => {
+  return materializeResponseSnapshot(params);
 };

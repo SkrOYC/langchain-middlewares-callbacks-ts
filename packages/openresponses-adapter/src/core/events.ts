@@ -1,70 +1,96 @@
 /**
- * Internal Semantic Event Types
+ * Internal semantic event types consumed by the serializer.
  *
- * These events are emitted by the callback bridge and consumed
- * by the accumulator and serializer. They are internal to the adapter
- * and map to Open Responses public events.
+ * These events are derived from LangChain callbacks but remain provider-agnostic.
  */
 
-/**
- * Union of all internal semantic events.
- * These derive from LangChain callbacks and are transformed into
- * Open Responses public events by the serializer.
- */
 export type InternalSemanticEvent =
   | RunStartedEvent
   | MessageStartedEvent
   | TextDeltaEvent
   | TextCompletedEvent
+  | RefusalStartedEvent
+  | RefusalDeltaEvent
+  | RefusalCompletedEvent
+  | ReasoningStartedEvent
+  | ReasoningDeltaEvent
+  | ReasoningCompletedEvent
+  | OutputTextAnnotationAddedEvent
   | FunctionCallStartedEvent
   | FunctionCallArgumentsDeltaEvent
   | FunctionCallCompletedEvent
+  | FunctionCallOutputCompletedEvent
   | ToolStartedEvent
   | ToolCompletedEvent
   | ToolErrorEvent
   | RunCompletedEvent
-  | RunFailedEvent;
+  | RunFailedEvent
+  | RunIncompleteEvent;
 
-/**
- * Agent/chain run started.
- */
 export interface RunStartedEvent {
   type: "run.started";
   runId: string;
   parentRunId?: string;
 }
 
-/**
- * Assistant message item started.
- */
 export interface MessageStartedEvent {
   type: "message.started";
   itemId: string;
   runId: string;
 }
 
-/**
- * Text delta for streaming output.
- */
 export interface TextDeltaEvent {
   type: "text.delta";
   itemId: string;
   delta: string;
 }
 
-/**
- * Text content completed.
- */
 export interface TextCompletedEvent {
   type: "text.completed";
   itemId: string;
 }
 
-/**
- * Function call (tool use) started.
- * When provider granularity is weak, the full arguments may be attached here
- * so downstream state can emit done-only behavior without synthetic deltas.
- */
+export interface RefusalStartedEvent {
+  type: "refusal.started";
+  itemId: string;
+  runId: string;
+}
+
+export interface RefusalDeltaEvent {
+  type: "refusal.delta";
+  itemId: string;
+  delta: string;
+}
+
+export interface RefusalCompletedEvent {
+  type: "refusal.completed";
+  itemId: string;
+}
+
+export interface ReasoningStartedEvent {
+  type: "reasoning.started";
+  itemId: string;
+  runId: string;
+}
+
+export interface ReasoningDeltaEvent {
+  type: "reasoning.delta";
+  itemId: string;
+  delta: string;
+}
+
+export interface ReasoningCompletedEvent {
+  type: "reasoning.completed";
+  itemId: string;
+  summaryTexts?: string[];
+}
+
+export interface OutputTextAnnotationAddedEvent {
+  type: "output_text.annotation.added";
+  itemId: string;
+  annotation: Record<string, unknown>;
+}
+
 export interface FunctionCallStartedEvent {
   type: "function_call.started";
   itemId: string;
@@ -73,26 +99,24 @@ export interface FunctionCallStartedEvent {
   arguments?: string;
 }
 
-/**
- * Function call arguments delta.
- */
 export interface FunctionCallArgumentsDeltaEvent {
   type: "function_call_arguments.delta";
   itemId: string;
   delta: string;
 }
 
-/**
- * Function call completed.
- */
 export interface FunctionCallCompletedEvent {
   type: "function_call.completed";
   itemId: string;
 }
 
-/**
- * Tool execution started.
- */
+export interface FunctionCallOutputCompletedEvent {
+  type: "function_call_output.completed";
+  itemId: string;
+  callId: string;
+  output: string | Record<string, unknown>[];
+}
+
 export interface ToolStartedEvent {
   type: "tool.started";
   runId: string;
@@ -100,9 +124,6 @@ export interface ToolStartedEvent {
   input: string;
 }
 
-/**
- * Tool execution completed.
- */
 export interface ToolCompletedEvent {
   type: "tool.completed";
   runId: string;
@@ -110,40 +131,31 @@ export interface ToolCompletedEvent {
   callId?: string;
 }
 
-/**
- * Tool execution error.
- */
 export interface ToolErrorEvent {
   type: "tool.error";
   runId: string;
   error: unknown;
 }
 
-/**
- * Run/agent completed successfully.
- */
 export interface RunCompletedEvent {
   type: "run.completed";
   runId: string;
 }
 
-/**
- * Run/agent failed with error.
- */
 export interface RunFailedEvent {
   type: "run.failed";
   runId: string;
   error: unknown;
 }
 
-/**
- * Event emitter interface for callback handlers.
- */
+export interface RunIncompleteEvent {
+  type: "run.incomplete";
+  runId: string;
+  reason?: string;
+}
+
 export interface InternalEventEmitter {
   emit(event: InternalSemanticEvent): void;
 }
 
-/**
- * Event listener interface for consumers.
- */
 export type InternalEventListener = (event: InternalSemanticEvent) => void;

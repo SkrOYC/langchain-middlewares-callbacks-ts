@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import type { MessageOutputItem } from "@/core/schemas.js";
 import { createCanonicalItemAccumulator } from "@/state/item-accumulator.js";
 import { createSequentialIdGenerator } from "@/testing/deterministic-id.js";
 
-const PART_CLOSED_PATTERN = /before output text part 0 is closed/;
 const DUPLICATE_ITEM_ID_PATTERN = /already exists/;
 const DUPLICATE_TERMINAL_PATTERN = /already received a terminal event/;
 
@@ -29,13 +29,14 @@ describe("CanonicalItemAccumulator", () => {
             type: "output_text",
             text: "Hello world",
             annotations: [],
+            logprobs: [],
           },
         ],
       },
     ]);
   });
 
-  test("closes output text parts before items", () => {
+  test("finalizes message items and returns the completed text payload", () => {
     const accumulator = createCanonicalItemAccumulator({
       generateId: createSequentialIdGenerator(["msg-1"]),
     });
@@ -44,15 +45,18 @@ describe("CanonicalItemAccumulator", () => {
     accumulator.startOutputTextPart(item.id);
     accumulator.appendOutputTextDelta(item.id, 0, "Hello");
 
-    expect(() => accumulator.finalizeItem(item.id, "completed")).toThrow(
-      PART_CLOSED_PATTERN
-    );
-
     const part = accumulator.finalizeOutputTextPart(item.id, 0);
     const finalizedItem = accumulator.finalizeItem(item.id, "completed");
+    const finalizedMessage = finalizedItem as MessageOutputItem;
 
     expect(part.text).toBe("Hello");
-    expect(finalizedItem.status).toBe("completed");
+    expect(finalizedMessage.status).toBe("completed");
+    expect(finalizedMessage.content[0]).toEqual({
+      type: "output_text",
+      text: "Hello",
+      annotations: [],
+      logprobs: [],
+    });
   });
 
   test("rejects duplicate terminal events for the same text part and item", () => {

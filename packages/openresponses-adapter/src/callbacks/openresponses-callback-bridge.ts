@@ -10,7 +10,6 @@ export interface OpenResponsesCallbackBridgeOptions {
 }
 
 type RecordValue = Record<string, unknown>;
-
 type TerminalRunStatus = "completed" | "failed";
 
 const MAX_TERMINAL_RUNS = 256;
@@ -249,13 +248,7 @@ const getObservedArguments = (action: unknown): string | undefined => {
     return undefined;
   }
 
-  const directArguments =
-    getString(action, "arguments") ?? getString(action, "args");
-  if (directArguments) {
-    return directArguments;
-  }
-
-  return undefined;
+  return getString(action, "arguments") ?? getString(action, "args");
 };
 
 const getSerializedName = (serialized: RecordValue): string | undefined => {
@@ -294,10 +287,158 @@ const normalizeToolNameFromRun = (
   return getSerializedName(serialized) ?? "tool";
 };
 
+const extractObservedDelta = (
+  previous: string,
+  next: string
+): { delta: string; observed: string } => {
+  if (next.length === 0) {
+    return { delta: "", observed: previous };
+  }
+
+  if (next.startsWith(previous)) {
+    return { delta: next.slice(previous.length), observed: next };
+  }
+
+  return { delta: next, observed: `${previous}${next}` };
+};
+
+const getChunkLike = (...candidates: unknown[]): RecordValue | undefined => {
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) {
+      continue;
+    }
+
+    const wrappedChunk = candidate.chunk;
+    if (isRecord(wrappedChunk)) {
+      return wrappedChunk;
+    }
+
+    if ("message" in candidate || "content" in candidate || "contentBlocks" in candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const getMessageLike = (value: unknown): RecordValue | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const message = value.message;
+  return isRecord(message) ? message : value;
+};
+
+const getContentBlocks = (value: unknown): RecordValue[] => {
+  const message = getMessageLike(value);
+  if (!message) {
+    return [];
+  }
+
+  const blockCandidates = [message.contentBlocks, message.content];
+  for (const candidate of blockCandidates) {
+    if (!Array.isArray(candidate)) {
+      continue;
+    }
+
+    return candidate.filter(isRecord);
+  }
+
+  return [];
+};
+
+const getAdditionalKwargs = (value: unknown): RecordValue | undefined => {
+  const message = getMessageLike(value);
+  if (!message) {
+    return undefined;
+  }
+
+  return getNestedRecord(message, "additional_kwargs");
+};
+
+const getReasoningTextFromBlock = (block: RecordValue): string | undefined => {
+  if (getString(block, "type") === "reasoning") {
+    return getString(block, "reasoning") ?? getString(block, "text");
+  }
+
+  if (getString(block, "type") === "reasoning_text") {
+    return getString(block, "text");
+  }
+
+  return undefined;
+};
+
+const getSummaryTextFromBlock = (block: RecordValue): string | undefined => {
+  if (getString(block, "type") === "summary_text") {
+    return getString(block, "text");
+  }
+
+  return undefined;
+};
+
+const getRefusalTextFromBlock = (block: RecordValue): string | undefined => {
+  if (getString(block, "type") !== "refusal") {
+    return undefined;
+  }
+
+  return getString(block, "refusal") ?? getString(block, "text");
+};
+
+const extractReasoningSummaryTexts = (value: unknown): string[] => {
+  const blocks = getContentBlocks(value);
+  const summaryTexts = blocks
+    .map(getSummaryTextFromBlock)
+    .filter((text): text is string => Boolean(text));
+  if (summaryTexts.length > 0) {
+    return summaryTexts;
+  }
+
+  const additionalKwargs = getAdditionalKwargs(value);
+  if (!additionalKwargs) {
+    return [];
+  }
+
+  const reasoning = additionalKwargs.reasoning;
+  if (!Array.isArray(reasoning)) {
+    return [];
+  }
+
+  const extracted: string[] = [];
+  for (const candidate of reasoning) {
+    if (!isRecord(candidate)) {
+      continue;
+    }
+
+    const summary = candidate.summary;
+    if (!Array.isArray(summary)) {
+      continue;
+    }
+
+    for (const part of summary) {
+      if (!isRecord(part)) {
+        continue;
+      }
+
+      const summaryText = getString(part, "text");
+      if (summaryText) {
+        extracted.push(summaryText);
+      }
+    }
+  }
+
+  return extracted;
+};
+
 export const createOpenResponsesCallbackBridge = (
   options: OpenResponsesCallbackBridgeOptions
 ): OpenResponsesCallbackHandler => {
   const activeMessageItems = new Map<string, string>();
+  const activeRefusalItems = new Map<string, string>();
+  const activeReasoningItems = new Map<string, string>();
+  const observedRefusalByRun = new Map<string, string>();
+  const observedReasoningByRun = new Map<string, string>();
+  const emittedAnnotationCounts = new Map<string, number>();
   const pendingFunctionCallsByAgentRun = new Map<
     string,
     PendingFunctionCall[]
@@ -309,13 +450,50 @@ export const createOpenResponsesCallbackBridge = (
   const terminalRuns = new Map<string, TerminalRunStatus>();
   const terminalRunOrder: string[] = [];
 
+  const cleanupRunState = (runId: string): void => {
+    activeMessageItems.delete(runId);
+    activeRefusalItems.delete(runId);
+    activeReasoningItems.delete(runId);
+    observedRefusalByRun.delete(runId);
+    observedReasoningByRun.delete(runId);
+    sharedArgumentDeltasByRun.delete(runId);
+
+    const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(runId);
+    if (pendingFunctionCalls) {
+      for (const pendingFunctionCall of pendingFunctionCalls) {
+        if (pendingFunctionCall.callId) {
+          pendingFunctionCallsByCallId.delete(pendingFunctionCall.callId);
+        }
+
+        if (pendingFunctionCall.toolRunId) {
+          activeFunctionCallsByToolRun.delete(pendingFunctionCall.toolRunId);
+        }
+      }
+
+      pendingFunctionCallsByAgentRun.delete(runId);
+    }
+
+    startedRuns.delete(runId);
+  };
+
+  const rememberTerminalRun = (
+    runId: string,
+    status: TerminalRunStatus
+  ): void => {
+    terminalRuns.set(runId, status);
+    terminalRunOrder.push(runId);
+
+    while (terminalRunOrder.length > MAX_TERMINAL_RUNS) {
+      const oldestRunId = terminalRunOrder.shift();
+      if (oldestRunId) {
+        terminalRuns.delete(oldestRunId);
+      }
+    }
+  };
+
   const emitRunStarted = (runId: string, parentRunId?: string): void => {
     if (terminalRuns.has(runId)) {
       terminalRuns.delete(runId);
-      const terminalRunIndex = terminalRunOrder.indexOf(runId);
-      if (terminalRunIndex >= 0) {
-        terminalRunOrder.splice(terminalRunIndex, 1);
-      }
       cleanupRunState(runId);
     }
 
@@ -341,6 +519,74 @@ export const createOpenResponsesCallbackBridge = (
     activeMessageItems.set(runId, itemId);
     options.emitter.emit({ type: "message.started", itemId, runId });
     return itemId;
+  };
+
+  const ensureRefusalItem = (runId: string): string => {
+    const existing = activeRefusalItems.get(runId);
+    if (existing) {
+      return existing;
+    }
+
+    const itemId = options.generateId();
+    activeRefusalItems.set(runId, itemId);
+    options.emitter.emit({ type: "refusal.started", itemId, runId });
+    return itemId;
+  };
+
+  const ensureReasoningItem = (runId: string): string => {
+    const existing = activeReasoningItems.get(runId);
+    if (existing) {
+      return existing;
+    }
+
+    const itemId = options.generateId();
+    activeReasoningItems.set(runId, itemId);
+    options.emitter.emit({ type: "reasoning.started", itemId, runId });
+    return itemId;
+  };
+
+  const completeActiveMessageArtifacts = (runId: string): void => {
+    const messageItemId = activeMessageItems.get(runId);
+    if (messageItemId) {
+      options.emitter.emit({ type: "text.completed", itemId: messageItemId });
+      activeMessageItems.delete(runId);
+    }
+
+    const refusalItemId = activeRefusalItems.get(runId);
+    if (refusalItemId) {
+      options.emitter.emit({ type: "refusal.completed", itemId: refusalItemId });
+      activeRefusalItems.delete(runId);
+    }
+
+    const reasoningItemId = activeReasoningItems.get(runId);
+    if (reasoningItemId) {
+      options.emitter.emit({
+        type: "reasoning.completed",
+        itemId: reasoningItemId,
+        summaryTexts: extractReasoningSummaryTexts(undefined),
+      });
+      activeReasoningItems.delete(runId);
+    }
+  };
+
+  const emitRunFailed = (runId: string, error: unknown): void => {
+    if (terminalRuns.has(runId)) {
+      return;
+    }
+
+    rememberTerminalRun(runId, "failed");
+    options.emitter.emit({ type: "run.failed", runId, error });
+    cleanupRunState(runId);
+  };
+
+  const emitRunCompleted = (runId: string): void => {
+    if (terminalRuns.has(runId)) {
+      return;
+    }
+
+    rememberTerminalRun(runId, "completed");
+    options.emitter.emit({ type: "run.completed", runId });
+    cleanupRunState(runId);
   };
 
   const getPendingFunctionCalls = (
@@ -436,41 +682,6 @@ export const createOpenResponsesCallbackBridge = (
     });
   };
 
-  const findPendingFunctionCallByCallId = (
-    pendingFunctionCalls: PendingFunctionCall[],
-    toolCallId: string
-  ): PendingFunctionCall | undefined => {
-    const matchedByCallId = pendingFunctionCallsByCallId.get(toolCallId);
-    if (matchedByCallId && pendingFunctionCalls.includes(matchedByCallId)) {
-      return matchedByCallId;
-    }
-
-    return undefined;
-  };
-
-  const findPendingFunctionCallByToolName = (
-    pendingFunctionCalls: PendingFunctionCall[],
-    toolName: string,
-    toolCallId?: string
-  ): PendingFunctionCall | undefined => {
-    for (const pendingFunctionCall of pendingFunctionCalls) {
-      if (pendingFunctionCall.toolName !== toolName) {
-        continue;
-      }
-
-      if (
-        toolCallId !== undefined &&
-        pendingFunctionCall.callId !== undefined
-      ) {
-        continue;
-      }
-
-      return pendingFunctionCall;
-    }
-
-    return undefined;
-  };
-
   const resolvePendingFunctionCallForToolStart = (
     agentRunId: string,
     toolName: string,
@@ -482,25 +693,17 @@ export const createOpenResponsesCallbackBridge = (
     }
 
     if (toolCallId) {
-      const matchedByCallId = findPendingFunctionCallByCallId(
-        pendingFunctionCalls,
-        toolCallId
-      );
-      if (matchedByCallId) {
+      const matchedByCallId = pendingFunctionCallsByCallId.get(toolCallId);
+      if (matchedByCallId && pendingFunctionCalls.includes(matchedByCallId)) {
         return matchedByCallId;
       }
     }
 
-    const matchedByToolName = findPendingFunctionCallByToolName(
-      pendingFunctionCalls,
-      toolName,
-      toolCallId
+    return (
+      pendingFunctionCalls.find((pendingFunctionCall) => {
+        return pendingFunctionCall.toolName === toolName;
+      }) ?? pendingFunctionCalls[0]
     );
-    if (matchedByToolName) {
-      return matchedByToolName;
-    }
-
-    return pendingFunctionCalls[0];
   };
 
   const resolvePendingFunctionCallForToolEnd = (
@@ -521,26 +724,8 @@ export const createOpenResponsesCallbackBridge = (
       return undefined;
     }
 
-    for (const pendingFunctionCall of pendingFunctionCalls) {
-      if (pendingFunctionCall.startedEmitted) {
-        return pendingFunctionCall;
-      }
-    }
-
-    return pendingFunctionCalls[0];
-  };
-
-  const completeFunctionCall = (
-    pendingFunctionCall: PendingFunctionCall | undefined
-  ): void => {
-    if (!pendingFunctionCall) {
-      return;
-    }
-
-    options.emitter.emit({
-      type: "function_call.completed",
-      itemId: pendingFunctionCall.itemId,
-    });
+    return pendingFunctionCalls.find((candidate) => candidate.startedEmitted)
+      ?? pendingFunctionCalls[0];
   };
 
   const cleanupFunctionCallState = (
@@ -581,66 +766,108 @@ export const createOpenResponsesCallbackBridge = (
     pendingFunctionCallsByAgentRun.set(agentRunId, remaining);
   };
 
-  const cleanupRunState = (runId: string): void => {
-    activeMessageItems.delete(runId);
-    sharedArgumentDeltasByRun.delete(runId);
+  const emitObservedRefusal = (runId: string, refusal: string): void => {
+    const itemId = ensureRefusalItem(runId);
+    const previous = observedRefusalByRun.get(runId) ?? "";
+    const { delta, observed } = extractObservedDelta(previous, refusal);
+    observedRefusalByRun.set(runId, observed);
+    if (delta.length > 0) {
+      options.emitter.emit({ type: "refusal.delta", itemId, delta });
+    }
+  };
 
-    const pendingFunctionCalls = pendingFunctionCallsByAgentRun.get(runId);
-    if (pendingFunctionCalls) {
-      for (const pendingFunctionCall of pendingFunctionCalls) {
-        if (pendingFunctionCall.callId) {
-          pendingFunctionCallsByCallId.delete(pendingFunctionCall.callId);
-        }
+  const emitObservedReasoning = (runId: string, reasoning: string): void => {
+    const itemId = ensureReasoningItem(runId);
+    const previous = observedReasoningByRun.get(runId) ?? "";
+    const { delta, observed } = extractObservedDelta(previous, reasoning);
+    observedReasoningByRun.set(runId, observed);
+    if (delta.length > 0) {
+      options.emitter.emit({ type: "reasoning.delta", itemId, delta });
+    }
+  };
 
-        if (pendingFunctionCall.toolRunId) {
-          activeFunctionCallsByToolRun.delete(pendingFunctionCall.toolRunId);
-        }
+  const emitObservedAnnotations = (runId: string, blocks: RecordValue[]): void => {
+    const messageItemId = activeMessageItems.get(runId);
+    if (!messageItemId) {
+      return;
+    }
+
+    const outputTextBlock = blocks.find((block) => {
+      return getString(block, "type") === "output_text";
+    });
+    if (!outputTextBlock) {
+      return;
+    }
+
+    const annotations = outputTextBlock.annotations;
+    if (!Array.isArray(annotations)) {
+      return;
+    }
+
+    const emittedCount = emittedAnnotationCounts.get(messageItemId) ?? 0;
+    for (const annotation of annotations.slice(emittedCount)) {
+      if (!isRecord(annotation)) {
+        continue;
       }
 
-      pendingFunctionCallsByAgentRun.delete(runId);
+      options.emitter.emit({
+        type: "output_text.annotation.added",
+        itemId: messageItemId,
+        annotation,
+      });
     }
 
-    startedRuns.delete(runId);
+    emittedAnnotationCounts.set(messageItemId, annotations.length);
   };
 
-  const rememberTerminalRun = (
-    runId: string,
-    status: TerminalRunStatus
-  ): void => {
-    if (terminalRuns.has(runId)) {
-      terminalRuns.set(runId, status);
+  const observeChunk = (runId: string, ...candidates: unknown[]): void => {
+    const chunk = getChunkLike(...candidates);
+    if (!chunk) {
       return;
     }
 
-    terminalRuns.set(runId, status);
-    terminalRunOrder.push(runId);
+    const contentBlocks = getContentBlocks(chunk);
+    emitObservedAnnotations(runId, contentBlocks);
 
-    while (terminalRunOrder.length > MAX_TERMINAL_RUNS) {
-      const oldestRunId = terminalRunOrder.shift();
-      if (oldestRunId) {
-        terminalRuns.delete(oldestRunId);
+    for (const block of contentBlocks) {
+      const refusal = getRefusalTextFromBlock(block);
+      if (refusal) {
+        emitObservedRefusal(runId, refusal);
+      }
+
+      const reasoning = getReasoningTextFromBlock(block);
+      if (reasoning) {
+        emitObservedReasoning(runId, reasoning);
+      }
+    }
+
+    const additionalKwargs = getAdditionalKwargs(chunk);
+    if (additionalKwargs) {
+      const refusal = additionalKwargs.refusal;
+      if (typeof refusal === "string") {
+        emitObservedRefusal(runId, refusal);
       }
     }
   };
 
-  const emitRunFailed = (runId: string, error: unknown): void => {
-    if (terminalRuns.has(runId)) {
-      return;
+  const finalizeObservedFamilies = (runId: string, output?: unknown): void => {
+    observeChunk(runId, output);
+
+    const refusalItemId = activeRefusalItems.get(runId);
+    if (refusalItemId) {
+      options.emitter.emit({ type: "refusal.completed", itemId: refusalItemId });
+      activeRefusalItems.delete(runId);
     }
 
-    rememberTerminalRun(runId, "failed");
-    options.emitter.emit({ type: "run.failed", runId, error });
-    cleanupRunState(runId);
-  };
-
-  const emitRunCompleted = (runId: string): void => {
-    if (terminalRuns.has(runId)) {
-      return;
+    const reasoningItemId = activeReasoningItems.get(runId);
+    if (reasoningItemId) {
+      options.emitter.emit({
+        type: "reasoning.completed",
+        itemId: reasoningItemId,
+        summaryTexts: extractReasoningSummaryTexts(output),
+      });
+      activeReasoningItems.delete(runId);
     }
-
-    rememberTerminalRun(runId, "completed");
-    options.emitter.emit({ type: "run.completed", runId });
-    cleanupRunState(runId);
   };
 
   return {
@@ -648,17 +875,25 @@ export const createOpenResponsesCallbackBridge = (
       emitRunStarted(runId, parentRunId);
     },
 
-    handleLLMNewToken(token, _chunk, runId): void {
-      const itemId = ensureMessageItem(runId);
-      options.emitter.emit({ type: "text.delta", itemId, delta: token });
+    handleLLMNewToken(token, idxOrChunk, runId, parentRunId, tags, fields): void {
+      emitRunStarted(runId, parentRunId);
+
+      if (token.length > 0) {
+        const itemId = ensureMessageItem(runId);
+        options.emitter.emit({ type: "text.delta", itemId, delta: token });
+      }
+
+      observeChunk(runId, idxOrChunk, fields, tags);
     },
 
-    handleLLMEnd(_output, runId): void {
+    handleLLMEnd(output, runId): void {
       const itemId = activeMessageItems.get(runId);
       if (itemId) {
         options.emitter.emit({ type: "text.completed", itemId });
+        activeMessageItems.delete(runId);
       }
 
+      finalizeObservedFamilies(runId, output);
       emitRunCompleted(runId);
     },
 
@@ -718,7 +953,26 @@ export const createOpenResponsesCallbackBridge = (
             }
           : { type: "tool.completed", runId, output }
       );
-      completeFunctionCall(pendingFunctionCall);
+
+      if (pendingFunctionCall) {
+        options.emitter.emit({
+          type: "function_call.completed",
+          itemId: pendingFunctionCall.itemId,
+        });
+
+        if (pendingFunctionCall.callId) {
+          options.emitter.emit({
+            type: "function_call_output.completed",
+            itemId: options.generateId(),
+            callId: pendingFunctionCall.callId,
+            output:
+              typeof output === "string"
+                ? output
+                : safeStringify(output),
+          });
+        }
+      }
+
       cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);
     },
 
@@ -728,7 +982,12 @@ export const createOpenResponsesCallbackBridge = (
         runId,
         parentRunId
       );
-      completeFunctionCall(pendingFunctionCall);
+      if (pendingFunctionCall) {
+        options.emitter.emit({
+          type: "function_call.completed",
+          itemId: pendingFunctionCall.itemId,
+        });
+      }
       cleanupFunctionCallState(pendingFunctionCall, parentRunId, runId);
     },
 
@@ -756,7 +1015,14 @@ export const createOpenResponsesCallbackBridge = (
       }
     },
 
-    handleAgentEnd(_result, runId): void {
+    handleAgentEnd(result, runId): void {
+      const itemId = activeMessageItems.get(runId);
+      if (itemId) {
+        options.emitter.emit({ type: "text.completed", itemId });
+        activeMessageItems.delete(runId);
+      }
+
+      finalizeObservedFamilies(runId, result);
       emitRunCompleted(runId);
     },
 

@@ -92,9 +92,13 @@ describe("tool calling release blockers", () => {
     expect(
       events.map((event) => (typeof event === "string" ? event : event.type))
     ).toEqual([
+      "response.created",
+      "response.queued",
       "response.in_progress",
       "response.output_item.added",
       "response.function_call_arguments.done",
+      "response.output_item.done",
+      "response.output_item.added",
       "response.output_item.done",
       "response.completed",
       "[DONE]",

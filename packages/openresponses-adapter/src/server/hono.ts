@@ -13,8 +13,8 @@ import {
   unsupportedMediaType,
 } from "@/core/errors.js";
 import type { OpenResponsesHandlerOptions } from "@/core/index.js";
-import type { OpenResponsesEvent } from "@/core/internal-schemas.js";
 import {
+  type OpenResponsesEvent,
   type OpenResponsesRequest,
   OpenResponsesRequestSchema,
 } from "@/core/schemas.js";
@@ -154,7 +154,7 @@ const streamOpenResponses = <E extends Env = Env>(params: {
         }
 
         if (chunk.type === "response.failed") {
-          terminalErrorCode = chunk.error.code;
+          terminalErrorCode = chunk.response.error?.code ?? "agent_execution_failed";
         }
 
         await stream.writeSSE(formatSSEFrame(chunk));
