@@ -72,7 +72,7 @@ Implementation status: the original ORA chain is implemented for the pinned upst
 
 ### Epic E — Full Pinned-Spec Conformance Closure
 
-**ORA-E001 Build the pinned-spec requirement matrix**
+ORA-E001 Build the pinned-spec requirement matrix
 - **Type:** Spike
 - **Effort:** 2
 - **Dependencies:** ORA-D003
@@ -85,7 +85,7 @@ When the maintainer audits conformance coverage
 Then every normative pinned-spec requirement is traceable to executable proof or an explicit uncovered gap
 ```
 
-**ORA-E002 Add black-box conformance tests for official-runner gaps**
+ORA-E002 Add black-box conformance tests for official-runner gaps
 - **Type:** Feature
 - **Effort:** 5
 - **Dependencies:** ORA-E001
@@ -98,7 +98,7 @@ When the package-owned conformance suite executes
 Then every runner-uncovered normative requirement has black-box proof against the public HTTP surface
 ```
 
-**ORA-E003 Upgrade release claims to full pinned-spec compliance**
+ORA-E003 Upgrade release claims to full pinned-spec compliance
 - **Type:** Chore
 - **Effort:** 1
 - **Dependencies:** ORA-E002

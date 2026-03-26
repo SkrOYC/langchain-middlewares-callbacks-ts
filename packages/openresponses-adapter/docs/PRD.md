@@ -44,7 +44,6 @@
 ### 3.1 Primary Actor
 - **Role:** Solo Builder integrating an existing LangChain-based agent into a Responses-style ecosystem.
 - **Context:** Already has a functioning agent loop and wants standards-compliant interoperability without rewriting the agent itself.
-- **Goals:** Mount the package quickly, preserve runtime behavior, pass the official compliance workflow, and ship a trustworthy API surface.
 - **Goals:** Mount the package quickly, preserve runtime behavior, pass the official compliance workflow, and ship a trustworthy API surface whose broader pinned-spec claims are actually proven.
 - **Frictions:** Contract drift between local tests and official validation, complex streaming semantics, continuation replay correctness, required response fields that do not naturally fall out of the runtime, and the risk of overclaiming full compliance from a narrower upstream acceptance suite.
 
