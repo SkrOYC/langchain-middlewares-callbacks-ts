@@ -12,8 +12,8 @@ import type {
   FunctionTool,
   InputItem,
   OpenResponsesEvent,
-  ToolChoice,
   OpenResponsesResponse,
+  ToolChoice,
 } from "./schemas.js";
 
 // =============================================================================

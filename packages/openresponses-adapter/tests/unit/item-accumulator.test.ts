@@ -103,6 +103,27 @@ describe("CanonicalItemAccumulator", () => {
     });
   });
 
+  test("stores distinct reasoning summaries as separate summary_text parts", () => {
+    const accumulator = createCanonicalItemAccumulator({
+      generateId: createSequentialIdGenerator(["reasoning-1"]),
+    });
+
+    const item = accumulator.startReasoningItem();
+    accumulator.appendReasoningDelta(item.id, "Need to compare options.");
+    accumulator.appendReasoningSummary(item.id, "Summary A");
+    accumulator.appendReasoningSummary(item.id, "Summary B");
+
+    expect(accumulator.finalizeReasoningItem(item.id)).toEqual({
+      id: "reasoning-1",
+      type: "reasoning",
+      content: [{ type: "reasoning_text", text: "Need to compare options." }],
+      summary: [
+        { type: "summary_text", text: "Summary A" },
+        { type: "summary_text", text: "Summary B" },
+      ],
+    });
+  });
+
   test("rejects duplicate caller-supplied item ids", () => {
     const accumulator = createCanonicalItemAccumulator({
       generateId: createSequentialIdGenerator(["generated-1"]),

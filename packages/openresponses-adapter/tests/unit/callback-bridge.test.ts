@@ -927,4 +927,65 @@ describe("OpenResponsesCallbackBridge", () => {
       runId: "bounded-run-0",
     });
   });
+
+  test("keeps restarted terminal runs suppressing duplicates after retention eviction", async () => {
+    const { events, emitter } = createEmitter();
+    const bridge = createOpenResponsesCallbackBridge({
+      emitter,
+      generateId: createSequentialIdGenerator(["msg-restarted"]),
+    });
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-restarted"
+    );
+    await callHandler(
+      bridge.handleLLMError,
+      new Error("first failure"),
+      "run-restarted"
+    );
+
+    await callHandler(
+      bridge.handleChatModelStart,
+      serializedFixture,
+      [],
+      "run-restarted"
+    );
+    await callHandler(
+      bridge.handleLLMError,
+      new Error("second failure"),
+      "run-restarted"
+    );
+
+    for (let index = 0; index < 255; index++) {
+      const runId = `retained-run-${index}`;
+      await callHandler(
+        bridge.handleChatModelStart,
+        serializedFixture,
+        [],
+        runId
+      );
+      await callHandler(
+        bridge.handleLLMError,
+        new Error(`failure-${index}`),
+        runId
+      );
+    }
+
+    const eventsBeforeDuplicateFailure = events.length;
+    await callHandler(
+      bridge.handleLLMError,
+      new Error("should stay suppressed"),
+      "run-restarted"
+    );
+
+    expect(events).toHaveLength(eventsBeforeDuplicateFailure);
+    expect(
+      events.filter((event) => {
+        return event.type === "run.failed" && event.runId === "run-restarted";
+      })
+    ).toHaveLength(2);
+  });
 });

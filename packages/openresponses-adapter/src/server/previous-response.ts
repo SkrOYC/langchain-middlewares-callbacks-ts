@@ -14,11 +14,11 @@ import type {
   ErrorObject,
   FunctionTool,
   InputItem,
+  OpenResponsesRequest,
+  OpenResponsesResponse,
   OutputItem,
   OutputTextPart,
   ToolChoice,
-  OpenResponsesRequest,
-  OpenResponsesResponse,
 } from "@/core/schemas.js";
 import { OpenResponsesRequestSchema } from "@/core/schemas.js";
 import { getEffectiveToolChoiceMode } from "@/core/tool-policy.js";
@@ -878,6 +878,10 @@ const inputItemToMessage = (item: InputItem): LangChainMessageLike => {
         },
       ],
     };
+  }
+
+  if (item.type !== "function_call_output") {
+    throw new Error(`Unsupported input item type '${item.type}'`);
   }
 
   return {

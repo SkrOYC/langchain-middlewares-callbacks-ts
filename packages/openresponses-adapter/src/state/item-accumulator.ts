@@ -149,6 +149,10 @@ type MutableItem =
   | MutableFunctionCallOutputItem
   | MutableReasoningItem;
 
+const unreachableItemKind = (value: never): never => {
+  throw new Error(`Unhandled canonical item kind: ${String(value)}`);
+};
+
 const duplicateTerminalError = (target: string): never => {
   throw invalidRequest(`${target} already received a terminal event`);
 };
@@ -239,6 +243,8 @@ const asOutputItem = (item: MutableItem): CanonicalOutputItem => {
       return asFunctionCallOutputItem(item);
     case "reasoning":
       return asReasoningItem(item);
+    default:
+      return unreachableItemKind(item);
   }
 };
 
@@ -374,6 +380,8 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
         return this.finalizeReasoningItem(itemId, status);
       case "function_call_output":
         return asFunctionCallOutputItem(item);
+      default:
+        return unreachableItemKind(item);
     }
   }
 
@@ -482,12 +490,6 @@ class DefaultCanonicalItemAccumulator implements CanonicalItemAccumulator {
 
   appendReasoningSummary(itemId: string, text: string): void {
     const item = this.#getReasoningItem(itemId);
-    const lastSummary = item.summary.at(-1);
-    if (lastSummary) {
-      lastSummary.text += text;
-      return;
-    }
-
     item.summary.push({ type: "summary_text", text });
   }
 

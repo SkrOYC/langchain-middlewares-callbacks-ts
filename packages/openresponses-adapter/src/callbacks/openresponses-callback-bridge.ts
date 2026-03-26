@@ -498,6 +498,10 @@ export const createOpenResponsesCallbackBridge = (
   const emitRunStarted = (runId: string, parentRunId?: string): void => {
     if (terminalRuns.has(runId)) {
       terminalRuns.delete(runId);
+      const terminalRunIndex = terminalRunOrder.indexOf(runId);
+      if (terminalRunIndex >= 0) {
+        terminalRunOrder.splice(terminalRunIndex, 1);
+      }
       cleanupRunState(runId);
     }
 
@@ -547,33 +551,6 @@ export const createOpenResponsesCallbackBridge = (
     activeReasoningItems.set(runId, itemId);
     options.emitter.emit({ type: "reasoning.started", itemId, runId });
     return itemId;
-  };
-
-  const completeActiveMessageArtifacts = (runId: string): void => {
-    const messageItemId = activeMessageItems.get(runId);
-    if (messageItemId) {
-      options.emitter.emit({ type: "text.completed", itemId: messageItemId });
-      activeMessageItems.delete(runId);
-    }
-
-    const refusalItemId = activeRefusalItems.get(runId);
-    if (refusalItemId) {
-      options.emitter.emit({
-        type: "refusal.completed",
-        itemId: refusalItemId,
-      });
-      activeRefusalItems.delete(runId);
-    }
-
-    const reasoningItemId = activeReasoningItems.get(runId);
-    if (reasoningItemId) {
-      options.emitter.emit({
-        type: "reasoning.completed",
-        itemId: reasoningItemId,
-        summaryTexts: extractReasoningSummaryTexts(undefined),
-      });
-      activeReasoningItems.delete(runId);
-    }
   };
 
   const emitRunFailed = (runId: string, error: unknown): void => {
