@@ -33,6 +33,8 @@ describe("README drift", () => {
       "test",
       "test:golden-stream",
       "test:compliance",
+      "test:compliance:local",
+      "test:compliance:official",
       "smoke:node",
       "smoke:bun",
     ];

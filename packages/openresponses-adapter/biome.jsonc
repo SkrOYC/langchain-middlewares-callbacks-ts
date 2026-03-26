@@ -13,6 +13,18 @@
       }
     },
     {
+      "includes": ["contracts/openresponses/official/**"],
+      "assist": {
+        "enabled": false
+      },
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["contracts/openresponses/compliance-runner/**"],
       "assist": {
         "enabled": false

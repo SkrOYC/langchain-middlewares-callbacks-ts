@@ -7,14 +7,14 @@ import {
   createFakeAgent,
   createInMemoryPreviousResponseStore,
 } from "@/testing/index.js";
-import { createPriorRecord } from "./helpers/records.ts";
+import { createPriorRecord } from "../helpers/records.ts";
 import {
   collectStream,
   createBaseRequest,
   createCallbackDrivenAgent,
   simulateTextStream,
   simulateToolCallStream,
-} from "./helpers/streaming-fixtures.ts";
+} from "../helpers/streaming-fixtures.ts";
 
 const weatherTool = {
   type: "function" as const,

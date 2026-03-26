@@ -33,6 +33,7 @@
     }
   },
   "exclude": [
+    "contracts/openresponses/official/**",
     "dist",
     "examples/*smoke.*",
     "contracts/openresponses/compliance-runner/upstream-*.ts"

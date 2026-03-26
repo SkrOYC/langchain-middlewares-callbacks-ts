@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { contractSnapshotVersion } from "@/contract/snapshot.js";
 import type { OpenResponsesEvent } from "@/core/schemas.js";
 import type {
   LangChainMessageLike,
@@ -1023,16 +1024,22 @@ describe("Hono streaming route", () => {
     );
 
     expect(startedLog).toMatchObject({
+      contract_snapshot_version: contractSnapshotVersion,
+      failure_class: null,
       request_id: expect.any(String),
       response_id: null,
       stream: false,
+      terminal_status: null,
     });
     expect(completedLog).toMatchObject({
+      contract_snapshot_version: contractSnapshotVersion,
+      failure_class: null,
       request_id: expect.any(String),
       response_id: "resp-1",
       status_code: 200,
       error_code: null,
       stream: false,
+      terminal_status: "completed",
     });
     expect(infoLogs.join("\n")).not.toContain("do-not-log-this-input");
     expect(infoLogs.join("\n")).not.toContain("do-not-log-this-output");
@@ -1062,13 +1069,58 @@ describe("Hono streaming route", () => {
     );
 
     expect(failedLog).toMatchObject({
+      contract_snapshot_version: contractSnapshotVersion,
+      failure_class: "runtime",
       request_id: expect.any(String),
       response_id: "resp-1",
       status_code: 200,
       error_code: "agent_execution_failed",
       stream: true,
+      terminal_status: "failed",
     });
     expect(errorLogs.join("\n")).not.toContain("Hi");
+  });
+
+  test("classifies persistence failures in structured logs", async () => {
+    const { errorLogs } = await captureStructuredLogs(async () => {
+      const app = await buildOpenResponsesApp({
+        agent: createCallbackDrivenAgent({ onStream: simulateTextStream }),
+        previousResponseStore: createFailingSaveStore(),
+        previousResponseSaveMode: "strict",
+        clock: createDeterministicClock(1000),
+        generateId: createSequentialIdGenerator([
+          "resp-1",
+          "msg-1",
+          "extra-1",
+          "extra-2",
+        ]),
+      });
+
+      const response = await app.request("/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(baseRequest),
+      });
+
+      expect(response.status).toBe(200);
+      await response.text();
+    });
+
+    const failedLog = JSON.parse(
+      errorLogs.find((entry) => entry.includes('"event":"request.failed"')) ??
+        ""
+    );
+
+    expect(failedLog).toMatchObject({
+      contract_snapshot_version: contractSnapshotVersion,
+      failure_class: "persistence",
+      request_id: expect.any(String),
+      response_id: "resp-1",
+      status_code: 200,
+      error_code: "internal_error",
+      stream: true,
+      terminal_status: "completed",
+    });
   });
 
   test("internal error responses and logs do not expose raw stack traces", async () => {

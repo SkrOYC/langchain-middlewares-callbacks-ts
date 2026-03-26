@@ -1,8 +1,28 @@
-import { buildOpenResponsesApp } from "../dist/server.js";
-import { createFakeAgent } from "../dist/testing.js";
+import {
+  buildOpenResponsesApp,
+  createInMemoryPreviousResponseStore,
+  createFakeAgent as createRootFakeAgent,
+} from "../dist/index.js";
+import { buildOpenResponsesApp as buildServerApp } from "../dist/server.js";
+import { createFakeAgent as createTestingFakeAgent } from "../dist/testing.js";
+
+const assertExport = (value: unknown, label: string): void => {
+  if (typeof value !== "function") {
+    throw new Error(`${label} export smoke check failed`);
+  }
+};
+
+assertExport(buildOpenResponsesApp, "root ESM buildOpenResponsesApp");
+assertExport(
+  createInMemoryPreviousResponseStore,
+  "root ESM createInMemoryPreviousResponseStore"
+);
+assertExport(createRootFakeAgent, "root ESM createFakeAgent");
+assertExport(buildServerApp, "server ESM buildOpenResponsesApp");
+assertExport(createTestingFakeAgent, "testing ESM createFakeAgent");
 
 const app = await buildOpenResponsesApp({
-  agent: createFakeAgent(),
+  agent: createTestingFakeAgent(),
 });
 
 const response = await app.fetch(

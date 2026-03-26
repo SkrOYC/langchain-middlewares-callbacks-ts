@@ -9,6 +9,11 @@
 
 Vendored baseline files in this repository:
 
+- `contracts/openresponses/official/bin/compliance-test.ts`
+- `contracts/openresponses/official/src/lib/compliance-tests.ts`
+- `contracts/openresponses/official/src/lib/sse-parser.ts`
+- `contracts/openresponses/official/src/generated/kubb/zod/**`
+- `contracts/openresponses/official/public/openapi/openapi.json`
 - `contracts/openresponses/compliance-runner/compliance-test.ts`
 - `contracts/openresponses/compliance-runner/compliance-tests.ts`
 - `contracts/openresponses/compliance-runner/sse-parser.ts`
@@ -32,5 +37,6 @@ bun run test:compliance:official
 ```
 
 The local harness builds the package, serves the built adapter from a temporary
-HTTP port, and runs the upstream CLI against that live endpoint so scenario
-failures reflect public contract gaps rather than local test doubles.
+HTTP port, and runs the vendored official CLI mirror against that live endpoint
+so scenario failures reflect public contract gaps rather than local test
+doubles.

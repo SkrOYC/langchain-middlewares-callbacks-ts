@@ -1,6 +1,8 @@
 # Technical Specification
 
 ## 0. Version History & Changelog
+- v2.2.0 - Upgraded verification from official-runner release gating alone to full pinned-spec conformance with an explicit requirement matrix and package-owned black-box coverage.
+- v2.1.0 - Recorded the ORA-D release-gating implementation, package-local versus official compliance split, and the current release-state convergence notes.
 - v2.0.2 - Restored fuller migration and module detail, removed the lingering request-snapshot ambiguity, and tightened required event-family coverage language.
 - v2.0.1 - Restored detailed brownfield drift registers, field-policy, module-boundary, and release-gate detail while preserving the full-compliance direction.
 - v2.0.0 - Reframed the package from an MVP subset implementation to a full current OpenResponses compliance target with explicit brownfield drift controls.
@@ -11,14 +13,15 @@
 - **Primary Frameworks / Libraries:** `langchain` 1.2.x, `@langchain/core` 1.1.x, optional `@langchain/langgraph` 1.2.x for builder integrations, `hono` 4.12.x, `zod` 4.3.x, `@hono/node-server` 1.19.x for Node examples and smoke coverage.
 - **State Stores / Persistence:** Builder-supplied `PreviousResponseStore` backed by a document or key-value persistence category; shipped in-memory development store remains part of the package for local testing only.
 - **Infrastructure / Tooling:** Bun workspaces, `tsup` 8.5.x, GitHub Actions, vendored current OpenResponses contract snapshot under `contracts/openresponses/`, and a pinned official compliance-runner integration.
-- **Testing / Quality Tooling:** `bun:test`, Biome 2.4.x, package-local regression tests, official OpenResponses CLI runner executed against a live built package, and Node/Bun smoke scripts.
+- **Testing / Quality Tooling:** `bun:test`, Biome 2.4.x, package-local regression tests, package-owned black-box conformance tests for pinned-spec gaps, official OpenResponses CLI runner executed against a live built package, and Node/Bun smoke scripts.
 - **Version Pinning / Compatibility Policy:** The package must pin the current upstream OpenResponses OpenAPI snapshot and official compliance-runner baseline by upstream commit or release reference. Any snapshot refresh requires a compatibility review, live compliance run, and docs update. The first full-compliance release must be treated as contract-breaking relative to package version `0.0.1`.
 
 ### 1.1 Brownfield Audit Summary
 - **Current package reality:** The package already contains the core machinery needed for the target state: request normalization, callback-driven semantic observation, canonical state accumulation, continuation persistence, Hono publication, and dual-runtime smoke coverage.
-- **Current package reality:** The package does not yet satisfy the target contract because the public response schema and terminal streaming events remain narrower than the current official OpenResponses contract.
-- **Current release reality:** `tests/compliance.spec.ts` is a useful package-local regression harness, but it is not equivalent to the official OpenResponses CLI runner and must not be treated as contract proof.
-- **Target-state implication:** The technical work is primarily contract broadening and publication correctness, not a wholesale rewrite of the package’s topology.
+- **Current package reality:** The package now satisfies the pinned target contract for the current vendored snapshot and official CLI runner baseline.
+- **Current release reality:** `tests/compliance/local-regression.spec.ts` is a useful package-local regression harness, but it is not equivalent to the official OpenResponses CLI runner and must not be treated as contract proof.
+- **Current release reality:** Official compliance, package-owned pinned-spec conformance checks, Node 24 smoke, and Bun smoke are release gates; local regressions remain supporting evidence only.
+- **Sustained implication:** Ongoing work is primarily snapshot refresh review, docs drift control, and compatibility maintenance rather than a topology rewrite.
 
 ## 2. Architecture Decision Records (ADRs)
 ### ADR-001 Contract Authority Is the Upstream OpenResponses Snapshot
@@ -69,9 +72,15 @@
 - **Decision:** CI and release verification must execute the official OpenResponses CLI runner against a live server built from the package artifacts on the certified runtimes.
 - **Consequences:** CI becomes slower and stricter, but release confidence becomes meaningful and auditable.
 
+### ADR-009 Full Compliance Requires a Requirement-to-Proof Matrix
+- **Status:** accepted
+- **Context:** The official upstream runner validates a useful but limited acceptance slice and does not, by itself, prove every normative rule in the pinned specification.
+- **Decision:** Full compliance claims require a maintained matrix mapping each normative pinned-spec requirement to executable proof, with package-owned black-box tests covering any gap not exercised by the official upstream runner.
+- **Consequences:** The package must maintain broader verification than the official runner alone, but release claims remain truthful and auditable.
+
 ### Brownfield Drift Notes
-- **Current state reality:** The package currently omits multiple fields required by the official `ResponseResource` and emits terminal streaming events with partial response payloads.
-- **Current state reality:** The package-local `tests/compliance.spec.ts` suite validates an earlier narrow subset and is not equivalent to the official OpenResponses CLI runner.
+- **Current state reality:** The package’s JSON responses, terminal SSE events, and continuation records now converge on the same vendored snapshot-backed contract surface.
+- **Current state reality:** The package-local `tests/compliance/local-regression.spec.ts` suite validates package-owned regressions and remains intentionally separate from the official OpenResponses CLI runner.
 - **Target state contract:** `src/core/schemas.ts`, `src/server/event-serializer.ts`, `src/server/previous-response.ts`, and release validation must converge on the same vendored upstream contract snapshot.
 - **Separately owned integration units:** `openresponses/openresponses` OpenAPI snapshot and official compliance runner are external integration units that govern the public contract but are not maintained inside this repository.
 
@@ -125,7 +134,7 @@ erDiagram
 | --- | --- | --- |
 | Terminal stream event payloads | `response.completed` and `response.failed` publish minimal response stubs | Terminal stream events must embed the full terminal `ResponseResource` |
 | Event-family breadth | Local event union centers on text and function-call events | Every snapshot-required event family must have a defined truthful publication mode, whether live delta, coarser live done-only publication, or terminal-only summary publication; no required family may be silently dropped |
-| Release proof | Local event-order and subset regressions pass | Official black-box compliance run must pass against the built package |
+| Release proof | Local event-order and subset regressions pass | Official black-box compliance run must pass against the built package, and every runner-uncovered normative requirement must have package-owned proof |
 
 ### 3.3 Field Completion Policy
 | Field Class | Completion Rule | Examples |
@@ -155,7 +164,7 @@ erDiagram
 ### 4.1 Public HTTP API
 - **Style:** HTTP API
 - **Authentication / Authorization:** Host-enforced before the package route executes. The package treats auth headers and request context as opaque inputs and does not define wire-level identity semantics beyond accepting the host’s chosen auth header.
-- **Compatibility Strategy:** The canonical public contract is the vendored current OpenResponses OpenAPI snapshot under `contracts/openresponses/openapi.json`. The local contract excerpt below defines the package’s release-gating surface and local overlay rules. Any public contract change must be evaluated against the pinned snapshot and the official compliance runner before release.
+- **Compatibility Strategy:** The canonical public contract is the vendored current OpenResponses OpenAPI snapshot under `contracts/openresponses/openapi.json`. The local contract excerpt below defines the package’s release-gating surface and local overlay rules. Any public contract change must be evaluated against the pinned snapshot, the official compliance runner, and the package-owned conformance matrix before release.
 - **Error model:** The wire error model follows the OpenResponses error object, not RFC 9457 Problem Details, because the upstream OpenResponses contract is the governing public standard for this package.
 
 ```yaml
@@ -469,11 +478,12 @@ export declare function createOpenResponsesToolPolicyMiddleware(): unknown;
 - **`src/testing`** owns deterministic fakes and helpers; it does not define the public contract. Its migration focus is separating local regression proof from official black-box compliance proof while preserving deterministic event-order coverage.
 
 ### 5.6 CI, Quality Gates, and Release Criteria
-- Required CI jobs include install, typecheck, lint, package-local unit/regression coverage, build, Node 24 smoke, Bun smoke, and an official OpenResponses black-box compliance run.
+- Required CI jobs include install, typecheck, lint, package-local unit/regression coverage, build, Node 24 smoke, Bun smoke, an official OpenResponses black-box compliance run, and package-owned black-box conformance coverage for pinned-spec gaps.
 - Release blockers include:
   - official compliance-runner pass against a live built package
+  - package-owned proof for every pinned-spec normative requirement not covered by the official runner
   - deterministic event-order regressions
   - continuation replay regressions
   - tool-policy and tool-call output regressions
   - import smoke for ESM and CJS package consumers
-- Local regression suites remain supporting signals. They are not a substitute for the black-box official runner.
+- Local regression suites remain supporting signals. They are not a substitute for the official runner or the broader pinned-spec conformance suite.

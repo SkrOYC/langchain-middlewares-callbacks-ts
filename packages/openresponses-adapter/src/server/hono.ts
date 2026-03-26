@@ -17,6 +17,7 @@ import {
   type OpenResponsesEvent,
   type OpenResponsesRequest,
   OpenResponsesRequestSchema,
+  type OpenResponsesResponse,
 } from "@/core/schemas.js";
 import { createOpenResponsesAdapter } from "@/server/adapter.js";
 import { formatSSEFrame } from "@/server/event-serializer.js";
@@ -115,7 +116,8 @@ const createExecutionOptions = <E extends Env = Env>(params: {
 
 const logStreamingOutcome = (
   requestLogContext: RequestLogContext,
-  terminalErrorCode: string | null
+  terminalErrorCode: string | null,
+  terminalStatus: "completed" | "failed" | "incomplete" | null
 ): void => {
   if (terminalErrorCode) {
     logRequestFailed(
@@ -124,12 +126,46 @@ const logStreamingOutcome = (
         code: terminalErrorCode,
         message: "Streaming request failed",
       },
-      200
+      200,
+      terminalStatus
     );
     return;
   }
 
-  logRequestCompleted(requestLogContext, 200);
+  logRequestCompleted(requestLogContext, 200, terminalStatus ?? "completed");
+};
+
+const updateStreamingTerminalState = (params: {
+  chunk: OpenResponsesEvent;
+  requestLogContext: RequestLogContext;
+  terminalErrorCode: string | null;
+  terminalStatus: "completed" | "failed" | "incomplete" | null;
+}): {
+  terminalErrorCode: string | null;
+  terminalStatus: "completed" | "failed" | "incomplete" | null;
+} => {
+  let { terminalErrorCode, terminalStatus } = params;
+
+  if ("response" in params.chunk) {
+    params.requestLogContext.responseId = params.chunk.response.id;
+    if (
+      params.chunk.type === "response.completed" ||
+      params.chunk.type === "response.failed" ||
+      params.chunk.type === "response.incomplete"
+    ) {
+      terminalStatus = params.chunk.response.status;
+    }
+  }
+
+  if (params.chunk.type === "response.failed") {
+    terminalErrorCode =
+      params.chunk.response.error?.code ?? "agent_execution_failed";
+  }
+
+  return {
+    terminalErrorCode,
+    terminalStatus,
+  };
 };
 
 const streamOpenResponses = <E extends Env = Env>(params: {
@@ -141,6 +177,7 @@ const streamOpenResponses = <E extends Env = Env>(params: {
   return streamSSE(params.context, async (stream) => {
     let sawDone = false;
     let terminalErrorCode: string | null = null;
+    let terminalStatus: "completed" | "failed" | "incomplete" | null = null;
 
     try {
       for await (const chunk of params.eventStream) {
@@ -149,14 +186,12 @@ const streamOpenResponses = <E extends Env = Env>(params: {
           continue;
         }
 
-        if ("response" in chunk) {
-          params.requestLogContext.responseId = chunk.response.id;
-        }
-
-        if (chunk.type === "response.failed") {
-          terminalErrorCode =
-            chunk.response.error?.code ?? "agent_execution_failed";
-        }
+        ({ terminalErrorCode, terminalStatus } = updateStreamingTerminalState({
+          chunk,
+          requestLogContext: params.requestLogContext,
+          terminalErrorCode,
+          terminalStatus,
+        }));
 
         await stream.writeSSE(formatSSEFrame(chunk));
       }
@@ -165,14 +200,28 @@ const streamOpenResponses = <E extends Env = Env>(params: {
         await stream.write("data: [DONE]\n\n");
       }
 
-      logStreamingOutcome(params.requestLogContext, terminalErrorCode);
+      logStreamingOutcome(
+        params.requestLogContext,
+        terminalErrorCode,
+        terminalStatus
+      );
     } catch (error) {
-      logRequestFailed(params.requestLogContext, error, 200);
+      logRequestFailed(params.requestLogContext, error, 200, terminalStatus);
       throw error;
     } finally {
       params.cleanupStreamAbort();
     }
   });
+};
+
+const toTerminalStatus = (
+  status: OpenResponsesResponse["status"]
+): "completed" | "failed" | "incomplete" => {
+  if (status === "failed" || status === "incomplete") {
+    return status;
+  }
+
+  return "completed";
 };
 
 /**
@@ -241,7 +290,11 @@ export function createOpenResponsesHandler<E extends Env = Env>(
 
       const response = await adapter.invoke(parsedRequest, executionOptions);
       requestLogContext.responseId = response.id;
-      logRequestCompleted(requestLogContext, 200);
+      logRequestCompleted(
+        requestLogContext,
+        200,
+        toTerminalStatus(response.status)
+      );
       return c.json(response);
     } catch (error) {
       logRequestFailed(requestLogContext, error);

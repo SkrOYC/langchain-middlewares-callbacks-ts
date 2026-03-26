@@ -1,7 +1,7 @@
 /**
  * OpenResponses Adapter for LangChain Agents
  *
- * A spec-minimal / acceptance-suite-targeted MVP adapter that exposes
+ * A pinned-snapshot OpenResponses adapter that exposes
  * an Open Responses API surface over an existing LangChain createAgent() runtime.
  *
  * @packageDocumentation

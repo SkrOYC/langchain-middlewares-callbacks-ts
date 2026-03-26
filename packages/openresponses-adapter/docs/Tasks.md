@@ -1,6 +1,8 @@
 # Engineering Execution Plan
 
 ## 0. Version History & Changelog
+- v2.2.0 - Added post-ORA work to upgrade the target from official-runner acceptance to full pinned-spec conformance proof.
+- v2.1.0 - Recorded ORA-D completion and retained the ticket list below as an implementation record for the full-compliance release.
 - v2.0.1 - Expanded dependency notes and archived ORL execution detail while tightening the full-compliance sequencing and coverage language.
 - v2.0.0 - Rebuilt the execution plan around full current OpenResponses compliance and preserved the completed ORL MVP backlog as archived brownfield context.
 - v1.1.0 - Recorded the MVP completion state and the final ORL critical-path outcome.
@@ -13,6 +15,8 @@
 - **Planning Assumptions:** The pinned upstream OpenResponses snapshot is the contract authority; the package remains library-shaped with root, `./server`, and `./testing` entrypoints; certified release verification remains Node.js 24.x plus Bun current.
 
 The active plan still follows the original constraint logic from the MVP phase: the real risk concentration is truthful semantic publication under a broader contract. The pacing chain remains contract authority -> canonical state -> publication breadth -> release proof. Request broadening, stored-record migration, and release documentation are sequenced to support that path rather than compete with it.
+
+Implementation status: the original ORA chain is implemented for the pinned upstream acceptance baseline. The additional delta below upgrades the target to full pinned-spec conformance proof rather than official-runner success alone.
 
 ### Legacy Issue Mapping Policy
 - `ORL-*` remains the archived MVP baseline that produced the current brownfield package.
@@ -38,6 +42,7 @@ The active plan still follows the original constraint logic from the MVP phase: 
 - Expand public schemas, request normalization, canonical response assembly, continuation persistence, and streaming publication to emit a full current `ResponseResource`.
 - Broaden truthful output-item and event-family coverage to every snapshot-required family, using live, coarse, or terminal publication rules as needed rather than silent omission.
 - Promote official compliance, import smoke, and certified runtime checks to release gates and public package claims.
+- Close every pinned-spec normative proof gap left outside the current upstream acceptance suite.
 
 ### Future / Deferred Scope
 - Additional runtime bindings beyond the current LangChain-oriented host family and the certified Node 24 plus Bun verification path.
@@ -51,15 +56,60 @@ The active plan still follows the original constraint logic from the MVP phase: 
 - `ORL-015` through `ORL-021`: truthful SSE streaming, Hono publication, minimum image input, error hardening, local regressions, smoke examples, and initial CI automation.
 
 ### Explicit Gap Inventory
-- Full terminal `ResponseResource` fields are still missing or incomplete in the current public schema and persisted record shape.
-- Terminal SSE events currently emit partial response stubs instead of full terminal resources.
-- Official black-box compliance is not yet wired into the repository as a first-class release gate.
-- Snapshot-required item and event families beyond the current text and function-call center need a checked truthful-publication policy before implementation.
+- Full terminal `ResponseResource` fields are now emitted and persisted from one canonical aggregate.
+- Terminal SSE events now publish full terminal resources.
+- Official black-box compliance is now wired into the repository as a first-class release gate.
+- Snapshot-required item and event families in scope for the pinned snapshot now have an implemented truthful-publication policy.
+- The official upstream acceptance suite still covers only a limited scenario slice and does not, by itself, prove full pinned-spec conformance.
+- The repository does not yet maintain an explicit requirement-to-proof matrix for all normative pinned-spec rules.
 
 ### Active Verification Milestones
-- **Milestone 1:** The pinned contract snapshot and official runner harness execute mechanically against a live built package, even while failing semantically.
-- **Milestone 2:** Local regressions and official black-box compliance both exercise the broadened response, continuation, and streaming surface without conflating their roles.
-- **Milestone 3:** CI, import smoke, examples, and release-facing docs all reflect the full-compliance posture rather than the old MVP subset claim.
+- **Milestone 1:** Completed. The pinned contract snapshot and official runner harness execute mechanically against a live built package.
+- **Milestone 2:** Completed. Local regressions and official black-box compliance both exercise the broadened response, continuation, and streaming surface without conflating their roles.
+- **Milestone 3:** Completed. CI, import smoke, examples, and release-facing docs now reflect the full-compliance posture rather than the old MVP subset claim.
+- **Milestone 4:** Pending. Every normative pinned-spec requirement is mapped to official-runner proof, package-owned proof, or an explicit uncovered gap.
+- **Milestone 5:** Pending. The package closes all runner-uncovered normative gaps and only then claims full pinned-spec compliance.
+
+### Epic E — Full Pinned-Spec Conformance Closure
+
+ORA-E001 Build the pinned-spec requirement matrix
+- **Type:** Spike
+- **Effort:** 2
+- **Dependencies:** ORA-D003
+- **Capability / Contract Mapping:** ORC-008, ORC-009, ORC-011
+- **Description:** Enumerate every normative requirement in the pinned OpenResponses specification and classify each one as covered by the official upstream runner, covered by package-owned proof, or currently uncovered.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the pinned OpenResponses specification, OpenAPI snapshot, and current verification suite
+When the maintainer audits conformance coverage
+Then every normative pinned-spec requirement is traceable to executable proof or an explicit uncovered gap
+```
+
+ORA-E002 Add black-box conformance tests for official-runner gaps
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** ORA-E001
+- **Capability / Contract Mapping:** ORC-001, ORC-002, ORC-003, ORC-004, ORC-005, ORC-006, ORC-011
+- **Description:** Add package-owned black-box tests for every normative pinned-spec rule not currently exercised by the upstream official runner, including streaming framing, event-to-type alignment, lifecycle ordering, failure-path semantics, and any other uncovered MUST-level behavior.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the pinned requirement matrix and the built package
+When the package-owned conformance suite executes
+Then every runner-uncovered normative requirement has black-box proof against the public HTTP surface
+```
+
+ORA-E003 Upgrade release claims to full pinned-spec compliance
+- **Type:** Chore
+- **Effort:** 1
+- **Dependencies:** ORA-E002
+- **Capability / Contract Mapping:** ORC-007, ORC-008, ORC-011
+- **Description:** Refresh release-facing claims so the package distinguishes official-runner acceptance from full pinned-spec conformance and only advertises the latter after the proof matrix is fully closed.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the official runner pass and complete pinned-spec conformance proof
+When release-facing claims are reviewed
+Then the package states its compliance level precisely and does not overclaim based on the narrower upstream acceptance slice
+```
 
 ## 3. Build Order (Mermaid)
 ```mermaid

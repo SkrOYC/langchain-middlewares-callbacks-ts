@@ -26,6 +26,10 @@ const runnerTargetDir = resolve(
   packageRoot,
   "contracts/openresponses/compliance-runner"
 );
+const officialRunnerTargetDir = resolve(
+  packageRoot,
+  "contracts/openresponses/official"
+);
 
 const copyIntoRepo = async (params: {
   from: string;
@@ -69,6 +73,26 @@ await copyIntoRepo({
 await copyIntoRepo({
   from: resolve(temporaryCloneDir, "src/lib/sse-parser.ts"),
   to: resolve(runnerTargetDir, "upstream-sse-parser.ts"),
+});
+
+await copyIntoRepo({
+  from: resolve(temporaryCloneDir, "bin"),
+  to: resolve(officialRunnerTargetDir, "bin"),
+});
+
+await copyIntoRepo({
+  from: resolve(temporaryCloneDir, "src/lib"),
+  to: resolve(officialRunnerTargetDir, "src/lib"),
+});
+
+await copyIntoRepo({
+  from: resolve(temporaryCloneDir, "src/generated"),
+  to: resolve(officialRunnerTargetDir, "src/generated"),
+});
+
+await copyIntoRepo({
+  from: resolve(temporaryCloneDir, "public/openapi"),
+  to: resolve(officialRunnerTargetDir, "public/openapi"),
 });
 
 await rm(temporaryCloneDir, { force: true, recursive: true });
