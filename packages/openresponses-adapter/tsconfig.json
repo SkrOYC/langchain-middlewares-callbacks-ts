@@ -29,7 +29,7 @@
 
     // Path aliases
     "paths": {
-      "@/*": ["./src/*", "./tests/*"]
+      "@/*": ["./src/*"]
     }
   },
   "exclude": [

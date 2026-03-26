@@ -55,6 +55,11 @@ interface OfficialRunnerPayload {
   summary: { passed: number; failed: number; total: number };
 }
 
+interface OfficialRunnerResult {
+  exitCode: number;
+  payload: OfficialRunnerPayload;
+}
+
 const buildPackage = async (): Promise<void> => {
   const proc = Bun.spawn({
     cmd: ["bun", "run", "build"],
@@ -121,7 +126,7 @@ const runOfficialCli = async (params: {
   baseUrl: string;
   filter?: string;
   model: string;
-}): Promise<OfficialRunnerPayload> => {
+}): Promise<OfficialRunnerResult> => {
   const cmd = [
     "bun",
     officialCliEntrypoint,
@@ -151,12 +156,10 @@ const runOfficialCli = async (params: {
   const exitCode = await proc.exited;
   const payload = JSON.parse(stdout) as OfficialRunnerPayload;
 
-  if (exitCode !== 0) {
-    process.stdout.write(summarizeScenarioResults(payload));
-    process.exit(exitCode);
-  }
-
-  return payload;
+  return {
+    exitCode,
+    payload,
+  };
 };
 
 const options = parseArgs(process.argv.slice(2));
@@ -177,7 +180,8 @@ try {
     officialRunnerOptions.filter = options.filter;
   }
 
-  const payload = await runOfficialCli(officialRunnerOptions);
+  const result = await runOfficialCli(officialRunnerOptions);
+  const { exitCode, payload } = result;
 
   if (options.jsonOut) {
     await Bun.write(
@@ -187,6 +191,7 @@ try {
   }
 
   process.stdout.write(summarizeScenarioResults(payload));
+  process.exit(exitCode);
 } finally {
   await server.stop();
 }
