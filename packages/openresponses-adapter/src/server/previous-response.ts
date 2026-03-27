@@ -919,20 +919,19 @@ const inputItemToMessages = (item: InputItem): LangChainMessageLike[] => {
   }
 
   if (item.type === "reasoning") {
-    const content = item.summary
+    const summaryText = item.summary
       .map(reasoningSummaryPartToText)
       .filter((part) => part.length > 0)
       .join(" ");
-
-    if (content.length === 0) {
-      return [];
-    }
 
     return [
       {
         type: "ai",
         role: "assistant",
-        content,
+        content: summaryText.length > 0 ? summaryText : [],
+        additional_kwargs: {
+          reasoning: safeStructuredClone(item),
+        },
       },
     ];
   }

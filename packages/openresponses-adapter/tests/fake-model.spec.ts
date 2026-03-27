@@ -89,7 +89,7 @@ describe("fake model regression", () => {
     ]);
   });
 
-  test("accepts reasoning and item_reference input items without crashing", async () => {
+  test("preserves reasoning input payload in additional_kwargs without crashing", async () => {
     const agent = createFakeAgent();
     const adapter = createOpenResponsesAdapter({ agent });
 
@@ -106,6 +106,7 @@ describe("fake model regression", () => {
           summary: [
             { type: "summary_text", text: "Earlier reasoning summary" },
           ],
+          encrypted_content: "opaque-reasoning-payload",
         },
         {
           type: "message",
@@ -125,6 +126,16 @@ describe("fake model regression", () => {
         type: "ai",
         role: "assistant",
         content: "Earlier reasoning summary",
+        additional_kwargs: {
+          reasoning: {
+            type: "reasoning",
+            id: "rs_123",
+            summary: [
+              { type: "summary_text", text: "Earlier reasoning summary" },
+            ],
+            encrypted_content: "opaque-reasoning-payload",
+          },
+        },
       },
       {
         type: "human",
