@@ -88,4 +88,49 @@ describe("fake model regression", () => {
       },
     ]);
   });
+
+  test("accepts reasoning and item_reference input items without crashing", async () => {
+    const agent = createFakeAgent();
+    const adapter = createOpenResponsesAdapter({ agent });
+
+    const response = await adapter.invoke({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          type: "item_reference",
+          id: "msg_123",
+        },
+        {
+          type: "reasoning",
+          id: "rs_123",
+          summary: [
+            { type: "summary_text", text: "Earlier reasoning summary" },
+          ],
+        },
+        {
+          type: "message",
+          role: "user",
+          content: "Continue.",
+        },
+      ],
+      metadata: {},
+      tools: [],
+      parallel_tool_calls: true,
+      stream: false,
+    });
+
+    expect(response.status).toBe("completed");
+    expect(agent.__getLastInvokeInput()?.messages).toEqual([
+      {
+        type: "ai",
+        role: "assistant",
+        content: "Earlier reasoning summary",
+      },
+      {
+        type: "human",
+        role: "user",
+        content: "Continue.",
+      },
+    ]);
+  });
 });
