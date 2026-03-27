@@ -182,6 +182,86 @@ describe("continuation replay", () => {
     ]);
   });
 
+  test("replays prior reasoning output items as reasoning payloads", async () => {
+    const store = createInMemoryPreviousResponseStore();
+    await store.save({
+      response_id: "resp-reasoning",
+      request: createRequestSnapshot({
+        include: ["reasoning.encrypted_content"],
+      }),
+      response: createTerminalResponse({
+        id: "resp-reasoning",
+        output: [
+          {
+            type: "reasoning",
+            id: "rs_123",
+            content: [{ type: "reasoning_text", text: "Detailed reasoning" }],
+            summary: [
+              { type: "summary_text", text: "Earlier reasoning summary" },
+            ],
+            encrypted_content: "opaque-reasoning-payload",
+          },
+        ],
+      }),
+      status: "completed",
+      created_at: 1000,
+      completed_at: 2000,
+      contract_snapshot_version: contractSnapshotVersion,
+    });
+
+    const agent = createFakeAgent({
+      responses: [{ type: "ai", id: "ai-reasoning", content: "Done" }],
+    });
+    const adapter = createOpenResponsesAdapter({
+      agent,
+      previousResponseStore: store,
+    });
+
+    await adapter.invoke({
+      model: "gpt-4.1-mini",
+      previous_response_id: "resp-reasoning",
+      input: "Continue.",
+      metadata: {},
+      tools: [],
+      parallel_tool_calls: true,
+      stream: false,
+    });
+
+    expect(agent.__getLastInvokeInput()?.messages).toEqual([
+      {
+        type: "system",
+        role: "system",
+        content: [{ type: "input_text", text: "Be terse." }],
+      },
+      {
+        type: "human",
+        role: "user",
+        content: "Tell me a joke",
+      },
+      {
+        type: "ai",
+        role: "assistant",
+        content: "Earlier reasoning summary",
+        additional_kwargs: {
+          reasoning: {
+            type: "reasoning",
+            id: "rs_123",
+            content: [{ type: "reasoning_text", text: "Detailed reasoning" }],
+            summary: [
+              { type: "summary_text", text: "Earlier reasoning summary" },
+            ],
+            encrypted_content: "opaque-reasoning-payload",
+          },
+        },
+      },
+      {
+        type: "human",
+        role: "user",
+        content: "Continue.",
+      },
+    ]);
+  });
+
   test("maps tool-call history input items to LangChain-compatible messages", async () => {
     const agent = createFakeAgent();
     const adapter = createOpenResponsesAdapter({ agent });

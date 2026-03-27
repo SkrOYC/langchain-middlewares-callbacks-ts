@@ -368,13 +368,21 @@ const outputItemToInputItem = (item: OutputItem): InputItem => {
 
   if (item.type === "reasoning") {
     return {
-      type: "message",
-      role: "assistant",
-      content: item.summary
+      type: "reasoning",
+      id: item.id,
+      summary: item.summary
         .map((part) => {
-          return "text" in part ? part.text : "";
+          return "text" in part
+            ? ({ type: "summary_text", text: part.text } as const)
+            : null;
         })
-        .join(" "),
+        .filter((part) => {
+          return part !== null;
+        }),
+      ...(item.content ? { content: safeStructuredClone(item.content) } : {}),
+      ...("encrypted_content" in item && item.encrypted_content !== undefined
+        ? { encrypted_content: item.encrypted_content }
+        : {}),
     };
   }
 

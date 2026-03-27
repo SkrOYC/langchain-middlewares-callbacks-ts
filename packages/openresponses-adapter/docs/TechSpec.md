@@ -18,9 +18,10 @@
 
 ### 1.1 Brownfield Audit Summary
 - **Current package reality:** The package already contains the core machinery needed for the target state: request normalization, callback-driven semantic observation, canonical state accumulation, continuation persistence, Hono publication, and dual-runtime smoke coverage.
-- **Current package reality:** The package now satisfies the pinned target contract for the current vendored snapshot and official CLI runner baseline.
+- **Current package reality:** The package now satisfies the current pinned JSON-surface release target and official CLI runner baseline for the vendored snapshot.
 - **Current release reality:** `tests/compliance/local-regression.spec.ts` is a useful package-local regression harness, but it is not equivalent to the official OpenResponses CLI runner and must not be treated as contract proof.
 - **Current release reality:** Official compliance, package-owned pinned-spec conformance checks, Node 24 smoke, and Bun smoke are release gates; local regressions remain supporting evidence only.
+- **Current claim scope:** `contracts/openresponses/REQUIREMENT-MATRIX.md` defines the currently claimed JSON-surface proof boundary; broader full pinned-spec conformance remains pending explicit matrix closure.
 - **Sustained implication:** Ongoing work is primarily snapshot refresh review, docs drift control, and compatibility maintenance rather than a topology rewrite.
 
 ## 2. Architecture Decision Records (ADRs)

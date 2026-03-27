@@ -655,7 +655,7 @@ describe("adapter.stream()", () => {
     expect(events.at(-1)).toBe("[DONE]");
   });
 
-  test("streaming persistence stores replay tool items separately from response output", async () => {
+  test("streaming persistence stores replay tool items and the full terminal response", async () => {
     const previousResponseStore = createInMemoryPreviousResponseStore();
     const adapter = createOpenResponsesAdapter({
       agent: createCallbackDrivenAgent({
@@ -669,6 +669,13 @@ describe("adapter.stream()", () => {
     const stream = await adapter.stream(baseRequest);
     const events = await collectStream(stream);
     const stored = await previousResponseStore.load(extractResponseId(events));
+    const completedEvent = events.find((event) => {
+      return typeof event !== "string" && event.type === "response.completed";
+    });
+
+    if (!completedEvent || typeof completedEvent === "string") {
+      throw new Error("Expected stream to emit response.completed");
+    }
 
     expect(stored?.request.input).toEqual([
       {
@@ -690,7 +697,7 @@ describe("adapter.stream()", () => {
         status: "completed",
       },
     ]);
-    expect(stored?.response.output).toEqual([]);
+    expect(stored?.response).toEqual(completedEvent.response);
   });
 
   test("multi-run callback sequences do not complete the response on sub-run completion", async () => {
