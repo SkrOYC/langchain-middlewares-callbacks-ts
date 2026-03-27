@@ -6,7 +6,7 @@ It exposes a `POST /v1/responses` route, preserves `previous_response_id` replay
 
 ## Status
 
-This package targets conformance with the pinned OpenResponses snapshot for the JSON request surface, uses the official OpenResponses CLI runner as a baseline release gate, and adds a package-owned spec-conformance suite for runner-uncovered behaviors.
+This package targets conformance with the pinned OpenResponses snapshot for the JSON request surface, uses the official OpenResponses CLI runner as a baseline release gate, and adds a package-owned spec-conformance suite for runner-uncovered behaviors. That suite also retains a small set of stricter package invariants where the pinned upstream wording is softer or leaves behavior unspecified.
 
 Implemented release-blocker capabilities:
 
@@ -107,7 +107,7 @@ The route is available at `POST /v1/responses`.
 
 Streaming output is derived from live LangChain callbacks observed during `agent.stream()`. The adapter does not replay the final answer as synthetic deltas.
 
-If the runtime fails after headers are already sent, the stream emits `response.failed` and then terminates. If a strict persistence failure happens after stream completion, the stream closes without appending `[DONE]`.
+If the runtime fails after headers are already sent, the stream emits `error`, then `response.failed`, and then terminates. If a strict persistence failure happens after stream completion, the stream closes without appending `[DONE]`.
 
 ### Compliance and release gating
 
@@ -118,6 +118,8 @@ Local regression tests, the official runner, and the spec-conformance suite are 
 - `bun run test:compliance:spec` runs the package-owned black-box JSON-surface conformance suite against the built package
 - `bun run test:compliance:full` runs the official runner and the package-owned conformance suite together
 - `bun run test:compliance` remains an alias to the local regression suite for backwards compatibility
+
+The package-owned suite intentionally includes a few stronger checks than the pinned upstream MUST-level wording, including omission of SSE `id` fields, monotonic built-in `sequence_number` progression, and package-specific HTTP/runtime error mappings where the upstream contract is silent.
 
 ### Tool policy enforcement
 
