@@ -152,6 +152,42 @@ function* simulateToolCallStream(
   bridge.handleAgentEnd?.({}, runId);
 }
 
+function* simulateReasoningSummaryStream(
+  _input: { messages: LangChainMessageLike[] },
+  config: Record<string, unknown>
+): Iterable<unknown> {
+  const bridge = extractBridge(config);
+  const runId = extractRunId(config);
+
+  bridge.handleChatModelStart?.({}, [[]], runId, undefined);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleLLMNewToken?.("", undefined, runId, undefined, undefined, {
+    chunk: {
+      message: {
+        contentBlocks: [{ type: "reasoning_text", text: "Thinking step 1" }],
+      },
+    },
+  });
+  yield { type: "chunk", content: "" };
+
+  bridge.handleLLMEnd?.(
+    {
+      message: {
+        content: [
+          { type: "reasoning_text", text: "Thinking step 1" },
+          { type: "summary_text", text: "Short answer summary" },
+        ],
+      },
+      generations: [],
+    },
+    runId
+  );
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentEnd?.({}, runId);
+}
+
 function* simulateMultiRunToolStream(
   _input: { messages: LangChainMessageLike[] },
   config: Record<string, unknown>
@@ -429,6 +465,7 @@ describe("adapter.stream()", () => {
 
     expect(types).toContain("response.in_progress");
     expect(types).toContain("response.output_text.delta");
+    expect(types).toContain("error");
     expect(types).toContain("response.failed");
     expect(types.at(-1)).toBe("[DONE]");
 
@@ -462,8 +499,53 @@ describe("adapter.stream()", () => {
     const events = await collectStream(stream);
 
     const types = events.map((e) => (typeof e === "string" ? e : e.type));
+    expect(types).toContain("error");
     expect(types).toContain("response.failed");
     expect(types.at(-1)).toBe("[DONE]");
+  });
+
+  test("reasoning summaries emit summary events before output_item.done", async () => {
+    const adapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateReasoningSummaryStream,
+      }),
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator(["resp-1", "reasoning-1"]),
+    });
+
+    const stream = await adapter.stream(baseRequest);
+    const events = await collectStream(stream);
+    const types = events.map((event) =>
+      typeof event === "string" ? event : event.type
+    );
+
+    expect(types).toContain("response.reasoning_summary_part.added");
+    expect(types).toContain("response.reasoning_summary_text.delta");
+    expect(types).toContain("response.reasoning_summary_text.done");
+    expect(types).toContain("response.reasoning_summary_part.done");
+
+    const itemDoneIndex = types.indexOf("response.output_item.done");
+    const summaryDoneIndex = types.indexOf(
+      "response.reasoning_summary_part.done"
+    );
+    expect(summaryDoneIndex).toBeGreaterThan(-1);
+    expect(summaryDoneIndex).toBeLessThan(itemDoneIndex);
+
+    const completedEvent = events.find((event) => {
+      return typeof event !== "string" && event.type === "response.completed";
+    });
+
+    expect(completedEvent).toBeDefined();
+    if (completedEvent && typeof completedEvent !== "string") {
+      expect(completedEvent.response.output).toEqual([
+        {
+          id: "reasoning-1",
+          type: "reasoning",
+          content: [{ type: "reasoning_text", text: "Thinking step 1" }],
+          summary: [{ type: "summary_text", text: "Short answer summary" }],
+        },
+      ]);
+    }
   });
 
   test("pre-stream validation error rejects the promise", async () => {
@@ -527,6 +609,7 @@ describe("adapter.stream()", () => {
     ).toEqual([
       "response.created",
       "response.queued",
+      "error",
       "response.failed",
       "[DONE]",
     ]);

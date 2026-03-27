@@ -1,0 +1,41 @@
+# OpenResponses JSON-Surface Requirement Matrix
+
+This matrix records the pinned OpenResponses requirements that this package
+claims to satisfy for the JSON request surface. It separates the official
+runner baseline from the package-owned spec-conformance suite so release claims
+do not overfit the six upstream acceptance scenarios.
+
+Scope notes:
+
+- Contract snapshot: `2.3.0+0e3605e36180`
+- In-scope transport: `application/json`
+- Deferred by explicit scope: `application/x-www-form-urlencoded`
+- Proof types:
+  - `official_runner`: vendored upstream acceptance suite
+  - `spec_conformance`: package-owned black-box HTTP proof
+  - `shared`: covered by both
+
+| ID | Source | Requirement | Proof Type | Proof Ref | Status |
+| --- | --- | --- | --- | --- | --- |
+| OR-HTTP-001 | specification | Non-streaming responses return `application/json` | shared | `basic-response`, `response-resource-complete` | covered |
+| OR-HTTP-002 | specification | Streaming responses return `text/event-stream` | shared | `streaming-response`, `sse-framing-and-ordering` | covered |
+| OR-HTTP-003 | specification | JSON is the in-scope request body encoding for this milestone | spec_conformance | `response-resource-complete`, `sse-framing-and-ordering` | covered |
+| OR-HTTP-004 | reference/openapi | `application/x-www-form-urlencoded` is published upstream but deferred from this milestone by explicit scope | deferred_by_scope | user scope decision on 2026-03-26 | deferred |
+| OR-RESP-001 | reference/openapi | Terminal JSON responses contain the full `ResponseResource` shape, including nullable/defaulted fields | shared | `basic-response`, `response-resource-complete` | covered |
+| OR-STREAM-001 | specification | SSE `event` must match body `type` | spec_conformance | `sse-framing-and-ordering` | covered |
+| OR-STREAM-002 | specification | SSE frames must not use the `id` field | spec_conformance | `sse-framing-and-ordering` | covered |
+| OR-STREAM-003 | specification | Streaming terminates with literal `[DONE]` after the terminal event | shared | `streaming-response`, `sse-framing-and-ordering` | covered |
+| OR-STREAM-004 | reference/openapi | Terminal stream events carry the full `ResponseResource` | shared | `streaming-response`, `sse-framing-and-ordering` | covered |
+| OR-STREAM-005 | specification | Sequence numbers are monotonic across a response stream | spec_conformance | `sse-framing-and-ordering` | covered |
+| OR-STREAM-006 | specification | Stream lifecycle ordering begins `response.created -> response.queued -> response.in_progress` | spec_conformance | `sse-framing-and-ordering` | covered |
+| OR-STREAM-007 | specification + reference/openapi | Post-start failures emit an `error` event and resolve through terminal `response.failed` semantics | spec_conformance | `post-start-failure` | covered |
+| OR-STREAM-008 | reference/openapi | Incomplete executions emit `response.incomplete` and terminal incomplete state | spec_conformance | `incomplete-terminal` | covered |
+| OR-STREAM-009 | reference/openapi | Reasoning summary event families are emitted when reasoning summaries are present | spec_conformance | `reasoning-summary-coverage` | covered |
+| OR-CONT-001 | specification | Continuation semantics are keyed by `previous_response_id` and replay prior input before prior output before new input | official_runner | `multi-turn` plus existing continuation regressions | partial |
+| OR-TOOLS-001 | specification + reference/openapi | Tool-calling paths surface contract-valid function-call behavior | official_runner | `tool-calling` | partial |
+
+`partial` rows are intentionally called out because the official runner gives
+useful baseline coverage but does not fully prove the broader normative
+continuation and tool-governance contract on its own. Those rows should be the
+next candidates for black-box expansion if the package needs a stricter release
+claim than the current JSON-surface milestone.

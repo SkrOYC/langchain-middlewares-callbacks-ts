@@ -109,6 +109,34 @@ const errorToErrorObject = (error: unknown) => {
   return internalErrorToPublicError(internal);
 };
 
+const emitErrorEvent = (
+  context: SerializerContext,
+  error: NonNullable<OpenResponsesResponse["error"]>
+): OpenResponsesEvent => {
+  return {
+    type: "error",
+    sequence_number: context.sequence.next(),
+    error: {
+      type: error.type,
+      code: error.code,
+      message: error.message,
+      param: error.param ?? null,
+    },
+  } as OpenResponsesEvent;
+};
+
+const emitFailedTerminalEvents = (
+  context: SerializerContext,
+  error: NonNullable<OpenResponsesResponse["error"]>
+): OpenResponsesEvent[] => {
+  return [
+    emitErrorEvent(context, error),
+    emitLifecycleEvent("response.failed", context, "failed", {
+      error,
+    }),
+  ];
+};
+
 const buildResponseSnapshot = (
   context: SerializerContext,
   status?: OpenResponsesResponse["status"],
@@ -472,7 +500,7 @@ const serializeReasoningCompleted = (
     );
   }
 
-  return [
+  const events: OpenResponsesEvent[] = [
     {
       type: "response.reasoning.done",
       sequence_number: context.sequence.next(),
@@ -489,13 +517,55 @@ const serializeReasoningCompleted = (
       content_index: 0,
       part: reasoningText,
     },
-    {
-      type: "response.output_item.done",
-      sequence_number: context.sequence.next(),
-      output_index: outputIndex,
-      item: finalizedItem,
-    },
   ];
+
+  for (const [summaryIndex, summaryPart] of finalizedItem.summary.entries()) {
+    const summaryText =
+      summaryPart.type === "summary_text" ? summaryPart.text : "";
+    events.push(
+      {
+        type: "response.reasoning_summary_part.added",
+        sequence_number: context.sequence.next(),
+        item_id: event.itemId,
+        output_index: outputIndex,
+        summary_index: summaryIndex,
+        part: summaryPart,
+      },
+      {
+        type: "response.reasoning_summary_text.delta",
+        sequence_number: context.sequence.next(),
+        item_id: event.itemId,
+        output_index: outputIndex,
+        summary_index: summaryIndex,
+        delta: summaryText,
+      },
+      {
+        type: "response.reasoning_summary_text.done",
+        sequence_number: context.sequence.next(),
+        item_id: event.itemId,
+        output_index: outputIndex,
+        summary_index: summaryIndex,
+        text: summaryText,
+      },
+      {
+        type: "response.reasoning_summary_part.done",
+        sequence_number: context.sequence.next(),
+        item_id: event.itemId,
+        output_index: outputIndex,
+        summary_index: summaryIndex,
+        part: summaryPart,
+      }
+    );
+  }
+
+  events.push({
+    type: "response.output_item.done",
+    sequence_number: context.sequence.next(),
+    output_index: outputIndex,
+    item: finalizedItem,
+  });
+
+  return events;
 };
 
 const serializeAnnotationAdded = (
@@ -661,11 +731,7 @@ const serializeRunFailed = (
     context.lifecycle.start();
   }
   context.lifecycle.fail(errorObject);
-  return [
-    emitLifecycleEvent("response.failed", context, "failed", {
-      error: errorObject,
-    }),
-  ];
+  return emitFailedTerminalEvents(context, errorObject);
 };
 
 const serializeRunIncomplete = (
@@ -781,11 +847,9 @@ export async function* createEventSerializer(params: {
     }
     if (params.lifecycle.getStatus() === "in_progress") {
       params.lifecycle.fail(errorObject);
-      yield validateOutgoingEvent(
-        emitLifecycleEvent("response.failed", context, "failed", {
-          error: errorObject,
-        })
-      );
+      for (const event of emitFailedTerminalEvents(context, errorObject)) {
+        yield validateOutgoingEvent(event);
+      }
     }
   }
 
