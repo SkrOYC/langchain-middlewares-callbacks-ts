@@ -18,6 +18,7 @@ import {
   createInMemoryPreviousResponseStore,
   createSequentialIdGenerator,
 } from "@/testing/index.js";
+import { simulateReasoningSummaryStream } from "../helpers/streaming-fixtures.ts";
 
 type StreamCallback = (
   input: { messages: LangChainMessageLike[] },
@@ -147,42 +148,6 @@ function* simulateToolCallStream(
   yield { type: "chunk", content: "" };
 
   bridge.handleToolEnd?.({ temperature: "55F" }, "tool-run-1", runId);
-  yield { type: "chunk", content: "" };
-
-  bridge.handleAgentEnd?.({}, runId);
-}
-
-function* simulateReasoningSummaryStream(
-  _input: { messages: LangChainMessageLike[] },
-  config: Record<string, unknown>
-): Iterable<unknown> {
-  const bridge = extractBridge(config);
-  const runId = extractRunId(config);
-
-  bridge.handleChatModelStart?.({}, [[]], runId, undefined);
-  yield { type: "chunk", content: "" };
-
-  bridge.handleLLMNewToken?.("", undefined, runId, undefined, undefined, {
-    chunk: {
-      message: {
-        contentBlocks: [{ type: "reasoning_text", text: "Thinking step 1" }],
-      },
-    },
-  });
-  yield { type: "chunk", content: "" };
-
-  bridge.handleLLMEnd?.(
-    {
-      message: {
-        content: [
-          { type: "reasoning_text", text: "Thinking step 1" },
-          { type: "summary_text", text: "Short answer summary" },
-        ],
-      },
-      generations: [],
-    },
-    runId
-  );
   yield { type: "chunk", content: "" };
 
   bridge.handleAgentEnd?.({}, runId);
