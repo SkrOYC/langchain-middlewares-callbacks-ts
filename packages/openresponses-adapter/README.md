@@ -138,6 +138,10 @@ Without that middleware, metadata-only tool policies still normalize, but enforc
 
 exactly in that order.
 
+### Item References
+
+`item_reference` is accepted as a schema-valid input item and preserved in the normalized request snapshot. The package does not currently invent dereference or re-hydration behavior for it at the LangChain runtime boundary, because the pinned public contract exposes the type more clearly than it defines its execution semantics.
+
 ### Image input
 
 `input_image` is accepted and passed through as-is. The package does not fetch, proxy, transform, or store image binaries.
