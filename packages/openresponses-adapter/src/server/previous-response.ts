@@ -400,6 +400,31 @@ const outputItemToInputItem = (item: OutputItem): InputItem => {
   };
 };
 
+const getReplayToolItemKey = (item: InputItem): string | null => {
+  if (item.type === "function_call" || item.type === "function_call_output") {
+    return `${item.type}:${item.call_id}`;
+  }
+
+  return null;
+};
+
+const dedupeReplayedResponseItems = (params: {
+  priorRequestItems: InputItem[];
+  priorResponseItems: InputItem[];
+}): InputItem[] => {
+  const replayedToolItemKeys = new Set(
+    params.priorRequestItems.flatMap((item) => {
+      const key = getReplayToolItemKey(item);
+      return key ? [key] : [];
+    })
+  );
+
+  return params.priorResponseItems.filter((item) => {
+    const key = getReplayToolItemKey(item);
+    return key === null || !replayedToolItemKeys.has(key);
+  });
+};
+
 const normalizeOutputItemStatus = (
   status: unknown
 ): "in_progress" | "completed" | "incomplete" => {
@@ -1437,8 +1462,11 @@ export const normalizeRequest = async (
     );
 
     const priorRequestItems = inputToItems(validatedRecord.request.input);
-    const priorResponseItems = validatedRecord.response.output.map((item) => {
-      return outputItemToInputItem(item as unknown as OutputItem);
+    const priorResponseItems = dedupeReplayedResponseItems({
+      priorRequestItems,
+      priorResponseItems: validatedRecord.response.output.map((item) => {
+        return outputItemToInputItem(item as unknown as OutputItem);
+      }),
     });
 
     replayedInputItems = [

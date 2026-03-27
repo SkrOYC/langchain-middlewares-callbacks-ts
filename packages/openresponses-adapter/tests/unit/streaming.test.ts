@@ -700,6 +700,68 @@ describe("adapter.stream()", () => {
     expect(stored?.response).toEqual(completedEvent.response);
   });
 
+  test("continuation from a streamed tool-call record does not duplicate tool items", async () => {
+    const previousResponseStore = createInMemoryPreviousResponseStore();
+    const streamingAdapter = createOpenResponsesAdapter({
+      agent: createCallbackDrivenAgent({
+        onStream: simulateToolCallStream,
+      }),
+      previousResponseStore,
+      clock: createDeterministicClock(1000),
+      generateId: createSequentialIdGenerator(["resp-1", "fc-1", "extra-1"]),
+    });
+
+    const events = await collectStream(await streamingAdapter.stream(baseRequest));
+    const responseId = extractResponseId(events);
+
+    const continuationAgent = createFakeAgent({
+      responses: [{ type: "ai", id: "ai-next", content: "Continued" }],
+    });
+    const continuationAdapter = createOpenResponsesAdapter({
+      agent: continuationAgent,
+      previousResponseStore,
+    });
+
+    await continuationAdapter.invoke({
+      ...baseRequest,
+      stream: false,
+      previous_response_id: responseId,
+      input: "Continue",
+    });
+
+    expect(continuationAgent.__getLastInvokeInput()?.messages).toEqual([
+      {
+        type: "human",
+        role: "user",
+        content: "Hello",
+      },
+      {
+        type: "ai",
+        role: "assistant",
+        content: [],
+        tool_calls: [
+          {
+            id: "call-1",
+            type: "tool_call",
+            name: "get_weather",
+            args: { city: "Boston" },
+          },
+        ],
+      },
+      {
+        type: "tool",
+        role: "tool",
+        tool_call_id: "call-1",
+        content: '{"temperature":"55F"}',
+      },
+      {
+        type: "human",
+        role: "user",
+        content: "Continue",
+      },
+    ]);
+  });
+
   test("multi-run callback sequences do not complete the response on sub-run completion", async () => {
     const adapter = createOpenResponsesAdapter({
       agent: createCallbackDrivenAgent({
