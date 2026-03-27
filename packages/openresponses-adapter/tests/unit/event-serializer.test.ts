@@ -412,8 +412,12 @@ describe("serializeInternalEvent", () => {
       context
     );
 
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
+      type: "response.in_progress",
+      response: { id: "resp-1", object: "response", status: "in_progress" },
+    });
+    expect(events[1]).toMatchObject({
       type: "response.completed",
       response: { id: "resp-1", object: "response", status: "completed" },
     });
@@ -462,6 +466,22 @@ describe("serializeInternalEvent", () => {
         message: "boom",
       });
     }
+  });
+
+  test("run.failed emits response.in_progress first when no prior in-progress event was emitted", () => {
+    const context = createContext();
+
+    const events = serializeInternalEvent(
+      { type: "run.failed", runId: "resp-1", error: new Error("boom") },
+      context
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "response.in_progress",
+      "error",
+      "response.failed",
+    ]);
+    expect(context.lifecycle.getStatus()).toBe("failed");
   });
 
   test("reasoning.completed emits summary-part events before output_item.done", () => {

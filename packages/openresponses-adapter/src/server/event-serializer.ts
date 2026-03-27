@@ -137,6 +137,13 @@ const emitFailedTerminalEvents = (
   ];
 };
 
+const ensureTerminalInProgressPrefix = (
+  context: SerializerContext
+): OpenResponsesEvent[] => {
+  const inProgressEvent = ensureInProgressEvent(context);
+  return inProgressEvent ? [inProgressEvent] : [];
+};
+
 const buildResponseSnapshot = (
   context: SerializerContext,
   status?: OpenResponsesResponse["status"],
@@ -710,11 +717,10 @@ const serializeRunCompleted = (
     return [];
   }
 
-  if (context.lifecycle.getStatus() === "queued") {
-    context.lifecycle.start();
-  }
+  const events = ensureTerminalInProgressPrefix(context);
   context.lifecycle.complete();
-  return [emitLifecycleEvent("response.completed", context, "completed")];
+  events.push(emitLifecycleEvent("response.completed", context, "completed"));
+  return events;
 };
 
 const serializeRunFailed = (
@@ -727,11 +733,10 @@ const serializeRunFailed = (
 
   const errorObject = errorToErrorObject(event.error);
   context.accumulator.finalizeOpenItemsAsIncomplete();
-  if (context.lifecycle.getStatus() === "queued") {
-    context.lifecycle.start();
-  }
+  const events = ensureTerminalInProgressPrefix(context);
   context.lifecycle.fail(errorObject);
-  return emitFailedTerminalEvents(context, errorObject);
+  events.push(...emitFailedTerminalEvents(context, errorObject));
+  return events;
 };
 
 const serializeRunIncomplete = (
@@ -743,17 +748,16 @@ const serializeRunIncomplete = (
   }
 
   context.accumulator.finalizeOpenItemsAsIncomplete();
-  if (context.lifecycle.getStatus() === "queued") {
-    context.lifecycle.start();
-  }
+  const events = ensureTerminalInProgressPrefix(context);
   context.lifecycle.incomplete();
-  return [
+  events.push(
     emitLifecycleEvent("response.incomplete", context, "incomplete", {
       incompleteDetails: {
         reason: event.reason ?? "stream_ended_before_terminal_state",
       },
-    }),
-  ];
+    })
+  );
+  return events;
 };
 
 export const serializeInternalEvent = (
@@ -842,8 +846,8 @@ export async function* createEventSerializer(params: {
   } catch (error) {
     const errorObject = errorToErrorObject(error);
     context.accumulator.finalizeOpenItemsAsIncomplete();
-    if (params.lifecycle.getStatus() === "queued") {
-      params.lifecycle.start();
+    for (const event of ensureTerminalInProgressPrefix(context)) {
+      yield validateOutgoingEvent(event);
     }
     if (params.lifecycle.getStatus() === "in_progress") {
       params.lifecycle.fail(errorObject);
@@ -856,8 +860,10 @@ export async function* createEventSerializer(params: {
   const status = params.lifecycle.getStatus();
   if (status === "queued" || status === "in_progress") {
     context.accumulator.finalizeOpenItemsAsIncomplete();
-    if (status === "queued") {
-      params.lifecycle.start();
+    if (params.lifecycle.getStatus() === "queued") {
+      for (const event of ensureTerminalInProgressPrefix(context)) {
+        yield validateOutgoingEvent(event);
+      }
     }
     params.lifecycle.incomplete();
     yield validateOutgoingEvent(

@@ -574,6 +574,7 @@ describe("adapter.stream()", () => {
     ).toEqual([
       "response.created",
       "response.queued",
+      "response.in_progress",
       "error",
       "response.failed",
       "[DONE]",
