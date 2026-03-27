@@ -31,13 +31,9 @@ Scope notes:
 | OR-STREAM-007 | specification + reference/openapi | Post-start failures emit an `error` event and resolve through terminal `response.failed` semantics | spec_conformance | `post-start-failure` | covered |
 | OR-STREAM-008 | reference/openapi | Incomplete executions emit `response.incomplete` and terminal incomplete state | spec_conformance | `incomplete-terminal` | covered |
 | OR-STREAM-009 | reference/openapi | Reasoning summary event families are emitted when reasoning summaries are present | spec_conformance | `reasoning-summary-coverage` | covered |
-| OR-CONT-001 | specification | Continuation semantics are keyed by `previous_response_id` and replay prior input before prior output before new input | official_runner | `multi-turn` plus existing continuation regressions | partial |
-| OR-TOOLS-001 | specification + reference/openapi | Tool-calling paths surface contract-valid function-call behavior | official_runner | `tool-calling` | partial |
+| OR-CONT-001 | specification | Continuation semantics are keyed by `previous_response_id` and replay prior input before prior output before new input | spec_conformance | `continuation-coverage` | covered |
+| OR-TOOLS-001 | specification + reference/openapi | Tool-calling paths surface contract-valid function-call behavior and tool-governance semantics | spec_conformance | `tool-governance-coverage` | covered |
 
-`partial` rows are intentionally called out because the current proof only
-covers a narrower slice of the normative contract than the row title implies.
-For `OR-CONT-001` and `OR-TOOLS-001`, the official runner gives useful
-baseline coverage but does not fully prove the broader continuation and
-tool-governance contract on its own. Those rows are the next candidates for
-black-box expansion if the package needs a stricter release claim than the
-current JSON-surface milestone.
+No in-scope JSON-surface requirement rows are intentionally left `partial`.
+The only remaining non-covered row is `OR-HTTP-004`, which is explicitly
+deferred by scope because this milestone is limited to `application/json`.

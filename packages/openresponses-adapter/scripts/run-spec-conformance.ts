@@ -3,8 +3,15 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseSSEStream } from "../contracts/openresponses/compliance-runner/sse-parser.ts";
-import type { OpenResponsesCompatibleAgent } from "../src/core/types.ts";
-import { createFakeAgent } from "../src/testing/fake-agent.ts";
+import type {
+  OpenResponsesCompatibleAgent,
+  PreviousResponseStore,
+} from "../src/core/types.ts";
+import {
+  createFakeAgent,
+  createInMemoryPreviousResponseStore,
+} from "../src/testing/index.ts";
+import { createPriorRecord } from "../tests/helpers/records.ts";
 import {
   createCallbackDrivenAgent,
   simulateIncompleteStream,
@@ -43,12 +50,14 @@ const buildPackage = async (): Promise<void> => {
 
 const startFixtureServer = async (params: {
   agent: OpenResponsesCompatibleAgent;
+  previousResponseStore?: PreviousResponseStore;
   timeoutBudgets?: {
     agentExecutionMs?: number;
     previousResponseLoadMs?: number;
     previousResponseSaveMs?: number;
     requestValidationMs?: number;
   };
+  toolPolicySupport?: "metadata-only" | "middleware";
 }) => {
   const { buildOpenResponsesApp } = (await import(
     distServerPath
@@ -56,7 +65,13 @@ const startFixtureServer = async (params: {
 
   const app = await buildOpenResponsesApp({
     agent: params.agent,
+    ...(params.previousResponseStore
+      ? { previousResponseStore: params.previousResponseStore }
+      : {}),
     ...(params.timeoutBudgets ? { timeoutBudgets: params.timeoutBudgets } : {}),
+    ...(params.toolPolicySupport
+      ? { toolPolicySupport: params.toolPolicySupport }
+      : {}),
   });
 
   const server = Bun.serve({
@@ -377,6 +392,319 @@ const runReasoningSummaryCoverage = async (): Promise<void> => {
   }
 };
 
+const runContinuationCoverage = async (): Promise<void> => {
+  const previousResponseStore = createInMemoryPreviousResponseStore();
+  await previousResponseStore.save(createPriorRecord());
+
+  const agent = createFakeAgent({
+    responses: [{ type: "ai", id: "ai-next", content: "Follow-up answer" }],
+  });
+
+  const server = await startFixtureServer({
+    agent,
+    previousResponseStore,
+  });
+
+  try {
+    const continuedResponse = await fetch(`${server.baseUrl}/v1/responses`, {
+      method: "POST",
+      headers: createJsonHeaders(),
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        previous_response_id: "resp-prev",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: "Explain why it is funny.",
+          },
+        ],
+        metadata: {},
+        tools: [],
+        parallel_tool_calls: true,
+        stream: false,
+      }),
+    });
+
+    assertCondition(
+      continuedResponse.status === 200,
+      "continuation-coverage: expected 200 for known previous_response_id"
+    );
+
+    const payload = (await continuedResponse.json()) as {
+      previous_response_id: string | null;
+    };
+    assertCondition(
+      payload.previous_response_id === "resp-prev",
+      "continuation-coverage: response must echo previous_response_id"
+    );
+
+    assertCondition(
+      JSON.stringify(agent.__getLastInvokeInput()?.messages) ===
+        JSON.stringify([
+          {
+            type: "system",
+            role: "system",
+            content: [{ type: "input_text", text: "Be terse." }],
+          },
+          {
+            type: "human",
+            role: "user",
+            content: "Tell me a joke",
+          },
+          {
+            type: "ai",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "Why did the test cross the road?",
+                annotations: [],
+                logprobs: [],
+              },
+            ],
+          },
+          {
+            type: "human",
+            role: "user",
+            content: "Explain why it is funny.",
+          },
+        ]),
+      "continuation-coverage: expected prior input -> prior output -> new input replay order"
+    );
+
+    const missingRecordResponse = await fetch(
+      `${server.baseUrl}/v1/responses`,
+      {
+        method: "POST",
+        headers: createJsonHeaders(),
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          previous_response_id: "missing",
+          input: "Next",
+        }),
+      }
+    );
+    assertCondition(
+      missingRecordResponse.status === 404,
+      "continuation-coverage: missing previous response must return 404"
+    );
+
+    const malformedStore: PreviousResponseStore = {
+      load: async () => ({
+        ...createPriorRecord(),
+        response: {
+          ...createPriorRecord().response,
+          status: "queued" as const,
+        },
+      }),
+      save: async () => {
+        // Intentionally unused for malformed-record verification.
+      },
+    };
+
+    const malformedServer = await startFixtureServer({
+      agent: createFakeAgent(),
+      previousResponseStore: malformedStore,
+    });
+
+    try {
+      const malformedResponse = await fetch(
+        `${malformedServer.baseUrl}/v1/responses`,
+        {
+          method: "POST",
+          headers: createJsonHeaders(),
+          body: JSON.stringify({
+            model: "gpt-4.1-mini",
+            previous_response_id: "resp-prev",
+            input: "Next",
+          }),
+        }
+      );
+      assertCondition(
+        malformedResponse.status === 409,
+        "continuation-coverage: unusable previous response must return 409"
+      );
+    } finally {
+      await malformedServer.stop();
+    }
+  } finally {
+    await server.stop();
+  }
+};
+
+const runToolGovernanceCoverage = async (): Promise<void> => {
+  const middlewareRequiredServer = await startFixtureServer({
+    agent: createFakeAgent(),
+  });
+
+  try {
+    const restrictiveResponse = await fetch(
+      `${middlewareRequiredServer.baseUrl}/v1/responses`,
+      {
+        method: "POST",
+        headers: createJsonHeaders(),
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: "Hello",
+          metadata: {},
+          tools: [
+            {
+              type: "function",
+              name: "lookup_fact",
+              description: "Lookup a fact",
+              parameters: { type: "object" },
+              strict: true,
+            },
+          ],
+          tool_choice: {
+            type: "function",
+            name: "lookup_fact",
+          },
+          parallel_tool_calls: true,
+          stream: false,
+        }),
+      }
+    );
+
+    assertCondition(
+      restrictiveResponse.status === 400,
+      "tool-governance: restrictive tool policy without middleware support must return 400"
+    );
+  } finally {
+    await middlewareRequiredServer.stop();
+  }
+
+  const lookupFactTool = {
+    type: "function" as const,
+    name: "lookup_fact",
+    description: "Lookup a fact",
+    parameters: { type: "object" },
+    strict: true,
+  };
+
+  const allowedToolsAgent = createFakeAgent({
+    responses: [
+      [
+        {
+          type: "ai",
+          id: "ai-call",
+          content: "",
+          tool_calls: [
+            {
+              id: "tool-call-1",
+              name: "lookup_fact",
+              args: { topic: "road" },
+            },
+          ],
+        },
+        {
+          type: "tool",
+          id: "tool-result-1",
+          content: '{"result":"because tests do that"}',
+          tool_call_id: "tool-call-1",
+        },
+        {
+          type: "ai",
+          id: "ai-final",
+          content: "Done.",
+        },
+      ],
+    ],
+  });
+
+  const toolServer = await startFixtureServer({
+    agent: allowedToolsAgent,
+    toolPolicySupport: "middleware",
+  });
+
+  try {
+    const allowedToolsResponse = await fetch(
+      `${toolServer.baseUrl}/v1/responses`,
+      {
+        method: "POST",
+        headers: createJsonHeaders(),
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: "Hello",
+          metadata: {},
+          tools: [lookupFactTool],
+          tool_choice: {
+            type: "allowed_tools",
+            tools: [{ type: "function", name: "lookup_fact" }],
+            mode: "auto",
+          },
+          parallel_tool_calls: true,
+          stream: false,
+        }),
+      }
+    );
+
+    assertCondition(
+      allowedToolsResponse.status === 200,
+      "tool-governance: allowed_tools request with middleware support must succeed"
+    );
+
+    const lastConfig = allowedToolsAgent.__getLastInvokeConfig() as {
+      configurable?: Record<string, unknown>;
+    } | null;
+    const serializedPolicy = lastConfig?.configurable
+      ?.openresponses_tool_policy as
+      | {
+          allowedToolNames?: string[];
+          parallelToolCalls?: boolean;
+          toolChoice?: Record<string, unknown>;
+        }
+      | undefined;
+
+    assertCondition(
+      JSON.stringify(serializedPolicy?.allowedToolNames) ===
+        JSON.stringify(["lookup_fact"]),
+      "tool-governance: expected allowed tool names to be serialized into runtime config"
+    );
+  } finally {
+    await toolServer.stop();
+  }
+
+  const requiredToolServer = await startFixtureServer({
+    agent: createFakeAgent({
+      responses: [
+        { type: "ai", id: "ai-1", content: "No tool call happened." },
+      ],
+    }),
+    toolPolicySupport: "middleware",
+  });
+
+  try {
+    const requiredToolFailureResponse = await fetch(
+      `${requiredToolServer.baseUrl}/v1/responses`,
+      {
+        method: "POST",
+        headers: createJsonHeaders(),
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: "Hello",
+          metadata: {},
+          tools: [lookupFactTool],
+          tool_choice: {
+            type: "function",
+            name: "lookup_fact",
+          },
+          parallel_tool_calls: true,
+          stream: false,
+        }),
+      }
+    );
+
+    assertCondition(
+      requiredToolFailureResponse.status === 500,
+      "tool-governance: unmet required tool semantics must surface as runtime failure"
+    );
+  } finally {
+    await requiredToolServer.stop();
+  }
+};
+
 const checks = [
   {
     id: "response-resource-complete",
@@ -397,6 +725,14 @@ const checks = [
   {
     id: "reasoning-summary-coverage",
     run: runReasoningSummaryCoverage,
+  },
+  {
+    id: "continuation-coverage",
+    run: runContinuationCoverage,
+  },
+  {
+    id: "tool-governance-coverage",
+    run: runToolGovernanceCoverage,
   },
 ] as const;
 
