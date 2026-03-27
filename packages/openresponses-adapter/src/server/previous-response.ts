@@ -1309,10 +1309,33 @@ const repairRequestSnapshot = (params: {
     >(requestRecord, "stream_options"),
   });
 
-  return buildRequestSnapshot({
+  const repairedSnapshot = buildRequestSnapshot({
     request: repairedRequest,
     inputItems: inputToItems(repairedRequest.input),
   });
+
+  const rawInputItems = Array.isArray(requestRecord.input) ? requestRecord.input : [];
+  repairedSnapshot.input = repairedSnapshot.input.map((item, index) => {
+    if (item.type !== "reasoning") {
+      return item;
+    }
+
+    const rawInputItem = rawInputItems[index];
+    if (!isRecord(rawInputItem) || rawInputItem.type !== "reasoning") {
+      return item;
+    }
+
+    if (!("content" in rawInputItem) || rawInputItem.content === undefined) {
+      return item;
+    }
+
+    return {
+      ...item,
+      content: safeStructuredClone(rawInputItem.content),
+    } as InputItem;
+  });
+
+  return repairedSnapshot;
 };
 
 const repairStoredResponseResource = (params: {
