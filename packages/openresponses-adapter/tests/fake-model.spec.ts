@@ -88,4 +88,60 @@ describe("fake model regression", () => {
       },
     ]);
   });
+
+  test("preserves reasoning input payload in additional_kwargs without crashing", async () => {
+    const agent = createFakeAgent();
+    const adapter = createOpenResponsesAdapter({ agent });
+
+    const response = await adapter.invoke({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          type: "item_reference",
+          id: "msg_123",
+        },
+        {
+          type: "reasoning",
+          id: "rs_123",
+          summary: [
+            { type: "summary_text", text: "Earlier reasoning summary" },
+          ],
+          encrypted_content: "opaque-reasoning-payload",
+        },
+        {
+          type: "message",
+          role: "user",
+          content: "Continue.",
+        },
+      ],
+      metadata: {},
+      tools: [],
+      parallel_tool_calls: true,
+      stream: false,
+    });
+
+    expect(response.status).toBe("completed");
+    expect(agent.__getLastInvokeInput()?.messages).toEqual([
+      {
+        type: "ai",
+        role: "assistant",
+        content: "Earlier reasoning summary",
+        additional_kwargs: {
+          reasoning: {
+            type: "reasoning",
+            id: "rs_123",
+            summary: [
+              { type: "summary_text", text: "Earlier reasoning summary" },
+            ],
+            encrypted_content: "opaque-reasoning-payload",
+          },
+        },
+      },
+      {
+        type: "human",
+        role: "user",
+        content: "Continue.",
+      },
+    ]);
+  });
 });

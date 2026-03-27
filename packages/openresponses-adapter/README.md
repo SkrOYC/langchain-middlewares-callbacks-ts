@@ -6,21 +6,22 @@ It exposes a `POST /v1/responses` route, preserves `previous_response_id` replay
 
 ## Status
 
-This package targets full compliance with the pinned OpenResponses snapshot, uses the official OpenResponses CLI runner as a baseline release gate, and treats broader pinned-spec conformance as a separate proof obligation.
+This package targets conformance with the pinned OpenResponses snapshot for the JSON request surface, uses the official OpenResponses CLI runner as a baseline release gate, and adds a package-owned spec-conformance suite for runner-uncovered behaviors. That suite also retains a small set of stricter package invariants where the pinned upstream wording is softer or leaves behavior unspecified.
 
 Implemented release-blocker capabilities:
 
 - Non-streaming full `ResponseResource` JSON responses
-- Streaming `text/event-stream` responses with semantic events, full terminal response payloads, and literal `[DONE]`
+- Streaming `text/event-stream` responses with semantic events, full terminal response payloads, literal `[DONE]`, and post-start `error` events
 - `previous_response_id` continuation through `PreviousResponseStore`
 - Tool-calling normalization and enforcement
 - `input_image` pass-through support
 - Package-local regressions separated from the official black-box compliance runner
+- Package-owned black-box spec-conformance checks for JSON-surface framing and runner gaps
 - Node 24 and Bun built-package smoke coverage for root, `./server`, and `./testing` entrypoints
 
 Deliberate boundaries:
 
-- `application/json` is the only accepted request-body encoding in this package overlay, even though the upstream vendored OpenAPI currently advertises a broader request-body surface
+- `application/json` is the only accepted request-body encoding in this package milestone, even though the upstream vendored OpenAPI currently advertises a broader request-body surface
 - No broad multimodal output support
 - No bundled durable persistence adapter
 - No synthetic text or function-call deltas when callbacks are too weak to support them truthfully
@@ -106,15 +107,19 @@ The route is available at `POST /v1/responses`.
 
 Streaming output is derived from live LangChain callbacks observed during `agent.stream()`. The adapter does not replay the final answer as synthetic deltas.
 
-If the runtime fails after headers are already sent, the stream emits `response.failed` and then terminates. If a strict persistence failure happens after stream completion, the stream closes without appending `[DONE]`.
+If the runtime fails after headers are already sent, the stream emits `error`, then `response.failed`, and then terminates. If a strict persistence failure happens after stream completion, the stream closes without appending `[DONE]`.
 
 ### Compliance and release gating
 
-Local regression tests and the official runner are intentionally separate:
+Local regression tests, the official runner, and the spec-conformance suite are intentionally separate:
 
 - `bun run test:compliance:local` covers package-owned regression scenarios
 - `bun run test:compliance:official` runs the vendored official OpenResponses CLI mirror against the built package
+- `bun run test:compliance:spec` runs the package-owned black-box JSON-surface conformance suite against the built package
+- `bun run test:compliance:full` runs the official runner and the package-owned conformance suite together
 - `bun run test:compliance` remains an alias to the local regression suite for backwards compatibility
+
+The package-owned suite intentionally includes a few stronger checks than the pinned upstream MUST-level wording, including omission of SSE `id` fields, monotonic built-in `sequence_number` progression, and package-specific HTTP/runtime error mappings where the upstream contract is silent.
 
 ### Tool policy enforcement
 
@@ -132,6 +137,10 @@ Without that middleware, metadata-only tool policies still normalize, but enforc
 `previous input -> previous output -> new input`
 
 exactly in that order.
+
+### Item References
+
+`item_reference` is accepted as a schema-valid input item and preserved in the normalized request snapshot. The package does not currently invent dereference or re-hydration behavior for it at the LangChain runtime boundary, because the pinned public contract exposes the type more clearly than it defines its execution semantics.
 
 ### Image input
 
@@ -170,6 +179,8 @@ bun run test:golden-stream
 bun run test:compliance
 bun run test:compliance:local
 bun run test:compliance:official
+bun run test:compliance:spec
+bun run test:compliance:full
 bun run smoke:node
 bun run smoke:bun
 ```

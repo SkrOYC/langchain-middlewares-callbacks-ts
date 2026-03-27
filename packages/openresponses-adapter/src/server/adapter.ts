@@ -540,9 +540,15 @@ export function createOpenResponsesAdapter(
           completedAt: lifecycle.getCompletedAt(),
           status,
           output: accumulator.snapshot().filter((item) => {
-            return !(
-              item.type === "function_call" && replayedCallIds.has(item.call_id)
-            );
+            if (item.type === "function_call") {
+              return !replayedCallIds.has(item.call_id);
+            }
+
+            if (item.type === "function_call_output") {
+              return !replayedCallIds.has(item.call_id);
+            }
+
+            return true;
           }),
           error: lifecycle.getError(),
         });

@@ -1,7 +1,7 @@
 {
   "name": "@skroyc/openresponses-adapter",
   "version": "0.1.0",
-  "description": "Open Responses adapter for LangChain agents with full pinned-snapshot compliance, truthful SSE streaming, and official runner release gating",
+  "description": "Open Responses adapter for LangChain agents with pinned-snapshot JSON-surface compliance, truthful SSE streaming, and official runner + spec-conformance release gating",
   "keywords": [
     "langchain",
     "open-responses",
@@ -51,6 +51,8 @@
     "test:compliance": "bun run test:compliance:local",
     "test:compliance:local": "bun test tests/compliance/local-regression.spec.ts",
     "test:compliance:official": "bun ./scripts/run-official-compliance.ts",
+    "test:compliance:spec": "bun ./scripts/run-spec-conformance.ts",
+    "test:compliance:full": "bun run test:compliance:official && bun run test:compliance:spec",
     "lint": "bunx --bun @biomejs/biome check .",
     "format": "bunx --bun @biomejs/biome format --write .",
     "typecheck": "tsc --noEmit",

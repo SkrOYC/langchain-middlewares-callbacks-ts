@@ -99,4 +99,38 @@ describe("InMemoryPreviousResponseStore", () => {
 
     expect(secondLoad?.request.metadata.source).toBe("test");
   });
+
+  test("preserves current-shape reasoning and function_call_output items on round-trip", async () => {
+    const store = createInMemoryPreviousResponseStore();
+    const record = createRecord();
+
+    record.response.output = [
+      {
+        id: "reasoning-1",
+        type: "reasoning",
+        content: [{ type: "reasoning_text", text: "Need to compare options." }],
+        summary: [{ type: "summary_text", text: "Compare the options." }],
+      },
+      {
+        id: "call-1",
+        type: "function_call",
+        call_id: "call-1",
+        name: "lookup_fact",
+        arguments: '{"topic":"road"}',
+        status: "completed",
+      },
+      {
+        id: "tool-1",
+        type: "function_call_output",
+        call_id: "call-1",
+        output: '{"result":"because tests do that"}',
+        status: "completed",
+      },
+    ];
+
+    await store.save(record);
+    const loaded = await store.load("resp-1");
+
+    expect(loaded?.response.output).toEqual(record.response.output);
+  });
 });

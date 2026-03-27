@@ -87,6 +87,20 @@ export function* simulateFailureStream(
   throw new Error("model crashed");
 }
 
+export function* simulateIncompleteStream(
+  _input: { messages: LangChainMessageLike[] },
+  config: Record<string, unknown>
+): Iterable<unknown> {
+  const bridge = extractBridge(config);
+  const runId = extractRunId(config);
+
+  bridge.handleChatModelStart?.({}, [[]], runId, undefined);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleLLMNewToken?.("Partial", undefined, runId);
+  yield { type: "chunk", content: "Partial" };
+}
+
 export function* simulateToolCallStream(
   _input: { messages: LangChainMessageLike[] },
   config: Record<string, unknown>
@@ -120,6 +134,42 @@ export function* simulateToolCallStream(
   yield { type: "chunk", content: "" };
 
   bridge.handleToolEnd?.({ temperature: "55F" }, "tool-run-1", runId);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleAgentEnd?.({}, runId);
+}
+
+export function* simulateReasoningSummaryStream(
+  _input: { messages: LangChainMessageLike[] },
+  config: Record<string, unknown>
+): Iterable<unknown> {
+  const bridge = extractBridge(config);
+  const runId = extractRunId(config);
+
+  bridge.handleChatModelStart?.({}, [[]], runId, undefined);
+  yield { type: "chunk", content: "" };
+
+  bridge.handleLLMNewToken?.("", undefined, runId, undefined, undefined, {
+    chunk: {
+      message: {
+        contentBlocks: [{ type: "reasoning_text", text: "Thinking step 1" }],
+      },
+    },
+  });
+  yield { type: "chunk", content: "" };
+
+  bridge.handleLLMEnd?.(
+    {
+      message: {
+        content: [
+          { type: "reasoning_text", text: "Thinking step 1" },
+          { type: "summary_text", text: "Short answer summary" },
+        ],
+      },
+      generations: [],
+    },
+    runId
+  );
   yield { type: "chunk", content: "" };
 
   bridge.handleAgentEnd?.({}, runId);

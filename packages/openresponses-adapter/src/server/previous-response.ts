@@ -20,7 +20,10 @@ import type {
   OutputTextPart,
   ToolChoice,
 } from "@/core/schemas.js";
-import { OpenResponsesRequestSchema } from "@/core/schemas.js";
+import {
+  OpenResponsesRequestSchema,
+  OutputItemSchema,
+} from "@/core/schemas.js";
 import { getEffectiveToolChoiceMode } from "@/core/tool-policy.js";
 import type {
   LangChainMessageLike,
@@ -892,6 +895,50 @@ const inputItemToMessage = (item: InputItem): LangChainMessageLike => {
   };
 };
 
+const reasoningSummaryPartToText = (part: unknown): string => {
+  if (!isRecord(part)) {
+    return "";
+  }
+
+  if (typeof part.text === "string") {
+    return part.text;
+  }
+
+  if (typeof part.refusal === "string") {
+    return part.refusal;
+  }
+
+  return "";
+};
+
+const inputItemToMessages = (item: InputItem): LangChainMessageLike[] => {
+  if (item.type === "item_reference") {
+    // The adapter preserves item references in the request snapshot, but the
+    // LangChain runtime does not expose an equivalent message primitive.
+    return [];
+  }
+
+  if (item.type === "reasoning") {
+    const summaryText = item.summary
+      .map(reasoningSummaryPartToText)
+      .filter((part) => part.length > 0)
+      .join(" ");
+
+    return [
+      {
+        type: "ai",
+        role: "assistant",
+        content: summaryText.length > 0 ? summaryText : [],
+        additional_kwargs: {
+          reasoning: safeStructuredClone(item),
+        },
+      },
+    ];
+  }
+
+  return [inputItemToMessage(item)];
+};
+
 const normalizeToolPolicy = (
   request: ResolvedOpenResponsesRequest
 ): NormalizedToolPolicy => {
@@ -1095,6 +1142,14 @@ const normalizeStoredResponseOutput = (
   const normalizedOutput: OutputItem[] = [];
 
   for (const candidate of output) {
+    const currentShapeResult = OutputItemSchema.safeParse(candidate);
+    if (currentShapeResult.success) {
+      normalizedOutput.push(
+        safeStructuredClone(currentShapeResult.data as OutputItem)
+      );
+      continue;
+    }
+
     if (
       isRecord(candidate) &&
       getStringProperty(candidate, "type") === "message"
@@ -1391,7 +1446,7 @@ export const normalizeRequest = async (
 
   return {
     inputItems: replayedInputItems,
-    messages: replayedInputItems.map(inputItemToMessage),
+    messages: replayedInputItems.flatMap(inputItemToMessages),
     requestSnapshot: buildRequestSnapshot({
       request: parsedRequest,
       inputItems: replayedInputItems,

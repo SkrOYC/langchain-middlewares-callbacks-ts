@@ -412,8 +412,12 @@ describe("serializeInternalEvent", () => {
       context
     );
 
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
+      type: "response.in_progress",
+      response: { id: "resp-1", object: "response", status: "in_progress" },
+    });
+    expect(events[1]).toMatchObject({
       type: "response.completed",
       response: { id: "resp-1", object: "response", status: "completed" },
     });
@@ -436,7 +440,7 @@ describe("serializeInternalEvent", () => {
     expect(context.lifecycle.getStatus()).toBe("in_progress");
   });
 
-  test("run.failed emits response.failed", () => {
+  test("run.failed emits error then response.failed", () => {
     const context = createContext();
     serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
 
@@ -445,16 +449,75 @@ describe("serializeInternalEvent", () => {
       context
     );
 
-    expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe("response.failed");
-    if (events[0]?.type === "response.failed") {
-      expect(events[0].response.id).toBe("resp-1");
-      expect(events[0].response.status).toBe("failed");
-      expect(events[0].response.error).toMatchObject({
+    expect(events).toHaveLength(2);
+    expect(events[0]?.type).toBe("error");
+    if (events[0]?.type === "error") {
+      expect(events[0].error).toMatchObject({
         type: "model_error",
         message: "boom",
       });
     }
+    expect(events[1]?.type).toBe("response.failed");
+    if (events[1]?.type === "response.failed") {
+      expect(events[1].response.id).toBe("resp-1");
+      expect(events[1].response.status).toBe("failed");
+      expect(events[1].response.error).toMatchObject({
+        type: "model_error",
+        message: "boom",
+      });
+    }
+  });
+
+  test("run.failed emits response.in_progress first when no prior in-progress event was emitted", () => {
+    const context = createContext();
+
+    const events = serializeInternalEvent(
+      { type: "run.failed", runId: "resp-1", error: new Error("boom") },
+      context
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "response.in_progress",
+      "error",
+      "response.failed",
+    ]);
+    expect(context.lifecycle.getStatus()).toBe("failed");
+  });
+
+  test("reasoning.completed emits summary-part events before output_item.done", () => {
+    const context = createContext();
+    serializeInternalEvent({ type: "run.started", runId: "run-1" }, context);
+    serializeInternalEvent(
+      { type: "reasoning.started", itemId: "reasoning-1", runId: "run-1" },
+      context
+    );
+    serializeInternalEvent(
+      {
+        type: "reasoning.delta",
+        itemId: "reasoning-1",
+        delta: "Thinking step 1",
+      },
+      context
+    );
+
+    const events = serializeInternalEvent(
+      {
+        type: "reasoning.completed",
+        itemId: "reasoning-1",
+        summaryTexts: ["Short answer summary"],
+      },
+      context
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "response.reasoning.done",
+      "response.content_part.done",
+      "response.reasoning_summary_part.added",
+      "response.reasoning_summary_text.delta",
+      "response.reasoning_summary_text.done",
+      "response.reasoning_summary_part.done",
+      "response.output_item.done",
+    ]);
   });
 
   test("run.failed from a sub-run does not fail the response lifecycle", () => {
@@ -585,7 +648,7 @@ describe("createEventSerializer", () => {
     expect(seqNums).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 
-  test("queue failure emits response.failed + [DONE]", async () => {
+  test("queue failure emits error + response.failed + [DONE]", async () => {
     const queue = createAsyncEventQueue<InternalSemanticEvent>();
     const generateId = createSequentialIdGenerator(["item-1"]);
     const accumulator = createCanonicalItemAccumulator({ generateId });
@@ -617,12 +680,13 @@ describe("createEventSerializer", () => {
       "response.output_item.added",
       "response.content_part.added",
       "response.output_text.delta",
+      "error",
       "response.failed",
       "[DONE]",
     ]);
   });
 
-  test("run.failed mid-stream emits failed + [DONE]", async () => {
+  test("run.failed mid-stream emits error + failed + [DONE]", async () => {
     const queue = createAsyncEventQueue<InternalSemanticEvent>();
     const generateId = createSequentialIdGenerator(["item-1"]);
     const accumulator = createCanonicalItemAccumulator({ generateId });
@@ -659,6 +723,7 @@ describe("createEventSerializer", () => {
       "response.output_item.added",
       "response.content_part.added",
       "response.output_text.delta",
+      "error",
       "response.failed",
       "[DONE]",
     ]);
