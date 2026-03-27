@@ -370,15 +370,11 @@ const outputItemToInputItem = (item: OutputItem): InputItem => {
     return {
       type: "reasoning",
       id: item.id,
-      summary: item.summary
-        .map((part) => {
-          return "text" in part
-            ? ({ type: "summary_text", text: part.text } as const)
-            : null;
-        })
-        .filter((part) => {
-          return part !== null;
-        }),
+      summary: item.summary.flatMap((part) => {
+        return part.type === "summary_text"
+          ? [{ type: "summary_text", text: part.text } as const]
+          : [];
+      }),
       ...(item.content ? { content: safeStructuredClone(item.content) } : {}),
       ...("encrypted_content" in item && item.encrypted_content !== undefined
         ? { encrypted_content: item.encrypted_content }
