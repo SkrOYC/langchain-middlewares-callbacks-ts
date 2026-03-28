@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary & Target Archetype
 - **Target Archetype:** Library package that exposes a standards-compliant HTTP adapter over an existing agent runtime.
-- **Vision:** A solo builder can expose an existing LangChain agent through a `/v1/responses` surface that satisfies the full current OpenResponses contract and works with Responses-style SDK clients and the official compliance runner without bespoke protocol glue.
+- **Vision:** A solo builder can expose an existing LangChain agent through a `/v1/responses` surface that satisfies the pinned JSON-surface release target, works with Responses-style SDK clients and the official compliance runner, and leaves broader pinned-spec proof explicit rather than implied.
 - **Problem:** Partial-compatible adapters fail when clients and the official OpenResponses validation workflow expect a full `ResponseResource`, full terminal streaming response payloads, richer event families, and broader contract fidelity than a spec-minimal MVP provides.
 - **Jobs to Be Done:** When a builder already has a working agent runtime, they want to mount a package that makes that runtime behave like a fully compliant OpenResponses endpoint, preserves truthful live execution semantics, supports tools and continuation correctly, and gives them a real black-box validation workflow before release.
 
@@ -22,7 +22,7 @@
 
 ### Product Posture
 - Contract truth beats convenience.
-- Full current compliance beats partial compatibility.
+- Truthful pinned-snapshot claims beat inflated compatibility claims.
 - Library-first adoption beats platform sprawl.
 - Hosted-service scope remains explicitly excluded.
 
@@ -153,7 +153,7 @@
 - **Viability Risk:** As a pure OSS utility, the package must stay narrow even while broadening the protocol contract. Hosted persistence, platform features, or framework sprawl would create maintenance cost disproportionate to ecosystem value.
 
 ### 5.2 Release Priorities & Success Criteria
-- **Release Now:** Full current `/v1/responses` contract fidelity, full terminal streaming resources, current tool-contract fidelity, explicit response-ID continuation, current compliant input coverage, and official compliance-runner pass as a release gate.
+- **Release Now:** Pinned JSON-surface `/v1/responses` contract fidelity, full terminal streaming resources, current tool-contract fidelity, explicit response-ID continuation, current compliant input coverage, and official compliance-runner pass as a release gate.
 - **Phase 2:** Broader runtime bindings, richer advanced integration surfaces, stronger observability and contract-drift tooling, and additional contract coverage beyond the current official acceptance scenarios.
 - **Deferred:** Hosted platform behavior, non-generic provider-native capabilities, and broader multimodal ambitions outside the current published OpenResponses contract.
 - **Primary Success Metric:** A built package passes the official OpenResponses compliance suite against a live server on the certified runtimes.
@@ -161,7 +161,7 @@
 
 ## 6. Boundary Analysis
 ### In Scope
-- Full current OpenResponses `/v1/responses` contract fidelity for the current published contract snapshot
+- Pinned JSON-surface `/v1/responses` contract fidelity for the current release milestone
 - Full non-streaming `ResponseResource` shape
 - Full terminal streaming response payloads
 - Current published streaming event families required for compliant operation

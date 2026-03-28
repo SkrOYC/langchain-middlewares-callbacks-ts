@@ -16,7 +16,7 @@
 
 The active plan still follows the original constraint logic from the MVP phase: the real risk concentration is truthful semantic publication under a broader contract. The pacing chain remains contract authority -> canonical state -> publication breadth -> release proof. Request broadening, stored-record migration, and release documentation are sequenced to support that path rather than compete with it.
 
-Implementation status: the original ORA chain is implemented for the pinned upstream acceptance baseline. The additional delta below upgrades the target to full pinned-spec conformance proof rather than official-runner success alone.
+Implementation status: the original ORA chain is implemented for the pinned upstream acceptance baseline and current JSON-surface proof target. The additional delta below upgrades the target to fuller pinned-spec conformance proof rather than official-runner success alone.
 
 ### Legacy Issue Mapping Policy
 - `ORL-*` remains the archived MVP baseline that produced the current brownfield package.
@@ -66,7 +66,7 @@ Implementation status: the original ORA chain is implemented for the pinned upst
 ### Active Verification Milestones
 - **Milestone 1:** Completed. The pinned contract snapshot and official runner harness execute mechanically against a live built package.
 - **Milestone 2:** Completed. Local regressions and official black-box compliance both exercise the broadened response, continuation, and streaming surface without conflating their roles.
-- **Milestone 3:** Completed. CI, import smoke, examples, and release-facing docs now reflect the full-compliance posture rather than the old MVP subset claim.
+- **Milestone 3:** Completed. CI, import smoke, examples, and release-facing docs now reflect the narrowed JSON-surface posture rather than the old MVP subset claim.
 - **Milestone 4:** Pending. Every normative pinned-spec requirement is mapped to official-runner proof, package-owned proof, or an explicit uncovered gap.
 - **Milestone 5:** Pending. The package closes all runner-uncovered normative gaps and only then claims full pinned-spec compliance.
 

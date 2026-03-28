@@ -6,7 +6,7 @@ It exposes a `POST /v1/responses` route, preserves `previous_response_id` replay
 
 ## Status
 
-This package targets conformance with the pinned OpenResponses snapshot for the JSON request surface, uses the official OpenResponses CLI runner as a baseline release gate, and adds a package-owned spec-conformance suite for runner-uncovered behaviors. That suite also retains a small set of stricter package invariants where the pinned upstream wording is softer or leaves behavior unspecified.
+This package currently claims conformance with the pinned OpenResponses snapshot for the JSON request surface, uses the official OpenResponses CLI runner as a baseline release gate, and adds a package-owned spec-conformance suite for selected runner-uncovered behaviors. The current claimed scope is tracked in `contracts/openresponses/REQUIREMENT-MATRIX.md`, and broader full pinned-spec conformance remains pending explicit proof closure.
 
 Implemented release-blocker capabilities:
 

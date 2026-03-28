@@ -1,7 +1,7 @@
 {
   "name": "@skroyc/openresponses-adapter",
   "version": "0.1.0",
-  "description": "Open Responses adapter for LangChain agents with pinned-snapshot JSON-surface compliance, truthful SSE streaming, and official runner + spec-conformance release gating",
+  "description": "Open Responses adapter for LangChain agents with pinned-snapshot JSON-surface compliance, truthful SSE streaming, and official runner baseline + spec-conformance checks",
   "keywords": [
     "langchain",
     "open-responses",

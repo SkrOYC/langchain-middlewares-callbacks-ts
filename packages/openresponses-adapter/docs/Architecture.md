@@ -10,7 +10,7 @@
 
 ## 1. Architectural Strategy & Archetype Alignment
 - **Architectural Pattern:** Contract-authoritative modular monolith library with event-serialized streaming and builder-controlled continuation persistence.
-- **Why this pattern fits the PRD:** The product remains a library package adopted inside an existing agent host, so a modular monolith keeps solo-dev operations small while still allowing one authoritative response assembly pipeline to own the full current OpenResponses contract. Full compliance increases contract and state complexity, but it does not justify distributed deployment boundaries.
+- **Why this pattern fits the PRD:** The product remains a library package adopted inside an existing agent host, so a modular monolith keeps solo-dev operations small while still allowing one authoritative response assembly pipeline to own the pinned JSON-surface contract for the current release scope. Snapshot-aligned compliance increases contract and state complexity, but it does not justify distributed deployment boundaries.
 - **Core trade-offs accepted:** More internal state assembly and contract validation complexity is accepted to eliminate partial public resources, terminal streaming stubs, and drift against the official OpenResponses surface.
 
 ### Standards Posture
@@ -21,7 +21,7 @@
 
 ### Brownfield Starting Point
 - The current codebase already contains the core logical pieces required for this architecture: public route publication, request normalization, callback observation, canonical response state, tool policy mediation, and continuation persistence.
-- The current codebase now realizes the pinned current contract for the vendored snapshot, with the official runner and built-package smoke checks acting as release validation rather than aspirational targets.
+- The current codebase now implements the pinned JSON-surface release target for the vendored snapshot, with the official runner and built-package smoke checks acting as release validation for the current milestone while broader pinned-spec proof remains open.
 
 ### Brownfield Rules Carried Forward
 - The agent runtime remains the execution engine, not the public protocol authority. The package is responsible for request normalization, public contract assembly, and truth-preserving publication.

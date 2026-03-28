@@ -368,13 +368,17 @@ const outputItemToInputItem = (item: OutputItem): InputItem => {
 
   if (item.type === "reasoning") {
     return {
-      type: "message",
-      role: "assistant",
-      content: item.summary
-        .map((part) => {
-          return "text" in part ? part.text : "";
-        })
-        .join(" "),
+      type: "reasoning",
+      id: item.id,
+      summary: item.summary.flatMap((part) => {
+        return part.type === "summary_text"
+          ? [{ type: "summary_text", text: part.text } as const]
+          : [];
+      }),
+      ...(item.content ? { content: safeStructuredClone(item.content) } : {}),
+      ...("encrypted_content" in item && item.encrypted_content !== undefined
+        ? { encrypted_content: item.encrypted_content }
+        : {}),
     };
   }
 
@@ -394,6 +398,31 @@ const outputItemToInputItem = (item: OutputItem): InputItem => {
     arguments: item.arguments,
     status: item.status,
   };
+};
+
+const getReplayToolItemKey = (item: InputItem): string | null => {
+  if (item.type === "function_call" || item.type === "function_call_output") {
+    return `${item.type}:${item.call_id}`;
+  }
+
+  return null;
+};
+
+const dedupeReplayedResponseItems = (params: {
+  priorRequestItems: InputItem[];
+  priorResponseItems: InputItem[];
+}): InputItem[] => {
+  const replayedToolItemKeys = new Set(
+    params.priorRequestItems.flatMap((item) => {
+      const key = getReplayToolItemKey(item);
+      return key ? [key] : [];
+    })
+  );
+
+  return params.priorResponseItems.filter((item) => {
+    const key = getReplayToolItemKey(item);
+    return key === null || !replayedToolItemKeys.has(key);
+  });
 };
 
 const normalizeOutputItemStatus = (
@@ -1280,10 +1309,35 @@ const repairRequestSnapshot = (params: {
     >(requestRecord, "stream_options"),
   });
 
-  return buildRequestSnapshot({
+  const repairedSnapshot = buildRequestSnapshot({
     request: repairedRequest,
     inputItems: inputToItems(repairedRequest.input),
   });
+
+  const rawInputItems = Array.isArray(requestRecord.input)
+    ? requestRecord.input
+    : [];
+  repairedSnapshot.input = repairedSnapshot.input.map((item, index) => {
+    if (item.type !== "reasoning") {
+      return item;
+    }
+
+    const rawInputItem = rawInputItems[index];
+    if (!isRecord(rawInputItem) || rawInputItem.type !== "reasoning") {
+      return item;
+    }
+
+    if (!("content" in rawInputItem) || rawInputItem.content === undefined) {
+      return item;
+    }
+
+    return {
+      ...item,
+      content: safeStructuredClone(rawInputItem.content),
+    } as InputItem;
+  });
+
+  return repairedSnapshot;
 };
 
 const repairStoredResponseResource = (params: {
@@ -1433,8 +1487,11 @@ export const normalizeRequest = async (
     );
 
     const priorRequestItems = inputToItems(validatedRecord.request.input);
-    const priorResponseItems = validatedRecord.response.output.map((item) => {
-      return outputItemToInputItem(item as unknown as OutputItem);
+    const priorResponseItems = dedupeReplayedResponseItems({
+      priorRequestItems,
+      priorResponseItems: validatedRecord.response.output.map((item) => {
+        return outputItemToInputItem(item as unknown as OutputItem);
+      }),
     });
 
     replayedInputItems = [

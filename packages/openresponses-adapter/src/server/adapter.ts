@@ -539,17 +539,7 @@ export function createOpenResponsesAdapter(
           createdAt,
           completedAt: lifecycle.getCompletedAt(),
           status,
-          output: accumulator.snapshot().filter((item) => {
-            if (item.type === "function_call") {
-              return !replayedCallIds.has(item.call_id);
-            }
-
-            if (item.type === "function_call_output") {
-              return !replayedCallIds.has(item.call_id);
-            }
-
-            return true;
-          }),
+          output: accumulator.snapshot(),
           error: lifecycle.getError(),
         });
 
