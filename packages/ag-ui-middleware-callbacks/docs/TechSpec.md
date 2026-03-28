@@ -1,155 +1,181 @@
-# TechSpec.md - Technical Specification
+# Technical Specification
 
-## @skroyc/ag-ui-middleware-callbacks
+## 0. Version History & Changelog
+- v2.0.0 - Rebuilt the technical spec around an explicit adapter boundary above middleware and callbacks, recorded brownfield drift, and defined the remaining implementation contract for convergence.
+- v1.1.0 - Captured the MVP backend, publisher, and subpath export shape after the package moved beyond the original event-sink design.
+- v1.0.0 - Specified the initial backend-adapter contract after the package was re-scoped away from an `onEvent` bridge.
+- ... [Older history truncated, refer to git logs]
 
----
+## 1. Stack Specification (Bill of Materials)
+- **Primary Language / Runtime:** TypeScript 5.9.x targeting modern ESM, with Bun current as the default workspace runtime and Node.js `>=20` as the published engine floor.
+- **Primary Frameworks / Libraries:** `langchain` 1.2.17, `@langchain/core` 1.1.31, `@ag-ui/core` 0.0.47, `zod` 4.3.6, `fast-json-patch` 3.1.1.
+- **State Stores / Persistence:** No durable store in the current package scope. Per-run state is in-memory and must be isolated to a single run session.
+- **Infrastructure / Tooling:** Bun workspaces, `tsup` 8.5.1, Biome 2.3.14, import-alias-based TypeScript configuration, Bun example apps, and schema-backed runtime validation via `@ag-ui/core`.
+- **Testing / Quality Tooling:** `bun:test`, built-package smoke via `bun run build`, end-to-end example verification, and package-owned checks that validate emitted AG-UI events against `@ag-ui/core` schemas.
+- **Version Pinning / Compatibility Policy:** LangChain and AG-UI contracts are external integration units. Any contract-facing surface change must be checked against the installed `langchain` and `@ag-ui/core` versions in this workspace, not against memory or earlier docs. `createAGUIAgent` remains a brownfield compatibility surface, not the package’s public contract.
 
-## 0. Scope and Technical Direction
+### 1.1 Brownfield Audit Summary
+- **Current package reality:** The package already exposes `./backend`, `./publication`, `./middleware`, and `./callbacks` subpaths, plus a working default backend path, examples, and a run-scoped single-writer publisher.
+- **Current package reality:** The codebase still contains a legacy `createAGUIAgent` compatibility surface and tests that exercise it heavily, even though the documented public contract no longer centers it.
+- **Current package reality:** `createAGUIBackend()` currently combines HTTP serving concerns with the non-HTTP orchestration layer that custom hosts also need.
+- **Current package reality:** The advanced custom-host example duplicates backend orchestration logic, which is evidence that the reusable adapter boundary is still missing as a concrete module.
+- **Current package reality:** Planning artifacts still mix historical "target state" language with "already implemented" language. The code is ahead of the docs in some places and behind the intended architecture in others.
 
-This document defines the **target architecture** for the package after the current event-emitter design is evolved into a backend adapter.
+### 1.2 Brownfield Drift Register
+| Area | Current Brownfield Reality | Target-State Requirement |
+| --- | --- | --- |
+| Product boundary | Public narrative still carries hook-first residue | Adapter boundary becomes the explicit product center |
+| Non-HTTP orchestration | `createAGUIBackend()` owns orchestration implicitly | A reusable programmatic adapter module owns it explicitly |
+| Custom hosts | Advanced example recreates orchestration manually | Custom hosts consume the same adapter boundary as the default backend |
+| Legacy compatibility | `createAGUIAgent` remains in source and tests | Compatibility surface becomes isolated and non-governing |
+| Truthful publication policy | Some degraded-fidelity rules exist only as code behavior | In-scope publication modes are recorded and tested explicitly |
+| Support artifacts | Main four planning docs are being updated, but older support docs remain historical | Governing artifacts must become trustworthy even when historical support docs remain in the repo |
 
-The package will support two usage tiers:
+## 2. Architecture Decision Records (ADRs)
+### ADR-001 Product Contract Is Adapter-First
+- **Status:** accepted
+- **Context:** The original package centered middleware and callbacks as if they were the product surface. That framing made the package too low-level and pushed host orchestration back onto every adopter.
+- **Decision:** Treat the package as an adapter-first library. Middleware and callbacks remain internal producer surfaces and advanced extension seams, not the main integration contract.
+- **Consequences:** The package must expose a reusable adapter boundary outside the producer layers and align docs, examples, and verification around that contract.
 
-1. **High-level backend path**
-   A batteries-included backend adapter for AG-UI-compatible serving.
-2. **Low-level bridge path**
-   Direct access to middleware, callbacks, and publication primitives for advanced hosts.
+### ADR-002 LangChain Hooks Are Producer Surfaces Only
+- **Status:** accepted
+- **Context:** Middleware sees lifecycle and state but not token truth; callbacks see rich observations but do not own terminal semantics or transport.
+- **Decision:** Middleware is the control producer and callbacks are the observation producer. Neither may define or write the public contract directly.
+- **Consequences:** Public semantics must be finalized above the hooks. Hook-level tests are necessary but insufficient product proof.
 
-The technical design keeps AG-UI transport-agnostic in principle while still shipping a default server path in practice.
+### ADR-003 Introduce a Reusable Programmatic Adapter Boundary
+- **Status:** accepted
+- **Context:** `createAGUIBackend()` and the custom-host example currently duplicate the same orchestration responsibilities in different places.
+- **Decision:** Introduce a programmatic adapter module and subpath, `./adapter`, that owns run-scoped orchestration independently of HTTP transport.
+- **Consequences:** `createAGUIBackend()` becomes a thin HTTP plus SSE wrapper over the adapter, and advanced hosts reuse the same semantics without copying backend internals.
 
----
+### ADR-004 Publication Remains the Single Writer Per Run
+- **Status:** accepted
+- **Context:** Public event order and terminal behavior become unreliable when middleware, callbacks, or transports can write directly to the client.
+- **Decision:** Retain one run-scoped publisher as the only public writer for one run.
+- **Consequences:** Ordering, duplicate suppression, degraded fidelity, and terminal behavior remain centrally testable.
 
-## 1. Stack Specification
+### ADR-005 Default Transport Is HTTP Plus SSE; Serving Wraps the Adapter
+- **Status:** accepted
+- **Context:** AG-UI supports multiple transport styles, but the package’s adoption value depends on a batteries-included backend path.
+- **Decision:** Keep HTTP plus SSE as the default serving path while extracting the orchestration logic into a transport-agnostic adapter module.
+- **Consequences:** The backend remains simple for solo builders while custom hosts gain a reusable non-HTTP seam.
 
-### 1.1 Runtime and Language
+### ADR-006 Legacy `createAGUIAgent` Is Transition-Only
+- **Status:** accepted
+- **Context:** `createAGUIAgent` still exists in the source tree and test suite, but the public package contract no longer centers it.
+- **Decision:** Treat `createAGUIAgent` as a legacy compatibility surface. It must not define docs, examples, exports, or release gates for the adapter-first product.
+- **Consequences:** Compatibility behavior may remain temporarily, but verification and documentation must move to the adapter-first surfaces.
 
-| Component | Technology | Version |
-|-----------|------------|---------|
-| Runtime | Bun / Node.js | bun >=1.0.0 / node >=20.0.0 |
-| Language | TypeScript | 5.x |
-| Build | tsup | 8.x |
-| Output | ESM + CJS + type declarations | - |
+### ADR-007 Verification Centers the Public Adapter Surfaces
+- **Status:** accepted
+- **Context:** The package has no official external compliance runner equivalent to the OpenResponses package. Verification must still prove the correct boundary.
+- **Decision:** Treat built-package import checks, `@ag-ui/core` schema validation, backend SSE lifecycle tests, adapter-level stream tests, and example verifiers as the release-quality proof set for the in-scope AG-UI contract.
+- **Consequences:** Verification must explicitly cover `./backend`, `./adapter`, and the advanced host path rather than only producer internals.
 
-### 1.2 Dependencies
+### Brownfield Drift Notes
+- `src/backend/create-agui-backend.ts` currently owns both HTTP handling and run orchestration.
+- The custom-host example currently reassembles the same orchestration with local helper code instead of consuming a shared adapter module.
+- `src/index.ts` and some package comments still describe the package as producer-only even though the backend and publication surfaces already ship.
+- Main planning artifacts are being refreshed in this pass. Support artifacts such as `ContractFreeze.md` and `VerificationAudit.md` should be treated as historical context until intentionally updated.
 
-| Package | Purpose | Type |
-|---------|---------|------|
-| `@ag-ui/core` | AG-UI event and schema types | Dependency |
-| `@langchain/core` | Callback abstractions | Dependency |
-| `langchain` | `createAgent()` runtime | Peer |
-| `zod` | Config validation | Dependency |
-| `fast-json-patch` | State delta computation | Dependency |
+## 3. State & Data Modeling
+### 3.1 Run Session Model
+- **Purpose:** Represent one adapter-owned execution session from validated input through terminal publication.
+- **Storage Shape:** In-memory per-run session consisting of validated `RunAgentInput`, resolved run and thread IDs, one `AGUIRunPublisher`, one middleware instance, one callback handler instance, and terminal completion state.
+- **Constraints / Invariants:**
+  - One publication pipeline exists per run.
+  - A run may finalize only once.
+  - Middleware and callback state must be isolated to the run session.
+  - Producers may emit facts concurrently, but only the publisher may order and finalize public events.
+  - Client abort closes transport safely and must not invent semantic terminal events.
+- **Indexes / Access Paths:** Run-scoped IDs are the canonical correlation path. Thread ID and run ID are propagated from validated input to runtime configuration and terminal events.
+- **Migration Notes:** The run-session model is additive over the current package. The main migration is extracting the adapter module from backend and example-local orchestration without changing the already published backend behavior.
 
-### 1.3 Runtime Neutrality
+```mermaid
+classDiagram
+    class AdapterRunSession {
+      input: RunAgentInput
+      runId: string
+      threadId: string
+      signal: AbortSignal
+      terminalState: pending|finished|errored|closed
+    }
 
-Shared modules must prefer Web Platform primitives:
+    class ProgrammaticAdapter {
+      stream(input, options)
+      createRunSession()
+      wireRuntime()
+    }
 
-- `Request`
-- `Response`
-- `Headers`
-- `ReadableStream`
-- `AbortSignal`
-- `crypto.randomUUID()`
+    class AGUIRunPublisher {
+      publish(event)
+      complete(result)
+      error(error)
+      close()
+    }
 
-Do not require Node-only serving code in core publication modules.
+    class AGUIMiddleware {
+      lifecycle_facts
+      state_facts
+      activity_facts
+    }
 
----
+    class AGUICallbackHandler {
+      text_observations
+      tool_observations
+      reasoning_observations
+    }
 
-## 2. Architecture Decision Records
+    class BackendHTTPWrapper {
+      handle(request)
+      validateRequest()
+      createSSE()
+    }
 
-### ADR-001: Product Shape Becomes Backend Adapter
+    ProgrammaticAdapter --> AdapterRunSession
+    AdapterRunSession --> AGUIRunPublisher
+    AdapterRunSession --> AGUIMiddleware
+    AdapterRunSession --> AGUICallbackHandler
+    BackendHTTPWrapper --> ProgrammaticAdapter
+```
 
-**Context**
+### 3.2 In-Scope Truthful Publication Policy
+| Event Family | Preferred Mode | Allowed Fallbacks | Truth Source |
+| --- | --- | --- | --- |
+| `RUN_*`, `STEP_*`, `STATE_*`, `MESSAGES_SNAPSHOT`, `ACTIVITY_*` | live control facts | none | middleware lifecycle and state hooks |
+| `TEXT_MESSAGE_*` | live delta | terminal finish only on abort or failure | callback token stream and finalized output |
+| `TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END` | live observation | done-only publication when only final arguments are available | callback chunks and final structured tool calls |
+| `TOOL_CALL_RESULT` | observed completion | final-only result without invented lifecycle chunks | observed tool completion only |
+| `REASONING_*` | live structured reasoning | skip unsupported raw provider payloads; terminal completion when final structured truth exists | LangChain structured content blocks and final outputs |
+| `THINKING_*` legacy family | compatibility mode using the same truth source as reasoning | compatibility-only degraded closure | same structured reasoning truth source when compatibility mode is enabled |
 
-The original design centered on emitting event objects via `onEvent`. That is insufficient for the desired plug-and-play backend outcome.
+### 3.3 Publication Rules
+- Never fabricate token deltas when none were observed.
+- Never fabricate tool-argument chunks when none were observed.
+- Do not convert provider-specific raw reasoning payloads into public reasoning events unless they pass through the standardized structured observation path already trusted by the package.
+- Terminal success and error semantics belong to the publisher, not to transport helpers, middleware, or callbacks.
 
-**Decision**
+## 4. Interface Contract
+### 4.1 Programmatic Adapter API
+- **Style:** library API
+- **Authentication / Authorization:** Host-owned outside the package boundary.
+- **Compatibility Strategy:** Additive public subpath, `@skroyc/ag-ui-middleware-callbacks/adapter`. The adapter contract becomes the shared non-HTTP orchestration surface. `createAGUIBackend()` wraps it. Lower-level publication and producer subpaths remain available. `createAGUIAgent` remains legacy and non-governing.
+- **Error model:** Promise rejection before stream exposure for invalid adapter configuration; terminal `RUN_ERROR` or safe close after stream start depending on failure timing and abort state.
 
-Redefine the package as an AG-UI backend adapter for LangChain `createAgent()`.
+```ts
+import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 
-**Consequences**
-
-- the package now owns a default serving path
-- the package still exposes low-level bridge components
-- documentation and task planning must prioritize publication and serving over minor event gaps
-
-### ADR-002: Middleware Is Control, Not Transport
-
-**Context**
-
-Middleware sees lifecycle, state, and policy, but not token chunks.
-
-**Decision**
-
-Use middleware only as a control producer.
-
-**Consequences**
-
-- middleware emits structural runtime facts
-- middleware does not directly write public AG-UI events to transport
-
-### ADR-003: Callbacks Are Observation, Not Publication
-
-**Context**
-
-Callbacks observe tokens and tool events, but they do not by themselves define trustworthy public protocol behavior.
-
-**Decision**
-
-Use callbacks only as observation producers.
-
-**Consequences**
-
-- callbacks provide rich runtime signals
-- callbacks do not own ordering, termination, or transport
-
-### ADR-004: Single Writer Per Run
-
-**Context**
-
-Mixing middleware and callback output directly into a socket or `onEvent` sink creates race conditions and leaky semantics.
-
-**Decision**
-
-Introduce a run-scoped publication layer with one canonical writer.
-
-**Consequences**
-
-- all public events are emitted through one queue/publisher
-- ordering and terminal behavior become deterministic
-- concurrent run safety becomes tractable
-
-### ADR-005: Default SSE Path, Extensible Transport Model
-
-**Context**
-
-AG-UI is transport-agnostic, but the package goal is plug-and-play backend integration.
-
-**Decision**
-
-Ship SSE as the default serving transport and keep publication reusable for future binary or WebSocket helpers.
-
-**Consequences**
-
-- simplest deployment path is covered
-- transport-specific framing remains separate from publication logic
-
----
-
-## 3. Public API Contracts
-
-### 3.1 High-Level Backend API
-
-```typescript
-interface AGUIBackend {
-  handle(request: Request): Promise<Response>;
+interface AGUIAdapterRunOptions {
+  signal?: AbortSignal;
 }
 
-interface AGUIBackendAgentLike {
+interface AGUIAdapter {
   stream(
-    input: Record<string, unknown>,
-    options?: AGUIBackendRunOptions
-  ): Promise<AsyncIterable<unknown>>;
+    input: RunAgentInput,
+    options?: AGUIAdapterRunOptions
+  ): Promise<AsyncIterable<BaseEvent>>;
 }
 
 type AGUIAgentFactory = (args: {
@@ -157,7 +183,7 @@ type AGUIAgentFactory = (args: {
   middleware: ReturnType<typeof createAGUIMiddleware>;
 }) => AGUIBackendAgentLike | Promise<AGUIBackendAgentLike>;
 
-interface AGUIBackendConfig {
+interface AGUIAdapterConfig {
   agentFactory: AGUIAgentFactory;
   validateEvents?: boolean | "strict";
   emitStateSnapshots?: "initial" | "final" | "all" | "none";
@@ -166,234 +192,106 @@ interface AGUIBackendConfig {
   callbackOptions?: Omit<AGUICallbackHandlerOptions, "publish">;
 }
 
-declare function createAGUIBackend(
-  config: AGUIBackendConfig,
-): AGUIBackend;
+declare function createAGUIAdapter(
+  config: AGUIAdapterConfig
+): AGUIAdapter;
 ```
 
-**Notes**
+### 4.2 Default Backend HTTP API
+- **Style:** HTTP API
+- **Authentication / Authorization:** Host-enforced before the backend wrapper executes.
+- **Compatibility Strategy:** Preserve the existing `./backend` subpath and `createAGUIBackend(config).handle(request)` contract while re-implementing it as a thin wrapper over `createAGUIAdapter()`.
+- **Error model:** Pre-stream JSON error responses for request validation failures; streamed canonical AG-UI events for successful requests; safe close on abort without invented semantic events.
 
-- `handle(request)` is the batteries-included path.
-- The request body is expected to be strict AG-UI `RunAgentInput` JSON.
-- The response is a streamed AG-UI-compatible HTTP response, defaulting to SSE.
-- `agentFactory` is intentional because LangChain middleware is attached when
-  `createAgent(...)` is constructed, not at request handling time.
+```yaml
+openapi: 3.1.0
+info:
+  title: AG-UI Backend Wrapper Contract
+  version: 2.0.0
+paths:
+  /agui:
+    post:
+      operationId: handleAGUIRun
+      summary: Accept a strict AG-UI run request and stream canonical AG-UI events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunAgentInput"
+      responses:
+        "200":
+          description: Streamed AG-UI response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: One canonical AG-UI BaseEvent JSON object per SSE frame.
+        "400":
+          description: Invalid request body
+        "405":
+          description: Method not allowed
+        "415":
+          description: Unsupported content type
+components:
+  schemas:
+    RunAgentInput:
+      type: object
+      description: Strict AG-UI RunAgentInput validated via @ag-ui/core at runtime.
+```
 
-### 3.2 Publication Layer API
+### 4.3 Publication and Producer Escape Hatches
+- **Style:** library API
+- **Authentication / Authorization:** Not applicable; these are internal composition surfaces exposed for deliberate advanced use.
+- **Compatibility Strategy:** Preserve `./publication`, `./middleware`, and `./callbacks` subpaths. These remain advanced escape hatches beneath the adapter boundary, not replacements for it.
+- **Error model:** Validation warnings or strict validation exceptions according to configuration; public semantic finalization remains the publisher’s responsibility.
 
-```typescript
+```ts
 interface AGUIRunPublisher {
   publish(event: BaseEvent): void;
+  complete(result?: unknown): void;
   error(error: unknown): void;
-  complete(): void;
+  close(): void;
+  subscribe(listener: (event: BaseEvent) => void): () => void;
   toReadableStream(): ReadableStream<Uint8Array>;
 }
-
-interface AGUIRunPublisherConfig {
-  validateEvents?: boolean | "strict";
-  serializer?: AGUIEventSerializer;
-  transport?: "sse";
-}
-
-declare function createAGUIRunPublisher(
-  config?: AGUIRunPublisherConfig,
-): AGUIRunPublisher;
 ```
 
-**Notes**
-
-- This is the single writer for one run.
-- Middleware and callbacks publish into this component instead of directly to transport.
-
-### 3.3 Control Layer API
-
-```typescript
-interface AGUIMiddlewareOptions {
-  publish: (event: BaseEvent) => void;
-  emitStateSnapshots?: "initial" | "final" | "all" | "none";
-  emitActivities?: boolean;
-  threadIdOverride?: string;
-  runIdOverride?: string;
-  errorDetailLevel?: "full" | "message" | "code" | "none";
-  stateMapper?: (state: unknown) => unknown;
-  activityMapper?: (activity: unknown) => unknown;
-}
-
-declare function createAGUIMiddleware(
-  options: AGUIMiddlewareOptions,
-): ReturnType<typeof createMiddleware>;
-```
-
-**Notes**
-
-- The control layer API changes from `onEvent` semantics to `publish` semantics.
-- The middleware remains a producer, not a server writer.
-
-### 3.4 Observation Layer API
-
-```typescript
-interface AGUICallbackHandlerOptions {
-  publish: (event: BaseEvent) => void;
-  emitTextMessages?: boolean;
-  emitToolCalls?: boolean;
-  emitToolResults?: boolean;
-  emitThinking?: boolean;
-  reasoningEventMode?: "thinking" | "reasoning";
-}
-
-declare class AGUICallbackHandler extends BaseCallbackHandler {
-  constructor(options: AGUICallbackHandlerOptions);
-  dispose(): void;
-}
-```
-
-**Notes**
-
-- The callback handler remains available as a low-level export.
-- It must never write directly to an HTTP response.
-
-### 3.5 Public Surface Decisions
-
-The frozen MVP package surface is:
-
-- `createAGUIBackend`
-- `createAGUIRunPublisher`
-- `createAGUIMiddleware`
-- `AGUICallbackHandler`
-
-`createAGUIAgent` is not part of the MVP public contract. It may remain in the
-source tree temporarily during implementation, but docs and package exports
-should not preserve it as a published API.
-
----
-
-## 4. Event Publication Rules
-
-### 4.1 Producer Mapping
-
-| Producer | Event Families |
-|----------|----------------|
-| Middleware | `RUN_*`, `STEP_*`, `STATE_*`, `MESSAGES_SNAPSHOT`, `ACTIVITY_*` |
-| Callbacks | `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `REASONING_*`, runtime errors |
-| Publisher | terminal coordination, validation, ordering, serialization |
-
-### 4.2 Truthfulness Rules
-
-1. Do not invent token deltas when none were observed.
-2. Do not invent tool argument chunks when none were observed.
-3. Allow degraded publication from chunked events to final-only events when upstream fidelity is lower.
-4. Validate public events before they reach transport when validation is enabled.
-
-### 4.3 Ordering Rules
-
-1. All public events for one run flow through one publisher.
-2. `RUN_STARTED` must appear before any text or tool event for that run.
-3. `RUN_FINISHED` or `RUN_ERROR` must be the final semantic lifecycle event.
-4. Serving must flush and close only after publication has finalized.
-
----
-
-## 5. Request and Serving Semantics
-
-### 5.1 Request Entry
-
-- Request body: strict AG-UI `RunAgentInput`
-- Method: `POST`
-- Content type: `application/json`
-- Response type: `text/event-stream` by default
-
-### 5.2 Serving Responsibilities
-
-The serving layer must:
-
-- parse request JSON
-- create a run-scoped publisher
-- invoke the LangChain runtime with control and observation producers
-- stream canonical events to the client
-- propagate `AbortSignal` from client disconnect to execution
-
-### 5.3 Transport Responsibilities
-
-The SSE helper must:
-
-- serialize each public event as one SSE frame
-- flush progressively
-- close safely on success, failure, or disconnect
-
-The transport helper must not:
-
-- decide event ordering
-- generate semantic events independently of the publisher
-
----
-
-## 6. Internal Module Structure
-
+## 5. Implementation Guidelines
+### 5.1 Project Structure
 ```text
-src/
-├── backend/
-│   ├── createAGUIBackend.ts      # High-level backend factory
-│   └── requestHandler.ts         # Request -> Response serving path
-├── publication/
-│   ├── createAGUIRunPublisher.ts # Single writer per run
-│   ├── serializer.ts             # BaseEvent -> framed output
-│   └── ordering.ts               # Ordering and terminal coordination
-├── transports/
-│   └── sse.ts                    # Default SSE writer
-├── middleware/
-│   ├── create-agui-middleware.ts   # Control producer
-│   ├── id-resolution.ts
-│   └── types.ts
-├── callbacks/
-│   └── agui-callback-handler.ts    # Observation producer
-├── utils/
-│   ├── cleaner.ts
-│   ├── id-generator.ts
-│   ├── message-mapper.ts
-│   ├── reasoning-blocks.ts
-│   ├── state-diff.ts
-│   └── validation.ts
-├── backend.ts                    # Package entry for ./backend
-├── publication.ts                # Package entry for ./publication
-├── callbacks.ts                  # Package entry for ./callbacks
-├── middleware.ts                 # Package entry for ./middleware
-└── index.ts                      # Minimal root entry
+.
+├── docs/
+│   ├── PRD.md
+│   ├── Architecture.md
+│   ├── TechSpec.md
+│   └── Tasks.md
+├── src/
+│   ├── adapter/
+│   │   └── create-agui-adapter.ts
+│   ├── backend/
+│   │   └── create-agui-backend.ts
+│   ├── callbacks/
+│   │   └── agui-callback-handler.ts
+│   ├── middleware/
+│   │   ├── create-agui-middleware.ts
+│   │   └── id-resolution.ts
+│   ├── publication/
+│   │   ├── create-agui-run-publisher.ts
+│   │   └── serializer.ts
+│   ├── transports/
+│   │   └── sse.ts
+│   └── utils/
+├── example/
+│   ├── server.ts
+│   ├── custom-host.ts
+│   └── verify.ts
+└── tests/
 ```
 
----
-
-## 7. Testing Requirements
-
-### 7.1 Publication Tests
-
-- canonical ordering across middleware and callback producers
-- truthful degraded fidelity behavior
-- duplicate suppression
-- terminal completion and failure semantics
-
-### 7.2 Serving Tests
-
-- `POST` request returns streamed SSE response
-- disconnect aborts upstream work
-- post-start failures close the stream safely
-
-### 7.3 Concurrency Tests
-
-- simultaneous runs do not share message IDs, step state, or terminal state
-- middleware state does not leak between runs
-
-### 7.4 Compatibility Tests
-
-- low-level producer exports continue to work for advanced users
-- package exports do not leak `createAGUIAgent` as a public API
-
----
-
-## 8. Technical Debt To Retire
-
-The following current-state properties are no longer acceptable in the target design:
-
-- direct `onEvent` sinks as the only public integration contract
-- shared middleware closure state for run-scoped publication data
-- callback-led assumptions about public stream completeness
-- docs that define transport as purely the caller's burden
+### 5.2 Coding Standards
+- **Formatting / Linting:** Use Bun workspace tooling, Biome checks, and alias-based imports. Avoid relative internal imports when an alias exists.
+- **Testing Expectations:** Release-quality checks must cover built-package importability, backend SSE behavior, adapter-level canonical event streaming, degraded-fidelity behavior, abort/failure semantics, and example verification. Producer-only tests remain supporting coverage.
+- **Observability Hooks:** Use `@ag-ui/core` schema validation for emitted public events when verification is enabled. Example verifiers should remain truthful public-surface checks rather than internal implementation probes only.
+- **Migration / Deployment Notes:** The package name is historical but the product shape is adapter-first. Adding `./adapter` is additive. `createAGUIAgent` must remain out of public docs and release gates and should be treated as a candidate for stronger containment or removal in a future breaking release.
+- **Performance / Capacity Notes:** Keep publication progressive, avoid whole-run buffering, and ensure transport framing remains a pure serialization concern above the canonical event pipeline.

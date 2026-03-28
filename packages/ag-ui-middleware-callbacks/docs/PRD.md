@@ -1,256 +1,217 @@
-# PRD.md - Product Requirements Document
+# Product Requirements Document
 
-## @skroyc/ag-ui-middleware-callbacks
+## 0. Version History & Changelog
+- v2.0.0 - Reframed the package around the missing adapter boundary outside middleware and callbacks, preserving brownfield continuity and defining the active success criteria for a successful implementation.
+- v1.1.0 - Recorded the MVP backend, publication, and example direction after the package moved beyond the original event-emitter framing.
+- v1.0.0 - Shifted the package vision from a low-level event bridge toward an AG-UI backend adapter for LangChain `createAgent()`.
+- ... [Older history truncated, refer to git logs]
 
----
+## 1. Executive Summary & Target Archetype
+- **Target Archetype:** Library package that exposes an AG-UI-compatible adapter over an existing LangChain `createAgent()` runtime.
+- **Vision:** A solo builder can mount a trustworthy AG-UI backend or reuse the same adapter boundary inside a custom host without rebuilding lifecycle, ordering, abort, or transport semantics by hand.
+- **Problem:** The package began with the wrong center of gravity. It treated LangChain middleware and callback hooks as if they were the product surface, when they are only producer surfaces. That mistake makes the package too thin where correctness actually matters: the layer outside those hooks that must own request intake, run orchestration, public event ordering, truthful terminal behavior, and host integration.
+- **Jobs to Be Done:** When a builder already has a working LangChain agent runtime, they want to add one library that turns that runtime into an AG-UI-compatible backend, preserves truthful live execution semantics, and still offers a reusable adapter boundary for custom hosts without exposing LangChain internals as the public contract.
 
-## 1. Executive Summary
+### Release-Quality Thresholds
+- The built package must support a default HTTP backend path that accepts strict AG-UI `RunAgentInput` JSON and streams canonical AG-UI events over SSE.
+- The built package must also expose a reusable adapter boundary above middleware and callbacks so custom hosts do not need to recreate runtime wiring, publisher ownership, terminal semantics, or abort handling by hand.
+- The public stream must remain truthful: no invented token deltas, no invented tool-argument chunks, and no invented semantic events on disconnect.
+- The adapter-owned stream must be deterministic enough for builders to trust ordering, IDs, and terminal behavior across success, failure, and client abort.
+- Local verification must exercise the built package and examples as public surfaces rather than treating hook-level tests alone as sufficient proof.
 
-### The Vision
-A batteries-included backend adapter that lets a LangChain.js agent created with `createAgent()` behave like an AG-UI-compatible backend with minimal developer code.
+### Product Posture
+- The adapter boundary is the product. Middleware and callbacks are internal producer surfaces and advanced extension seams, not the primary mental model.
+- Library-first adoption beats framework sprawl. The package must remain additive over an existing LangChain runtime.
+- Host-owned concerns remain host-owned. Authentication, authorization, routing, and durable persistence are outside the package boundary unless explicitly adopted later.
+- The package name is historical. The successful product shape is adapter-first even if the published package name still reflects the package’s origin.
 
-### The Problem
-The current package shape is too thin for the product goal. Emitting AG-UI-compatible event objects is useful, but it does not by itself guarantee:
-- truthful token streaming
-- deterministic event ordering
-- correct terminal behavior, meaning the package truthfully decides how a run ends across success, failure, disconnect, final lifecycle events, and stream closure
-- disconnect and abort propagation
-- plug-and-play backend setup
+### Brownfield Continuity Note
+- The current codebase already contains a backend path, a run-scoped publisher, middleware and callback producers, examples, and a legacy `createAGUIAgent` compatibility surface.
+- The active product problem is no longer "can the package emit AG-UI events at all?" It is "can the package converge on the correct adapter-first boundary without leaving builders trapped in the old hook-first mental model?"
 
-This creates the exact failure mode we want to avoid: too much protocol logic leaks into LangChain internals, while too much serving logic is left to every consuming app.
-
-### Product Goal
-Provide a default backend path that is as close as possible to:
-
-```typescript
-const backend = createAGUIBackend({
-  agentFactory: ({ middleware }) =>
-    createAgent({
-      model,
-      tools,
-      middleware: [middleware],
-    }),
-});
-return backend.handle(request);
-```
-
-while still exposing lower-level building blocks for custom hosts.
-
-### Jobs To Be Done
-
-| # | Job Statement | Priority |
-|:---:|:---------------|:----------:|
-| 1 | "I want my `createAgent()` backend to become AG-UI-compatible without building the serving pipeline myself." | P0 |
-| 2 | "I need token and tool-call streaming to be published truthfully to the frontend." | P0 |
-| 3 | "I want one package to own ordering, IDs, and terminal behavior so my frontend can trust the stream." | P0 |
-| 4 | "I need a low-level escape hatch when my app has custom transport or auth requirements." | P1 |
-| 5 | "I want state and activity updates to remain available without conflating them with token delivery." | P1 |
-| 6 | "I want extensibility for custom events and future transports without rewriting the core bridge." | P2 |
-
----
-
-## 2. Ubiquitous Language
-
+## 2. Ubiquitous Language (Glossary)
 | Term | Definition | Do Not Use |
-|------|------------|------------|
-| **Execution Layer** | The LangChain `createAgent()` runtime that performs model and tool work | Protocol, Transport |
-| **Control Layer** | LangChain middleware responsible for execution policy, state, and lifecycle boundaries | Streaming Layer |
-| **Observation Layer** | LangChain callbacks responsible for observing token, tool, and runtime events | Transport |
-| **Publication Layer** | The run-scoped component that merges control and observation signals into one canonical AG-UI event stream | Callback Transport |
-| **Serving Layer** | The HTTP or connection-facing layer that accepts AG-UI input and delivers the canonical event stream | Business Logic |
-| **Backend Adapter** | The full package surface that exposes a `createAgent()` runtime as an AG-UI-compatible backend | Event Emitter |
-| **Transport Helper** | A concrete delivery helper such as SSE, WebSocket, or binary framing | Core Protocol |
-| **Event Producer** | A component that emits internal semantic events into the publication layer | Publisher |
-| **Single Writer** | The only component allowed to decide public event order and terminal behavior for one run | Global Emitter |
-
----
+| --- | --- | --- |
+| Solo Builder | The independent developer integrating the package into their own backend or app host. | Team, Enterprise User |
+| Framework Integrator | The advanced adopter embedding the package into a custom runtime, framework, or host. | Power User |
+| Agent Runtime | The LangChain `createAgent()` runtime that performs model turns, tool calls, and final execution. | Protocol Layer, Backend Brain |
+| Adapter Boundary | The run-scoped orchestration layer above middleware and callbacks that owns execution wiring, canonical stream lifecycle, and host-facing integration. | Middleware Layer, Callback Layer |
+| Host Integration Boundary | The builder-facing surface that mounts the package inside an HTTP server, custom transport, or other host environment. | Internal Glue |
+| Control Producer | Middleware that emits lifecycle, state, activity, and execution metadata into the adapter-owned publication path. | Streaming Layer |
+| Observation Producer | Callback handling that emits token, tool, reasoning, and runtime observations into the adapter-owned publication path. | Transport Writer |
+| Publication Layer | The single-writer run-scoped component that orders and finalizes public AG-UI events. | Event Bus, Global Sink |
+| Serving Layer | The transport-facing layer that accepts AG-UI input and delivers canonical events to a client. | Business Logic |
+| Canonical Event Stream | The truthful public AG-UI event sequence produced by the adapter-owned publication layer for one run. | Raw Callback Output |
+| Legacy Compatibility Surface | Older package APIs that may remain temporarily for migration or test continuity but do not define the product’s public mental model. | Main API |
 
 ## 3. Actors & Personas
+### 3.1 Primary Actor
+- **Role:** Solo Builder exposing an existing LangChain agent through AG-UI.
+- **Context:** Already has a working backend and wants AG-UI compatibility without hand-assembling runtime hooks, SSE details, and terminal semantics.
+- **Goals:** Mount the package quickly, trust the public event stream, and avoid per-project reinvention of adapter glue.
+- **Frictions:** LangChain hooks expose useful internal signals but do not by themselves define a trustworthy public protocol surface.
 
-### Primary Actor: The Solo Builder
+### 3.2 Secondary Actor
+- **Role:** Framework Integrator embedding the package inside a custom host.
+- **Context:** Needs to keep their own routing, auth, or transport choices while still reusing the package’s truthful orchestration and publication behavior.
+- **Goals:** Reuse the same adapter-owned run semantics in non-default hosts without copying backend internals.
+- **Frictions:** A producer-only package forces advanced users to reconstruct the very layer they were trying to reuse.
 
-- **Profile:** Maintains their own app backend and wants AG-UI compatibility quickly
-- **Psychographics:**
-  - Optimizes for momentum and correctness
-  - Prefers a package that owns the boring transport details
-  - Wants low ceremony but not hidden magic
-- **Goals:**
-  - Mount a working AG-UI backend with minimal code
-  - Trust the event stream in production
-  - Avoid per-project reinvention of SSE and ordering rules
-
-### Secondary Actor: The Framework Integrator
-
-- **Profile:** Wants to embed the bridge into a custom backend or platform
-- **Psychographics:**
-  - Accepts more configuration in exchange for control
-  - Needs reusable primitives rather than one rigid server
-- **Goals:**
-  - Reuse the publication pipeline with custom routing/auth
-  - Swap transports without rewriting LangChain integration
-
----
+### 3.3 Supporting Actor
+- **Role:** Package Maintainer guiding the brownfield package toward its correct product boundary.
+- **Context:** Maintains a codebase where the implementation has moved forward faster than the planning artifacts and where a legacy compatibility path still influences tests and code shape.
+- **Goals:** Converge the product identity, reduce architectural ambiguity, and leave a clear implementation plan that finishes the adapter-first design.
+- **Frictions:** Mixed-era docs, duplicated orchestration logic, and the temptation to preserve the old hook-first story because the package name and legacy tests still exist.
 
 ## 4. Functional Capabilities
+### Epic: Adapter-First Adoption Surface
+- **Priority:** P0
+- **Capability ID:** AGC-001
+- **Capability:** The package must let a builder expose an existing LangChain `createAgent()` runtime as an AG-UI-compatible backend through an adapter-first integration surface rather than through direct hook wiring.
+- **Rationale:** The product only succeeds if builders can think in terms of "mount an adapter" rather than "assemble middleware and callbacks into a protocol."
 
-### Epic 1: Batteries-Included Backend Path (P0)
+### Epic: Shared Host Integration Boundary
+- **Priority:** P0
+- **Capability ID:** AGC-002
+- **Capability:** The package must provide one reusable adapter-owned run boundary that both the default HTTP backend path and custom hosts can reuse without duplicating runtime orchestration.
+- **Rationale:** The missing layer outside middleware and callbacks is what prevents the package from being a trustworthy reusable adapter rather than a collection of low-level parts.
 
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| Backend Factory | Create a high-level backend adapter around an existing `createAgent()` runtime | `createAGUIBackend(config)` returns a backend object |
-| Request Handling | Accept AG-UI-compatible input over HTTP | Backend exposes a `handle(request)` or equivalent request entrypoint |
-| Minimal Setup | Require minimal host code to publish a working AG-UI backend | User can mount one handler without building a publisher manually |
+### Epic: Truthful Canonical Publication
+- **Priority:** P0
+- **Capability ID:** AGC-003
+- **Capability:** The system must own a canonical per-run AG-UI event stream that merges control and observation signals deterministically and ends truthfully across success, failure, and abort.
+- **Rationale:** Builders and frontends must trust one public stream, not ad hoc callback timing.
 
-### Epic 2: Publication Layer (P0)
+### Epic: Producer Boundaries Remain Explicit
+- **Priority:** P0
+- **Capability ID:** AGC-004
+- **Capability:** Middleware and callbacks must remain producer surfaces only. They may contribute execution facts and live observations, but they must not become the product boundary or write directly to transport.
+- **Rationale:** The original architectural error came from overloading the hooks with responsibilities they should only inform.
 
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| Single Writer | Use one response-scoped publisher per run | No public event is written directly from middleware or callbacks |
-| Canonical Ordering | Merge control and observation signals deterministically | Public event order is stable and testable |
-| ID Management | Normalize run, thread, message, and tool call identifiers | IDs remain consistent across lifecycle, text, and tool events |
-| Terminal Semantics | Own completion and failure termination rules | Stream ends truthfully on success, failure, or disconnect |
-| Degraded Fidelity Rules | Publish only events supported by upstream runtime fidelity | Missing token deltas degrade honestly rather than being fabricated |
+### Epic: Legacy Compatibility Containment
+- **Priority:** P1
+- **Capability ID:** AGC-005
+- **Capability:** Any retained legacy compatibility surface must be clearly isolated from the adapter-first public contract, documentation, examples, and release gates.
+- **Rationale:** A package cannot converge on the right product boundary while its public narrative and verification still center the wrong one.
 
-### Epic 3: LangChain Integration Layers (P0)
+### Epic: Advanced Escape Hatches
+- **Priority:** P1
+- **Capability ID:** AGC-006
+- **Capability:** Advanced adopters must retain lower-level access to publication and producer primitives for deliberate customization after the adapter boundary, not instead of it.
+- **Rationale:** The package should remain flexible without forcing every advanced user to rebuild adapter semantics from scratch.
 
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| Control Layer | Use middleware for lifecycle, state, activity, and execution metadata | Middleware never claims token visibility |
-| Observation Layer | Use callbacks for token, tool, and runtime observation | Callbacks capture token/tool richness without becoming transport writers |
-| Per-Run State | Keep run-scoped state out of shared middleware closure state | Concurrent runs do not corrupt each other's publication state |
+### Epic: In-Scope Verification Confidence
+- **Priority:** P1
+- **Capability ID:** AGC-007
+- **Capability:** Maintainers must be able to verify the in-scope AG-UI contract and adapter semantics using built-package checks, canonical event validation, and end-to-end example verification.
+- **Rationale:** Success cannot rest on producer-level tests alone when the product boundary sits above the producers.
 
-### Epic 4: Serving & Transport (P0)
-
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| HTTP Serving | Expose an AG-UI-compatible HTTP entrypoint | Accepts POST body matching AG-UI run input and returns streamed response |
-| SSE Delivery | Ship a default SSE writer for broad compatibility | SSE output flushes lifecycle/text/tool events in canonical order |
-| Abort Propagation | Stop work when the client disconnects or aborts | Disconnect reaches the execution path through cancellation wiring |
-| Transport Safety | Map post-start transport failures into safe terminal behavior | Public stream closes predictably |
-
-### Epic 5: Low-Level Escape Hatches (P1)
-
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| Publisher API | Expose the publication layer separately for custom hosts | Advanced user can subscribe to canonical per-run events directly |
-| Producer Middleware Export | Continue exposing lower-level middleware for advanced composition | Advanced users can publish lifecycle and state signals without the high-level handler |
-| Producer Callback Export | Continue exposing callback handler for advanced composition | Advanced users can publish observation signals without the high-level handler |
-
-### Epic 6: Extensibility (P2)
-
-| Capability | Description | Acceptance Criteria |
-|------------|-------------|-------------------|
-| Custom Events | Allow application-specific events without bypassing the publisher | Custom events flow through the same publication guarantees |
-| Alternative Transports | Support future binary or WebSocket helpers | Core publication semantics are reused across transports |
-| Protocol Evolution | Leave room for additional AG-UI events without re-architecting serving | New event families slot into the publication layer cleanly |
-
----
+### Epic: Extensibility
+- **Priority:** P2
+- **Capability ID:** AGC-008
+- **Capability:** The package should support future event-family expansion, transport helpers, and host adapters without redesigning the core adapter-owned publication boundary.
+- **Rationale:** The adapter boundary should absorb future growth cleanly instead of pushing complexity back into host code.
 
 ## 5. Non-Functional Constraints
+- **Performance:** Canonical publication and transport delivery must remain progressive and must not require buffering a whole run before anything is sent downstream.
+- **Reliability:** Only the adapter-owned publication layer may finalize terminal semantics. Concurrent runs must remain isolated.
+- **Security & Privacy:** Authentication and authorization remain host concerns. The package must not leak raw internal errors or hidden runtime state as public protocol output.
+- **Operability:** Maintainers must be able to distinguish adapter-level proof from hook-level proof and verify both the default backend path and the reusable adapter boundary.
+- **Domain-specific Constraints:** The package must stay library-shaped, keep LangChain as the execution engine, and avoid treating provider-native payloads as the public API.
 
-### Performance
-
-- Event publication must not materially slow agent execution.
-- The serving layer must support progressive delivery rather than buffering full responses.
-
-### Reliability
-
-- Middleware and callbacks must be fail-safe producers.
-- Only the publication layer may decide public ordering and termination.
-- Per-run state must be isolated to support concurrent requests safely.
-
-### Architectural Separation
-
-- **Execution Layer:** LangChain runtime only
-- **Control Layer:** Middleware only
-- **Observation Layer:** Callbacks only
-- **Publication Layer:** Canonical AG-UI event stream only
-- **Serving Layer:** Request parsing and transport delivery only
-
-### Compatibility
-
-- Must work with LangChain.js agents created with `createAgent()`.
-- Must emit AG-UI-compatible `BaseEvent` objects.
-- Must preserve an advanced path for custom hosts, not only the default server path.
-
-### Usability
-
-- Default path should feel plug-and-play from the backend side.
-- Low-level APIs should remain available for deliberate customization.
-
----
+### Prohibited Patterns
+- Defining the product as "middleware plus callbacks" instead of "adapter plus producer surfaces"
+- Writing to transport directly from middleware or callbacks
+- Forcing custom hosts to copy backend orchestration to reuse the package
+- Inventing token, tool-argument, or semantic events to appear richer than the runtime truth
+- Letting legacy compatibility APIs define the package’s public mental model
+- Mixing active scope and archived brownfield context without labeling the difference
 
 ## 6. Boundary Analysis
-
-### What This Package IS
-
-- An AG-UI backend adapter for LangChain `createAgent()`
-- A package that owns the publication boundary between LangChain internals and frontend delivery
-- A package that includes a default serving path and lower-level extension points
-
-### What This Package IS NOT
-
-- A frontend package
-- A generic LangChain middleware collection
-- A promise that callbacks alone define the public protocol
-
 ### In Scope
-
-- Request handling for AG-UI-compatible runs
-- Middleware and callback integration as producer layers
-- Run-scoped publication and serialization of AG-UI events
-- Default SSE delivery path
-- Cancellation and disconnect propagation
-- Lower-level publisher and bridge exports
+- Adapter-first library integration over an existing LangChain `createAgent()` runtime
+- Default HTTP backend path for strict AG-UI `RunAgentInput`
+- Reusable non-HTTP adapter boundary for custom hosts
+- Run-scoped single-writer publication
+- Middleware and callback producers as internal extension seams
+- Default SSE delivery
+- Truthful abort, failure, and terminal behavior for the in-scope AG-UI event families
+- Package-owned verification for the in-scope AG-UI contract and examples
 
 ### Out of Scope
+- Frontend rendering or AG-UI client implementation
+- General-purpose authentication and authorization frameworks
+- Durable persistence productization
+- Replacing LangChain as the execution engine
+- Hosted gateway or platform behavior
+- Provider-native wire formats as the public contract
 
-| Excluded Feature | Reason |
-|------------------|--------|
-| Frontend rendering | Belongs to AG-UI frontend consumers |
-| General-purpose auth framework | Host application concern |
-| Durable persistence productization | Separate concern from run publication |
-| Replacing LangChain execution | LangChain remains the execution engine |
-
----
-
-## 7. Conceptual Diagrams
-
-### System Context
-
+## 7. Conceptual Diagrams (Mermaid)
+### 7.1 System Context
 ```mermaid
 C4Context
-  Person(Builder, "Solo Builder", "Mounts the backend in an existing app")
-  System_Boundary(Adapter, "AG-UI Backend Adapter") {
-    System(Backend, "createAGUIBackend", "High-level backend adapter")
-    System(Publisher, "Publication Layer", "Run-scoped canonical event publisher")
-    System(Bridge, "LangChain Bridge", "Middleware + callbacks as producers")
-  }
-  System(LangChain, "LangChain createAgent()", "Execution engine")
-  System(Client, "AG-UI Client / Frontend", "Consumes AG-UI event stream")
+title AG-UI Middleware Callbacks - Adapter-First System Context
 
-  Rel(Builder, Backend, "Uses")
-  Rel(Backend, LangChain, "Invokes")
-  Rel(Bridge, Publisher, "Publishes semantic signals to")
-  Rel(Backend, Client, "Serves AG-UI stream to")
+Person(builder, "Solo Builder", "Mounts the package inside an existing backend.")
+Person(integrator, "Framework Integrator", "Reuses the adapter boundary inside a custom host.")
+System(system, "AG-UI Adapter Package", "Provides adapter, publication, and producer surfaces over a LangChain runtime.")
+System_Ext(runtime, "LangChain createAgent Runtime", "Executes model and tool work.")
+System_Ext(client, "AG-UI Client", "Consumes the canonical AG-UI event stream.")
+System_Ext(host, "Builder Host", "Owns routing, auth, and transport mounting.")
+
+Rel(builder, host, "Maintains")
+Rel(integrator, host, "Extends")
+Rel(host, system, "Mounts and configures")
+Rel(system, runtime, "Invokes and observes")
+Rel(system, client, "Delivers canonical AG-UI events to")
 ```
 
-### Layer Model
-
+### 7.2 Domain Model
 ```mermaid
-flowchart TD
-  A[Execution Layer\nLangChain createAgent()] --> B[Control Layer\nMiddleware]
-  A --> C[Observation Layer\nCallbacks]
-  B --> D[Publication Layer\nSingle Writer]
-  C --> D
-  D --> E[Serving Layer\nHTTP / SSE / future transports]
-  E --> F[AG-UI Client]
+classDiagram
+    class HostIntegrationBoundary {
+      mount_backend
+      mount_custom_host
+    }
+
+    class AdapterBoundary {
+      validate_input
+      wire_runtime
+      coordinate_abort
+      expose_canonical_events
+    }
+
+    class ControlProducer {
+      lifecycle_facts
+      state_updates
+      activity_updates
+    }
+
+    class ObservationProducer {
+      text_observations
+      tool_observations
+      reasoning_observations
+    }
+
+    class PublicationLayer {
+      order_events
+      finalize_terminal_semantics
+      serialize_transport_output
+    }
+
+    class LegacyCompatibilitySurface {
+      transition_only
+    }
+
+    HostIntegrationBoundary --> AdapterBoundary
+    AdapterBoundary --> ControlProducer
+    AdapterBoundary --> ObservationProducer
+    ControlProducer --> PublicationLayer
+    ObservationProducer --> PublicationLayer
+    LegacyCompatibilitySurface ..> AdapterBoundary
 ```
 
----
-
-## Appendix: Product Positioning
-
-This package is no longer framed as "middleware plus callbacks that emit event objects." The target product is:
-
-**"The simplest way to expose a LangChain `createAgent()` backend as an AG-UI-compatible backend."**
+## Appendix: Operator Preferences
+- Use Bun workspace tooling and `bun test` as the default local verification path.
+- Prefer explicit subpath exports and import aliases over relative internal imports.
+- Preserve important brownfield continuity and historical context rather than reducing the docs to a smaller but less trustworthy summary.

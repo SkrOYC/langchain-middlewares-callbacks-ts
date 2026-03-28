@@ -1,330 +1,223 @@
-# Tasks.md - Execution Plan
+# Engineering Execution Plan
 
-## @skroyc/ag-ui-middleware-callbacks
+## 0. Version History & Changelog
+- v2.0.0 - Rebased the plan around the remaining adapter-first convergence work and archived the earlier MVP backlog as brownfield context.
+- v1.1.0 - Recorded the MVP completion state after backend, publication, verification, and examples landed.
+- v1.0.0 - Planned the first backend-adapter implementation pass after the package moved beyond the original event-emitter framing.
+- ... [Older history truncated, refer to git logs]
 
----
+## 1. Executive Summary & Active Critical Path
+- **Total Active Story Points:** 31
+- **Critical Path:** `AGA-A001 -> AGA-B001 -> AGA-B002 -> AGA-B003 -> AGA-D001`
+- **Planning Assumptions:** The package remains library-shaped, keeps LangChain as the execution engine, preserves the current backend behavior for consumers, and treats `createAGUIAgent` as a legacy compatibility surface rather than active product scope.
 
-## 1. Executive Summary
+The active delta is no longer "build a backend adapter from scratch." That work is already present in brownfield form. The remaining work is to converge the package on the correct adapter-first boundary so the default backend path, custom-host path, publication logic, compatibility surface, and verification story all point at the same architecture.
 
-- **Total Estimation:** 58 story points
-- **Critical Path:** `[P-1] -> [P-2] -> [A-1] -> [A-2] -> [A-3] -> [A-4] -> [S-1] -> [S-2] -> [S-3] -> [Q-3] -> [K-1] -> [D-1] -> [D-2]`
+### Brownfield Continuity Note
+- The package already contains a working backend path, a run-scoped publisher, producer layers, examples, and end-to-end tests.
+- The active plan does not reopen those completed foundations. It concentrates on extracting the reusable adapter boundary that the current code still keeps implicit, hardening truthful publication for the in-scope event families, and moving release confidence to the right public surfaces.
+- Historical work items from the earlier MVP backlog remain useful context and are preserved below as archived scope rather than active execution.
 
-This plan is grounded in the verified mismatch between the original codebase
-and the target `TechSpec.md`. The package implementation is now aligned with
-the MVP target, including a validated replacement for the example surface.
+### Active Dependency Notes
+- **Adapter branch:** `AGA-A001` through `AGA-A003` establishes the reusable orchestration layer outside middleware and callbacks and removes duplicated host glue.
+- **Publication hardening branch:** `AGA-B001` through `AGA-B003` makes truthful publication policy explicit and closes the remaining reasoning and legacy-thinking edge cases.
+- **Compatibility branch:** `AGA-C001` through `AGA-C002` prevents the legacy `createAGUIAgent` path from continuing to define the package’s public identity.
+- **Verification branch:** `AGA-D001` is intentionally last because it should validate the converged product surfaces, not the transitional ones.
 
-Current status snapshot:
+## 2. Project Phasing & Iteration Strategy
+### Current Active Scope
+- Extract and publish a reusable adapter boundary above middleware and callbacks.
+- Make the default backend and custom-host paths reuse that adapter boundary instead of duplicating orchestration.
+- Encode and harden explicit truthful publication modes for the in-scope AG-UI event families, including legacy `THINKING_*` compatibility and modern `REASONING_*` behavior.
+- Move release confidence to the adapter-first public surfaces, examples, and built-package checks.
+- Contain `createAGUIAgent` as a legacy surface so it no longer drives the public mental model.
 
-- completed: contract freeze (`P-1` through `P-3`)
-- completed: publication core (`A-1` through `A-5`)
-- completed: default serving path (`S-1` through `S-3`)
-- completed: verification coverage (`Q-1` through `Q-3`)
-- completed: package alignment (`K-1`)
-- completed: README rewrite (`D-1`)
-- completed: example replacement work (`D-2`)
-- verification evidence: see [VerificationAudit.md](./VerificationAudit.md)
+### Future / Deferred Scope
+- Alternative transports beyond the default HTTP plus SSE path.
+- Additional AG-UI event families beyond the current in-scope publication matrix.
+- Stronger long-term compatibility decisions such as removing `createAGUIAgent` entirely in a future breaking release.
+- Historical package-name cleanup or republishing under a new adapter-first package identity.
 
-Per Goldratt's Theory of Constraints, the bottleneck is the missing publication boundary. No serving or packaging work should be treated as stable until that boundary exists.
+### Archived or Already Completed Scope
+- Contract-freeze, publication core, default backend path, verification coverage, package alignment, README rewrite, and example replacement work from the earlier MVP backlog.
+- The completed MVP chain proved that the package could ship backend, publisher, and producer surfaces. It did not fully resolve the deeper architectural boundary issue around the missing adapter layer outside the hooks.
 
----
+### Archived MVP Ticket Families
+- `P-*`: package and serving contract freezing
+- `A-*`: publication boundary and producer refactors
+- `S-*`: default SSE backend path
+- `Q-*`: ordering, concurrency, and end-to-end verification
+- `K-*`: build and export alignment
+- `D-*`: README and example replacement
 
-## 2. Project Phasing Strategy
-
-### Phase 1 (MVP)
-
-- Freeze the public package and serving contract so implementation does not drift
-- Introduce a run-scoped single-writer publication layer
-- Refactor middleware into a control producer
-- Refactor callbacks into an observation producer
-- Ship a default SSE-based backend path via `createAGUIBackend().handle(request)`
-- Verify ordering, degraded fidelity, concurrency isolation, and end-to-end serving behavior
-- Align package exports and distribution with the intended reusable-library surface
-- Replace stale README and examples with validated backend-adapter documentation
-
-### Phase 2 (Post-Launch)
-
-- Additional AG-UI event families beyond the current MVP bridge
-- Alternative transports beyond the default SSE path
-- Custom event publication ergonomics
-- Raw passthrough and encrypted reasoning exploration
-- Additional serialization niceties for low-level callback classes
-
----
-
-## 3. Build Order (Dependency Graph)
-
+## 3. Build Order (Mermaid)
 ```mermaid
 flowchart LR
-  A[P-1 Package Contract Spike] --> B[P-2 Serving Contract Spike]
-  B --> C[P-3 Example Audit]
-  A --> D[A-1 Publication Skeleton]
-  B --> D
-  D --> E[A-2 Single-Writer Publisher]
-  E --> F[A-3 Middleware Producer Refactor]
-  E --> G[A-4 Callback Producer Refactor]
-  G --> H[A-5 Degraded Fidelity Rules]
-  E --> I[S-1 SSE Writer]
-  F --> J[S-2 Backend Factory and Request Handler]
-  G --> J
-  I --> J
-  J --> K[S-3 Abort and Terminal Handling]
-  F --> L[Q-1 Publication Tests]
-  G --> L
-  H --> L
-  F --> M[Q-2 Concurrency Isolation Tests]
-  G --> M
-  J --> N[Q-3 End-to-End Serving Tests]
-  K --> N
-  A --> O[K-1 Dual Package and Export Map]
-  J --> O
-  O --> P[D-1 README Rewrite]
-  C --> P
-  O --> Q[D-2 Replace Examples]
-  J --> Q
-  K --> Q
+    AGAA001[AGA-A001 createAGUIAdapter module] --> AGAA002[AGA-A002 backend wraps adapter]
+    AGAA001 --> AGAA003[AGA-A003 custom host reuses adapter]
+
+    AGAA001 --> AGAB001[AGA-B001 explicit publication policy]
+    AGAB001 --> AGAB002[AGA-B002 publisher terminalization hardening]
+    AGAB002 --> AGAB003[AGA-B003 publication regressions]
+
+    AGAA001 --> AGAC001[AGA-C001 contain createAGUIAgent legacy path]
+    AGAC001 --> AGAC002[AGA-C002 metadata and export convergence]
+
+    AGAA002 --> AGAD001[AGA-D001 adapter-first verification matrix]
+    AGAA003 --> AGAD001
+    AGAB003 --> AGAD001
+    AGAC002 --> AGAD001
 ```
 
----
+## 4. Ticket List
+### Epic A — Adapter Boundary Extraction (AGA)
 
-## 4. The Ticket List
+**AGA-A001 Introduce the reusable `createAGUIAdapter()` module**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** None
+- **Legacy Issue ID:** S-2, D-2
+- **Capability / Contract Mapping:** AGC-001, AGC-002, AGC-006
+- **Description:** Extract the run-scoped orchestration logic that currently lives inside `createAGUIBackend()` and the custom-host example into a reusable adapter module and `./adapter` subpath that yields canonical AG-UI events independently of HTTP transport.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given an adapter configuration with an agentFactory and a valid RunAgentInput
+When a builder calls createAGUIAdapter(config).stream(input, { signal })
+Then the adapter creates one run-scoped publisher, middleware instance, and callback handler internally
+And it invokes the LangChain runtime without introducing HTTP-specific concerns
+And it yields canonical BaseEvent objects whose completion, error, and abort semantics are owned by the adapter
+```
 
-### Epic: Contract Freezing
+**AGA-A002 Rebase `createAGUIBackend()` on the adapter boundary**
+- **Type:** Feature
+- **Effort:** 3
+- **Dependencies:** AGA-A001
+- **Legacy Issue ID:** S-2, S-3
+- **Capability / Contract Mapping:** AGC-001, AGC-003
+- **Description:** Refactor `createAGUIBackend()` so it becomes a thin HTTP plus SSE wrapper over `createAGUIAdapter()` and no longer owns duplicated runtime orchestration logic.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the default backend surface and the extracted adapter module
+When a valid POST request reaches createAGUIBackend(config).handle(request)
+Then request validation and SSE response creation remain in the backend layer
+And the backend delegates run orchestration to createAGUIAdapter()
+And the streamed public behavior remains compatible with the existing backend contract
+```
 
-> **[P-1] Freeze Package Surface and Export Contract**
-> - **Type:** Spike
-> - **Effort:** 3 story points
-> - **Dependencies:** None
-> - **Description:** Define the authoritative public package surface for MVP, including whether `createAGUIBackend`, `createAGUIRunPublisher`, and subpath exports such as `./backend` or `./server` are part of the first release.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the target TechSpec and the current package exports
-> When the package contract spike is completed
-> Then the MVP export map is documented explicitly
-> And the role of createAGUIAgent as a compatibility API is decided
-> And the ESM plus CJS distribution target is confirmed
-> ```
+**AGA-A003 Rework the advanced custom-host example to consume the adapter**
+- **Type:** Chore
+- **Effort:** 2
+- **Dependencies:** AGA-A001
+- **Legacy Issue ID:** D-2
+- **Capability / Contract Mapping:** AGC-002, AGC-006
+- **Description:** Update the custom-host example and its local helpers so it demonstrates host-owned auth and routing while delegating runtime orchestration to the shared adapter boundary instead of recreating it locally.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the advanced custom-host example
+When a builder inspects or runs it
+Then host-owned concerns such as auth remain in example code
+And canonical run orchestration is delegated to the shared adapter boundary
+And the example no longer manually recreates publisher, middleware, and callback wiring that the package should own
+```
 
-> **[P-2] Freeze HTTP Serving Contract and Terminal Semantics**
-> - **Type:** Spike
-> - **Effort:** 3 story points
-> - **Dependencies:** P-1
-> - **Description:** Define the exact request and response contract for the default backend path, including request body shape, SSE framing assumptions, success and failure termination rules, and disconnect handling.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the target backend-adapter architecture
-> When the serving contract spike is completed
-> Then the request shape for handle(request) is documented
-> And the SSE response contract is documented
-> And post-start failure and disconnect behavior are documented
-> ```
+### Epic B — Truthful Publication Hardening (AGA)
 
-> **[P-3] Audit and Rebaseline Example Assumptions**
-> - **Type:** Chore
-> - **Effort:** 2 story points
-> - **Dependencies:** P-2
-> - **Description:** Audit the current example and README snippets, identify stale API assumptions, and document which demo-local serving logic can be reused versus discarded.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the current example and README
-> When the audit is completed
-> Then every stale API assumption is documented
-> And reusable serving behaviors are identified separately from stale signatures
-> ```
+**AGA-B001 Encode explicit publication modes for the in-scope AG-UI event families**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** AGA-A001
+- **Legacy Issue ID:** A-5, Q-1
+- **Capability / Contract Mapping:** AGC-003, AGC-004, AGC-007
+- **Description:** Move the current partially implicit truthfulness rules into explicit code-level publication policy for text, tool, reasoning, and legacy thinking families so the adapter and publisher can rely on one declared source of truth.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the in-scope AG-UI event families defined in TechSpec.md
+When the package resolves how to publish text, tool, reasoning, and legacy thinking events
+Then one explicit publication policy governs preferred and fallback modes for each in-scope family
+And unsupported raw provider payloads are skipped rather than translated into invented public events
+And the policy is consumed by the adapter-owned publication path rather than left implicit in scattered branching
+```
 
-### Epic: Publication Core
+**AGA-B002 Harden publisher terminalization for `REASONING_*` and legacy `THINKING_*` compatibility**
+- **Type:** Feature
+- **Effort:** 3
+- **Dependencies:** AGA-B001
+- **Legacy Issue ID:** A-2, A-5
+- **Capability / Contract Mapping:** AGC-003, AGC-004
+- **Description:** Extend the run publisher so open reasoning and legacy thinking streams finalize truthfully on completion, error, and abort, with no duplicate terminalizers and no invented semantic events.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given a run that opens reasoning or legacy thinking streams
+When the run completes, errors, or is aborted mid-stream
+Then the publisher closes only the streams justified by the observed state
+And terminal lifecycle events remain deterministic
+And no duplicate or invented reasoning or thinking terminal events are emitted
+```
 
-> **[A-1] Introduce Publication Module Skeleton**
-> - **Type:** Feature
-> - **Effort:** 5 story points
-> - **Dependencies:** P-1, P-2
-> - **Description:** Create the `publication/` module boundary, including run-scoped context, publisher interfaces, and serializer seams required by the TechSpec.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the agreed package and serving contracts
-> When the publication module is introduced
-> Then the codebase contains a dedicated publication boundary
-> And run-scoped publisher instances can be created independently of transport
-> ```
+**AGA-B003 Add regression coverage for degraded-fidelity and terminal-closure behavior**
+- **Type:** Feature
+- **Effort:** 3
+- **Dependencies:** AGA-B002
+- **Legacy Issue ID:** Q-1, Q-3
+- **Capability / Contract Mapping:** AGC-003, AGC-007
+- **Description:** Add focused tests that prove the explicit publication policy, degraded-fidelity behavior, reasoning/thinking terminalization, and adapter-versus-backend output consistency.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given runs with full-fidelity, reduced-fidelity, reasoning, and legacy thinking observations
+When the publication and adapter tests execute
+Then the package proves its declared publication modes and terminal closure behavior
+And backend and adapter-level canonical event sequences stay consistent for equivalent runs
+And no regression test depends on hook-level behavior alone to prove the public contract
+```
 
-> **[A-2] Implement Single-Writer Publisher**
-> - **Type:** Feature
-> - **Effort:** 5 story points
-> - **Dependencies:** A-1
-> - **Description:** Implement `AGUIRunPublisher` as the canonical writer for one run, including event validation hooks, ordering coordination, and terminal completion or error handling.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given one run-scoped publisher
-> When control and observation producers publish events
-> Then all public events flow through one canonical writer
-> And ordering is coordinated in one place
-> And terminal completion or error is finalized by the publisher
-> ```
+### Epic C — Legacy Compatibility Containment (AGA)
 
-> **[A-3] Refactor Middleware into a Control Producer**
-> - **Type:** Feature
-> - **Effort:** 5 story points
-> - **Dependencies:** A-2
-> - **Description:** Refactor `createAGUIMiddleware()` so it publishes lifecycle, state, and activity signals into the publisher without keeping canonical run state in shared closure variables.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given concurrent agent runs using the same middleware factory
-> When middleware emits lifecycle, state, and activity events
-> Then run-scoped correlation state is not shared across runs
-> And middleware publishes into the publisher instead of writing to a direct sink
-> ```
+**AGA-C001 Contain `createAGUIAgent` as a legacy compatibility surface**
+- **Type:** Chore
+- **Effort:** 3
+- **Dependencies:** AGA-A001
+- **Legacy Issue ID:** P-1, K-1
+- **Capability / Contract Mapping:** AGC-005
+- **Description:** Isolate `createAGUIAgent` in tests, metadata, and package messaging so it remains transition-only and no longer defines the release-critical product boundary.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the retained createAGUIAgent implementation
+When package surfaces, tests, and release gates are reviewed
+Then createAGUIAgent is treated as a legacy compatibility surface rather than the active product contract
+And public adapter-first surfaces remain the release-critical integration path
+And compatibility coverage is separated clearly from adapter-first verification
+```
 
-> **[A-4] Refactor Callback Handler into an Observation Producer**
-> - **Type:** Feature
-> - **Effort:** 5 story points
-> - **Dependencies:** A-2
-> - **Description:** Refactor `AGUICallbackHandler` so token, tool, and reasoning observations publish into the run-scoped publisher rather than acting as a direct public event sink.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a streaming model run
-> When token and tool callbacks fire
-> Then the callback layer publishes observation signals into the publisher
-> And callbacks do not write directly to transport
-> ```
+**AGA-C002 Align metadata, exports, and source commentary with the adapter-first contract**
+- **Type:** Chore
+- **Effort:** 2
+- **Dependencies:** AGA-C001
+- **Legacy Issue ID:** K-1, D-1
+- **Capability / Contract Mapping:** AGC-001, AGC-005
+- **Description:** Update package metadata, export map, root/source comments, README-facing code snippets, and built-package import expectations so they consistently describe the adapter-first product surface and the new `./adapter` subpath.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the converged adapter-first contract
+When package metadata, exports, and source/package commentary are updated
+Then the package publishes the adapter subpath intentionally
+And stale producer-only descriptions are removed from package metadata and source comments
+And public-facing snippets and import expectations match the adapter-first contract
+```
 
-> **[A-5] Encode Degraded Fidelity Rules**
-> - **Type:** Feature
-> - **Effort:** 3 story points
-> - **Dependencies:** A-4
-> - **Description:** Implement publisher rules for partial upstream fidelity so the package degrades honestly when token chunks or tool argument chunks are missing.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a provider that emits partial callback fidelity
-> When a run is published
-> Then the publisher emits only events justified by observed runtime behavior
-> And it never fabricates token or tool argument deltas
-> ```
+### Epic D — Adapter-First Verification (AGA)
 
-### Epic: Default Serving Path
-
-> **[S-1] Implement Reusable SSE Writer**
-> - **Type:** Feature
-> - **Effort:** 3 story points
-> - **Dependencies:** A-2, P-2
-> - **Description:** Extract a reusable SSE transport helper from the demo-local serving ideas and align it to the publisher contract.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given canonical events from the publisher
-> When the SSE writer serializes them
-> Then events are emitted progressively as SSE frames
-> And the transport helper does not invent or reorder semantic events
-> ```
-
-> **[S-2] Implement Backend Factory and Request Handler**
-> - **Type:** Feature
-> - **Effort:** 5 story points
-> - **Dependencies:** A-3, A-4, S-1
-> - **Description:** Implement `createAGUIBackend()` and the default `handle(request)` entrypoint that creates a run-scoped publisher, invokes the agent, and returns a streamed response.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given an existing LangChain createAgent runtime
-> When a developer creates an AG-UI backend and calls handle(request)
-> Then the backend parses the request
-> And it creates a run-scoped publisher
-> And it invokes the runtime through the control and observation producers
-> And it returns a streamed AG-UI-compatible response
-> ```
-
-> **[S-3] Wire Abort, Disconnect, and Post-Start Failure Handling**
-> - **Type:** Feature
-> - **Effort:** 3 story points
-> - **Dependencies:** S-2
-> - **Description:** Propagate client abort and disconnect into the execution path and implement the final transport behavior for failures that occur after streaming has started.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a client that disconnects or aborts during a run
-> When the serving layer observes the cancellation
-> Then upstream execution receives the abort signal
-> And the stream is finalized according to the documented terminal rules
-> ```
-
-### Epic: Verification
-
-> **[Q-1] Add Publication Ordering and Fidelity Tests**
-> - **Type:** Feature
-> - **Effort:** 3 story points
-> - **Dependencies:** A-3, A-4, A-5
-> - **Description:** Add tests that verify canonical ordering, terminal event behavior, and degraded fidelity behavior for the publication layer.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given interleaved lifecycle, text, and tool events
-> When the publisher emits the canonical stream
-> Then RUN_STARTED appears before any text or tool event
-> And terminal completion or error behavior is deterministic
-> And degraded-fidelity publication never fabricates deltas
-> ```
-
-> **[Q-2] Add Concurrency Isolation Tests**
-> - **Type:** Feature
-> - **Effort:** 3 story points
-> - **Dependencies:** A-3, A-4
-> - **Description:** Add tests proving that concurrent runs do not share step state, message correlation, or terminal publication state.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given two simultaneous runs against the same package surface
-> When both runs publish events concurrently
-> Then message IDs, step state, and terminal state remain isolated per run
-> ```
-
-> **[Q-3] Add End-to-End HTTP and SSE Tests**
-> - **Type:** Feature
-> - **Effort:** 5 story points
-> - **Dependencies:** S-2, S-3
-> - **Description:** Add end-to-end tests for the default backend path, covering request parsing, SSE output, disconnect handling, and failure handling after streaming starts.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the default AG-UI backend handler
-> When a valid HTTP request is sent
-> Then the response is a streamed SSE response
-> And the event sequence is AG-UI-compatible
-> And disconnect and post-start failure behavior follow the documented contract
-> ```
-
-### Epic: Package Alignment
-
-> **[K-1] Align Build and Export Surface with the TechSpec**
-> - **Type:** Feature
-> - **Effort:** 3 story points
-> - **Dependencies:** P-1, S-2
-> - **Description:** Update package exports, build configuration, and distribution outputs so the package exposes the new backend-adapter surface and ships dual ESM plus CJS artifacts with type declarations.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the finalized MVP package contract
-> When the package is built
-> Then the package exports the agreed root and subpath entrypoints
-> And both import and require consumers resolve supported outputs
-> And type declarations are published for the supported entrypoints
-> ```
-
-### Epic: Documentation and Examples
-
-> **[D-1] Rewrite README Around the Backend-Adapter Product**
-> - **Type:** Chore
-> - **Effort:** 2 story points
-> - **Dependencies:** K-1, P-3
-> - **Description:** Rewrite README and package-level messaging so the default path is the backend adapter, while preserving clear guidance for low-level consumers.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given a new package reader
-> When they read the README
-> Then the default mental model is a plug-and-play backend adapter
-> And the low-level bridge APIs are clearly positioned as advanced escape hatches
-> ```
-
-> **[D-2] Replace the Stale Example Set**
-> - **Type:** Chore
-> - **Effort:** 3 story points
-> - **Dependencies:** K-1, S-2, S-3
-> - **Description:** Replace the stale demo and validation examples with one validated default-backend example and one advanced custom-host example.
-> - **Acceptance Criteria (Gherkin):**
-> ```gherkin
-> Given the examples directory
-> When a developer inspects the examples
-> Then they find a validated default backend example
-> And they find a validated advanced custom-host example
-> And neither example depends on stale API signatures
-> ```
+**AGA-D001 Refresh the verification matrix around backend, adapter, and example public surfaces**
+- **Type:** Feature
+- **Effort:** 5
+- **Dependencies:** AGA-A002, AGA-A003, AGA-B003, AGA-C002
+- **Legacy Issue ID:** Q-3, D-2
+- **Capability / Contract Mapping:** AGC-001, AGC-002, AGC-003, AGC-007
+- **Description:** Rebuild the release-quality verification matrix so it exercises the built package’s backend and adapter subpaths, validates emitted events against `@ag-ui/core`, and proves that the default backend and custom-host examples both reuse the converged adapter semantics.
+- **Acceptance Criteria (Gherkin):**
+```gherkin
+Given the built package, the adapter subpath, the backend subpath, and the example applications
+When the verification suite executes
+Then built-package imports for the public subpaths succeed
+And backend and adapter public outputs validate against @ag-ui/core runtime schemas
+And the default backend and advanced custom-host examples prove the same adapter-owned semantics rather than divergent local glue
+```
