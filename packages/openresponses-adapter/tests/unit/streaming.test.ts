@@ -711,7 +711,9 @@ describe("adapter.stream()", () => {
       generateId: createSequentialIdGenerator(["resp-1", "fc-1", "extra-1"]),
     });
 
-    const events = await collectStream(await streamingAdapter.stream(baseRequest));
+    const events = await collectStream(
+      await streamingAdapter.stream(baseRequest)
+    );
     const responseId = extractResponseId(events);
 
     const continuationAgent = createFakeAgent({

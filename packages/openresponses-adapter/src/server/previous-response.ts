@@ -1314,7 +1314,9 @@ const repairRequestSnapshot = (params: {
     inputItems: inputToItems(repairedRequest.input),
   });
 
-  const rawInputItems = Array.isArray(requestRecord.input) ? requestRecord.input : [];
+  const rawInputItems = Array.isArray(requestRecord.input)
+    ? requestRecord.input
+    : [];
   repairedSnapshot.input = repairedSnapshot.input.map((item, index) => {
     if (item.type !== "reasoning") {
       return item;
