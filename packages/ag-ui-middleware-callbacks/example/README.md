@@ -26,6 +26,9 @@ cd packages/ag-ui-middleware-callbacks/example
 
 bun install
 
+# Type-check the example workspace against the package declarations
+bun run typecheck
+
 # Verify the default backend contract from the CLI
 bun run verify
 
@@ -135,6 +138,10 @@ The custom-host verifier automatically sends the default auth token
   not to be a production UI.
 - The CLI is the primary contract check: it prints streamed events and fails if
   the lifecycle ordering is wrong.
+- The example `tsconfig.json` intentionally points at the package `dist/*.d.ts`
+  outputs. That keeps example type-checking aligned with the published surface,
+  but it means example type-checking requires a package build first; `bun run typecheck`
+  handles that for you.
 - If your shell auto-loads a live provider config from `.env`, override it with
   `EXAMPLE_PROVIDER=mock` when you want deterministic local verification.
 - The live probe is stricter about reasoning: if a provider does not surface
