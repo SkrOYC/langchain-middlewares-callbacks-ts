@@ -1,32 +1,12 @@
-import { createAgent } from "langchain";
-import index from "./index.html";
 import {
-  createAGUIBackend,
   type AGUIBackend,
+  createAGUIBackend,
 } from "@skroyc/ag-ui-middleware-callbacks/backend";
-import {
-  createCalculatorTool,
-  createExampleModel,
-  resolveAgentConfig,
-} from "./runtime";
-
-const calculatorTool = createCalculatorTool();
+import index from "./index.html";
+import { createExampleAdapterConfig } from "./runtime";
 
 export function createExampleBackend(): AGUIBackend {
-  return createAGUIBackend({
-    validateEvents: true,
-    emitActivities: true,
-    emitStateSnapshots: "initial",
-    callbackOptions: {
-      reasoningEventMode: "reasoning",
-    },
-    agentFactory: ({ input, middleware }) =>
-      createAgent({
-        model: createExampleModel(resolveAgentConfig(input.forwardedProps)),
-        tools: [calculatorTool],
-        middleware: [middleware],
-      }),
-  });
+  return createAGUIBackend(createExampleAdapterConfig());
 }
 
 const backend = createExampleBackend();

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { type BaseEvent, EventSchemas } from "@ag-ui/core";
+import { type BaseEvent, EventSchemas, EventType } from "@ag-ui/core";
 import {
   CUSTOM_HOST_HEADER,
   DEFAULT_CUSTOM_HOST_TOKEN,
@@ -24,6 +24,11 @@ interface VerificationResult {
   prompt: string;
   frames: string[];
   events: BaseEvent[];
+}
+
+function readStringField(event: BaseEvent, field: string): string | undefined {
+  const value = (event as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : undefined;
 }
 
 function printUsage(): void {
@@ -61,26 +66,33 @@ function assertNoEmptyAssistantMessages(events: BaseEvent[]): void {
   const contentCounts = new Map<string, number>();
 
   for (const event of events) {
-    if (event.type === "TEXT_MESSAGE_START") {
-      started.add(event.messageId);
+    if (event.type === EventType.TEXT_MESSAGE_START) {
+      const messageId = readStringField(event, "messageId");
+      if (messageId) {
+        started.add(messageId);
+      }
       continue;
     }
 
-    if (event.type === "TEXT_MESSAGE_CONTENT") {
-      contentCounts.set(
-        event.messageId,
-        (contentCounts.get(event.messageId) ?? 0) + 1
-      );
+    if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+      const messageId = readStringField(event, "messageId");
+      if (messageId) {
+        contentCounts.set(messageId, (contentCounts.get(messageId) ?? 0) + 1);
+      }
       continue;
     }
 
-    if (event.type === "TEXT_MESSAGE_END") {
-      ended.add(event.messageId);
+    if (event.type === EventType.TEXT_MESSAGE_END) {
+      const messageId = readStringField(event, "messageId");
+      if (messageId) {
+        ended.add(messageId);
+      }
     }
   }
 
   const emptyMessages = [...started].filter(
-    (messageId) => ended.has(messageId) && (contentCounts.get(messageId) ?? 0) === 0
+    (messageId) =>
+      ended.has(messageId) && (contentCounts.get(messageId) ?? 0) === 0
   );
 
   if (emptyMessages.length > 0) {
@@ -91,21 +103,32 @@ function assertNoEmptyAssistantMessages(events: BaseEvent[]): void {
 }
 
 function assertToolLifecycle(events: BaseEvent[]): void {
-  const toolStarts = events.filter((event) => event.type === "TOOL_CALL_START");
+  const toolStarts = events.filter(
+    (event) => event.type === EventType.TOOL_CALL_START
+  );
   const toolArgs = new Set(
     events
-      .filter((event) => event.type === "TOOL_CALL_ARGS")
-      .map((event) => event.toolCallId)
+      .filter((event) => event.type === EventType.TOOL_CALL_ARGS)
+      .map((event) => readStringField(event, "toolCallId"))
+      .filter(
+        (toolCallId): toolCallId is string => typeof toolCallId === "string"
+      )
   );
   const toolEnds = new Set(
     events
-      .filter((event) => event.type === "TOOL_CALL_END")
-      .map((event) => event.toolCallId)
+      .filter((event) => event.type === EventType.TOOL_CALL_END)
+      .map((event) => readStringField(event, "toolCallId"))
+      .filter(
+        (toolCallId): toolCallId is string => typeof toolCallId === "string"
+      )
   );
   const toolResults = new Set(
     events
-      .filter((event) => event.type === "TOOL_CALL_RESULT")
-      .map((event) => event.toolCallId)
+      .filter((event) => event.type === EventType.TOOL_CALL_RESULT)
+      .map((event) => readStringField(event, "toolCallId"))
+      .filter(
+        (toolCallId): toolCallId is string => typeof toolCallId === "string"
+      )
   );
 
   if (toolStarts.length === 0) {
@@ -113,22 +136,21 @@ function assertToolLifecycle(events: BaseEvent[]): void {
   }
 
   for (const event of toolStarts) {
-    if (!toolArgs.has(event.toolCallId)) {
-      throw new Error(
-        `Missing TOOL_CALL_ARGS for toolCallId ${event.toolCallId}.`
-      );
+    const toolCallId = readStringField(event, "toolCallId");
+    if (!toolCallId) {
+      throw new Error("Observed TOOL_CALL_START without a string toolCallId.");
     }
 
-    if (!toolEnds.has(event.toolCallId)) {
-      throw new Error(
-        `Missing TOOL_CALL_END for toolCallId ${event.toolCallId}.`
-      );
+    if (!toolArgs.has(toolCallId)) {
+      throw new Error(`Missing TOOL_CALL_ARGS for toolCallId ${toolCallId}.`);
     }
 
-    if (!toolResults.has(event.toolCallId)) {
-      throw new Error(
-        `Missing TOOL_CALL_RESULT for toolCallId ${event.toolCallId}.`
-      );
+    if (!toolEnds.has(toolCallId)) {
+      throw new Error(`Missing TOOL_CALL_END for toolCallId ${toolCallId}.`);
+    }
+
+    if (!toolResults.has(toolCallId)) {
+      throw new Error(`Missing TOOL_CALL_RESULT for toolCallId ${toolCallId}.`);
     }
   }
 }
@@ -161,7 +183,9 @@ async function runScenario(
       : await handleChatRequest(request);
 
   if (!response.ok) {
-    throw new Error(`Unexpected status ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `Unexpected status ${response.status}: ${await response.text()}`
+    );
   }
 
   const frames = await readSSEFrames(response);
@@ -189,9 +213,17 @@ async function run(): Promise<void> {
 
   try {
     const results = [
-      await runScenario("default", "Say hello in one short sentence.", llmock.config),
+      await runScenario(
+        "default",
+        "Say hello in one short sentence.",
+        llmock.config
+      ),
       await runScenario("default", "Calculate 2 + 2", llmock.config),
-      await runScenario("custom-host", "Say hello in one short sentence.", llmock.config),
+      await runScenario(
+        "custom-host",
+        "Say hello in one short sentence.",
+        llmock.config
+      ),
       await runScenario("custom-host", "Calculate 2 + 2", llmock.config),
     ];
 
@@ -201,7 +233,9 @@ async function run(): Promise<void> {
       }
 
       console.log(`[${result.mode}] ${result.prompt}`);
-      console.log(`Frames: ${result.frames.length} Events: ${result.events.length}`);
+      console.log(
+        `Frames: ${result.frames.length} Events: ${result.events.length}`
+      );
       for (const event of result.events) {
         console.log(`  ${summarizeEvent(event)}`);
       }

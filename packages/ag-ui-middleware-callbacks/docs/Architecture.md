@@ -1,6 +1,7 @@
 # Solution Architecture
 
 ## 0. Version History & Changelog
+- v2.1.0 - Recorded the shipped adapter boundary after `createAGUIAdapter()`, backend wrapping, and custom-host reuse landed in code.
 - v2.0.0 - Rebuilt the logical architecture around the missing adapter boundary above middleware and callbacks, preserving brownfield continuity and clarifying the active convergence work.
 - v1.1.0 - Recorded the layered backend-adapter direction after publication and serving landed in the codebase.
 - v1.0.0 - Shifted the logical design away from a pure event-emitter mental model toward a backend-adapter architecture.
@@ -18,8 +19,8 @@
 
 ### Brownfield Starting Point
 - The current codebase already contains a default backend path, a run-scoped publisher, middleware and callback producers, examples, and a legacy `createAGUIAgent` compatibility surface.
-- The current codebase does not yet converge cleanly on one reusable adapter boundary. `createAGUIBackend()` owns HTTP serving and run orchestration together, while the advanced custom-host path duplicates much of the same orchestration logic in host code.
-- The planning artifacts currently mix historical target-state language with current-state implementation reality, which makes the architecture harder to trust than the code.
+- The current codebase now converges on one reusable adapter boundary. `createAGUIBackend()` wraps it for HTTP plus SSE, while the advanced custom-host path reuses the same orchestration and keeps only host concerns local.
+- The planning artifacts still mix historical target-state language with current-state implementation reality, which makes the architecture slightly harder to trust than the code until the remaining publication and verification epics are closed.
 
 ### Brownfield Rules Carried Forward
 - Middleware and callbacks remain producer surfaces only.

@@ -1,5 +1,10 @@
 # Contract Freeze
 
+Historical note: this document freezes the earlier MVP target state. The
+current shipped package now also includes the `./adapter` subpath and backend
+rebasing work from Epic A. Use `README.md`, `docs/TechSpec.md`, and
+`docs/Tasks.md` for the up-to-date code state.
+
 This document is the authoritative outcome of the first epic in `docs/Tasks.md`
 (`P-1` through `P-3`).
 
@@ -114,7 +119,7 @@ These parts are worth reusing in later epics:
 
 ## Current-State Note
 
-This freeze is intentionally ahead of implementation. Until later epics land,
-the published package may expose only the existing low-level primitives. The
-backend/publication APIs defined here are the frozen target contract for the
-next implementation steps.
+This freeze intentionally captured the earlier target state ahead of
+implementation. The package has since moved beyond that point: backend,
+publication, and adapter surfaces are now implemented. Keep this document as
+historical context, not as the sole source of current behavior.

@@ -1,12 +1,11 @@
 /**
- * AG-UI low-level producer exports for LangChain.js.
+ * Minimal root exports for the AG-UI LangChain package.
  *
- * The first contract-freeze epic keeps the published runtime surface honest:
- * this root entry currently exposes only the existing low-level producer APIs.
- * The frozen backend-adapter contract lives in `docs/ContractFreeze.md` and
- * will be implemented in later epics.
+ * The package now ships adapter-first public subpaths such as `./adapter`,
+ * `./backend`, and `./publication`, but the root entry stays intentionally
+ * small and keeps exposing only the low-level producer primitives.
  *
- * Package scope today: producer primitives only.
+ * Use explicit subpath imports for builder-facing integration surfaces.
  *
  * @packageDocumentation
  */

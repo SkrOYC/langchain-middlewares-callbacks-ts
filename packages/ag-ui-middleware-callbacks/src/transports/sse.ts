@@ -15,6 +15,24 @@ export function serializeEventAsSSE(event: BaseEvent): Uint8Array {
   return textEncoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+export function createSSEStream(
+  events: AsyncIterable<BaseEvent>
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const event of events) {
+          controller.enqueue(serializeEventAsSSE(event));
+        }
+
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
 export function createSSEResponse(
   stream: ReadableStream<Uint8Array>,
   init: ResponseInit = {}

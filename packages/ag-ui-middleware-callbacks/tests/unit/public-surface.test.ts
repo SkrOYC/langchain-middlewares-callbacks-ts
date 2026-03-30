@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createAGUIAdapter } from "../../src/adapter";
 import { createAGUIBackend } from "../../src/backend";
 import { AGUICallbackHandler as callbackHandlerFromSubpath } from "../../src/callbacks";
 import {
@@ -9,7 +10,7 @@ import {
   AGUIMiddlewareOptionsSchema,
   createAGUIMiddleware as createMiddlewareFromSubpath,
 } from "../../src/middleware";
-import { createAGUIRunPublisher } from "../../src/publication";
+import { createAGUIRunPublisher, createSSEStream } from "../../src/publication";
 
 describe("public surface", () => {
   test("root export stays limited to low-level producers", async () => {
@@ -29,11 +30,16 @@ describe("public surface", () => {
     expect(AGUIMiddlewareOptionsSchema).toBeDefined();
   });
 
-  test("publication subpath exports run publisher API", () => {
+  test("publication subpath exports run publisher and SSE helpers", () => {
     expect(createAGUIRunPublisher).toBeDefined();
+    expect(createSSEStream).toBeDefined();
   });
 
   test("backend subpath exports backend factory API", () => {
     expect(createAGUIBackend).toBeDefined();
+  });
+
+  test("adapter subpath exports adapter factory API", () => {
+    expect(createAGUIAdapter).toBeDefined();
   });
 });

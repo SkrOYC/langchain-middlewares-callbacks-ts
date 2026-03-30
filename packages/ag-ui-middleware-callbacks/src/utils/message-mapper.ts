@@ -1,4 +1,15 @@
-import type { Message, Role, ToolCall } from "@ag-ui/core";
+import type {
+  SystemMessage as AGUISystemMessage,
+  ToolMessage as AGUIToolMessage,
+  AssistantMessage,
+  DeveloperMessage,
+  InputContent,
+  Message,
+  ReasoningMessage,
+  Role,
+  ToolCall,
+  UserMessage,
+} from "@ag-ui/core";
 import {
   AIMessage,
   type BaseMessage,
@@ -12,21 +23,6 @@ import { generateId } from "./id-generator";
 const UNSERIALIZABLE_CONTENT_FALLBACK = "[unserializable content]";
 const UNSERIALIZABLE_TOOL_ARGS_FALLBACK = "{}";
 
-interface AGUITextInputContent {
-  type: "text";
-  text: string;
-}
-
-interface AGUIBinaryInputContent {
-  type: "binary";
-  mimeType: string;
-  id?: string;
-  url?: string;
-  data?: string;
-  filename?: string;
-}
-
-type AGUIInputContent = AGUITextInputContent | AGUIBinaryInputContent;
 interface ToolCallSource {
   id?: string;
   name?: unknown;
@@ -62,6 +58,9 @@ function fallbackStringContent(value: unknown): string {
   if (typeof value === "undefined") {
     return "";
   }
+  if (typeof value === "string") {
+    return value;
+  }
   const serialized = safeStringify(value);
   if (typeof serialized === "string") {
     return serialized;
@@ -69,7 +68,9 @@ function fallbackStringContent(value: unknown): string {
   return UNSERIALIZABLE_CONTENT_FALLBACK;
 }
 
-function isAGUITextInputContent(value: unknown): value is AGUITextInputContent {
+function isAGUITextInputContent(
+  value: unknown
+): value is Extract<InputContent, { type: "text" }> {
   if (!isRecord(value)) {
     return false;
   }
@@ -78,7 +79,7 @@ function isAGUITextInputContent(value: unknown): value is AGUITextInputContent {
 
 function isAGUIBinaryInputContent(
   value: unknown
-): value is AGUIBinaryInputContent {
+): value is Extract<InputContent, { type: "binary" }> {
   if (!isRecord(value)) {
     return false;
   }
@@ -102,7 +103,7 @@ function isAGUIBinaryInputContent(
   );
 }
 
-function isAGUIInputContentArray(value: unknown): value is AGUIInputContent[] {
+function isAGUIInputContentArray(value: unknown): value is InputContent[] {
   if (!Array.isArray(value)) {
     return false;
   }
@@ -111,14 +112,14 @@ function isAGUIInputContentArray(value: unknown): value is AGUIInputContent[] {
   );
 }
 
-function toRole(value: unknown): Role | undefined {
+function toRole(value: unknown): Exclude<Role, "activity"> | undefined {
   switch (value) {
     case "assistant":
     case "user":
     case "system":
     case "developer":
     case "tool":
-    case "activity":
+    case "reasoning":
       return value;
     default:
       return undefined;
@@ -128,7 +129,7 @@ function toRole(value: unknown): Role | undefined {
 function mapContentForRole(
   role: Role,
   content: unknown
-): string | AGUIInputContent[] | undefined {
+): string | InputContent[] {
   if (typeof content === "string") {
     return content;
   }
@@ -141,33 +142,33 @@ function mapContentForRole(
   return fallbackStringContent(content);
 }
 
-/**
- * Maps a LangChain BaseMessage to an AG-UI Protocol Message.
- *
- * @param message - The LangChain message to map
- * @returns An AG-UI Protocol compliant Message object
- */
-export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
-  const messageLike = message as MessageLike;
-  const id = messageLike.id || generateId();
-  let role: Role = "assistant";
-  let toolCalls: ToolCall[] | undefined;
-  let toolCallId: string | undefined;
+function resolveRoleAndToolState(
+  message: BaseMessage,
+  messageLike: MessageLike
+): {
+  role: Exclude<Role, "activity">;
+  toolCallId?: string;
+  toolCalls?: ToolCall[];
+} {
   const messageType = messageLike._getType?.();
   const explicitRole = toRole(messageLike.role);
+  let role: Exclude<Role, "activity"> = "assistant";
+  let toolCalls: ToolCall[] | undefined;
+  let toolCallId: string | undefined;
 
   if (
     message instanceof HumanMessage ||
     explicitRole === "user" ||
     messageType === "human"
   ) {
-    role = "user";
-  } else if (
+    return { role: "user" };
+  }
+
+  if (
     message instanceof AIMessage ||
     explicitRole === "assistant" ||
     messageType === "ai"
   ) {
-    role = "assistant";
     const toolCallsFromLLM =
       messageLike.tool_calls || messageLike.kwargs?.tool_calls;
     if (toolCallsFromLLM && toolCallsFromLLM.length > 0) {
@@ -183,33 +184,118 @@ export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
         },
       }));
     }
-  } else if (
+
+    return {
+      role: "assistant",
+      toolCalls,
+    };
+  }
+
+  if (
     message instanceof ToolMessage ||
     explicitRole === "tool" ||
     messageType === "tool"
   ) {
-    role = "tool";
     toolCallId = messageLike.tool_call_id || messageLike.kwargs?.tool_call_id;
-  } else if (
+    return {
+      role: "tool",
+      toolCallId,
+    };
+  }
+
+  if (
     message instanceof SystemMessage ||
     explicitRole === "system" ||
     messageType === "system"
   ) {
-    role = "system";
-  } else if (message instanceof ChatMessage) {
-    role = toRole(message.role) ?? "assistant";
-  } else if (explicitRole) {
-    role = explicitRole;
+    return { role: "system" };
   }
 
-  const content = mapContentForRole(role, messageLike.content);
+  if (message instanceof ChatMessage) {
+    role = toRole(message.role) ?? "assistant";
+    return { role };
+  }
 
-  return {
+  if (explicitRole) {
+    return { role: explicitRole };
+  }
+
+  return { role };
+}
+
+/**
+ * Maps a LangChain BaseMessage to an AG-UI Protocol Message.
+ *
+ * @param message - The LangChain message to map
+ * @returns An AG-UI Protocol compliant Message object
+ */
+export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
+  const messageLike = message as MessageLike;
+  const id = messageLike.id || generateId();
+  const { role, toolCalls, toolCallId } = resolveRoleAndToolState(
+    message,
+    messageLike
+  );
+
+  if (role === "assistant") {
+    const assistantMessage: AssistantMessage = {
+      id,
+      role,
+      content: fallbackStringContent(messageLike.content),
+      toolCalls,
+      name: messageLike.name,
+    };
+    return assistantMessage;
+  }
+
+  if (role === "tool") {
+    if (!toolCallId) {
+      throw new Error("Cannot map a tool-role message without a toolCallId.");
+    }
+
+    const toolMessage: AGUIToolMessage = {
+      id,
+      role,
+      content: fallbackStringContent(messageLike.content),
+      toolCallId,
+    };
+    return toolMessage;
+  }
+
+  if (role === "user") {
+    const userMessage: UserMessage = {
+      id,
+      role,
+      content: mapContentForRole(role, messageLike.content),
+      name: messageLike.name,
+    };
+    return userMessage;
+  }
+
+  if (role === "system") {
+    const systemMessage: AGUISystemMessage = {
+      id,
+      role,
+      content: fallbackStringContent(messageLike.content),
+      name: messageLike.name,
+    };
+    return systemMessage;
+  }
+
+  if (role === "developer") {
+    const developerMessage: DeveloperMessage = {
+      id,
+      role,
+      content: fallbackStringContent(messageLike.content),
+      name: messageLike.name,
+    };
+    return developerMessage;
+  }
+
+  const reasoningMessage: ReasoningMessage = {
     id,
     role,
-    content,
-    toolCalls,
-    toolCallId,
-    name: messageLike.name,
+    content: fallbackStringContent(messageLike.content),
   };
+  return reasoningMessage;
 }

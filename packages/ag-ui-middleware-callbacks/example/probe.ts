@@ -2,7 +2,11 @@
 
 import { HumanMessage } from "@langchain/core/messages";
 import { createExampleModel } from "./runtime";
-import { envConfig, printVerificationResult, runExampleVerification } from "./verification";
+import {
+  envConfig,
+  printVerificationResult,
+  runExampleVerification,
+} from "./verification";
 
 type VerifyMode = "default" | "custom-host";
 
@@ -95,12 +99,14 @@ console.log(
 console.log("");
 
 for await (const chunk of stream) {
-  const chunkRecord = isRecord(chunk) ? chunk : {};
+  const chunkRecord = isRecord(chunk) ? chunk : undefined;
+  const content = chunkRecord?.content;
+  const contentBlocks = chunkRecord?.contentBlocks;
   const token =
-    readString(chunkRecord.content) ??
-    (Array.isArray(chunkRecord.content) ? JSON.stringify(chunkRecord.content) : "");
-  const blocks = Array.isArray(chunkRecord.contentBlocks)
-    ? chunkRecord.contentBlocks
+    readString(content) ??
+    (Array.isArray(content) ? JSON.stringify(content) : "");
+  const blocks = Array.isArray(contentBlocks)
+    ? contentBlocks
         .map(summarizeContentBlock)
         .filter((block): block is ContentBlockSummary => block !== null)
         .filter((block) => block.preview.length > 0 || block.type.length > 0)
@@ -111,7 +117,10 @@ for await (const chunk of stream) {
     continue;
   }
 
-  if (firstReasoningChunk < 0 && blocks.some((block) => block.type === "reasoning")) {
+  if (
+    firstReasoningChunk < 0 &&
+    blocks.some((block) => block.type === "reasoning")
+  ) {
     firstReasoningChunk = chunkIndex;
   }
 

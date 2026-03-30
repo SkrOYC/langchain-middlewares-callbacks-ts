@@ -7,8 +7,8 @@ This directory now mirrors the frozen backend-adapter package contract:
 - `server.ts`: default backend example using
   `createAGUIBackend(...).handle(request)`
 - `verify.ts`: CLI verifier that streams and validates the same backend handler
-- `custom-host.ts`: advanced host example using publisher + middleware +
-  callback primitives directly
+- `custom-host.ts`: advanced host example using `createAGUIAdapter(...)` plus
+  host-owned auth and SSE response wiring
 
 The examples intentionally avoid `createAGUIAgent` and internal `../src/*`
 imports in example code.
@@ -25,6 +25,9 @@ imports in example code.
 cd packages/ag-ui-middleware-callbacks/example
 
 bun install
+
+# Type-check the example workspace against the package declarations
+bun run typecheck
 
 # Verify the default backend contract from the CLI
 bun run verify
@@ -110,11 +113,12 @@ without depending on external rate limits.
 
 ## Advanced Custom Host Example
 
-- Uses `@skroyc/ag-ui-middleware-callbacks/publication`,
-  `/middleware`, and `/callbacks` directly
+- Uses `@skroyc/ag-ui-middleware-callbacks/adapter` directly
 - Demonstrates a host-owned concern outside the package: header auth via
   `x-example-key`
-- Keeps the run publisher as the single semantic writer
+- Reuses the same adapter config as the default backend example
+- Keeps transport ownership in the host example while delegating canonical run
+  orchestration to the shared adapter
 
 Start it with:
 
@@ -134,6 +138,12 @@ The custom-host verifier automatically sends the default auth token
   not to be a production UI.
 - The CLI is the primary contract check: it prints streamed events and fails if
   the lifecycle ordering is wrong.
+- The example `tsconfig.json` intentionally points at the package `dist/*.d.ts`
+  outputs. That keeps example type-checking aligned with the published surface,
+  but it means example type-checking requires a package build first; `bun run typecheck`
+  handles that for you.
+- If your shell auto-loads a live provider config from `.env`, override it with
+  `EXAMPLE_PROVIDER=mock` when you want deterministic local verification.
 - The live probe is stricter about reasoning: if a provider does not surface
   standardized LangChain `contentBlocks` for reasoning, the probe fails instead
   of silently falling back to provider-native payloads.

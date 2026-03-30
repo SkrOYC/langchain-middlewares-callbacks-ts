@@ -7,18 +7,24 @@ import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   AIMessage,
   AIMessageChunk,
-  HumanMessage,
   type BaseMessage,
+  HumanMessage,
   ToolMessage,
 } from "@langchain/core/messages";
+import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
 import { ChatOpenAI } from "@langchain/openai";
-import { tool } from "langchain";
+import type {
+  AGUIAdapterConfig,
+  AGUIAgentLike,
+} from "@skroyc/ag-ui-middleware-callbacks/adapter";
+import { createSSEStream } from "@skroyc/ag-ui-middleware-callbacks/publication";
+import { createAgent, tool } from "langchain";
 import { z } from "zod";
 import {
   CALCULATOR_TOOL_PARAMETERS,
+  DEFAULT_AGENT_CONFIG,
   type ExampleAgentConfig,
   type ExampleProvider,
-  DEFAULT_AGENT_CONFIG,
 } from "./config";
 
 const SSE_HEADERS = {
@@ -29,15 +35,6 @@ const SSE_HEADERS = {
 
 const ARITHMETIC_EXPRESSION_REGEX =
   /(-?\d+(?:\.\d+)?)\s*([+\-*/])\s*(-?\d+(?:\.\d+)?)/;
-
-interface GeneratedResponse {
-  generations: Array<{
-    text: unknown;
-    message: AIMessage;
-    generationInfo: Record<string, unknown>;
-  }>;
-  llmOutput: Record<string, unknown>;
-}
 
 interface ArithmeticOperation {
   a: number;
@@ -54,7 +51,9 @@ function isRunAgentInput(value: unknown): value is RunAgentInput {
   return result.success;
 }
 
-function mapOperatorToOperation(operator: string): ArithmeticOperation["operation"] {
+function mapOperatorToOperation(
+  operator: string
+): ArithmeticOperation["operation"] {
   switch (operator) {
     case "+":
       return "add";
@@ -75,17 +74,27 @@ function parseArithmeticOperation(input: string): ArithmeticOperation | null {
     return null;
   }
 
+  const left = match[1];
+  const operator = match[2];
+  const right = match[3];
+  if (!(left && operator && right)) {
+    return null;
+  }
+
   return {
-    a: Number(match[1]),
-    b: Number(match[3]),
-    operation: mapOperatorToOperation(match[2]),
+    a: Number(left),
+    b: Number(right),
+    operation: mapOperatorToOperation(operator),
   };
 }
 
 function getLastUserMessage(messages: BaseMessage[]): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message instanceof HumanMessage && typeof message.content === "string") {
+    if (
+      message instanceof HumanMessage &&
+      typeof message.content === "string"
+    ) {
       return message.content;
     }
   }
@@ -94,26 +103,24 @@ function getLastUserMessage(messages: BaseMessage[]): string {
 }
 
 class ExampleMockModel extends BaseChatModel {
-  private boundTools: unknown[] = [];
-
   constructor() {
     super({
-      temperature: 0,
       callbacks: undefined,
       tags: undefined,
       metadata: undefined,
     });
   }
 
-  override bindTools(tools: unknown[]): ExampleMockModel {
+  override bindTools(_tools: unknown[]): ExampleMockModel {
     const bound = new ExampleMockModel();
-    bound.boundTools = tools;
     return bound;
   }
 
-  protected _generate(
-    messages: BaseMessage[]
-  ): Promise<GeneratedResponse> {
+  _generate(
+    messages: BaseMessage[],
+    _options: Record<string, unknown>,
+    _runManager?: unknown
+  ): Promise<ChatResult> {
     const response = this.createResponse(messages);
     return Promise.resolve({
       generations: [
@@ -128,16 +135,16 @@ class ExampleMockModel extends BaseChatModel {
   }
 
   override async *_streamResponseChunks(
-    messages: BaseMessage[]
-  ): AsyncGenerator<{
-    message: AIMessageChunk;
-    generationInfo: Record<string, unknown>;
-  }> {
+    messages: BaseMessage[],
+    _options: Record<string, unknown>,
+    _runManager?: unknown
+  ): AsyncGenerator<ChatGenerationChunk> {
     const response = this.createResponse(messages);
     await Promise.resolve();
 
     if (Array.isArray(response.tool_calls) && response.tool_calls.length > 0) {
       yield {
+        text: "",
         message: new AIMessageChunk({
           content: "",
           tool_call_chunks: response.tool_calls.map((toolCall, index) => ({
@@ -145,26 +152,28 @@ class ExampleMockModel extends BaseChatModel {
             name: toolCall.name,
             args: JSON.stringify(toolCall.args),
             index,
-            type: "tool_call",
+            type: "tool_call_chunk" as const,
           })),
           additional_kwargs: {},
           response_metadata: {},
-        } as ConstructorParameters<typeof AIMessageChunk>[0]),
+        }),
         generationInfo: {},
-      };
+      } as ChatGenerationChunk;
       return;
     }
 
-    const content = typeof response.content === "string" ? response.content : "";
+    const content =
+      typeof response.content === "string" ? response.content : "";
     for (const chunk of content) {
       yield {
+        text: chunk,
         message: new AIMessageChunk({
           content: chunk,
           additional_kwargs: {},
           response_metadata: {},
         }),
         generationInfo: {},
-      };
+      } as ChatGenerationChunk;
     }
   }
 
@@ -215,7 +224,9 @@ class ExampleMockModel extends BaseChatModel {
   }
 }
 
-export function resolveAgentConfig(forwardedProps: unknown): ExampleAgentConfig {
+export function resolveAgentConfig(
+  forwardedProps: unknown
+): ExampleAgentConfig {
   if (!isRecord(forwardedProps)) {
     return DEFAULT_AGENT_CONFIG;
   }
@@ -244,13 +255,16 @@ export function resolveAgentConfig(forwardedProps: unknown): ExampleAgentConfig 
         ? forwardedProps.useResponsesApi
         : DEFAULT_AGENT_CONFIG.useResponsesApi,
     outputVersion:
-      forwardedProps.outputVersion === "v1" ? "v1" : DEFAULT_AGENT_CONFIG.outputVersion,
+      forwardedProps.outputVersion === "v1"
+        ? "v1"
+        : DEFAULT_AGENT_CONFIG.outputVersion,
   };
 }
 
 function usesResponsesApiOutput(model: string): boolean {
   const normalizedModel = model.trim().toLowerCase();
-  const providerQualifiedModel = normalizedModel.split("/").at(-1) ?? normalizedModel;
+  const providerQualifiedModel =
+    normalizedModel.split("/").at(-1) ?? normalizedModel;
   return providerQualifiedModel.startsWith("gpt-5");
 }
 
@@ -285,7 +299,7 @@ export function createExampleModel(config: ExampleAgentConfig): BaseChatModel {
 
 export function createCalculatorTool() {
   return tool(
-    async ({
+    ({
       a,
       b,
       operation,
@@ -303,6 +317,8 @@ export function createCalculatorTool() {
           return String(a * b);
         case "divide":
           return String(a / b);
+        default:
+          throw new Error(`Unsupported operation: ${operation}`);
       }
     },
     {
@@ -322,6 +338,32 @@ export function createAGUIToolDefinition() {
     name: "calculator",
     description: "Perform arithmetic operations.",
     parameters: CALCULATOR_TOOL_PARAMETERS,
+  };
+}
+
+const calculatorTool = createCalculatorTool();
+type CreateAgentConfig = Parameters<typeof createAgent>[0];
+type LangChainMiddlewareEntry = NonNullable<
+  CreateAgentConfig["middleware"]
+>[number];
+
+export function createExampleAdapterConfig(): AGUIAdapterConfig {
+  return {
+    validateEvents: true,
+    emitActivities: true,
+    emitStateSnapshots: "initial",
+    callbackOptions: {
+      reasoningEventMode: "reasoning",
+    },
+    agentFactory: ({
+      input,
+      middleware,
+    }: Parameters<NonNullable<AGUIAdapterConfig["agentFactory"]>>[0]) =>
+      createAgent({
+        model: createExampleModel(resolveAgentConfig(input.forwardedProps)),
+        tools: [calculatorTool],
+        middleware: [middleware as unknown as LangChainMiddlewareEntry],
+      }) as unknown as AGUIAgentLike,
   };
 }
 
@@ -386,6 +428,12 @@ export async function consumeAgentStream(
 
 export function createSSEHeaders(): Headers {
   return new Headers(SSE_HEADERS);
+}
+
+export function createSSEEventStream(
+  events: AsyncIterable<BaseEvent>
+): ReadableStream<Uint8Array> {
+  return createSSEStream(events);
 }
 
 export function buildRunAgentInput(
