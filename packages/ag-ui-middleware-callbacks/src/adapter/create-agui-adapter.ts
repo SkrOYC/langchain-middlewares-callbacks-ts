@@ -111,6 +111,7 @@ function createAsyncQueue<T>(): {
   const waiters: QueueWaiter<T>[] = [];
   let isClosed = false;
   let failure: unknown;
+  let hasConsumer = false;
 
   const resolveBufferedValues = () => {
     while (values.length > 0 && waiters.length > 0) {
@@ -183,6 +184,14 @@ function createAsyncQueue<T>(): {
 
     iterable: {
       async *[Symbol.asyncIterator]() {
+        if (hasConsumer) {
+          throw new Error(
+            "AGUI adapter event streams support a single consumer."
+          );
+        }
+
+        hasConsumer = true;
+
         while (true) {
           if (values.length > 0) {
             yield values.shift() as T;
@@ -276,8 +285,21 @@ export function createAGUIAdapter(config: AGUIAdapterConfig): AGUIAdapter {
             publisher.error(error);
           }
         } finally {
-          callbackHandler.dispose();
-          unsubscribe();
+          try {
+            callbackHandler.dispose();
+          } catch (error) {
+            console.error("Failed to dispose AG-UI callback handler.", error);
+          }
+
+          try {
+            unsubscribe();
+          } catch (error) {
+            console.error(
+              "Failed to unsubscribe AG-UI adapter listener.",
+              error
+            );
+          }
+
           eventQueue.close();
         }
       })();

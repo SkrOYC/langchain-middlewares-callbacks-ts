@@ -249,11 +249,15 @@ export function mapLangChainMessageToAGUI(message: BaseMessage): Message {
   }
 
   if (role === "tool") {
+    if (!toolCallId) {
+      throw new Error("Cannot map a tool-role message without a toolCallId.");
+    }
+
     const toolMessage: AGUIToolMessage = {
       id,
       role,
       content: fallbackStringContent(messageLike.content),
-      toolCallId: toolCallId ?? generateId(),
+      toolCallId,
     };
     return toolMessage;
   }

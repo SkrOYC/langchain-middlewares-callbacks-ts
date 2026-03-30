@@ -252,6 +252,26 @@ describe("createAGUIAdapter", () => {
     expect(events).toHaveLength(0);
   });
 
+  test("rejects multiple consumers for the same adapter event stream", async () => {
+    const adapter = createAGUIAdapter({
+      agentFactory: ({ middleware }) =>
+        createAgent({
+          model: createTextModel(["Hello from adapter"]),
+          tools: [],
+          middleware: [middleware],
+        }),
+    });
+
+    const stream = await adapter.stream(createRunInput());
+
+    const firstPass = await collectEvents(stream);
+    await expect(collectEvents(stream)).rejects.toThrow(
+      "AGUI adapter event streams support a single consumer."
+    );
+
+    expect(firstPass.at(0)?.type).toBe("RUN_STARTED");
+  });
+
   test("matches backend canonical event types for equivalent runs", async () => {
     const config = {
       agentFactory: ({ middleware }: { middleware: any }) =>

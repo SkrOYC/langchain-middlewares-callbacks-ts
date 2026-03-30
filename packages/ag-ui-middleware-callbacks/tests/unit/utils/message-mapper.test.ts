@@ -54,6 +54,17 @@ describe("messageMapper", () => {
     expect(mapped.toolCallId).toBe("call_1");
   });
 
+  it("should reject ToolMessage values without a tool_call_id", () => {
+    const message = new ToolMessage({
+      content: '{"temp": 22}',
+      tool_call_id: "",
+    });
+
+    expect(() => mapLangChainMessageToAGUI(message)).toThrow(
+      "Cannot map a tool-role message without a toolCallId."
+    );
+  });
+
   it("should map SystemMessage to system role", () => {
     const message = new SystemMessage("System prompt");
     const mapped = mapLangChainMessageToAGUI(message);
