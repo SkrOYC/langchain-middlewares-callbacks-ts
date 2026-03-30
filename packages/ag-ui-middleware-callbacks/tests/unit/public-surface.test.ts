@@ -10,7 +10,7 @@ import {
   AGUIMiddlewareOptionsSchema,
   createAGUIMiddleware as createMiddlewareFromSubpath,
 } from "../../src/middleware";
-import { createAGUIRunPublisher } from "../../src/publication";
+import { createAGUIRunPublisher, createSSEStream } from "../../src/publication";
 
 describe("public surface", () => {
   test("root export stays limited to low-level producers", async () => {
@@ -30,8 +30,9 @@ describe("public surface", () => {
     expect(AGUIMiddlewareOptionsSchema).toBeDefined();
   });
 
-  test("publication subpath exports run publisher API", () => {
+  test("publication subpath exports run publisher and SSE helpers", () => {
     expect(createAGUIRunPublisher).toBeDefined();
+    expect(createSSEStream).toBeDefined();
   });
 
   test("backend subpath exports backend factory API", () => {

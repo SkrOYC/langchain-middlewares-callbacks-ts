@@ -17,7 +17,7 @@ import type {
   AGUIAdapterConfig,
   AGUIAgentLike,
 } from "@skroyc/ag-ui-middleware-callbacks/adapter";
-import { serializeEventAsSSE } from "@skroyc/ag-ui-middleware-callbacks/publication";
+import { createSSEStream } from "@skroyc/ag-ui-middleware-callbacks/publication";
 import { createAgent, tool } from "langchain";
 import { z } from "zod";
 import {
@@ -433,19 +433,7 @@ export function createSSEHeaders(): Headers {
 export function createSSEEventStream(
   events: AsyncIterable<BaseEvent>
 ): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for await (const event of events) {
-          controller.enqueue(serializeEventAsSSE(event));
-        }
-
-        controller.close();
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-  });
+  return createSSEStream(events);
 }
 
 export function buildRunAgentInput(

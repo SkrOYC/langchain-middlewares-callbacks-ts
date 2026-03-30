@@ -7,6 +7,7 @@ import {
 } from "./publication/create-agui-run-publisher";
 import {
   type AGUIEventSerializer,
+  createSSEStream as createSSEStreamImplementation,
   serializeEventAsSSE as serializeEventAsSSEImplementation,
 } from "./publication/serializer";
 
@@ -24,4 +25,10 @@ export function createAGUIRunPublisher(
 
 export function serializeEventAsSSE(event: Parameters<AGUIEventSerializer>[0]) {
   return serializeEventAsSSEImplementation(event);
+}
+
+export function createSSEStream(
+  events: AsyncIterable<Parameters<AGUIEventSerializer>[0]>
+) {
+  return createSSEStreamImplementation(events);
 }
