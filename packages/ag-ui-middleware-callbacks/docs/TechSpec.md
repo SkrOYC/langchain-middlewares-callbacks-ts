@@ -1,6 +1,7 @@
 # Technical Specification
 
 ## 0. Version History & Changelog
+- v2.1.0 - Recorded the shipped `./adapter` subpath, backend rebasing, and custom-host convergence after Epic A implementation.
 - v2.0.0 - Rebuilt the technical spec around an explicit adapter boundary above middleware and callbacks, recorded brownfield drift, and defined the remaining implementation contract for convergence.
 - v1.1.0 - Captured the MVP backend, publisher, and subpath export shape after the package moved beyond the original event-sink design.
 - v1.0.0 - Specified the initial backend-adapter contract after the package was re-scoped away from an `onEvent` bridge.
@@ -15,18 +16,18 @@
 - **Version Pinning / Compatibility Policy:** LangChain and AG-UI contracts are external integration units. Any contract-facing surface change must be checked against the installed `langchain` and `@ag-ui/core` versions in this workspace, not against memory or earlier docs. `createAGUIAgent` remains a brownfield compatibility surface, not the package’s public contract.
 
 ### 1.1 Brownfield Audit Summary
-- **Current package reality:** The package already exposes `./backend`, `./publication`, `./middleware`, and `./callbacks` subpaths, plus a working default backend path, examples, and a run-scoped single-writer publisher.
+- **Current package reality:** The package now exposes `./adapter`, `./backend`, `./publication`, `./middleware`, and `./callbacks` subpaths, plus a working default backend path, examples, and a run-scoped single-writer publisher.
 - **Current package reality:** The codebase still contains a legacy `createAGUIAgent` compatibility surface and tests that exercise it heavily, even though the documented public contract no longer centers it.
-- **Current package reality:** `createAGUIBackend()` currently combines HTTP serving concerns with the non-HTTP orchestration layer that custom hosts also need.
-- **Current package reality:** The advanced custom-host example duplicates backend orchestration logic, which is evidence that the reusable adapter boundary is still missing as a concrete module.
-- **Current package reality:** Planning artifacts still mix historical "target state" language with "already implemented" language. The code is ahead of the docs in some places and behind the intended architecture in others.
+- **Current package reality:** `createAGUIBackend()` now delegates non-HTTP orchestration to `createAGUIAdapter()` and stays focused on HTTP validation plus SSE response creation.
+- **Current package reality:** The advanced custom-host example now reuses the shared adapter boundary and only owns auth, routing, and transport response creation locally.
+- **Current package reality:** Planning artifacts still mix historical target-state language with already implemented work. The adapter extraction is done; the remaining convergence work is now publication hardening, compatibility containment, and release-quality verification.
 
 ### 1.2 Brownfield Drift Register
 | Area | Current Brownfield Reality | Target-State Requirement |
 | --- | --- | --- |
 | Product boundary | Public narrative still carries hook-first residue | Adapter boundary becomes the explicit product center |
-| Non-HTTP orchestration | `createAGUIBackend()` owns orchestration implicitly | A reusable programmatic adapter module owns it explicitly |
-| Custom hosts | Advanced example recreates orchestration manually | Custom hosts consume the same adapter boundary as the default backend |
+| Non-HTTP orchestration | `createAGUIAdapter()` now owns orchestration and `createAGUIBackend()` wraps it | Keep the adapter as the only non-HTTP orchestration path |
+| Custom hosts | Advanced example now consumes the shared adapter boundary | Keep custom hosts aligned with backend semantics instead of local glue |
 | Legacy compatibility | `createAGUIAgent` remains in source and tests | Compatibility surface becomes isolated and non-governing |
 | Truthful publication policy | Some degraded-fidelity rules exist only as code behavior | In-scope publication modes are recorded and tested explicitly |
 | Support artifacts | Main four planning docs are being updated, but older support docs remain historical | Governing artifacts must become trustworthy even when historical support docs remain in the repo |
@@ -75,8 +76,8 @@
 - **Consequences:** Verification must explicitly cover `./backend`, `./adapter`, and the advanced host path rather than only producer internals.
 
 ### Brownfield Drift Notes
-- `src/backend/create-agui-backend.ts` currently owns both HTTP handling and run orchestration.
-- The custom-host example currently reassembles the same orchestration with local helper code instead of consuming a shared adapter module.
+- `src/backend/create-agui-backend.ts` now owns HTTP handling and SSE response creation only.
+- The custom-host example now consumes the shared adapter module instead of reassembling runtime orchestration locally.
 - `src/index.ts` and some package comments still describe the package as producer-only even though the backend and publication surfaces already ship.
 - Main planning artifacts are being refreshed in this pass. Support artifacts such as `ContractFreeze.md` and `VerificationAudit.md` should be treated as historical context until intentionally updated.
 

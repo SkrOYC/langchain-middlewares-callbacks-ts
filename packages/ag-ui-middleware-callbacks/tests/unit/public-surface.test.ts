@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createAGUIAdapter } from "../../src/adapter";
 import { createAGUIBackend } from "../../src/backend";
 import { AGUICallbackHandler as callbackHandlerFromSubpath } from "../../src/callbacks";
 import {
@@ -35,5 +36,9 @@ describe("public surface", () => {
 
   test("backend subpath exports backend factory API", () => {
     expect(createAGUIBackend).toBeDefined();
+  });
+
+  test("adapter subpath exports adapter factory API", () => {
+    expect(createAGUIAdapter).toBeDefined();
   });
 });

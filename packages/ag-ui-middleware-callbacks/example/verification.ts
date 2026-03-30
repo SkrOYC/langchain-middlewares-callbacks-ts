@@ -1,4 +1,4 @@
-import { type BaseEvent, EventSchemas } from "@ag-ui/core";
+import { type BaseEvent, EventSchemas, EventType } from "@ag-ui/core";
 import {
   CUSTOM_HOST_HEADER,
   DEFAULT_AGENT_CONFIG,
@@ -41,6 +41,11 @@ export interface VerificationResult {
   frames: string[];
   events: BaseEvent[];
   audit: VerificationAudit;
+}
+
+function readStringField(event: BaseEvent, field: string): string | undefined {
+  const value = (event as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : undefined;
 }
 
 export function envConfig(): ExampleAgentConfig {
@@ -100,14 +105,71 @@ function validateEvents(events: BaseEvent[]): ValidationIssue[] {
         index,
         type: event.type,
         issues: result.error.issues.map(
-          (issue) =>
-            `${issue.path.join(".") || "<root>"}: ${issue.message}`
+          (issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`
         ),
       });
     }
   }
 
   return issues;
+}
+
+function markMessageLifecycle(
+  event: BaseEvent,
+  messageHasContent: Map<string, boolean>,
+  messageHasEnd: Map<string, boolean>
+): boolean {
+  const messageId = readStringField(event, "messageId");
+  if (!messageId) {
+    return false;
+  }
+
+  if (event.type === EventType.TEXT_MESSAGE_START) {
+    messageHasContent.set(messageId, false);
+    messageHasEnd.set(messageId, false);
+    return true;
+  }
+
+  if (event.type === EventType.TEXT_MESSAGE_CONTENT) {
+    messageHasContent.set(messageId, true);
+    return true;
+  }
+
+  if (event.type === EventType.TEXT_MESSAGE_END) {
+    messageHasEnd.set(messageId, true);
+    return true;
+  }
+
+  return false;
+}
+
+function markToolLifecycle(
+  event: BaseEvent,
+  toolCallHasArgs: Map<string, boolean>,
+  toolCallHasEnd: Map<string, boolean>
+): boolean {
+  const toolCallId = readStringField(event, "toolCallId");
+  if (!toolCallId) {
+    return false;
+  }
+
+  if (event.type === EventType.TOOL_CALL_START) {
+    toolCallHasArgs.set(toolCallId, false);
+    toolCallHasEnd.set(toolCallId, false);
+    return true;
+  }
+
+  if (event.type === EventType.TOOL_CALL_ARGS) {
+    toolCallHasArgs.set(toolCallId, true);
+    return true;
+  }
+
+  if (event.type === EventType.TOOL_CALL_END) {
+    toolCallHasEnd.set(toolCallId, true);
+    return true;
+  }
+
+  return false;
 }
 
 function auditEvents(events: BaseEvent[]): VerificationAudit {
@@ -118,50 +180,31 @@ function auditEvents(events: BaseEvent[]): VerificationAudit {
   const eventTypes = events.map((event) => event.type);
 
   for (const event of events) {
-    if (event.type === "TEXT_MESSAGE_START") {
-      messageHasContent.set(event.messageId, false);
-      messageHasEnd.set(event.messageId, false);
+    if (markMessageLifecycle(event, messageHasContent, messageHasEnd)) {
       continue;
     }
 
-    if (event.type === "TEXT_MESSAGE_CONTENT") {
-      messageHasContent.set(event.messageId, true);
-      continue;
-    }
-
-    if (event.type === "TEXT_MESSAGE_END") {
-      messageHasEnd.set(event.messageId, true);
-      continue;
-    }
-
-    if (event.type === "TOOL_CALL_START") {
-      toolCallHasArgs.set(event.toolCallId, false);
-      toolCallHasEnd.set(event.toolCallId, false);
-      continue;
-    }
-
-    if (event.type === "TOOL_CALL_ARGS") {
-      toolCallHasArgs.set(event.toolCallId, true);
-      continue;
-    }
-
-    if (event.type === "TOOL_CALL_END") {
-      toolCallHasEnd.set(event.toolCallId, true);
-    }
+    markToolLifecycle(event, toolCallHasArgs, toolCallHasEnd);
   }
 
   return {
     emptyAssistantMessages: [...messageHasContent.entries()]
-      .filter(([messageId, hasContent]) => hasContent === false && messageHasEnd.get(messageId))
+      .filter(
+        ([messageId, hasContent]) =>
+          hasContent === false && messageHasEnd.get(messageId)
+      )
       .map(([messageId]) => messageId),
     toolCallsWithoutArgs: [...toolCallHasArgs.entries()]
-      .filter(([toolCallId, hasArgs]) => hasArgs === false && toolCallHasEnd.get(toolCallId))
+      .filter(
+        ([toolCallId, hasArgs]) =>
+          hasArgs === false && toolCallHasEnd.get(toolCallId)
+      )
       .map(([toolCallId]) => toolCallId),
     reasoningStartsAfterTextMessages:
-      eventTypes.includes("REASONING_START") &&
-      eventTypes.includes("TEXT_MESSAGE_START") &&
-      eventTypes.indexOf("REASONING_START") >
-        eventTypes.indexOf("TEXT_MESSAGE_START"),
+      eventTypes.includes(EventType.REASONING_START) &&
+      eventTypes.includes(EventType.TEXT_MESSAGE_START) &&
+      eventTypes.indexOf(EventType.REASONING_START) >
+        eventTypes.indexOf(EventType.TEXT_MESSAGE_START),
     invalidEvents: validateEvents(events),
   };
 }
@@ -210,8 +253,7 @@ export function assertVerificationResult(
   if (result.audit.invalidEvents.length > 0) {
     const detail = result.audit.invalidEvents
       .map(
-        (issue) =>
-          `#${issue.index} ${issue.type}: ${issue.issues.join("; ")}`
+        (issue) => `#${issue.index} ${issue.type}: ${issue.issues.join("; ")}`
       )
       .join("\n");
     throw new Error(`Invalid AG-UI events detected:\n${detail}`);

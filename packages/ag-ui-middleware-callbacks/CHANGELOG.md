@@ -4,10 +4,14 @@
 
 ### Features
 
-- Froze the MVP backend/package contract in `docs/ContractFreeze.md`.
-- Added explicit public subpath entrypoints for `./callbacks` and
-  `./middleware`.
-- Switched package build output to ESM + CJS.
+- Added the reusable `./adapter` public subpath with `createAGUIAdapter(...)`
+  as the shared non-HTTP orchestration boundary.
+- Rebased `createAGUIBackend()` on top of the adapter boundary while preserving
+  strict request validation and one-event-per-frame SSE behavior.
+- Reworked the advanced custom-host example to reuse the shared adapter and
+  keep only auth, routing, and transport concerns in host code.
+- Updated package docs and example docs to reflect the adapter-first runtime
+  surface.
 
 ### Breaking Changes
 

@@ -107,7 +107,7 @@ function withInjectedAGUICallback(
   // Runtime callback list provided. Avoid duplicates if AG-UI callback already exists.
   if (Array.isArray(callbacks)) {
     if (callbacks.some(isAGUICallbackHandler)) {
-      return runtimeOptions;
+      return runtimeOptions ?? {};
     }
     return {
       ...runtimeOptions,
@@ -116,7 +116,7 @@ function withInjectedAGUICallback(
   }
 
   // Non-array callback manager provided: honor runtime callbacks as source of truth.
-  return runtimeOptions;
+  return runtimeOptions ?? {};
 }
 
 function wrapAgentWithPerRunAGUICallback(

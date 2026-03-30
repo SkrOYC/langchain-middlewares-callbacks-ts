@@ -1,18 +1,21 @@
 # @skroyc/ag-ui-middleware-callbacks
 
-AG-UI backend and producer primitives for LangChain.js.
+AG-UI backend, adapter, and producer primitives for LangChain.js.
 
 ## Status
 
-The first contract-freeze epic is complete in docs. The frozen target package
-shape is recorded in [docs/ContractFreeze.md](./docs/ContractFreeze.md).
+The frozen MVP contract is recorded in
+[docs/ContractFreeze.md](./docs/ContractFreeze.md). The current shipped package
+now goes further and includes the extracted adapter boundary described in
+`docs/TechSpec.md`.
 
 Current implementation status:
 
-- published runtime surface: backend adapter, run-scoped publisher, and
-  low-level producers
+- published runtime surface: programmatic adapter, backend wrapper,
+  run-scoped publisher, and low-level producers
 - validated example set: CLI verifier plus GUI-backed default backend example
-  and advanced custom-host example under `example/`
+  and advanced custom-host example under `example/`, both reusing the same
+  adapter semantics
 - `createAGUIAgent`: still present in source for transition work, but no longer
   treated as public package API
 
@@ -28,6 +31,7 @@ Prefer explicit subpath imports:
 
 ```ts
 import { AGUICallbackHandler } from "@skroyc/ag-ui-middleware-callbacks/callbacks";
+import { createAGUIAdapter } from "@skroyc/ag-ui-middleware-callbacks/adapter";
 import { createAGUIBackend } from "@skroyc/ag-ui-middleware-callbacks/backend";
 import { createAGUIMiddleware } from "@skroyc/ag-ui-middleware-callbacks/middleware";
 import { createAGUIRunPublisher } from "@skroyc/ag-ui-middleware-callbacks/publication";
@@ -40,6 +44,31 @@ import {
 	AGUICallbackHandler,
 	createAGUIMiddleware,
 } from "@skroyc/ag-ui-middleware-callbacks";
+```
+
+## Programmatic Adapter Path
+
+Use the adapter subpath when your host wants to own auth, routing, or transport
+but still reuse the package's canonical run orchestration:
+
+```ts
+import { createAgent } from "langchain";
+import { createAGUIAdapter } from "@skroyc/ag-ui-middleware-callbacks/adapter";
+
+const adapter = createAGUIAdapter({
+  agentFactory: ({ input, middleware }) =>
+    createAgent({
+      model,
+      tools,
+      middleware: [middleware],
+    }),
+});
+
+const events = await adapter.stream(input, { signal });
+
+for await (const event of events) {
+  console.log(event);
+}
 ```
 
 ## Default Backend Path
@@ -65,7 +94,8 @@ export function handle(request: Request) {
 ```
 
 `handle(request)` expects a strict AG-UI `RunAgentInput` JSON payload and
-returns a streamed `text/event-stream` response.
+returns a streamed `text/event-stream` response. Internally, the backend now
+wraps `createAGUIAdapter()` rather than owning run orchestration itself.
 
 ## Low-Level Example
 
@@ -95,9 +125,13 @@ const callbacks = [
 
 - Reasoning events can be emitted as legacy `THINKING_*` or newer
   `REASONING_*` families.
+- New adapter-facing code should prefer `REASONING_*`; `THINKING_*` remains a
+  compatibility mode.
 - Thinking/reasoning content is derived from LangChain content blocks after the
   response is available; callback-only concurrent reasoning streaming is not
   currently possible.
 - The backend contract is `agentFactory({ input, middleware })`, not the older
   frozen `{ agent }` shape. This is intentional because LangChain middleware is
   attached at agent construction time.
+- Repo-level package builds should use
+  `bun run --filter @skroyc/ag-ui-middleware-callbacks build`.

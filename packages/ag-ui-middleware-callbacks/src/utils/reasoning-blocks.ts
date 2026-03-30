@@ -57,7 +57,7 @@ export function extractReasoningBlocks(message: BaseMessage): ReasoningBlock[] {
     return [];
   }
 
-  return contentBlocks.filter(isReasoningBlock);
+  return contentBlocks.filter(isReasoningBlock) as unknown as ReasoningBlock[];
 }
 
 /**

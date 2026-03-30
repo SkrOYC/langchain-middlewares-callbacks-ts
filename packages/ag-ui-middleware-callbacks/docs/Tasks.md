@@ -1,33 +1,32 @@
 # Engineering Execution Plan
 
 ## 0. Version History & Changelog
+- v2.1.0 - Recorded Epic A as implemented and shifted the active critical path to publication hardening, legacy containment, and verification.
 - v2.0.0 - Rebased the plan around the remaining adapter-first convergence work and archived the earlier MVP backlog as brownfield context.
 - v1.1.0 - Recorded the MVP completion state after backend, publication, verification, and examples landed.
 - v1.0.0 - Planned the first backend-adapter implementation pass after the package moved beyond the original event-emitter framing.
 - ... [Older history truncated, refer to git logs]
 
 ## 1. Executive Summary & Active Critical Path
-- **Total Active Story Points:** 31
-- **Critical Path:** `AGA-A001 -> AGA-B001 -> AGA-B002 -> AGA-B003 -> AGA-D001`
+- **Total Active Story Points:** 21
+- **Critical Path:** `AGA-B001 -> AGA-B002 -> AGA-B003 -> AGA-D001`
 - **Planning Assumptions:** The package remains library-shaped, keeps LangChain as the execution engine, preserves the current backend behavior for consumers, and treats `createAGUIAgent` as a legacy compatibility surface rather than active product scope.
 
-The active delta is no longer "build a backend adapter from scratch." That work is already present in brownfield form. The remaining work is to converge the package on the correct adapter-first boundary so the default backend path, custom-host path, publication logic, compatibility surface, and verification story all point at the same architecture.
+The active delta is no longer "build a backend adapter from scratch." That work is now implemented in the package. The remaining work is to harden truthful publication, contain legacy compatibility, and rebuild release confidence around the converged adapter-first architecture.
 
 ### Brownfield Continuity Note
 - The package already contains a working backend path, a run-scoped publisher, producer layers, examples, and end-to-end tests.
-- The active plan does not reopen those completed foundations. It concentrates on extracting the reusable adapter boundary that the current code still keeps implicit, hardening truthful publication for the in-scope event families, and moving release confidence to the right public surfaces.
+- The active plan does not reopen those completed foundations. It now concentrates on hardening truthful publication for the in-scope event families and moving release confidence to the right public surfaces.
 - Historical work items from the earlier MVP backlog remain useful context and are preserved below as archived scope rather than active execution.
 
 ### Active Dependency Notes
-- **Adapter branch:** `AGA-A001` through `AGA-A003` establishes the reusable orchestration layer outside middleware and callbacks and removes duplicated host glue.
+- **Adapter branch:** `AGA-A001` through `AGA-A003` is implemented in the current codebase.
 - **Publication hardening branch:** `AGA-B001` through `AGA-B003` makes truthful publication policy explicit and closes the remaining reasoning and legacy-thinking edge cases.
 - **Compatibility branch:** `AGA-C001` through `AGA-C002` prevents the legacy `createAGUIAgent` path from continuing to define the package’s public identity.
 - **Verification branch:** `AGA-D001` is intentionally last because it should validate the converged product surfaces, not the transitional ones.
 
 ## 2. Project Phasing & Iteration Strategy
 ### Current Active Scope
-- Extract and publish a reusable adapter boundary above middleware and callbacks.
-- Make the default backend and custom-host paths reuse that adapter boundary instead of duplicating orchestration.
 - Encode and harden explicit truthful publication modes for the in-scope AG-UI event families, including legacy `THINKING_*` compatibility and modern `REASONING_*` behavior.
 - Move release confidence to the adapter-first public surfaces, examples, and built-package checks.
 - Contain `createAGUIAgent` as a legacy surface so it no longer drives the public mental model.
@@ -40,7 +39,8 @@ The active delta is no longer "build a backend adapter from scratch." That work 
 
 ### Archived or Already Completed Scope
 - Contract-freeze, publication core, default backend path, verification coverage, package alignment, README rewrite, and example replacement work from the earlier MVP backlog.
-- The completed MVP chain proved that the package could ship backend, publisher, and producer surfaces. It did not fully resolve the deeper architectural boundary issue around the missing adapter layer outside the hooks.
+- Adapter extraction, backend rebasing, and advanced custom-host convergence from Epic A.
+- The completed MVP chain proved that the package could ship backend, publisher, and producer surfaces. Epic A closed the deeper architectural boundary issue around the missing adapter layer outside the hooks.
 
 ### Archived MVP Ticket Families
 - `P-*`: package and serving contract freezing
@@ -72,9 +72,12 @@ flowchart LR
 ## 4. Ticket List
 ### Epic A — Adapter Boundary Extraction (AGA)
 
+Status: implemented in the current codebase on 2026-03-30.
+
 **AGA-A001 Introduce the reusable `createAGUIAdapter()` module**
 - **Type:** Feature
 - **Effort:** 5
+- **Status:** Implemented
 - **Dependencies:** None
 - **Legacy Issue ID:** S-2, D-2
 - **Capability / Contract Mapping:** AGC-001, AGC-002, AGC-006
@@ -91,6 +94,7 @@ And it yields canonical BaseEvent objects whose completion, error, and abort sem
 **AGA-A002 Rebase `createAGUIBackend()` on the adapter boundary**
 - **Type:** Feature
 - **Effort:** 3
+- **Status:** Implemented
 - **Dependencies:** AGA-A001
 - **Legacy Issue ID:** S-2, S-3
 - **Capability / Contract Mapping:** AGC-001, AGC-003
@@ -107,6 +111,7 @@ And the streamed public behavior remains compatible with the existing backend co
 **AGA-A003 Rework the advanced custom-host example to consume the adapter**
 - **Type:** Chore
 - **Effort:** 2
+- **Status:** Implemented
 - **Dependencies:** AGA-A001
 - **Legacy Issue ID:** D-2
 - **Capability / Contract Mapping:** AGC-002, AGC-006
