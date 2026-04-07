@@ -294,14 +294,14 @@ describe("createAGUIBackend", () => {
     );
 
     const frames = await readSSEFrames(response);
-    const events = frames.map((frame) => JSON.parse(frame.slice(6)) as BaseEvent);
+    const events = frames.map(
+      (frame) => JSON.parse(frame.slice(6)) as BaseEvent
+    );
 
     expect(frames.length).toBeGreaterThan(0);
     expect(frames.every((frame) => frame.startsWith("data: "))).toBe(true);
     expect(events).toHaveLength(frames.length);
-    expect(events[0]).toEqual(
-      expect.objectContaining({ type: "RUN_STARTED" })
-    );
+    expect(events[0]).toEqual(expect.objectContaining({ type: "RUN_STARTED" }));
     expect(events.at(-1)).toEqual(
       expect.objectContaining({ type: "RUN_FINISHED" })
     );

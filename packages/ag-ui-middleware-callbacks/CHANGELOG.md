@@ -1,110 +1,98 @@
 # Changelog
 
-## [Unreleased]
-
-### Features
-
-- Added the reusable `./adapter` public subpath with `createAGUIAdapter(...)`
-  as the shared non-HTTP orchestration boundary.
-- Rebased `createAGUIBackend()` on top of the adapter boundary while preserving
-  strict request validation and one-event-per-frame SSE behavior.
-- Reworked the advanced custom-host example to reuse the shared adapter and
-  keep only auth, routing, and transport concerns in host code.
-- Updated package docs and example docs to reflect the adapter-first runtime
-  surface.
+## 2.0.0 (2026-04-06)
 
 ### Breaking Changes
 
-- Removed `createAGUIAgent` from the published package root.
+- **`onEvent` renamed to `publish`** in both `createAGUIMiddleware()` options and `AGUICallbackHandler` constructor. All consumers must update the property name.
+- **`emitToolResults` removed from middleware options.** Use `callbackOptions.emitToolResults` on the adapter config, or pass it directly to `AGUICallbackHandler`.
+- **`maxUIPayloadSize` and `chunkLargeResults` removed from middleware options.** These are `AGUICallbackHandler`-only options — pass them via `callbackOptions` on the adapter config, or directly to the callback handler constructor.
+- **`createAGUIAgent()` removed.** This convenience wrapper around LangChain's `createAgent()` has been replaced by the adapter pattern (`createAGUIAdapter` / `createAGUIBackend`). Consumers that need direct control should compose `createAGUIMiddleware` + `AGUICallbackHandler` themselves.
+- **Sourcemaps no longer included** in the published package.
 
-## [1.1.1] - 2026-03-03
+### New Features
+
+- **Adapter layer** (`./adapter` subpath): `createAGUIAdapter()` orchestrates middleware, callbacks, and publisher into a single `stream()` call that returns `AsyncIterable<BaseEvent>`.
+- **Backend layer** (`./backend` subpath): `createAGUIBackend()` wraps the adapter with HTTP request handling (POST validation, SSE response).
+- **Publication layer** (`./publication` subpath): `createAGUIRunPublisher()` manages event lifecycle ordering, open-stream tracking, and terminal event guarantees. Includes `serializeEventAsSSE()` and `createSSEStream()` helpers.
+- **Thinking/Reasoning events**: Full support for `THINKING_*` and `REASONING_*` event families via LangChain V1 `contentBlocks` API. Both batch (from `handleLLMEnd`) and streaming (from `handleLLMNewToken`) paths supported.
+- **Reasoning migration mode**: `reasoningEventMode` option on `AGUICallbackHandler` — set to `"reasoning"` for the new `REASONING_*` events, or `"thinking"` (default) for backward-compatible `THINKING_*` events.
+- **Structured message fidelity**: `MESSAGES_SNAPSHOT` now preserves structured content blocks and tool calls.
+- **Subpath exports**: Package exposes `./adapter`, `./backend`, `./callbacks`, `./middleware`, and `./publication` as explicit entry points.
 
 ### Fixes
 
-- Wired `callbackOptions` through `createAGUIAgent` via default `AGUICallbackHandler` binding.
-- Added explicit callback-level `emitToolResults` toggle.
-- Added compatibility mapping from legacy `middlewareOptions.emitToolResults` to callback behavior.
-- Added deprecation warning for `middlewareOptions.emitToolResults` (prefer `callbackOptions.emitToolResults`).
-- Added/updated tests for callback option wiring and tool-result emission policy.
+- Runtime context IDs (`run_id`, `thread_id`) from LangChain runtime are now correctly resolved for AG-UI lifecycle correlation.
+- `emitStateSnapshots` mode contract enforced — duplicate `STATE_SNAPSHOT` emissions eliminated.
+- Deterministic message IDs derived from resolved run ID for consistent cross-layer correlation.
 
-## [1.1.0] - 2026-01-28
-
-### Features
-
-- Added thinking/reasoning content blocks support via LangChain V1 contentBlocks API
-- New `reasoningBlocks.ts` utility with `extractReasoningBlocks()`, `extractReasoningText()`, `groupReasoningBlocksByIndex()`
-- Support for Anthropic `{ type: "thinking" }` blocks
-- Support for Google `{ type: "thinking" }` blocks
-- Support for OpenAI reasoning blocks
-- Multiple reasoning phases (interleaved thinking) support via index-based grouping
-
-### Breaking Changes
-Thinking events are emitted **after the complete response** using LangChain V1's `contentBlocks` API. Concurrent streaming of thinking is not possible through callbacks alone due to the callback pattern receiving only raw string tokens. See [docs/Architecture.md](./docs/Architecture.md) for details on middleware hooks and callback patterns.
-### Changes
-
-- Replaced streaming fallback with canonical contentBlocks API extraction
-- Added `detectAndEmitThinking()` method to AGUICallbackHandler
-- Removed `thinkingIds` map (no longer needed)
-- Thinking events are now coupled with `emitTextMessages` flag
-
-## [1.0.0] - 2026-01-20
-
-### Breaking Changes
-
-- **Scope Clarification**: Package now focuses exclusively on intercepting LangChain execution and emitting AG-UI events as JavaScript objects. All transport/wire-formatting concerns have been removed (developer responsibility).
-- **Type Changes**: Removed custom event type definitions and re-exports. Use `@ag-ui/core` for event types directly.
-- **Removed Exports**: `createSSETransport`, `createProtobufTransport`, `AGUITransport`, `ProtobufTransport`, `SSETransport`, `AGUI_MEDIA_TYPE`, `encodeEventWithFraming`, `decodeEventWithFraming`, `encodeProtobuf`, `decodeProtobuf`, `generateId`, `computeStateDelta`, `mapLangChainMessageToAGUI`, `cleanLangChainData`, `extractToolOutput`, `expandEvent`, `validateEvent`, `isValidEvent`, `createValidatingCallback`, `AGUIMiddlewareOptions`, `AGUIMiddlewareOptionsSchema`, `EventType`, `EventSchemas`, `ValidationResult`, `MessageSchema`, `ToolCallSchema`.
-- **Removed Dependencies**: `@ag-ui/proto`
-- **Version**: Bumped to 1.0.0
-
-### Migration
+### Migration from 1.0.x
 
 ```typescript
-// Before
-import { createSSETransport, EventType } from "@skroyc/ag-ui-middleware-callbacks"
+// Before (1.0.x)
+import { createAGUIMiddleware, AGUICallbackHandler } from "@skroyc/ag-ui-middleware-callbacks";
 
-// After
-import { EventType } from "@ag-ui/core"
-import { createAGUIAgent } from "@skroyc/ag-ui-middleware-callbacks"
+createAGUIMiddleware({
+  onEvent: emit,
+  emitToolResults: false,
+  maxUIPayloadSize: 50 * 1024,
+});
 
-// Implement transport yourself
-for await (const event of agent.stream(input)) {
-  res.write(`data: ${JSON.stringify(event)}\n\n`)  // SSE
-}
+new AGUICallbackHandler({ onEvent: emit });
+
+// After (2.0.0)
+import { createAGUIMiddleware, AGUICallbackHandler } from "@skroyc/ag-ui-middleware-callbacks";
+
+createAGUIMiddleware({
+  publish: emit,
+});
+
+new AGUICallbackHandler({
+  publish: emit,
+  emitToolResults: false,
+  maxUIPayloadSize: 50 * 1024,
+});
 ```
+
+### Internal
+
+- `@ag-ui/core` updated to `^0.0.47`.
+- Dead code removed (`createAGUIAgent`, associated integration tests).
+
+## 1.0.2 (2026-01-22)
+
+### Fixes
+
+- Fixed `toolCallId` consistency across AG-UI tool events.
+
+## 1.0.1 (2026-01-21)
 
 ### Changes
 
-- Removed `transports/` directory
-- Removed `src/types/ag-ui.ts`
-- Simplified `src/events/index.ts` to use @ag-ui/core types directly
-- Updated `AGUICallbackHandler` to use callback pattern instead of transport
-- Updated `createAGUIMiddleware` to use callback pattern instead of transport
-- Updated `createAGUIAgent` to use callback pattern instead of transport
+- Updated `@ag-ui/core` to `0.0.43` and configured `langchain` as peer dependency.
+
+## 1.0.0 (2026-01-20)
+
+### Breaking Changes
+
+- **Scope Clarification**: Package now focuses exclusively on intercepting LangChain execution and emitting AG-UI events as JavaScript objects. All transport/wire-formatting concerns removed.
+- **Removed Exports**: `createSSETransport`, `createProtobufTransport`, and all transport-related types.
+- **Removed Dependencies**: `@ag-ui/proto`
 
 ## 0.1.2 (2026-01-15)
 
 ### Documentation
-- Updated README.md to be more concise and aligned with implementation
-- Updated SPEC.md with accurate implementation details
-- Added TOOL_CALL_START and TOOL_CALL_END to event tables
-- Clarified callback binding behavior in createAGUIAgent
 
-### Fixes
-- Fixed event source documentation (Middleware vs Callbacks)
+- Updated README.md and SPEC.md with accurate implementation details.
 
 ## 0.1.1 (2026-01-07)
 
 ### Fixes
-- Fixed package.json configuration for npm publishing
-- Corrected repository.url to use git+https protocol
-- Fixed types field to point to .d.mts file
+
+- Fixed package.json configuration for npm publishing.
 
 ## 0.1.0 (2026-01-07)
 
 ### Features
-- Initial release of @skroyc/ag-ui-middleware-callbacks
-- AG-UI protocol middleware integration for LangChain.js
-- SSE and Protocol Buffer transports
-- LangChain callbacks for streaming events
-- Validation utilities using @ag-ui/core schemas
+
+- Initial release of @skroyc/ag-ui-middleware-callbacks.

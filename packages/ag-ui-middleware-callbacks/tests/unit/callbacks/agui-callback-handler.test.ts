@@ -167,7 +167,9 @@ describe("AGUICallbackHandler", () => {
         publish: mockCallback.emit,
         reasoningEventMode: "reasoning",
       });
-      const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+      const warnSpy = spyOn(console, "warn").mockImplementation(
+        () => undefined
+      );
       const runId = "run-123";
       const messageId = "msg-abc";
       const agentRunId = "agent-run-123";
@@ -206,7 +208,9 @@ describe("AGUICallbackHandler", () => {
         "langchain",
         "responses-v1-chatmodel.json"
       );
-      const fixture = (await Bun.file(fixturePath).json()) as CapturedChatModelFixture;
+      const fixture = (await Bun.file(
+        fixturePath
+      ).json()) as CapturedChatModelFixture;
 
       expect(fixture.useResponsesApi).toBe(true);
       expect(fixture.outputVersion).toBe("v1");

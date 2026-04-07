@@ -116,7 +116,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
   private readonly accumulatedToolArgs = new Map<string, string>(); // Accumulates partial args for streaming tool calls
   private readonly streamingToolCallIds = new Map<string, string>(); // Maps agentRunId:index to toolCallId for args-only deltas
   private readonly streamedReasoningRuns = new Set<string>();
-  private readonly openReasoningStates = new Map<string, StreamingReasoningState>();
+  private readonly openReasoningStates = new Map<
+    string,
+    StreamingReasoningState
+  >();
   private readonly warnedMissingStreamingContentBlocks = new Set<string>();
   private readonly emitCallback: (event: BaseEvent) => void;
 
@@ -951,7 +954,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
         assistantMessageId,
         chunk.index
       );
-      if (!(typeof chunk.reasoning === "string" && chunk.reasoning.length > 0)) {
+      if (
+        !(typeof chunk.reasoning === "string" && chunk.reasoning.length > 0)
+      ) {
         continue;
       }
       if (this.reasoningEventMode === "reasoning") {
@@ -1246,8 +1251,7 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
       return {
         id: this.getString(record, "id"),
         function: {
-          name:
-            this.getString(fn, "name") ?? this.getString(record, "name"),
+          name: this.getString(fn, "name") ?? this.getString(record, "name"),
           arguments:
             this.getString(fn, "arguments") ??
             this.stringifyIfDefined(record?.args),
@@ -1319,7 +1323,10 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     if (metadataToolCallId) {
       return {
         toolCallId: metadataToolCallId,
-        toolCallName: this.resolveStoredToolName(metadataToolCallId, toolCallName),
+        toolCallName: this.resolveStoredToolName(
+          metadataToolCallId,
+          toolCallName
+        ),
         argsDelta,
       };
     }
@@ -1490,7 +1497,9 @@ export class AGUICallbackHandler extends BaseCallbackHandler {
     const generations = Array.isArray(outputRecord?.generations)
       ? outputRecord.generations
       : undefined;
-    const firstGroup = Array.isArray(generations?.[0]) ? generations[0] : undefined;
+    const firstGroup = Array.isArray(generations?.[0])
+      ? generations[0]
+      : undefined;
     const generation = this.asRecord(firstGroup?.[0]);
     const generationText = generation?.text;
     return typeof generationText === "string" && generationText.length > 0
