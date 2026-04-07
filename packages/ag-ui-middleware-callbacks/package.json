@@ -1,6 +1,6 @@
 {
   "name": "@skroyc/ag-ui-middleware-callbacks",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "AG-UI backend, adapter, and producer primitives for LangChain.js",
   "type": "module",
   "sideEffects": false,
@@ -75,7 +75,6 @@
   "dependencies": {
     "@ag-ui/core": "^0.0.47",
     "@langchain/core": "^1.1.31",
-    "fast-json-patch": "^3.1.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {},

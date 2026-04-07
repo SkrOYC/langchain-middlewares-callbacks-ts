@@ -26,6 +26,5 @@ export default defineConfig({
     "@ag-ui/core",
     "@ag-ui/proto",
     "zod",
-    "fast-json-patch",
   ],
 });
