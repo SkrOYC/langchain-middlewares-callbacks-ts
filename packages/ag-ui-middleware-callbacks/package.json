@@ -1,6 +1,6 @@
 {
   "name": "@skroyc/ag-ui-middleware-callbacks",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AG-UI backend, adapter, and producer primitives for LangChain.js",
   "type": "module",
   "sideEffects": false,
@@ -64,8 +64,8 @@
     }
   },
   "peerDependencies": {
-    "langchain": "catalog:peer",
-    "typescript": "catalog:peer"
+    "langchain": "^1.2.17",
+    "typescript": ">=5"
   },
   "peerDependenciesMeta": {
     "langchain": {
@@ -74,9 +74,9 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.47",
-    "@langchain/core": "catalog:",
+    "@langchain/core": "^1.1.31",
     "fast-json-patch": "^3.1.1",
-    "zod": "catalog:"
+    "zod": "^4.3.6"
   },
   "devDependencies": {},
   "scripts": {
